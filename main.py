@@ -96,6 +96,15 @@ class ActivitySubmit(BaseModel):
 # ---------------------------
 
 app = FastAPI(title="Gem Kids Gamified Quiz API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://gamified-quiz-delta.vercel.app"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # allow all methods
+    allow_headers=["*"],  # allow all headers
+)
 
 # ---------------------------
 # In-memory OTP storage
