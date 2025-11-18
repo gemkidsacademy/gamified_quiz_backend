@@ -54,6 +54,17 @@ class ActivityAttempt(Base):
     time_taken = Column(Integer)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True)
+    phone_number = Column(String, unique=True)
+    password = Column(String, nullable=False)  # store hashed password in production
+    class_name = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 
@@ -61,8 +72,13 @@ Base.metadata.create_all(bind=engine)
 # Pydantic Schemas
 # ---------------------------
 
+
 class OTPRequest(BaseModel):
     phone_number: str
+
+class LoginRequest(BaseModel):
+    phone_number: str
+    otp: str
 
 class OTPVerify(BaseModel):
     phone_number: str
@@ -80,24 +96,62 @@ class ActivitySubmit(BaseModel):
 app = FastAPI(title="Gem Kids Gamified Quiz API")
 
 # ---------------------------
+# In-memory OTP storage
+# ---------------------------
+otp_dict = {}  # phone_number -> otp
+
+# ---------------------------
 # OTP Endpoints
 # ---------------------------
 
-@app.post("/login-otp")
-def login_otp(request: OTPRequest, db: Session = Depends(get_db)):
-    otp_code = str(random.randint(1000, 9999))
-    otp_entry = db.query(OTP).filter(OTP.phone_number == request.phone_number).first()
-    if otp_entry:
-        otp_entry.otp_code = otp_code
-        otp_entry.created_at = datetime.utcnow()
-    else:
-        otp_entry = OTP(phone_number=request.phone_number, otp_code=otp_code)
-        db.add(otp_entry)
-    db.commit()
-    # TODO: send OTP via SMS/email
-    print(f"DEBUG: OTP for {request.phone_number} is {otp_code}")
+# ---------------------------
+# OTP Generation Endpoint
+# ---------------------------
+
+@app.post("/send-otp")
+def send_otp(request: OTPRequest):
+    if not request.phone_number:
+        raise HTTPException(status_code=400, detail="Phone number is required")
+
+    # Fixed OTP for testing
+    otp_code = "123"
+    otp_dict[request.phone_number] = otp_code
+
+    # TODO: replace print with SMS/email sending in production
+    print(f"[DEBUG] OTP for {request.phone_number}: {otp_code}")
+
     return {"message": "OTP sent successfully"}
 
+
+# ---------------------------
+# Login Endpoint
+# ---------------------------
+@app.post("/login")
+def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    # Check if phone number exists in DB
+    stmt = select(User).where(User.phone_number == request.phone_number)
+    user = db.execute(stmt).scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Phone number not registered")
+
+    # Check OTP from in-memory dict
+    stored_otp = otp_dict.get(request.phone_number)
+    if not stored_otp or request.otp != stored_otp:
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+
+    # Set dummy session cookie
+    response.set_cookie(
+        key="session_token",
+        value=f"session_{user.id}",
+        httponly=True,
+        max_age=3600  # 1 hour
+    )
+
+    # Optionally, remove OTP after successful login
+    otp_dict.pop(request.phone_number, None)
+
+    return {"message": "Login successful", "username": user.name, "id": user.id}
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     otp_entry = db.query(OTP).filter(OTP.phone_number == request.phone_number).first()
