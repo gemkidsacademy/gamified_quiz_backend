@@ -95,7 +95,7 @@ Base.metadata.create_all(bind=engine)
 # Pydantic Schemas
 # ---------------------------
 
-
+  
 class OTPRequest(BaseModel):
     phone_number: str
 
