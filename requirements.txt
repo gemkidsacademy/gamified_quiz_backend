@@ -6,3 +6,4 @@ SQLAlchemy==2.0.22
 psycopg2-binary==2.9.7
 celery==5.3.1
 redis==5.3.0
+openai==1.7.3
