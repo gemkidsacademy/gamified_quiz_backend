@@ -20,8 +20,8 @@ from openai import OpenAI
 # ---------------------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "your_openai_api_key")
-openai.api_key = OPENAI_API_KEY
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -182,11 +182,12 @@ def generate_quizzes():
             prompt = prompt_template.replace("{topics}", topics)
 
             # Call OpenAI API
-            response = openai.chat.completions.create(
+            response = client.chat.completions.create(
                 model="gpt-4",
                 messages=[{"role": "system", "content": prompt}],
                 temperature=0.7
             )
+
             quiz_content = response['choices'][0]['message']['content']
             
             # Store the generated quiz
