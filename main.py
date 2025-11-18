@@ -165,11 +165,21 @@ def login(request: LoginRequest, response: Response, db: Session = Depends(get_d
     return {"message": "Login successful", "username": user.name, "id": user.id}
     
 @app.post("/verify-otp")
-def verify_otp(request: OTPVerify):
+def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
+    # Example using otp_dict for testing
     stored_otp = otp_dict.get(request.phone_number)
     if not stored_otp or stored_otp != request.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP")
-    return {"message": "OTP verified successfully", "student_id": 1}
+
+    # Dummy lookup for username
+    stmt = select(User).where(User.phone_number == request.phone_number)
+    user = db.execute(stmt).scalar_one_or_none()
+    
+    return {
+        "message": "OTP verified successfully",
+        "student_id": user.id,
+        "username": user.name  # <-- added field
+    }
 
 # ---------------------------
 # Activity Endpoints
