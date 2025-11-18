@@ -145,11 +145,10 @@ celery_app.conf.update(
 
 celery_app.conf.beat_schedule = {
     'generate-daily-quizzes': {
-        'task': 'gamified_scheduler.generate_quizzes',
-        'schedule': crontab(hour=19, minute=0),  # daily at 7 PM
+        'task': 'main.generate_quizzes',  # correct path
+        'schedule': crontab(hour=19, minute=0),
     },
 }
-
 
 # ---------------------------
 # In-memory OTP storage
@@ -158,68 +157,85 @@ otp_dict = {}  # phone_number -> otp
 
 
 # ------------------ Scheduler Task ------------------
+# ------------------ Scheduler Task (with DEBUG LOGS) ------------------
 @celery_app.task
 def generate_quizzes():
-    print("[DEBUG] generate_quizzes task started")  # <-- Task started
+    print("\n==============================")
+    print("[CELERY] Task Started: generate_quizzes()")
+    print("==============================")
+
     db = SessionLocal()
     try:
-        # 1. Fetch all active students
+        print("[DEBUG] Fetching active students...")
         students = db.query(User).filter(User.status == "active").all()
-        print(f"[DEBUG] Found {len(students)} active students")  # <-- check students
+        print(f"[DEBUG] Active students found: {len(students)}")
 
         if not students:
-            print("[DEBUG] No active students found.")
+            print("[DEBUG] No active students. Task ending.")
             return
 
-        # 2. Fetch all activity prompts
+        print("[DEBUG] Fetching activities...")
         activities = db.query(Activity).all()
-        print(f"[DEBUG] Found {len(activities)} activities")  # <-- check activities
+        print(f"[DEBUG] Activities found: {len(activities)}")
 
         if not activities:
-            print("[DEBUG] No activities found in the database.")
+            print("[DEBUG] No activities found in DB. Task ending.")
             return
 
-        # 3. Generate quizzes for each student
+        print("[DEBUG] Starting quiz generation loop...")
         for student in students:
-            print(f"[DEBUG] Generating quiz for student {student.id} - {student.name}")
+            print(f"\n[DEBUG] Generating quiz for student: {student.id} - {student.name}")
+
             activity = random.choice(activities)
-            print(f"[DEBUG] Selected activity {activity.activity_id} - {activity.instructions}")
+            print(f"[DEBUG] Selected activity ID: {activity.activity_id}")
 
-            prompt_template = activity.questions[0]["prompt"]
-            topics = "Math, Science, English"
-            prompt = prompt_template.replace("{topics}", topics)
-            print(f"[DEBUG] Prompt sent to OpenAI: {prompt}")
+            try:
+                prompt_template = activity.questions[0]["prompt"]
+                print(f"[DEBUG] Prompt template: {prompt_template[:80]}...")
 
-            # Call OpenAI API
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "system", "content": prompt}],
-                temperature=0.7
-            )
+                topics = "Math, Science, English"
+                prompt = prompt_template.replace("{topics}", topics)
 
-            quiz_content = response['choices'][0]['message']['content']
-            print(f"[DEBUG] OpenAI returned quiz content: {quiz_content}")
+                print("[DEBUG] Sending request to OpenAI...")
+                response = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[{"role": "system", "content": prompt}],
+                    temperature=0.7
+                )
+                print("[DEBUG] OpenAI response received")
 
-            # Store the generated quiz
-            student_quiz = StudentQuiz(
-                student_id=student.id,
-                activity_id=activity.activity_id,
-                quiz_json=json.loads(quiz_content),
-                status="pending",
-                created_at=datetime.utcnow()
-            )
-            db.add(student_quiz)
-            print(f"[DEBUG] Added quiz for student {student.id} to DB session")
+                quiz_content = response.choices[0].message.content
+                print("[DEBUG] Quiz content generated")
+
+                # Parse JSON from OpenAI
+                parsed_json = json.loads(quiz_content)
+                print("[DEBUG] Quiz JSON parsed successfully")
+
+                student_quiz = StudentQuiz(
+                    student_id=student.id,
+                    activity_id=activity.activity_id,
+                    quiz_json=parsed_json,
+                    status="pending",
+                    created_at=datetime.utcnow()
+                )
+                db.add(student_quiz)
+                print("[DEBUG] Quiz saved for student")
+
+            except Exception as ai_error:
+                print(f"[ERROR] Failed to generate quiz for {student.name}: {ai_error}")
+                continue  # Continue with next student
 
         db.commit()
-        print(f"[DEBUG] Committed quizzes for {len(students)} students at {datetime.utcnow()}")
+        print("\n[CELERY] Successfully generated quizzes for all active students.")
+        print("==============================\n")
 
     except Exception as e:
-        print("[ERROR] Error generating quizzes:", e)
+        print("[FATAL ERROR] Scheduler crashed:", e)
         db.rollback()
+
     finally:
         db.close()
-        print("[DEBUG] DB session closed")
+        print("[DEBUG] Database session closed.")
 
 
 
