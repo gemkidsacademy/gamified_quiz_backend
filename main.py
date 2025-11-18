@@ -142,24 +142,21 @@
    
    
    
+
+   @app.get("/get-pending-quiz/{user_id}")
+   def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
+       quiz = db.query(StudentQuiz).filter_by(student_id=user_id, status="pending").first()
+       if not quiz:
+           return {"message": "No pending quiz found"}
    
-@app.get("/get-pending-quiz/{user_id}")
-def get_pending_quiz(user_id: int):
-    db = SessionLocal()
-    quiz = db.query(StudentQuiz).filter_by(student_id=user_id, status="pending").first()  # ✔️ FIXED
+       return {
+           "quiz_id": quiz.quiz_id,
+           "activity_id": quiz.activity_id,
+           "quiz_json": quiz.quiz_json,
+           "status": quiz.status,
+           "created_at": quiz.created_at
+       }
 
-    if not quiz:
-        db.close()
-        return {"message": "No pending quiz found"}
-
-    response = {
-        "quiz_id": quiz.id,
-        "activity_id": quiz.activity_id,
-        "quiz_json": quiz.quiz_json
-    }
-
-    db.close()
-    return response
    
    # ---------------------------
    # Send OTP endpoint
