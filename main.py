@@ -6,7 +6,7 @@ from datetime import datetime
 import random
 import os
 from fastapi import Response
-from sqlalchemy import select
+from sqlalchemy import select 
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
