@@ -399,3 +399,6 @@ def submit_quiz_answer(quiz_id: int, payload: AnswerPayload):
 @app.get("/")
 def root():
     return {"message": "Welcome to Gem Kids Gamified Quiz API"}
+
+if __name__ == "__main__":
+    generate_quizzes()  # <-- This will run immediately
