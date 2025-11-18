@@ -4,11 +4,61 @@ from pydantic import BaseModel
 from typing import List
 from datetime import datetime
 import random
+import os
 
-app = FastAPI(title="Gem Kids Gamified Quiz API")
+from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 
 # ---------------------------
-# Models
+# Database Setup
+# ---------------------------
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ---------------------------
+# Models (DB tables)
+# ---------------------------
+
+class OTP(Base):
+    __tablename__ = "otp_store"
+    id = Column(Integer, primary_key=True, index=True)
+    phone_number = Column(String, unique=True, index=True)
+    otp_code = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Activity(Base):
+    __tablename__ = "activities"
+    activity_id = Column(Integer, primary_key=True, index=True)
+    instructions = Column(String)
+    questions = Column(JSON)  # list of dicts
+    score_logic = Column(String)
+
+class ActivityAttempt(Base):
+    __tablename__ = "activity_attempts"
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer)
+    activity_id = Column(Integer)
+    score = Column(Integer)
+    time_taken = Column(Integer)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+# Create tables
+Base.metadata.create_all(bind=engine)
+
+# ---------------------------
+# Pydantic Schemas
 # ---------------------------
 
 class OTPRequest(BaseModel):
@@ -18,85 +68,82 @@ class OTPVerify(BaseModel):
     phone_number: str
     otp: str
 
-class ActivityRequest(BaseModel):
-    student_id: int
-
 class ActivitySubmit(BaseModel):
     student_id: int
     activity_id: int
     answers: List[str]
 
 # ---------------------------
-# Dummy in-memory storage (replace with DB later)
+# FastAPI App
 # ---------------------------
 
-otp_store = {}  # phone_number -> otp
-activities_store = {
-    1: {
-        "activity_id": 1,
-        "instructions": "Solve the mini quiz",
-        "questions": [
-            {"q": "2 + 2 = ?", "options": ["3","4","5"], "answer": "4"},
-            {"q": "Capital of Australia?", "options": ["Sydney","Melbourne","Canberra"], "answer": "Canberra"}
-        ],
-        "score_logic": "1 point per correct answer"
-    }
-}
-activity_attempts = []
+app = FastAPI(title="Gem Kids Gamified Quiz API")
 
 # ---------------------------
 # OTP Endpoints
 # ---------------------------
 
 @app.post("/login-otp")
-def login_otp(request: OTPRequest):
-    otp = str(random.randint(1000, 9999))
-    otp_store[request.phone_number] = otp
-    # TODO: send OTP via SMS/Email
-    print(f"DEBUG: OTP for {request.phone_number} is {otp}")
+def login_otp(request: OTPRequest, db: Session = Depends(get_db)):
+    otp_code = str(random.randint(1000, 9999))
+    otp_entry = db.query(OTP).filter(OTP.phone_number == request.phone_number).first()
+    if otp_entry:
+        otp_entry.otp_code = otp_code
+        otp_entry.created_at = datetime.utcnow()
+    else:
+        otp_entry = OTP(phone_number=request.phone_number, otp_code=otp_code)
+        db.add(otp_entry)
+    db.commit()
+    # TODO: send OTP via SMS/email
+    print(f"DEBUG: OTP for {request.phone_number} is {otp_code}")
     return {"message": "OTP sent successfully"}
 
 @app.post("/verify-otp")
-def verify_otp(request: OTPVerify):
-    stored_otp = otp_store.get(request.phone_number)
-    if not stored_otp or stored_otp != request.otp:
+def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
+    otp_entry = db.query(OTP).filter(OTP.phone_number == request.phone_number).first()
+    if not otp_entry or otp_entry.otp_code != request.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP")
     # TODO: generate JWT or session token
-    return {"message": "OTP verified successfully", "student_id": 1}  # Example
+    return {"message": "OTP verified successfully", "student_id": 1}  # placeholder
 
 # ---------------------------
 # Activity Endpoints
 # ---------------------------
 
 @app.get("/get-activity")
-def get_activity(student_id: int):
+def get_activity(student_id: int, db: Session = Depends(get_db)):
     # TODO: fetch activity based on class/week from DB
-    activity = activities_store.get(1)
+    activity = db.query(Activity).first()  # placeholder: first activity
     if not activity:
         raise HTTPException(status_code=404, detail="No activity found")
-    return activity
+    return {
+        "activity_id": activity.activity_id,
+        "instructions": activity.instructions,
+        "questions": activity.questions,
+        "score_logic": activity.score_logic
+    }
 
 @app.post("/submit-activity")
-def submit_activity(submit: ActivitySubmit):
-    # Simple scoring logic for demo
-    activity = activities_store.get(submit.activity_id)
+def submit_activity(submit: ActivitySubmit, db: Session = Depends(get_db)):
+    activity = db.query(Activity).filter(Activity.activity_id == submit.activity_id).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
 
+    # Simple scoring logic
     score = 0
     for i, answer in enumerate(submit.answers):
-        if i < len(activity["questions"]) and answer == activity["questions"][i]["answer"]:
+        if i < len(activity.questions) and answer == activity.questions[i]["answer"]:
             score += 1
 
-    # Store attempt
-    attempt = {
-        "student_id": submit.student_id,
-        "activity_id": submit.activity_id,
-        "score": score,
-        "time_taken": random.randint(30, 180),  # dummy time in seconds
-        "timestamp": datetime.utcnow()
-    }
-    activity_attempts.append(attempt)
+    # Record attempt
+    attempt = ActivityAttempt(
+        student_id=submit.student_id,
+        activity_id=submit.activity_id,
+        score=score,
+        time_taken=random.randint(30, 180)
+    )
+    db.add(attempt)
+    db.commit()
 
     return {"message": "Activity submitted", "score": score}
 
