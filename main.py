@@ -135,7 +135,7 @@ app.add_middleware(
 # ------------------ Celery Setup ------------------
 celery_app = Celery(
     "gamified_scheduler",
-    broker=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    broker=os.getenv("CELERY_BROKER_URL")
 )
 
 celery_app.conf.update(
