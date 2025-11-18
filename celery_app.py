@@ -4,14 +4,17 @@ from celery.schedules import crontab
 
 # Celery Initialization
 celery_app = Celery(
-    "gamified_scheduler",
+    "gemkids_tasks",
     broker=os.getenv("CELERY_BROKER_URL"),
-    backend=os.getenv("CELERY_RESULT_BACKEND")
+    backend=os.getenv("CELERY_RESULT_BACKEND"),  # optional
 )
 
 celery_app.conf.update(
-    timezone="Asia/Karachi",
-    enable_utc=True
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='Asia/Karachi',
+    enable_utc=True,
 )
 
 # Celery Beat Schedule
