@@ -123,44 +123,45 @@ otp_dict = {}  # phone_number -> otp
 # Send OTP endpoint
 # ---------------------------
 @app.post("/send-otp")
-def send_otp(request: OTPRequest):
+def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
     phone = request.phone_number.strip()
     if not phone:
         raise HTTPException(status_code=400, detail="Phone number is required")
-    
+
+    # Check if phone exists in DB
+    user = db.query(User).filter(User.phone_number == phone).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Phone number not registered")
+
     # For testing, OTP is always "123"
     otp_dict[phone] = "123"
-    
-    # TODO: Integrate SMS/Email sending if needed
     print(f"[DEBUG] OTP for {phone} is 123")  # debug only
+
     return {"message": "OTP sent successfully"}
 
-# ---------------------------
-# Verify OTP endpoint
-# ---------------------------
 @app.post("/verify-otp")
-def verify_otp(request: OTPVerify):
+def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     phone = request.phone_number.strip()
     otp = request.otp.strip()
 
-    # Check if OTP exists for the phone
-    if phone not in otp_dict:
-        raise HTTPException(status_code=401, detail="Phone number not registered / OTP not sent")
-    
     # Check OTP
-    if otp_dict[phone] != otp:
+    if phone not in otp_dict or otp_dict[phone] != otp:
         raise HTTPException(status_code=401, detail="Invalid OTP")
-    
+
+    # Lookup user in DB
+    user = db.query(User).filter(User.phone_number == phone).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Phone number not registered")
+
     # Remove OTP after successful login
     otp_dict.pop(phone, None)
-    
-    # Return success response
+
     return {
         "message": "OTP verified successfully",
-        "student_id": 1,            # placeholder
-        "phone_number": phone        # frontend can use this
+        "student_id": user.id,
+        "phone_number": user.phone_number,
+        "name": user.name
     }
-
 # ---------------------------
 # Login Endpoint
 # ---------------------------
