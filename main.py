@@ -119,20 +119,47 @@ otp_dict = {}  # phone_number -> otp
 # OTP Generation Endpoint
 # ---------------------------
 
+# ---------------------------
+# Send OTP endpoint
+# ---------------------------
 @app.post("/send-otp")
 def send_otp(request: OTPRequest):
-    if not request.phone_number:
+    phone = request.phone_number.strip()
+    if not phone:
         raise HTTPException(status_code=400, detail="Phone number is required")
-
-    # Fixed OTP for testing
-    otp_code = "123"
-    otp_dict[request.phone_number] = otp_code
-
-    # TODO: replace print with SMS/email sending in production
-    print(f"[DEBUG] OTP for {request.phone_number}: {otp_code}")
-
+    
+    # For testing, OTP is always "123"
+    otp_dict[phone] = "123"
+    
+    # TODO: Integrate SMS/Email sending if needed
+    print(f"[DEBUG] OTP for {phone} is 123")  # debug only
     return {"message": "OTP sent successfully"}
 
+# ---------------------------
+# Verify OTP endpoint
+# ---------------------------
+@app.post("/verify-otp")
+def verify_otp(request: OTPVerify):
+    phone = request.phone_number.strip()
+    otp = request.otp.strip()
+
+    # Check if OTP exists for the phone
+    if phone not in otp_dict:
+        raise HTTPException(status_code=401, detail="Phone number not registered / OTP not sent")
+    
+    # Check OTP
+    if otp_dict[phone] != otp:
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+    
+    # Remove OTP after successful login
+    otp_dict.pop(phone, None)
+    
+    # Return success response
+    return {
+        "message": "OTP verified successfully",
+        "student_id": 1,            # placeholder
+        "phone_number": phone        # frontend can use this
+    }
 
 # ---------------------------
 # Login Endpoint
@@ -164,22 +191,6 @@ def login(request: LoginRequest, response: Response, db: Session = Depends(get_d
 
     return {"message": "Login successful", "username": user.name, "id": user.id}
     
-@app.post("/verify-otp")
-def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
-    # Example using otp_dict for testing
-    stored_otp = otp_dict.get(request.phone_number)
-    if not stored_otp or stored_otp != request.otp:
-        raise HTTPException(status_code=400, detail="Invalid OTP")
-
-    # Dummy lookup for username
-    stmt = select(User).where(User.phone_number == request.phone_number)
-    user = db.execute(stmt).scalar_one_or_none()
-    
-    return {
-        "message": "OTP verified successfully",
-        "student_id": user.id,
-        "username": user.name  # <-- added field
-    }
 
 # ---------------------------
 # Activity Endpoints
