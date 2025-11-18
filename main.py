@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from celery.schedules import crontab
 from openai import OpenAI
 from celery import Celery
+import json
 
 
 
@@ -90,8 +91,8 @@ class User(Base):
     phone_number = Column(String, unique=True)
     password = Column(String, nullable=False)  # store hashed password in production
     class_name = Column(String)
+    status = Column(String, default="active")  # new column to indicate active/inactive users
     created_at = Column(DateTime, default=datetime.utcnow)
-
 # Create tables
 Base.metadata.create_all(bind=engine)
 
@@ -162,7 +163,7 @@ def generate_quizzes():
     db = SessionLocal()
     try:
         # 1. Fetch all active students
-        students = db.query(MasterUser).filter(MasterUser.status=="active").all()
+        students = db.query(User).filter(User.status == "active").all()
         if not students:
             print("No active students found.")
             return
@@ -178,7 +179,7 @@ def generate_quizzes():
             activity = random.choice(activities)
             # Assume questions[0]["prompt"] contains the OpenAI template
             prompt_template = activity.questions[0]["prompt"]
-            
+
             # You can replace {topics} dynamically if needed
             topics = "Math, Science, English"
             prompt = prompt_template.replace("{topics}", topics)
@@ -191,7 +192,7 @@ def generate_quizzes():
             )
 
             quiz_content = response['choices'][0]['message']['content']
-            
+
             # Store the generated quiz
             student_quiz = StudentQuiz(
                 student_id=student.id,
@@ -210,6 +211,7 @@ def generate_quizzes():
         db.rollback()
     finally:
         db.close()
+
 
 @app.get("/get-pending-quiz/{user_id}")
 def get_pending_quiz(user_id: int):
