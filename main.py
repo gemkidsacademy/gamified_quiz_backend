@@ -160,29 +160,35 @@ otp_dict = {}  # phone_number -> otp
 # ------------------ Scheduler Task ------------------
 @celery_app.task
 def generate_quizzes():
+    print("[DEBUG] generate_quizzes task started")  # <-- Task started
     db = SessionLocal()
     try:
         # 1. Fetch all active students
         students = db.query(User).filter(User.status == "active").all()
+        print(f"[DEBUG] Found {len(students)} active students")  # <-- check students
+
         if not students:
-            print("No active students found.")
+            print("[DEBUG] No active students found.")
             return
 
         # 2. Fetch all activity prompts
         activities = db.query(Activity).all()
+        print(f"[DEBUG] Found {len(activities)} activities")  # <-- check activities
+
         if not activities:
-            print("No activities found in the database.")
+            print("[DEBUG] No activities found in the database.")
             return
 
         # 3. Generate quizzes for each student
         for student in students:
+            print(f"[DEBUG] Generating quiz for student {student.id} - {student.name}")
             activity = random.choice(activities)
-            # Assume questions[0]["prompt"] contains the OpenAI template
-            prompt_template = activity.questions[0]["prompt"]
+            print(f"[DEBUG] Selected activity {activity.activity_id} - {activity.instructions}")
 
-            # You can replace {topics} dynamically if needed
+            prompt_template = activity.questions[0]["prompt"]
             topics = "Math, Science, English"
             prompt = prompt_template.replace("{topics}", topics)
+            print(f"[DEBUG] Prompt sent to OpenAI: {prompt}")
 
             # Call OpenAI API
             response = client.chat.completions.create(
@@ -192,6 +198,7 @@ def generate_quizzes():
             )
 
             quiz_content = response['choices'][0]['message']['content']
+            print(f"[DEBUG] OpenAI returned quiz content: {quiz_content}")
 
             # Store the generated quiz
             student_quiz = StudentQuiz(
@@ -202,15 +209,18 @@ def generate_quizzes():
                 created_at=datetime.utcnow()
             )
             db.add(student_quiz)
+            print(f"[DEBUG] Added quiz for student {student.id} to DB session")
 
         db.commit()
-        print(f"Generated quizzes for {len(students)} students at {datetime.utcnow()}")
+        print(f"[DEBUG] Committed quizzes for {len(students)} students at {datetime.utcnow()}")
 
     except Exception as e:
-        print("Error generating quizzes:", e)
+        print("[ERROR] Error generating quizzes:", e)
         db.rollback()
     finally:
         db.close()
+        print("[DEBUG] DB session closed")
+
 
 
 @app.get("/get-pending-quiz/{user_id}")
