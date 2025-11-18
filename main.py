@@ -13,6 +13,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from celery.schedules import crontab
 from openai import OpenAI
+from celery import Celery
+
 
 
 # ---------------------------
