@@ -16,7 +16,7 @@ from openai import OpenAI
 from celery import Celery
 import json
 
-
+   
 
 # ---------------------------
 # Database Setup
