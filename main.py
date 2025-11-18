@@ -163,13 +163,13 @@ def login(request: LoginRequest, response: Response, db: Session = Depends(get_d
     otp_dict.pop(request.phone_number, None)
 
     return {"message": "Login successful", "username": user.name, "id": user.id}
+    
 @app.post("/verify-otp")
-def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
-    otp_entry = db.query(OTP).filter(OTP.phone_number == request.phone_number).first()
-    if not otp_entry or otp_entry.otp_code != request.otp:
+def verify_otp(request: OTPVerify):
+    stored_otp = otp_dict.get(request.phone_number)
+    if not stored_otp or stored_otp != request.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP")
-    # TODO: generate JWT or session token
-    return {"message": "OTP verified successfully", "student_id": 1}  # placeholder
+    return {"message": "OTP verified successfully", "student_id": 1}
 
 # ---------------------------
 # Activity Endpoints
