@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 from datetime import datetime
+from scheduler import generate_quizzes
 from sqlalchemy import (
     create_engine, Column, Integer, String, JSON,
     DateTime, ForeignKey, select
