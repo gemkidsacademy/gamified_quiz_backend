@@ -70,6 +70,9 @@ class ActivityAttempt(Base):
     term_number = Column(Integer)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+class OTPRequest(BaseModel):    
+    phone: str 
+
 class StudentQuiz(Base):
     __tablename__ = "student_quizzes"
     quiz_id = Column(Integer, primary_key=True)
