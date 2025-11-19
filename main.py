@@ -100,7 +100,8 @@ class Activity(Base):
     questions = Column(JSON)
     score_logic = Column(String)
     class_name = Column(String)   # new column for class name
-    class_day = Column(String) 
+    class_day = Column(String)
+    week_number = Column(Integer)  # new column for week number
     
 class ActivityAttempt(Base):
     __tablename__ = "activity_attempts"
