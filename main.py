@@ -70,8 +70,7 @@ class ActivityAttempt(Base):
 class StudentQuiz(Base):
     __tablename__ = "student_quizzes"
     quiz_id = Column(Integer, primary_key=True)
-    student_id = Column(Integer, ForeignKey("users.id"))
-    activity_id = Column(Integer, ForeignKey("activities.activity_id"))
+    student_id = Column(Integer, ForeignKey("users.id"))    
     quiz_json = Column(JSON)
     status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -157,7 +156,6 @@ def generate_quizzes():
 
                 student_quiz = StudentQuiz(
                     student_id=student.id,
-                    activity_id=activity.activity_id,
                     quiz_json=parsed_json,
                     status="pending",
                     created_at=datetime.utcnow()
