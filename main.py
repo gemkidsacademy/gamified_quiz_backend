@@ -59,7 +59,15 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
 class LoginRequest(BaseModel):
     phone_number: str
     password: str
-    
+
+class ActivityPayload(BaseModel):
+    instructions: str
+    questions: List[Dict[str, Any]]       # expects a JSON array of question objects
+    score_logic: Optional[str] = None
+    class_name: str
+    class_day: Optional[str] = None
+    week_number: Optional[int] = None
+
 class AnswerPayload(BaseModel):
     question_index: int
     selected_option: str
@@ -408,6 +416,35 @@ def get_quiz_results(
     ]
 
     return JSONResponse(content=response_data)
+
+
+@app.post("/add-activity")
+def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
+    # Validate questions field
+    if not payload.questions or not isinstance(payload.questions, list):
+        raise HTTPException(status_code=400, detail="Questions must be a non-empty JSON array")
+
+    # Create new activity
+    activity = Activity(
+        instructions=payload.instructions,
+        questions=payload.questions,
+        score_logic=payload.score_logic,
+        class_name=payload.class_name,
+        class_day=payload.class_day,
+        week_number=payload.week_number
+    )
+
+    try:
+        db.add(activity)
+        db.commit()
+        db.refresh(activity)
+        return {
+            "message": "Activity added successfully",
+            "activity_id": activity.activity_id
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to add activity: {e}")
 
 
 @app.get("/get-quiz")
