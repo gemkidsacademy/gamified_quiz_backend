@@ -51,11 +51,14 @@ class OTP(Base):
 
 class Activity(Base):
     __tablename__ = "activities"
+
     activity_id = Column(Integer, primary_key=True, index=True)
     instructions = Column(String)
     questions = Column(JSON)
     score_logic = Column(String)
-
+    class_name = Column(String)   # new column for class name
+    class_day = Column(String) 
+    
 class ActivityAttempt(Base):
     __tablename__ = "activity_attempts"
     attempt_id = Column(Integer, primary_key=True, index=True)
