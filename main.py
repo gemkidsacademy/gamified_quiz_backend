@@ -23,9 +23,12 @@ from openai import OpenAI
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # ---------------------------
-# Database Setup
+# Database Setup PGUSER,PGPASSWORD,PGHOST,PGPORT,PGDATABASE rewrite "" using PGPASSWORD=lgZmFsBTApVPJIyTegBttTLfdWnvccHj psql -h metro.proxy.rlwy.net -U postgres -p 31631 -d railway
 # ---------------------------
-DATABASE_URL = os.getenv("DATABASE_URL")
+#DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL") or (
+    f"postgresql://{os.environ['PGUSER']}:{os.environ['PGPASSWORD']}@{os.environ['PGHOST']}:{os.environ['PGPORT']}/{os.environ['PGDATABASE']}"
+)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -121,7 +124,7 @@ class StudentQuiz(Base):
     class_day = Column(String, nullable=True)
     
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "users_temp"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     email = Column(String, unique=True)
