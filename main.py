@@ -138,13 +138,13 @@ def generate_quizzes():
 
     db = SessionLocal()
     try:
-        # Fetch active students
+        # Get all active students
         students = db.query(User).filter(User.status == "active").all()
         if not students:
             print("[DEBUG] No active students. Task ending.")
             return
 
-        # Fetch all activities
+        # Get all activities
         activities = db.query(Activity).all()
         if not activities:
             print("[DEBUG] No activities found in DB. Task ending.")
@@ -152,36 +152,44 @@ def generate_quizzes():
 
         for student in students:
             activity = random.choice(activities)
+
+            # Prepare the prompt
             try:
-                prompt_template = activity.questions[0]["prompt"] if activity.questions else "Create a quiz based on {topics}"
+                prompt_template = activity.questions[0]["prompt"] if activity.questions else "Create a simple quiz with {topics}."
                 topics = "Math, Science, English"
                 prompt = prompt_template.replace("{topics}", topics)
 
-                # Call OpenAI API (economical model)
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "system", "content": prompt}],
-                    temperature=0.7
-                )
-                quiz_content = response.choices[0].message.content
-
+                # Try OpenAI API call
                 try:
-                    parsed_json = json.loads(quiz_content)
-                except Exception:
-                    # Fallback quiz if AI fails
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "system", "content": prompt}],
+                        temperature=0.7
+                    )
+                    quiz_content = response.choices[0].message.content
+                    try:
+                        parsed_json = json.loads(quiz_content)
+                    except Exception:
+                        print(f"[WARNING] Failed to parse AI response for {student.name}. Using fallback quiz.")
+                        parsed_json = None
+
+                except Exception as e:
+                    print(f"[ERROR] AI call failed for {student.name}: {e}")
+                    parsed_json = None
+
+                # If AI failed or response is invalid, use fallback quiz
+                if not parsed_json:
                     parsed_json = {
                         "quiz_title": "Fallback Sample Quiz",
-                        "class_name": activity.class_name,
-                        "class_day": activity.class_day,
                         "instructions": "This is a fallback quiz. Answer the questions carefully.",
                         "questions": [
-                            {"category": "Math", "prompt": "What is 10 + 5?", "options": ["12", "15", "20", "25"], "answer": "15"},
-                            {"category": "Science", "prompt": "Which planet is closest to the Sun?", "options": ["Earth", "Mercury", "Venus", "Mars"], "answer": "Mercury"},
-                            {"category": "English", "prompt": "Plural of 'mouse'?", "options": ["Mouses", "Mice", "Mouseses", "Mouse"], "answer": "Mice"}
+                            {"category": "Math", "prompt": "What is 10 + 5?", "options": ["12","15","20","25"], "answer":"15"},
+                            {"category": "Science", "prompt": "Which planet is closest to the Sun?", "options":["Earth","Mercury","Venus","Mars"], "answer":"Mercury"},
+                            {"category": "English", "prompt": "Plural of 'mouse'?", "options":["Mouses","Mice","Mouseses","Mouse"], "answer":"Mice"}
                         ]
                     }
 
-                # Create StudentQuiz record
+                # Save the student quiz
                 student_quiz = StudentQuiz(
                     student_id=student.id,
                     quiz_json=parsed_json,
@@ -197,11 +205,12 @@ def generate_quizzes():
                 continue
 
         db.commit()
-        print("[SCHEDULER] Successfully generated quizzes.")
+        print("[SCHEDULER] Successfully generated quizzes for all students.")
 
     except Exception as e:
         print("[FATAL ERROR] Scheduler crashed:", e)
         db.rollback()
+
     finally:
         db.close()
         print("[DEBUG] Database session closed.")
