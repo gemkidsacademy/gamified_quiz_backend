@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 from datetime import datetime
-from scheduler import generate_quizzes
+
 from sqlalchemy import (
     create_engine, Column, Integer, String, JSON,
     DateTime, ForeignKey, select
@@ -158,6 +158,92 @@ otp_dict = {}  # phone_number -> otp
 # ---------------------------
 # Quiz Endpoints
 # ---------------------------
+def generate_quizzes():
+    # Lazy imports to avoid circular import
+    from main import SessionLocal, User, Activity, StudentQuiz, client
+
+    print("\n==============================")
+    print("[CELERY] Task Started: generate_quizzes()")
+    print("==============================")
+
+    db = SessionLocal()
+    try:
+        print("[DEBUG] Fetching active students...")
+        students = db.query(User).filter(User.status == "active").all()
+        print(f"[DEBUG] Active students found: {len(students)}")
+
+        if not students:
+            print("[DEBUG] No active students. Task ending.")
+            return
+
+        print("[DEBUG] Fetching activities...")
+        activities = db.query(Activity).all()
+        print(f"[DEBUG] Activities found: {len(activities)}")
+
+        if not activities:
+            print("[DEBUG] No activities found in DB. Task ending.")
+            return
+
+        print("[DEBUG] Starting quiz generation loop...")
+        for student in students:
+            print(f"\n[DEBUG] Generating quiz for student: {student.id} - {student.name}")
+
+            activity = random.choice(activities)
+            print(f"[DEBUG] Selected activity ID: {activity.activity_id}")
+
+            try:
+                prompt_template = activity.questions[0]["prompt"]
+                topics = "Math, Science, English"
+                prompt = prompt_template.replace("{topics}", topics)
+
+                print("[DEBUG] Sending request to OpenAI...")
+                response = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[{"role": "system", "content": prompt}],
+                    temperature=0.7
+                )
+                print("[DEBUG] OpenAI response received")
+
+                quiz_content = response.choices[0].message.content
+
+                # For testing without OpenAI, fallback to static JSON
+                try:
+                    parsed_json = json.loads(quiz_content)
+                except Exception:
+                    parsed_json = {
+                        "questions": [
+                            {"prompt": "Sample Q1", "correct_option": "A"},
+                            {"prompt": "Sample Q2", "correct_option": "B"}
+                        ]
+                    }
+                    print("[DEBUG] Using fallback static quiz JSON")
+
+                student_quiz = StudentQuiz(
+                    student_id=student.id,
+                    activity_id=activity.activity_id,
+                    quiz_json=parsed_json,
+                    status="pending",
+                    created_at=datetime.utcnow()
+                )
+                db.add(student_quiz)
+                print("[DEBUG] Quiz saved for student")
+
+            except Exception as ai_error:
+                print(f"[ERROR] Failed to generate quiz for {student.name}: {ai_error}")
+                continue
+
+        db.commit()
+        print("\n[CELERY] Successfully generated quizzes.")
+        print("==============================\n")
+
+    except Exception as e:
+        print("[FATAL ERROR] Scheduler crashed:", e)
+        db.rollback()
+
+    finally:
+        db.close()
+        print("[DEBUG] Database session closed.")
+
 
 @app.get("/get-pending-quiz/{user_id}")
 def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
