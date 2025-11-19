@@ -331,17 +331,19 @@ def get_activity(student_id: int, db: Session = Depends(get_db)):
 def get_quiz(class_name: str = Query(..., description="Class name of the quiz"), db: Session = Depends(get_db)):
     """
     Fetch the latest quiz for a given class_name.
+    This version trims whitespace and matches case-insensitively.
     """
-    # Fetch the latest quiz for the given class_name
+    cleaned_class_name = class_name.strip()
+
     quiz = (
         db.query(StudentQuiz)
-        .filter(StudentQuiz.class_name == class_name)
+        .filter(func.lower(func.trim(StudentQuiz.class_name)) == cleaned_class_name.lower())
         .order_by(StudentQuiz.created_at.desc())
         .first()
     )
 
     if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found for this class")
+        raise HTTPException(status_code=404, detail=f"No quiz found for class '{class_name}'")
 
     return JSONResponse(content=quiz.quiz_json)
 
