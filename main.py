@@ -42,6 +42,10 @@ class AnswerPayload(BaseModel):
     question_index: int
     selected_option: str
 
+class OTPVerify(BaseModel):    
+    phone: Optional[str] = None
+    otp: str
+
 class OTP(Base):
     __tablename__ = "otp_store"
     id = Column(Integer, primary_key=True, index=True)
@@ -229,15 +233,28 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
 
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
-    phone, otp = request.phone_number.strip(), request.otp.strip()
+    phone = request.phone.strip() if request.phone else None
+    otp = request.otp.strip()
+
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number is required")
+
     if phone not in otp_dict or otp_dict[phone] != otp:
         raise HTTPException(status_code=401, detail="Invalid OTP")
+
     user = db.query(User).filter(User.phone_number == phone).first()
     if not user:
         raise HTTPException(status_code=404, detail="Phone number not registered")
-    otp_dict.pop(phone, None)
-    return {"message": "OTP verified", "student_id": user.id, "phone_number": user.phone_number, "name": user.name}
 
+    # Remove OTP after successful verification
+    otp_dict.pop(phone, None)
+
+    return {
+        "message": "OTP verified",
+        "student_id": user.id,
+        "phone_number": user.phone_number,
+        "name": user.name
+    }
 
 @app.post("/login")
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
