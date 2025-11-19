@@ -402,12 +402,12 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 
+
 @app.post("/submit-quiz-answer")
 def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     """
     Receive a single answer from the student for the current question.
-    Calculate score and save final result in QuizResult table.
-    Preserves all previous answers across submissions.
+    Preserves previous answers, calculates score, and saves final result in QuizResult.
     """
     print("\n--- SUBMIT QUIZ ANSWER ---")
     print("Received payload:", payload)
@@ -423,17 +423,24 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         quiz.started_at = datetime.utcnow()
         print("Quiz started at:", quiz.started_at)
 
-    # Merge new answer with existing answers
-    student_answers = quiz.quiz_json.get("student_answers") or {}
+    # Load existing quiz_json or initialize
+    quiz_json = quiz.quiz_json or {}
+    student_answers = quiz_json.get("student_answers") or {}
+
+    # Record the current answer
     q_key = f"q{payload.question_index + 1}"
     student_answers[q_key] = payload.selected_option
-    quiz.quiz_json["student_answers"] = student_answers
+    quiz_json["student_answers"] = student_answers
+
+    # Re-assign the updated JSON back to the quiz object
+    quiz.quiz_json = quiz_json
+
     print(f"Recorded answer for {q_key}: {payload.selected_option}")
     print("All student_answers so far:", student_answers)
 
     # Calculate current score
     correct_count = 0
-    for idx, question in enumerate(quiz.quiz_json["questions"]):
+    for idx, question in enumerate(quiz_json.get("questions", [])):
         q_key_check = f"q{idx+1}"
         student_answer = student_answers.get(q_key_check)
         correct_answer = question.get("answer")
@@ -442,11 +449,11 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         if is_correct:
             correct_count += 1
 
-    quiz.quiz_json["score"] = correct_count
+    quiz_json["score"] = correct_count
     print("Current score:", correct_count)
 
     # Check if quiz is completed
-    total_questions = len(quiz.quiz_json["questions"])
+    total_questions = len(quiz_json.get("questions", []))
     answered_questions = len(student_answers)
     quiz_completed = answered_questions >= total_questions
 
@@ -474,7 +481,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     else:
         print(f"Quiz not yet completed: {answered_questions}/{total_questions} answered")
 
-    # Commit quiz updates (answers & score)
+    # Commit the quiz updates (answers & score)
     db.commit()
     print("--- END SUBMIT QUIZ ANSWER ---\n")
 
@@ -483,6 +490,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         "current_score": correct_count,
         "quiz_status": quiz.status
     }
+
 
 
 
