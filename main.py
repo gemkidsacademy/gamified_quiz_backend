@@ -73,13 +73,17 @@ class ActivityAttempt(Base):
 class StudentQuiz(Base):
     __tablename__ = "student_quizzes"
     quiz_id = Column(Integer, primary_key=True)
-    student_id = Column(Integer, ForeignKey("users.id"))    
+    student_id = Column(Integer, ForeignKey("users.id"))
     quiz_json = Column(JSON)
     status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
+    # new columns
+    class_name = Column(String, nullable=True)
+    class_day = Column(String, nullable=True)
+    
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -161,7 +165,9 @@ def generate_quizzes():
                     student_id=student.id,
                     quiz_json=parsed_json,
                     status="pending",
-                    created_at=datetime.utcnow()
+                    created_at=datetime.utcnow(),
+                    class_name=activity.class_name,
+                    class_day=activity.class_day
                 )
                 db.add(student_quiz)
             except Exception as e:
