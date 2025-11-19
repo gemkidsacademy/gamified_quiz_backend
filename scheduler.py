@@ -3,9 +3,9 @@ import random
 from datetime import datetime
 
 from celery_app import celery_app
-from database import SessionLocal
-from models import User, Activity, StudentQuiz
+
 from openai_client import client   # your OpenAI wrapper
+from main import SessionLocal, User, Activity, StudentQuiz
 
 
 # ------------------ Scheduler Task ------------------
