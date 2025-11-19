@@ -243,6 +243,20 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
+
+
+@app.get("/student-name")
+def get_student_name(student_id: int = Query(...), db: Session = Depends(get_db)):
+    """
+    Return student name for a given student_id.
+    """
+    student = db.query(User).filter(User.id == student_id).first()
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    return {"student_id": student.id, "student_name": student.name}
+    
 @app.get("/run-scheduler-now")
 def run_scheduler_now():
     generate_quizzes()
