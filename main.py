@@ -86,10 +86,11 @@ class QuizResult(Base):
     student_id = Column(Integer, nullable=False)          # link to student
     student_name = Column(String, nullable=False)         # store student name
     class_name = Column(String, nullable=False)           # class the quiz belongs to
+    class_day = Column(String, nullable=True)             # class day
     total_score = Column(Integer, nullable=False)         # total correct answers
     total_questions = Column(Integer, nullable=False)     # total number of questions
     submitted_at = Column(DateTime, default=datetime.utcnow)
-
+    
 class Activity(Base):
     __tablename__ = "activities"
 
@@ -583,10 +584,11 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
                 student_id=payload.student_id,
                 student_name=payload.student_name,
                 class_name=payload.class_name,
+                class_day=payload.class_day,         # added class_day
                 total_score=correct_count,
                 total_questions=total_questions,
                 submitted_at=datetime.utcnow()
-            )
+                )
 
 
             db.add(result)
