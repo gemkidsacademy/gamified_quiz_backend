@@ -65,7 +65,8 @@ class AnswerPayload(BaseModel):
     selected_option: str
     student_id: int        # ID of the student submitting the answer
     student_name: str      # Name of the student (needed for leaderboard)
-    class_name: str  
+    class_name: str
+    class_day: str  
 
 class OTPVerify(BaseModel):    
     phone: Optional[str] = None
