@@ -522,7 +522,8 @@ from datetime import datetime
 def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     """
     Submit a single answer for the current quiz question.
-    Preserves all previous answers, calculates score, and saves final result.
+    Preserves all previous answers, calculates score, and saves final result
+    only if it does not already exist for the student for this quiz.
     """
     print("\n--- SUBMIT QUIZ ANSWER ---")
     print("Received payload:", payload)
@@ -541,7 +542,6 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     # Start quiz if not started
     if not quiz.started_at:
         quiz.started_at = datetime.utcnow()
-        print("Quiz started at:", quiz.started_at)
 
     # Load or initialize student_answers
     student_answers = quiz.quiz_json.get("student_answers") or {}
@@ -551,22 +551,15 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     student_answers[q_key] = payload.selected_option
     quiz.quiz_json["student_answers"] = student_answers  # MutableDict tracks changes
 
-    print(f"Recorded answer for {q_key}: {payload.selected_option}")
-    print("All student_answers so far:", student_answers)
-
     # Calculate current score
     correct_count = 0
     for idx, question in enumerate(quiz.quiz_json.get("questions", [])):
-        q_key_check = f"q{idx+1}"
-        student_answer = student_answers.get(q_key_check)
+        student_answer = student_answers.get(f"q{idx+1}")
         correct_answer = question.get("answer")
-        is_correct = student_answer == correct_answer
-        print(f"Q{idx+1}: student_answer='{student_answer}', correct_answer='{correct_answer}', correct={is_correct}")
-        if is_correct:
+        if student_answer == correct_answer:
             correct_count += 1
 
     quiz.quiz_json["score"] = correct_count
-    print("Current score:", correct_count)
 
     # Check if quiz is completed
     total_questions = len(quiz.quiz_json.get("questions", []))
@@ -576,46 +569,41 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     if quiz_completed:
         quiz.status = "completed"
         quiz.completed_at = datetime.utcnow()
-        time_taken_seconds = int((quiz.completed_at - quiz.started_at).total_seconds())
-        print(f"Quiz completed at {quiz.completed_at}, time taken: {time_taken_seconds} seconds")
+        print(f"Quiz completed for student {payload.student_id}")
 
-        # Save final result in QuizResult
-        try:
+        # Only create a QuizResult if it doesn't exist yet
+        existing_result = db.query(QuizResult).filter_by(
+            student_id=payload.student_id,
+            quiz_id=quiz.quiz_id
+        ).first()
+
+        if not existing_result:
             result = QuizResult(
-                quiz_id=quiz.quiz_id,                # link to the quiz
+                quiz_id=quiz.quiz_id,
                 student_id=payload.student_id,
                 student_name=payload.student_name,
                 class_name=payload.class_name,
-                class_day=payload.class_day,         # added class_day
+                class_day=payload.class_day,
                 total_score=correct_count,
                 total_questions=total_questions,
                 submitted_at=datetime.utcnow()
-                )
-
-
+            )
             db.add(result)
-            db.commit()
-            print("QuizResult saved successfully:", result)
-        except Exception as e:
-            db.rollback()
-            print("Failed to save QuizResult:", e)
+            print(f"QuizResult created for student {payload.student_id}")
     else:
         quiz.status = "in_progress"
-        print(f"Quiz not yet completed: {answered_questions}/{total_questions} answered")
+        print(f"Quiz in progress: {answered_questions}/{total_questions} answered")
 
     # Commit quiz updates (answers & score)
     db.commit()
     print("Updated quiz_json:", quiz.quiz_json)
     print("--- END SUBMIT QUIZ ANSWER ---\n")
 
-    return JSONResponse(
-        content={
-            "message": "Answer recorded",
-            "current_score": correct_count,
-            "quiz_status": quiz.status
-        }
-    )
-
+    return {
+        "message": "Answer recorded",
+        "current_score": correct_count,
+        "quiz_status": quiz.status
+    }
 
 
 
