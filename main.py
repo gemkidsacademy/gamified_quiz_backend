@@ -38,6 +38,10 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
 # ---------------------------
 # Models
 # ---------------------------
+class LoginRequest(BaseModel):
+    phone_number: str
+    password: str
+    
 class AnswerPayload(BaseModel):
     question_index: int
     selected_option: str
