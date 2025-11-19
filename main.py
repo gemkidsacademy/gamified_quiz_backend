@@ -82,13 +82,13 @@ class QuizResult(Base):
     __tablename__ = "quiz_results"
     
     id = Column(Integer, primary_key=True)
+    quiz_id = Column(Integer, nullable=False)             # link to the quiz
     student_id = Column(Integer, nullable=False)          # link to student
-    student_name = Column(String, nullable=False)         # NEW → store student name
+    student_name = Column(String, nullable=False)         # store student name
     class_name = Column(String, nullable=False)           # class the quiz belongs to
     total_score = Column(Integer, nullable=False)         # total correct answers
     total_questions = Column(Integer, nullable=False)     # total number of questions
     submitted_at = Column(DateTime, default=datetime.utcnow)
-
 
 class Activity(Base):
     __tablename__ = "activities"
@@ -547,6 +547,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         # Save final result in QuizResult
         try:
             result = QuizResult(
+                quiz_id=quiz.quiz_id,                # link to the quiz
                 student_id=payload.student_id,
                 student_name=payload.student_name,
                 class_name=payload.class_name,
@@ -554,6 +555,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
                 total_questions=total_questions,
                 submitted_at=datetime.utcnow()
             )
+
 
             db.add(result)
             db.commit()
