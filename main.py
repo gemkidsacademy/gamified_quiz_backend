@@ -93,8 +93,10 @@
        phone_number = Column(String, unique=True)
        password = Column(String, nullable=False)
        class_name = Column(String)
+       class_day = Column(String)  # <-- NEW
        status = Column(String, default="active")
        created_at = Column(DateTime, default=datetime.utcnow)
+
 
    # Create tables
    Base.metadata.create_all(bind=engine)
