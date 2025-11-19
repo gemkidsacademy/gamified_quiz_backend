@@ -159,8 +159,7 @@ otp_dict = {}  # phone_number -> otp
 # Quiz Endpoints
 # ---------------------------
 def generate_quizzes():
-    # Lazy imports to avoid circular import
-    from main import SessionLocal, User, Activity, StudentQuiz, client
+   
 
     print("\n==============================")
     print("[CELERY] Task Started: generate_quizzes()")
