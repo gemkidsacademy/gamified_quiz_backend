@@ -289,7 +289,12 @@ def login(request: LoginRequest, response: Response, db: Session = Depends(get_d
         max_age=3600
     )
     otp_dict.pop(request.phone_number, None)
-    return {"message": "Login successful", "username": user.name, "id": user.id}
+     return {
+        "message": "Login successful",
+        "username": user.name,
+        "id": user.id,
+        "class_name": user.class_name  # <- include class_name here
+    }
 
 
 
