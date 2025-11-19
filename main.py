@@ -45,6 +45,9 @@ class LoginRequest(BaseModel):
 class AnswerPayload(BaseModel):
     question_index: int
     selected_option: str
+    student_id: int  # sent from frontend
+    class_name: str  # sent from frontend
+
 
 class OTPVerify(BaseModel):    
     phone: Optional[str] = None
@@ -56,6 +59,16 @@ class OTP(Base):
     phone_number = Column(String, unique=True, index=True)
     otp_code = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class QuizResult(Base):
+    __tablename__ = "quiz_results"
+    
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, nullable=False)      # link to student
+    class_name = Column(String, nullable=False)       # the class of the quiz
+    total_score = Column(Integer, nullable=False)     # total correct answers
+    total_questions = Column(Integer, nullable=False) # total questions in quiz
+    submitted_at = Column(DateTime, default=datetime.utcnow)
 
 class Activity(Base):
     __tablename__ = "activities"
@@ -351,50 +364,88 @@ def submit_activity(submit: ActivitySubmit, db: Session = Depends(get_db)):
     return {"message": "Activity submitted", "score": score}
 """
 
+@app.post("/submit-answer")
+def submit_answer(class_name: str, question_index: int, selected_option: str, db: Session = Depends(get_db)):
+    # Fetch the latest quiz for this class
+    quiz = db.query(StudentQuiz).filter(StudentQuiz.class_name == class_name).order_by(StudentQuiz.created_at.desc()).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
 
-@app.post("/submit-quiz/{quiz_id}/answer")
-def submit_quiz_answer(quiz_id: int, payload: AnswerPayload):
-    db = SessionLocal()
-    try:
-        quiz = db.query(StudentQuiz).filter_by(quiz_id=quiz_id).first()
-        if not quiz:
-            raise HTTPException(status_code=404, detail="Quiz not found")
+    # Initialize answers if not present
+    if "student_answers" not in quiz.quiz_json:
+        quiz.quiz_json["student_answers"] = {}
 
-        if not quiz.started_at:
-            quiz.started_at = datetime.utcnow()
+    quiz.quiz_json["student_answers"][f"q{question_index+1}"] = selected_option
 
-        if "student_answers" not in quiz.quiz_json:
-            quiz.quiz_json["student_answers"] = {}
+    # Optional: Calculate current score
+    score = 0
+    for idx, q in enumerate(quiz.quiz_json["questions"]):
+        answer = quiz.quiz_json["student_answers"].get(f"q{idx+1}")
+        if answer == q.get("answer"):
+            score += 1
 
-        q_key = f"q{payload.question_index + 1}"
-        quiz.quiz_json["student_answers"][q_key] = payload.selected_option
+    quiz.quiz_json["score"] = score
+    db.commit()
+    return {"current_score": score}
+    
+@app.post("/submit-quiz-answer")
+def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
+    """
+    Receive a single answer from the student for the current question.
+    Once all questions are answered, store final score in QuizResult table.
+    """
+    # Fetch the quiz for this class
+    quiz = db.query(StudentQuiz).filter(
+        StudentQuiz.class_name == payload.class_name
+    ).first()
+    
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
 
-        correct_count = 0
-        for idx, question in enumerate(quiz.quiz_json["questions"]):
-            q_key_check = f"q{idx+1}"
-            if q_key_check in quiz.quiz_json["student_answers"]:
-                if quiz.quiz_json["student_answers"][q_key_check] == question.get("correct_option"):
-                    correct_count += 1
+    # Start quiz if not started
+    if not quiz.started_at:
+        quiz.started_at = datetime.utcnow()
 
-        quiz.quiz_json["score"] = correct_count
+    # Initialize student_answers dict
+    if "student_answers" not in quiz.quiz_json:
+        quiz.quiz_json["student_answers"] = {}
 
-        if len(quiz.quiz_json["student_answers"]) == len(quiz.quiz_json["questions"]):
-            quiz.status = "completed"
-            quiz.completed_at = datetime.utcnow()
-            time_taken_seconds = int((quiz.completed_at - quiz.started_at).total_seconds())
-            attempt = ActivityAttempt(
-                student_id=quiz.student_id,
-                quiz_id=quiz.quiz_id,
-                score=correct_count,
-                time_taken=time_taken_seconds
-            )
-            db.add(attempt)
+    # Record current answer
+    q_key = f"q{payload.question_index + 1}"
+    quiz.quiz_json["student_answers"][q_key] = payload.selected_option
 
-        db.commit()
-        return {"message": "Answer recorded", "current_score": correct_count, "quiz_status": quiz.status}
-    finally:
-        db.close()
+    # Calculate current score
+    correct_count = 0
+    for idx, question in enumerate(quiz.quiz_json["questions"]):
+        q_key_check = f"q{idx+1}"
+        if q_key_check in quiz.quiz_json["student_answers"]:
+            if quiz.quiz_json["student_answers"][q_key_check] == question.get("answer"):
+                correct_count += 1
 
+    quiz.quiz_json["score"] = correct_count
+
+    # Check if quiz is completed
+    if len(quiz.quiz_json["student_answers"]) == len(quiz.quiz_json["questions"]):
+        quiz.status = "completed"
+        quiz.completed_at = datetime.utcnow()
+        time_taken_seconds = int((quiz.completed_at - quiz.started_at).total_seconds())
+
+        # Save final result in QuizResult table
+        result = QuizResult(
+            student_id=payload.student_id,
+            class_name=payload.class_name,
+            total_score=correct_count,
+            total_questions=len(quiz.quiz_json["questions"]),
+            submitted_at=datetime.utcnow()
+        )
+        db.add(result)
+
+    db.commit()
+    return {
+        "message": "Answer recorded",
+        "current_score": correct_count,
+        "quiz_status": quiz.status
+    }
 
 
 
