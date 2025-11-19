@@ -331,7 +331,8 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
         "student_id": user.id,
         "phone_number": user.phone_number,
         "name": user.name,
-        "class_name": user.class_name  # <- added this
+        "class_name": user.class_name,
+        "class_day": user.class_day  # <- added this
     }
     
 @app.post("/login")
