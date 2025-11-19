@@ -522,8 +522,7 @@ from datetime import datetime
 def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     """
     Submit a single answer for the current quiz question.
-    Preserves all previous answers, calculates score, and saves final result
-    only if it does not already exist for the student for this quiz.
+    Records answers in StudentQuiz, but creates only one QuizResult per student per quiz.
     """
     print("\n--- SUBMIT QUIZ ANSWER ---")
     print("Received payload:", payload)
@@ -536,7 +535,6 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         .first()
     )
     if not quiz:
-        print("Quiz not found for class:", payload.class_name)
         raise HTTPException(status_code=404, detail="Quiz not found")
 
     # Start quiz if not started
@@ -554,9 +552,9 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     # Calculate current score
     correct_count = 0
     for idx, question in enumerate(quiz.quiz_json.get("questions", [])):
-        student_answer = student_answers.get(f"q{idx+1}")
-        correct_answer = question.get("answer")
-        if student_answer == correct_answer:
+        q_key_check = f"q{idx+1}"
+        student_answer = student_answers.get(q_key_check)
+        if student_answer == question.get("answer"):
             correct_count += 1
 
     quiz.quiz_json["score"] = correct_count
@@ -569,35 +567,34 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     if quiz_completed:
         quiz.status = "completed"
         quiz.completed_at = datetime.utcnow()
-        print(f"Quiz completed for student {payload.student_id}")
 
-        # Only create a QuizResult if it doesn't exist yet
-        existing_result = db.query(QuizResult).filter_by(
-            student_id=payload.student_id,
-            quiz_id=quiz.quiz_id
+        # Check if a result already exists for this student for this quiz
+        existing_result = db.query(QuizResult).filter(
+            QuizResult.student_id == payload.student_id,
+            QuizResult.quiz_id == quiz.quiz_id
         ).first()
 
-        if not existing_result:
+        if existing_result:
+            print("Result already exists, not creating a new row")
+        else:
             result = QuizResult(
                 quiz_id=quiz.quiz_id,
                 student_id=payload.student_id,
                 student_name=payload.student_name,
                 class_name=payload.class_name,
-                class_day=payload.class_day,
+                class_day=getattr(payload, "class_day", None),
                 total_score=correct_count,
                 total_questions=total_questions,
                 submitted_at=datetime.utcnow()
             )
             db.add(result)
-            print(f"QuizResult created for student {payload.student_id}")
+            print("Result saved successfully")
+
     else:
         quiz.status = "in_progress"
-        print(f"Quiz in progress: {answered_questions}/{total_questions} answered")
 
     # Commit quiz updates (answers & score)
     db.commit()
-    print("Updated quiz_json:", quiz.quiz_json)
-    print("--- END SUBMIT QUIZ ANSWER ---\n")
 
     return {
         "message": "Answer recorded",
