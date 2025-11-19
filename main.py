@@ -71,11 +71,13 @@ class QuizResult(Base):
     __tablename__ = "quiz_results"
     
     id = Column(Integer, primary_key=True)
-    student_id = Column(Integer, nullable=False)      # link to student
-    class_name = Column(String, nullable=False)       # the class of the quiz
-    total_score = Column(Integer, nullable=False)     # total correct answers
-    total_questions = Column(Integer, nullable=False) # total questions in quiz
+    student_id = Column(Integer, nullable=False)          # link to student
+    student_name = Column(String, nullable=False)         # NEW → store student name
+    class_name = Column(String, nullable=False)           # class the quiz belongs to
+    total_score = Column(Integer, nullable=False)         # total correct answers
+    total_questions = Column(Integer, nullable=False)     # total number of questions
     submitted_at = Column(DateTime, default=datetime.utcnow)
+
 
 class Activity(Base):
     __tablename__ = "activities"
@@ -341,7 +343,7 @@ def get_quiz_results(
     db: Session = Depends(get_db)
 ):
     """
-    Return all quiz results for a specific class, sorted by score descending.
+    Return all quiz results for a specific class, sorted by score (descending).
     """
     cleaned_class_name = class_name.strip()
 
@@ -353,13 +355,16 @@ def get_quiz_results(
     )
 
     if not results:
-        raise HTTPException(status_code=404, detail=f"No results found for class '{class_name}'")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No results found for class '{class_name}'"
+        )
 
-    # Build JSON response
     response_data = [
         {
             "student_id": r.student_id,
-            "student_name": getattr(r, "student_name", f"Student {r.student_id}"),
+            "student_name": r.student_name,
+            "class_name": r.class_name,
             "total_score": r.total_score,
             "total_questions": r.total_questions,
             "submitted_at": r.submitted_at.isoformat()
@@ -368,6 +373,7 @@ def get_quiz_results(
     ]
 
     return JSONResponse(content=response_data)
+
 
 @app.get("/get-quiz")
 def get_quiz(class_name: str = Query(..., description="Class name of the quiz"), db: Session = Depends(get_db)):
@@ -511,11 +517,13 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         try:
             result = QuizResult(
                 student_id=payload.student_id,
+                student_name=payload.student_name,
                 class_name=payload.class_name,
                 total_score=correct_count,
                 total_questions=total_questions,
                 submitted_at=datetime.utcnow()
             )
+
             db.add(result)
             db.commit()
             print("QuizResult saved successfully:", result)
