@@ -291,7 +291,7 @@ def get_activity(student_id: int, db: Session = Depends(get_db)):
         "score_logic": activity.score_logic
     }
 
-
+"""
 @app.post("/submit-activity")
 def submit_activity(submit: ActivitySubmit, db: Session = Depends(get_db)):
     activity = db.query(Activity).filter(Activity.activity_id == submit.activity_id).first()
@@ -310,6 +310,7 @@ def submit_activity(submit: ActivitySubmit, db: Session = Depends(get_db)):
     db.add(attempt)
     db.commit()
     return {"message": "Activity submitted", "score": score}
+"""
 
 
 @app.post("/submit-quiz/{quiz_id}/answer")
