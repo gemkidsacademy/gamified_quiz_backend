@@ -9,6 +9,8 @@ import random
 import json
 from typing import Optional
 from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func
+from fastapi.responses import JSONResponse
+
 
 
 from sqlalchemy.ext.declarative import declarative_base
