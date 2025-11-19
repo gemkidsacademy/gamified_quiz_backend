@@ -91,10 +91,11 @@
        name = Column(String, unique=True, nullable=False)
        email = Column(String, unique=True)
        phone_number = Column(String, unique=True)
-       password = Column(String, nullable=False)  # store hashed password in production
+       password = Column(String, nullable=False)
        class_name = Column(String)
-       status = Column(String, default="active")  # new column to indicate active/inactive users
+       status = Column(String, default="active")
        created_at = Column(DateTime, default=datetime.utcnow)
+
    # Create tables
    Base.metadata.create_all(bind=engine)
    
