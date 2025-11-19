@@ -103,7 +103,7 @@ class Activity(Base):
 class ActivityAttempt(Base):
     __tablename__ = "activity_attempts"
     attempt_id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("users.id"))
+    student_id = Column(Integer, ForeignKey("users_temp.id"))
     quiz_id = Column(Integer, ForeignKey("student_quizzes.quiz_id"))
     score = Column(Integer)
     time_taken = Column(Integer)
