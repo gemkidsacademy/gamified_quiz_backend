@@ -202,4 +202,44 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
         "created_at": quiz.created_at
     }
 
-# (Other endpoints like OTP, login, activity submission, etc. remain unchanged)
+@app.post("/send-otp")
+def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
+    phone = request.phone_number.strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number required")
+    user = db.query(User).filter(User.phone_number == phone).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Phone number not registered")
+    otp_dict[phone] = "123"
+    print(f"[DEBUG] OTP for {phone}: 123")
+    return {"message": "OTP sent successfully"}
+
+
+@app.post("/verify-otp")
+def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
+    phone, otp = request.phone_number.strip(), request.otp.strip()
+    if phone not in otp_dict or otp_dict[phone] != otp:
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+    user = db.query(User).filter(User.phone_number == phone).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Phone number not registered")
+    otp_dict.pop(phone, None)
+    return {"message": "OTP verified", "student_id": user.id, "phone_number": user.phone_number, "name": user.name}
+
+
+@app.post("/login")
+def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    user = db.execute(select(User).where(User.phone_number == request.phone_number)).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="Phone number not registered")
+    stored_otp = otp_dict.get(request.phone_number)
+    if not stored_otp or request.otp != stored_otp:
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+    response.set_cookie(
+        key="session_token",
+        value=f"session_{user.id}",
+        httponly=True,
+        max_age=3600
+    )
+    otp_dict.pop(request.phone_number, None)
+    return {"message": "Login successful", "username": user.name, "id": user.id}
