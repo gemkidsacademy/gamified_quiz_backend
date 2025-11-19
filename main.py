@@ -130,6 +130,7 @@ otp_dict = {}
 # ---------------------------
 # Quiz Generation
 # ---------------------------
+
 def generate_quizzes():
     print("\n==============================")
     print("[SCHEDULER] Task Started: generate_quizzes()")
@@ -137,11 +138,13 @@ def generate_quizzes():
 
     db = SessionLocal()
     try:
+        # Fetch active students
         students = db.query(User).filter(User.status == "active").all()
         if not students:
             print("[DEBUG] No active students. Task ending.")
             return
 
+        # Fetch all activities
         activities = db.query(Activity).all()
         if not activities:
             print("[DEBUG] No activities found in DB. Task ending.")
@@ -150,11 +153,11 @@ def generate_quizzes():
         for student in students:
             activity = random.choice(activities)
             try:
-                prompt_template = activity.questions[0]["prompt"]
+                prompt_template = activity.questions[0]["prompt"] if activity.questions else "Create a quiz based on {topics}"
                 topics = "Math, Science, English"
                 prompt = prompt_template.replace("{topics}", topics)
 
-                # OpenAI call
+                # Call OpenAI API (economical model)
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "system", "content": prompt}],
@@ -165,13 +168,20 @@ def generate_quizzes():
                 try:
                     parsed_json = json.loads(quiz_content)
                 except Exception:
+                    # Fallback quiz if AI fails
                     parsed_json = {
+                        "quiz_title": "Fallback Sample Quiz",
+                        "class_name": activity.class_name,
+                        "class_day": activity.class_day,
+                        "instructions": "This is a fallback quiz. Answer the questions carefully.",
                         "questions": [
-                            {"prompt": "Sample Q1", "correct_option": "A"},
-                            {"prompt": "Sample Q2", "correct_option": "B"}
+                            {"category": "Math", "prompt": "What is 10 + 5?", "options": ["12", "15", "20", "25"], "answer": "15"},
+                            {"category": "Science", "prompt": "Which planet is closest to the Sun?", "options": ["Earth", "Mercury", "Venus", "Mars"], "answer": "Mercury"},
+                            {"category": "English", "prompt": "Plural of 'mouse'?", "options": ["Mouses", "Mice", "Mouseses", "Mouse"], "answer": "Mice"}
                         ]
                     }
 
+                # Create StudentQuiz record
                 student_quiz = StudentQuiz(
                     student_id=student.id,
                     quiz_json=parsed_json,
@@ -181,18 +191,21 @@ def generate_quizzes():
                     class_day=activity.class_day
                 )
                 db.add(student_quiz)
+
             except Exception as e:
                 print(f"[ERROR] Failed to generate quiz for {student.name}: {e}")
                 continue
 
         db.commit()
         print("[SCHEDULER] Successfully generated quizzes.")
+
     except Exception as e:
         print("[FATAL ERROR] Scheduler crashed:", e)
         db.rollback()
     finally:
         db.close()
         print("[DEBUG] Database session closed.")
+
 
 # ---------------------------
 # APScheduler Setup (weekly run)
