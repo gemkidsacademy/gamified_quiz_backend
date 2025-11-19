@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.ext.mutable import MutableDict
 
 
 
@@ -104,7 +105,10 @@ class StudentQuiz(Base):
     __tablename__ = "student_quizzes"
 
     quiz_id = Column(Integer, primary_key=True)
-    quiz_json = Column(JSON, nullable=False)
+    
+    # Use MutableDict so in-place updates to quiz_json are tracked
+    quiz_json = Column(MutableDict.as_mutable(JSON), nullable=False, default=dict)
+    
     status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
