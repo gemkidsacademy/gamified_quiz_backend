@@ -339,7 +339,8 @@ def get_activity(student_id: int, db: Session = Depends(get_db)):
 def get_quiz(class_name: str = Query(..., description="Class name of the quiz"), db: Session = Depends(get_db)):
     """
     Fetch the latest quiz for a given class_name.
-    This version trims whitespace and matches case-insensitively.
+    Trims whitespace and matches case-insensitively.
+    Returns the quiz JSON.
     """
     cleaned_class_name = class_name.strip()
 
@@ -353,7 +354,11 @@ def get_quiz(class_name: str = Query(..., description="Class name of the quiz"),
     if not quiz:
         raise HTTPException(status_code=404, detail=f"No quiz found for class '{class_name}'")
 
-    return JSONResponse(content=quiz.quiz_json)
+    # Ensure quiz_json is always returned as a dict
+    quiz_data = quiz.quiz_json or {}
+
+    return JSONResponse(content=quiz_data)
+    
 
 """
 @app.post("/submit-activity")
@@ -410,14 +415,19 @@ from datetime import datetime
 @app.post("/submit-quiz-answer")
 def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     """
-    Receive a single answer from the student for the current question.
-    Preserves previous answers, calculates score, and saves final result in QuizResult.
+    Submit a single answer for the current quiz question.
+    Preserves all previous answers, calculates score, and saves final result.
     """
     print("\n--- SUBMIT QUIZ ANSWER ---")
     print("Received payload:", payload)
 
-    # Fetch the quiz for this class
-    quiz = db.query(StudentQuiz).filter(StudentQuiz.class_name == payload.class_name).first()
+    # Fetch the latest quiz for this class
+    quiz = (
+        db.query(StudentQuiz)
+        .filter(StudentQuiz.class_name == payload.class_name)
+        .order_by(StudentQuiz.created_at.desc())
+        .first()
+    )
     if not quiz:
         print("Quiz not found for class:", payload.class_name)
         raise HTTPException(status_code=404, detail="Quiz not found")
@@ -427,24 +437,20 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         quiz.started_at = datetime.utcnow()
         print("Quiz started at:", quiz.started_at)
 
-    # Load existing quiz_json or initialize
-    quiz_json = quiz.quiz_json or {}
-    student_answers = quiz_json.get("student_answers") or {}
+    # Load or initialize student_answers
+    student_answers = quiz.quiz_json.get("student_answers") or {}
 
-    # Record the current answer
+    # Record current answer
     q_key = f"q{payload.question_index + 1}"
     student_answers[q_key] = payload.selected_option
-    quiz_json["student_answers"] = student_answers
-
-    # Re-assign the updated JSON back to the quiz object
-    quiz.quiz_json = quiz_json
+    quiz.quiz_json["student_answers"] = student_answers  # MutableDict tracks changes
 
     print(f"Recorded answer for {q_key}: {payload.selected_option}")
     print("All student_answers so far:", student_answers)
 
     # Calculate current score
     correct_count = 0
-    for idx, question in enumerate(quiz_json.get("questions", [])):
+    for idx, question in enumerate(quiz.quiz_json.get("questions", [])):
         q_key_check = f"q{idx+1}"
         student_answer = student_answers.get(q_key_check)
         correct_answer = question.get("answer")
@@ -453,11 +459,11 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         if is_correct:
             correct_count += 1
 
-    quiz_json["score"] = correct_count
+    quiz.quiz_json["score"] = correct_count
     print("Current score:", correct_count)
 
     # Check if quiz is completed
-    total_questions = len(quiz_json.get("questions", []))
+    total_questions = len(quiz.quiz_json.get("questions", []))
     answered_questions = len(student_answers)
     quiz_completed = answered_questions >= total_questions
 
@@ -467,7 +473,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         time_taken_seconds = int((quiz.completed_at - quiz.started_at).total_seconds())
         print(f"Quiz completed at {quiz.completed_at}, time taken: {time_taken_seconds} seconds")
 
-        # Save final result in QuizResult table
+        # Save final result in QuizResult
         try:
             result = QuizResult(
                 student_id=payload.student_id,
@@ -483,17 +489,21 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
             db.rollback()
             print("Failed to save QuizResult:", e)
     else:
+        quiz.status = "in_progress"
         print(f"Quiz not yet completed: {answered_questions}/{total_questions} answered")
 
-    # Commit the quiz updates (answers & score)
+    # Commit quiz updates (answers & score)
     db.commit()
+    print("Updated quiz_json:", quiz.quiz_json)
     print("--- END SUBMIT QUIZ ANSWER ---\n")
 
-    return {
-        "message": "Answer recorded",
-        "current_score": correct_count,
-        "quiz_status": quiz.status
-    }
+    return JSONResponse(
+        content={
+            "message": "Answer recorded",
+            "current_score": correct_count,
+            "quiz_status": quiz.status
+        }
+    )
 
 
 
