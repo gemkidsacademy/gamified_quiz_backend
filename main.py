@@ -26,9 +26,17 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # Database Setup PGUSER,PGPASSWORD,PGHOST,PGPORT,PGDATABASE rewrite "" using PGPASSWORD=lgZmFsBTApVPJIyTegBttTLfdWnvccHj psql -h metro.proxy.rlwy.net -U postgres -p 31631 -d railway
 # ---------------------------
 #DATABASE_URL = os.getenv("DATABASE_URL")
+# Confirm connection details
+print("PGUSER:", os.environ.get("PGUSER"))
+print("PGHOST:", os.environ.get("PGHOST"))
+print("PGPORT:", os.environ.get("PGPORT"))
+print("PGDATABASE:", os.environ.get("PGDATABASE"))
+
 DATABASE_URL = os.environ.get("DATABASE_URL") or (
-    f"postgresql://{os.environ['PGUSER']}:{os.environ['PGPASSWORD']}@{os.environ['PGHOST']}:{os.environ['PGPORT']}/{os.environ['PGDATABASE']}"
+    f"postgresql://{os.environ['PGUSER']}:{os.environ['PGPASSWORD']}"
+    f"@{os.environ['PGHOST']}:{os.environ['PGPORT']}/{os.environ['PGDATABASE']}"
 )
+print("Connecting to DATABASE_URL:", DATABASE_URL)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -135,7 +143,13 @@ class User(Base):
     status = Column(String, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
 
-Base.metadata.create_all(bind=engine)
+
+try:
+    Base.metadata.create_all(bind=engine)
+    print("Tables created successfully")
+except Exception as e:
+    print("Error creating tables:", e)
+
 
 # ---------------------------
 # FastAPI App
