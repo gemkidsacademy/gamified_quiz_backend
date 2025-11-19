@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi import FastAPI, HTTPException, Depends, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
@@ -11,6 +11,8 @@ from typing import Optional
 from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+
+
 
 from openai import OpenAI
 from apscheduler.schedulers.background import BackgroundScheduler
