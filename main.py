@@ -83,16 +83,16 @@ class OTPRequest(BaseModel):
 
 class StudentQuiz(Base):
     __tablename__ = "student_quizzes"
+
     quiz_id = Column(Integer, primary_key=True)
-    student_id = Column(Integer, ForeignKey("users.id"))
-    quiz_json = Column(JSON)
+    quiz_json = Column(JSON, nullable=False)
     status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
-    # new columns
-    class_name = Column(String, nullable=True)
+    # Class metadata
+    class_name = Column(String, nullable=False)
     class_day = Column(String, nullable=True)
     
 class User(Base):
@@ -130,7 +130,6 @@ otp_dict = {}
 # ---------------------------
 # Quiz Generation
 # ---------------------------
-
 def generate_quizzes():
     print("\n==============================")
     print("[SCHEDULER] Task Started: generate_quizzes()")
@@ -138,23 +137,15 @@ def generate_quizzes():
 
     db = SessionLocal()
     try:
-        # Get all active students
-        students = db.query(User).filter(User.status == "active").all()
-        if not students:
-            print("[DEBUG] No active students. Task ending.")
-            return
-
-        # Get all activities
+        # Get all distinct classes from activities
         activities = db.query(Activity).all()
         if not activities:
             print("[DEBUG] No activities found in DB. Task ending.")
             return
 
-        for student in students:
-            activity = random.choice(activities)
-
-            # Prepare the prompt
+        for activity in activities:
             try:
+                # Prepare prompt
                 prompt_template = activity.questions[0]["prompt"] if activity.questions else "Create a simple quiz with {topics}."
                 topics = "Math, Science, English"
                 prompt = prompt_template.replace("{topics}", topics)
@@ -162,7 +153,7 @@ def generate_quizzes():
                 # Try OpenAI API call
                 try:
                     response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model="gpt-3.5-turbo",  # economical model
                         messages=[{"role": "system", "content": prompt}],
                         temperature=0.7
                     )
@@ -170,17 +161,17 @@ def generate_quizzes():
                     try:
                         parsed_json = json.loads(quiz_content)
                     except Exception:
-                        print(f"[WARNING] Failed to parse AI response for {student.name}. Using fallback quiz.")
+                        print(f"[WARNING] Failed to parse AI response for class {activity.class_name}. Using fallback quiz.")
                         parsed_json = None
 
                 except Exception as e:
-                    print(f"[ERROR] AI call failed for {student.name}: {e}")
+                    print(f"[ERROR] AI call failed for class {activity.class_name}: {e}")
                     parsed_json = None
 
-                # If AI failed or response is invalid, use fallback quiz
+                # Fallback quiz if AI fails
                 if not parsed_json:
                     parsed_json = {
-                        "quiz_title": "Fallback Sample Quiz",
+                        "quiz_title": f"Sample Quiz for {activity.class_name}",
                         "instructions": "This is a fallback quiz. Answer the questions carefully.",
                         "questions": [
                             {"category": "Math", "prompt": "What is 10 + 5?", "options": ["12","15","20","25"], "answer":"15"},
@@ -189,23 +180,22 @@ def generate_quizzes():
                         ]
                     }
 
-                # Save the student quiz
-                student_quiz = StudentQuiz(
-                    student_id=student.id,
+                # Save class-level quiz
+                class_quiz = StudentQuiz(
                     quiz_json=parsed_json,
                     status="pending",
                     created_at=datetime.utcnow(),
                     class_name=activity.class_name,
                     class_day=activity.class_day
                 )
-                db.add(student_quiz)
+                db.add(class_quiz)
 
             except Exception as e:
-                print(f"[ERROR] Failed to generate quiz for {student.name}: {e}")
+                print(f"[ERROR] Failed to generate quiz for class {activity.class_name}: {e}")
                 continue
 
         db.commit()
-        print("[SCHEDULER] Successfully generated quizzes for all students.")
+        print("[SCHEDULER] Successfully generated quizzes for all classes.")
 
     except Exception as e:
         print("[FATAL ERROR] Scheduler crashed:", e)
@@ -214,6 +204,7 @@ def generate_quizzes():
     finally:
         db.close()
         print("[DEBUG] Database session closed.")
+
 
 
 # ---------------------------
