@@ -407,7 +407,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     """
     Receive a single answer from the student for the current question.
     Calculate score and save final result in QuizResult table.
-    Preserves previous answers across submissions.
+    Preserves all previous answers across submissions.
     """
     print("\n--- SUBMIT QUIZ ANSWER ---")
     print("Received payload:", payload)
@@ -423,14 +423,13 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         quiz.started_at = datetime.utcnow()
         print("Quiz started at:", quiz.started_at)
 
-    # Ensure student_answers dict exists and preserve previous answers
+    # Merge new answer with existing answers
     student_answers = quiz.quiz_json.get("student_answers") or {}
-    quiz.quiz_json["student_answers"] = student_answers
-
-    # Record current answer
     q_key = f"q{payload.question_index + 1}"
     student_answers[q_key] = payload.selected_option
+    quiz.quiz_json["student_answers"] = student_answers
     print(f"Recorded answer for {q_key}: {payload.selected_option}")
+    print("All student_answers so far:", student_answers)
 
     # Calculate current score
     correct_count = 0
@@ -445,7 +444,6 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
 
     quiz.quiz_json["score"] = correct_count
     print("Current score:", correct_count)
-    print("All student_answers so far:", student_answers)
 
     # Check if quiz is completed
     total_questions = len(quiz.quiz_json["questions"])
