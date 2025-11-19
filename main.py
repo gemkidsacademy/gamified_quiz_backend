@@ -267,13 +267,15 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     # Remove OTP after successful verification
     otp_dict.pop(phone, None)
 
+    # Include class_name in the response
     return {
         "message": "OTP verified",
         "student_id": user.id,
         "phone_number": user.phone_number,
-        "name": user.name
+        "name": user.name,
+        "class_name": user.class_name  # <- added this
     }
-
+    
 @app.post("/login")
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.execute(select(User).where(User.phone_number == request.phone_number)).scalar_one_or_none()
