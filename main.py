@@ -79,7 +79,7 @@ class ActivityAttempt(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 class OTPRequest(BaseModel):    
-    phone: str 
+    phone_number: str
 
 class StudentQuiz(Base):
     __tablename__ = "student_quizzes"
