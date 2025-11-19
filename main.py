@@ -52,9 +52,9 @@ class LoginRequest(BaseModel):
 class AnswerPayload(BaseModel):
     question_index: int
     selected_option: str
-    student_id: int  # sent from frontend
-    class_name: str  # sent from frontend
-
+    student_id: int        # ID of the student submitting the answer
+    student_name: str      # Name of the student (needed for leaderboard)
+    class_name: str  
 
 class OTPVerify(BaseModel):    
     phone: Optional[str] = None
