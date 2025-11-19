@@ -4,8 +4,8 @@ from datetime import datetime
 
 from celery_app import celery_app
 
-from openai_client import client   # your OpenAI wrapper
-from main import SessionLocal, User, Activity, StudentQuiz
+  # your OpenAI wrapper
+from main import client, SessionLocal, User, Activity, StudentQuiz
 
 
 # ------------------ Scheduler Task ------------------
