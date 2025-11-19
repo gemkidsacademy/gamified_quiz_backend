@@ -375,6 +375,7 @@ def submit_activity(submit: ActivitySubmit, db: Session = Depends(get_db)):
 @app.post("/submit-answer")
 def submit_answer(class_name: str, question_index: int, selected_option: str, db: Session = Depends(get_db)):
     # Fetch the latest quiz for this class
+    print("Received payload:", payload)
     quiz = db.query(StudentQuiz).filter(StudentQuiz.class_name == class_name).order_by(StudentQuiz.created_at.desc()).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
