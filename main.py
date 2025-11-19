@@ -156,7 +156,7 @@ def generate_quizzes():
 
                 # OpenAI call
                 response = client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-3.5-turbo",
                     messages=[{"role": "system", "content": prompt}],
                     temperature=0.7
                 )
@@ -198,7 +198,8 @@ def generate_quizzes():
 # APScheduler Setup (weekly run)
 # ---------------------------
 scheduler = BackgroundScheduler()
-scheduler.add_job(generate_quizzes, 'interval', weeks=1, next_run_time=datetime.utcnow())
+scheduler.add_job(generate_quizzes, 'interval', weeks=1)
+
 scheduler.start()
 
 # ---------------------------
