@@ -397,47 +397,62 @@ def submit_answer(class_name: str, question_index: int, selected_option: str, db
     db.commit()
     return {"current_score": score}
     
+from fastapi import FastAPI, HTTPException, Depends
+from sqlalchemy.orm import Session
+from datetime import datetime
+
 @app.post("/submit-quiz-answer")
 def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     """
     Receive a single answer from the student for the current question.
     Once all questions are answered, store final score in QuizResult table.
+    Includes detailed logs for debugging.
     """
+    print("\n--- SUBMIT QUIZ ANSWER ---")
+    print("Received payload:", payload)
+
     # Fetch the quiz for this class
-    quiz = db.query(StudentQuiz).filter(
-        StudentQuiz.class_name == payload.class_name
-    ).first()
+    quiz = db.query(StudentQuiz).filter(StudentQuiz.class_name == payload.class_name).first()
     
     if not quiz:
+        print("Quiz not found for class:", payload.class_name)
         raise HTTPException(status_code=404, detail="Quiz not found")
 
     # Start quiz if not started
     if not quiz.started_at:
         quiz.started_at = datetime.utcnow()
+        print("Quiz started at:", quiz.started_at)
 
     # Initialize student_answers dict
     if "student_answers" not in quiz.quiz_json:
         quiz.quiz_json["student_answers"] = {}
+        print("Initialized student_answers dictionary")
 
     # Record current answer
     q_key = f"q{payload.question_index + 1}"
     quiz.quiz_json["student_answers"][q_key] = payload.selected_option
+    print(f"Recorded answer for {q_key}: {payload.selected_option}")
 
     # Calculate current score
     correct_count = 0
     for idx, question in enumerate(quiz.quiz_json["questions"]):
         q_key_check = f"q{idx+1}"
-        if q_key_check in quiz.quiz_json["student_answers"]:
-            if quiz.quiz_json["student_answers"][q_key_check] == question.get("answer"):
-                correct_count += 1
+        student_answer = quiz.quiz_json["student_answers"].get(q_key_check)
+        correct_answer = question.get("answer")
+        is_correct = student_answer == correct_answer
+        print(f"Q{idx+1}: student_answer='{student_answer}', correct_answer='{correct_answer}', correct={is_correct}")
+        if is_correct:
+            correct_count += 1
 
     quiz.quiz_json["score"] = correct_count
+    print("Current score:", correct_count)
 
     # Check if quiz is completed
     if len(quiz.quiz_json["student_answers"]) == len(quiz.quiz_json["questions"]):
         quiz.status = "completed"
         quiz.completed_at = datetime.utcnow()
         time_taken_seconds = int((quiz.completed_at - quiz.started_at).total_seconds())
+        print(f"Quiz completed at {quiz.completed_at}, time taken: {time_taken_seconds} seconds")
 
         # Save final result in QuizResult table
         result = QuizResult(
@@ -448,8 +463,11 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
             submitted_at=datetime.utcnow()
         )
         db.add(result)
+        print("Saved final result in QuizResult table:", result)
 
     db.commit()
+    print("--- END SUBMIT QUIZ ANSWER ---\n")
+
     return {
         "message": "Answer recorded",
         "current_score": correct_count,
