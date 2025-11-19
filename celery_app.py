@@ -6,8 +6,14 @@ from celery.schedules import crontab
 celery_app = Celery(
     "gemkids_tasks",
     broker=os.getenv("CELERY_BROKER_URL"),
-    backend=os.getenv("CELERY_RESULT_BACKEND"),  # optional
+    backend=os.getenv("CELERY_RESULT_BACKEND"),
 )
+
+# 🔥 Ensure FastAPI models & DB session are loaded
+import main
+
+# 🔥 Ensure Celery registers the task from scheduler.py
+import scheduler
 
 celery_app.conf.update(
     task_serializer='json',
@@ -21,6 +27,6 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     'generate-daily-quizzes': {
         'task': 'scheduler.generate_quizzes',
-        'schedule': crontab(hour=19, minute=0),  # run daily at 7 PM
+        'schedule': crontab(hour=19, minute=0),  # daily at 7 PM
     },
 }
