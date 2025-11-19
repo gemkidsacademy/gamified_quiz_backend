@@ -453,29 +453,61 @@ def submit_activity(submit: ActivitySubmit, db: Session = Depends(get_db)):
 """
 
 @app.post("/submit-answer")
-def submit_answer(class_name: str, question_index: int, selected_option: str, db: Session = Depends(get_db)):
-    # Fetch the latest quiz for this class
-    print("Received payload:", payload)
-    quiz = db.query(StudentQuiz).filter(StudentQuiz.class_name == class_name).order_by(StudentQuiz.created_at.desc()).first()
+def submit_answer(
+    student_id: int,
+    quiz_id: int,
+    question_index: int,
+    selected_option: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Record a student's answer for a specific quiz.
+    Does nothing if a result already exists for this student and quiz.
+    """
+    # Check if the student already has a QuizResult for this quiz
+    existing_result = db.query(QuizResult).filter(
+        QuizResult.student_id == student_id,
+        QuizResult.quiz_id == quiz_id
+    ).first()
+    
+    if existing_result:
+        return {
+            "message": "Result already exists for this student and quiz",
+            "current_score": existing_result.total_score
+        }
+
+    # Fetch the quiz by quiz_id
+    quiz = db.query(StudentQuiz).filter(StudentQuiz.quiz_id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    # Initialize answers if not present
+    # Initialize student_answers dictionary if missing
     if "student_answers" not in quiz.quiz_json:
         quiz.quiz_json["student_answers"] = {}
 
-    quiz.quiz_json["student_answers"][f"q{question_index+1}"] = selected_option
+    # Initialize student-specific answers
+    if str(student_id) not in quiz.quiz_json["student_answers"]:
+        quiz.quiz_json["student_answers"][str(student_id)] = {}
 
-    # Optional: Calculate current score
+    # Record the answer
+    quiz.quiz_json["student_answers"][str(student_id)][f"q{question_index+1}"] = selected_option
+
+    # Recalculate student's score
+    student_answers = quiz.quiz_json["student_answers"][str(student_id)]
     score = 0
-    for idx, q in enumerate(quiz.quiz_json["questions"]):
-        answer = quiz.quiz_json["student_answers"].get(f"q{idx+1}")
-        if answer == q.get("answer"):
+    for idx, q in enumerate(quiz.quiz_json.get("questions", [])):
+        if student_answers.get(f"q{idx+1}") == q.get("answer"):
             score += 1
 
-    quiz.quiz_json["score"] = score
+    # Save the score in student_answers
+    quiz.quiz_json["student_answers"][str(student_id)]["score"] = score
+
     db.commit()
-    return {"current_score": score}
+    return {
+        "message": "Answer recorded",
+        "current_score": score
+    }
+
     
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
