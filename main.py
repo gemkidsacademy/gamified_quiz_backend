@@ -173,6 +173,15 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
     }
 
 
+
+
+
+@app.get("/run-scheduler-now")
+def run_scheduler_now():
+    # Trigger Celery task asynchronously
+    generate_quizzes.delay()
+    return {"message": "Scheduler task triggered"}
+
 # ---------------------------
 # Send OTP endpoint
 # ---------------------------
