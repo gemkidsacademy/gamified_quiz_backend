@@ -243,3 +243,86 @@ def login(request: LoginRequest, response: Response, db: Session = Depends(get_d
     )
     otp_dict.pop(request.phone_number, None)
     return {"message": "Login successful", "username": user.name, "id": user.id}
+
+
+
+@app.get("/get-activity")
+def get_activity(student_id: int, db: Session = Depends(get_db)):
+    activity = db.query(Activity).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="No activity found")
+    return {
+        "activity_id": activity.activity_id,
+        "instructions": activity.instructions,
+        "questions": activity.questions,
+        "score_logic": activity.score_logic
+    }
+
+
+@app.post("/submit-activity")
+def submit_activity(submit: ActivitySubmit, db: Session = Depends(get_db)):
+    activity = db.query(Activity).filter(Activity.activity_id == submit.activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    score = 0
+    for i, answer in enumerate(submit.answers):
+        if i < len(activity.questions) and answer == activity.questions[i]["answer"]:
+            score += 1
+    attempt = ActivityAttempt(
+        student_id=submit.student_id,
+        quiz_id=None,
+        score=score,
+        time_taken=random.randint(30, 180)
+    )
+    db.add(attempt)
+    db.commit()
+    return {"message": "Activity submitted", "score": score}
+
+
+@app.post("/submit-quiz/{quiz_id}/answer")
+def submit_quiz_answer(quiz_id: int, payload: AnswerPayload):
+    db = SessionLocal()
+    try:
+        quiz = db.query(StudentQuiz).filter_by(quiz_id=quiz_id).first()
+        if not quiz:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+
+        if not quiz.started_at:
+            quiz.started_at = datetime.utcnow()
+
+        if "student_answers" not in quiz.quiz_json:
+            quiz.quiz_json["student_answers"] = {}
+
+        q_key = f"q{payload.question_index + 1}"
+        quiz.quiz_json["student_answers"][q_key] = payload.selected_option
+
+        correct_count = 0
+        for idx, question in enumerate(quiz.quiz_json["questions"]):
+            q_key_check = f"q{idx+1}"
+            if q_key_check in quiz.quiz_json["student_answers"]:
+                if quiz.quiz_json["student_answers"][q_key_check] == question.get("correct_option"):
+                    correct_count += 1
+
+        quiz.quiz_json["score"] = correct_count
+
+        if len(quiz.quiz_json["student_answers"]) == len(quiz.quiz_json["questions"]):
+            quiz.status = "completed"
+            quiz.completed_at = datetime.utcnow()
+            time_taken_seconds = int((quiz.completed_at - quiz.started_at).total_seconds())
+            attempt = ActivityAttempt(
+                student_id=quiz.student_id,
+                quiz_id=quiz.quiz_id,
+                score=correct_count,
+                time_taken=time_taken_seconds
+            )
+            db.add(attempt)
+
+        db.commit()
+        return {"message": "Answer recorded", "current_score": correct_count, "quiz_status": quiz.status}
+    finally:
+        db.close()
+
+
+
+
+
