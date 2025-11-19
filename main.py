@@ -312,6 +312,24 @@ def get_activity(student_id: int, db: Session = Depends(get_db)):
         "score_logic": activity.score_logic
     }
 
+@app.get("/get-quiz")
+def get_quiz(class_name: str = Query(..., description="Class name of the quiz"), db: Session = Depends(get_db)):
+    """
+    Fetch the latest quiz for a given class_name.
+    """
+    # Fetch the latest quiz for the given class_name
+    quiz = (
+        db.query(StudentQuiz)
+        .filter(StudentQuiz.class_name == class_name)
+        .order_by(StudentQuiz.created_at.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found for this class")
+
+    return JSONResponse(content=quiz.quiz_json)
+
 """
 @app.post("/submit-activity")
 def submit_activity(submit: ActivitySubmit, db: Session = Depends(get_db)):
