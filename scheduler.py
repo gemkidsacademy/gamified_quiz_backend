@@ -5,7 +5,7 @@ from datetime import datetime
 from celery_app import celery_app
 
   # your OpenAI wrapper
-from main import client, SessionLocal, User, Activity, StudentQuiz
+from main import SessionLocal, User, Activity, StudentQuiz
 
 
 # ------------------ Scheduler Task ------------------
@@ -14,7 +14,7 @@ def generate_quizzes():
     print("\n==============================")
     print("[CELERY] Task Started: generate_quizzes()")
     print("==============================")
-
+    from main import client
     db = SessionLocal()
     try:
         print("[DEBUG] Fetching active students...")
