@@ -58,6 +58,10 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
 # ---------------------------
 # Models
 # ---------------------------
+
+class WeekRequest(BaseModel):
+    date: str  #
+
 class LoginRequest(BaseModel):
     phone_number: str
     password: str
@@ -274,6 +278,29 @@ scheduler.start()
 # Endpoints
 # ---------------------------
 
+@app.post("/retrieve-week-number")
+def retrieve_week_number(request: WeekRequest):
+    try:
+        # Convert input date string to date object
+        input_date = datetime.strptime(request.date, "%Y-%m-%d").date()
+
+        # Get the Monday of the week of the input date
+        input_monday = input_date - timedelta(days=input_date.weekday())  # weekday(): Mon=0 ... Sun=6
+
+        # Get the current date
+        today = datetime.utcnow().date()
+        current_monday = today - timedelta(days=today.weekday())
+
+        # Calculate number of weeks between input week and current week
+        delta_days = (current_monday - input_monday).days
+        if delta_days < 0:
+            raise HTTPException(status_code=400, detail="Selected date is in the future")
+
+        week_number = (delta_days // 7) + 1  # first week is 1
+
+        return {"week_number": week_number}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
 @app.get("/student-name")
 def get_student_name(student_id: int = Query(...), db: Session = Depends(get_db)):
