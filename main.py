@@ -352,6 +352,9 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
         "created_at": quiz.created_at
     }
 
+def generate_otp():
+    return random.randint(100000, 999999)
+
 @app.post("/send-otp")
 def send_otp_endpoint(request: OTPRequest, db: Session = Depends(get_db)):
     email = request.email.strip().lower()
