@@ -502,6 +502,27 @@ def get_quiz(class_name: str = Query(..., description="Class name of the quiz"),
     Trims whitespace and matches case-insensitively.
     Returns the quiz JSON.
     """
+    # ------------------ Calculate week_number ------------------
+    admin_date_entry = db.query(AdminDate).first()
+    if not admin_date_entry or not admin_date_entry.date:
+        raise HTTPException(status_code=400, detail="Admin date not set")
+    
+    date_to_use = admin_date_entry.date
+    week_number = calculate_week_number(date_to_use)
+
+    # ------------------ Check if student already attempted ------------------
+    existing_result = db.query(QuizResult).filter(
+        QuizResult.student_id == student_id,
+        QuizResult.class_name == class_name.strip(),
+        QuizResult.week_number == week_number
+    ).first()
+
+    if existing_result:
+        return JSONResponse(
+            status_code=200,
+            content={"message": "You have already attempted this week's quiz."}
+        )
+
     cleaned_class_name = class_name.strip()
 
     quiz = (
