@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import os
 import random
 import time
-
+from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
 
 import json
