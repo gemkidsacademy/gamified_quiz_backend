@@ -496,7 +496,11 @@ def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
 
 
 @app.get("/get-quiz")
-def get_quiz(class_name: str = Query(..., description="Class name of the quiz"), db: Session = Depends(get_db)):
+def get_quiz(
+    class_name: str = Query(..., description="Class name of the quiz"),
+    student_id: int = Query(..., description="ID of the student requesting the quiz"),
+    db: Session = Depends(get_db)
+):
     """
     Fetch the latest quiz for a given class_name.
     Trims whitespace and matches case-insensitively.
