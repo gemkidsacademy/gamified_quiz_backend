@@ -7,6 +7,8 @@ from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta
 import os
 import random
+import time
+
 from typing import List, Dict, Any, Optional
 
 import json
