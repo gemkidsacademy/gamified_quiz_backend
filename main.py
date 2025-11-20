@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException, Depends, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
-
+from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta
 import os
 import random
@@ -55,6 +55,7 @@ def get_db():
 # OpenAI Client
 # ---------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 
 # ---------------------------
 # Models
@@ -352,17 +353,39 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
     }
 
 @app.post("/send-otp")
-def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
+def send_otp_endpoint(request: OTPRequest, db: Session = Depends(get_db)):
     phone = request.phone_number.strip()
+    print(f"[DEBUG] Received OTP request for phone number: {phone}")
+
     if not phone:
-        raise HTTPException(status_code=400, detail="Phone number required")
+        raise HTTPException(status_code=400, detail="Phone number is required")
+
+    # --- Lookup user by phone ---
     user = db.query(User).filter(User.phone_number == phone).first()
     if not user:
+        print(f"[WARNING] Phone number {phone} not found in database")
         raise HTTPException(status_code=404, detail="Phone number not registered")
-    otp_dict[phone] = "123"
-    print(f"[DEBUG] OTP for {phone}: 123")
-    return {"message": "OTP sent successfully"}
 
+    print(f"[DEBUG] Found user {user.name} with phone {phone}")
+
+    # --- Generate OTP ---
+    otp = generate_otp()  # implement your own OTP generator
+    print(f"[DEBUG] Generated OTP {otp} for phone {phone}")
+
+    # --- Store OTP keyed by phone with 5 min expiry ---
+    otp_store[phone] = {"otp": otp, "expiry": time.time() + 300}
+    print(f"[DEBUG] Stored OTP for {phone} with 5 min expiry")
+
+    # --- Send OTP via SMS ---
+    try:
+        print(f"[DEBUG] Attempting to send OTP to {phone} via SMS")
+        send_otp_sms(phone, otp)  # implement your SMS sending function
+        print(f"[INFO] Successfully sent OTP to {phone}")
+    except Exception as e:
+        print(f"[ERROR] Error sending OTP to {phone}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error sending SMS: {e}")
+
+    return {"message": "OTP sent successfully"}
 
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
@@ -394,25 +417,71 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     
 @app.post("/login")
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    user = db.execute(select(User).where(User.phone_number == request.phone_number)).scalar_one_or_none()
+    phone = request.phone_number.strip()
+    print(f"[DEBUG] Received login request for phone: {phone}")
+
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number is required")
+
+    # --- Fetch user by phone ---
+    user = db.query(User).filter(User.phone_number == phone).first()
     if not user:
+        print(f"[WARNING] Phone number {phone} not registered")
         raise HTTPException(status_code=401, detail="Phone number not registered")
-    stored_otp = otp_dict.get(request.phone_number)
-    if not stored_otp or request.otp != stored_otp:
-        raise HTTPException(status_code=401, detail="Invalid OTP")
+
+    # --- Retrieve OTP record ---
+    record = otp_store.get(phone)
+    if not record:
+        print(f"[WARNING] No OTP record found for phone {phone}")
+        raise HTTPException(status_code=400, detail="OTP not sent")
+
+    if time.time() > record["expiry"]:
+        print(f"[WARNING] OTP for phone {phone} has expired")
+        otp_store.pop(phone, None)
+        raise HTTPException(status_code=400, detail="OTP expired")
+
+    if str(request.otp) != str(record["otp"]):
+        print(f"[WARNING] Entered OTP ({request.otp}) does not match stored OTP ({record['otp']})")
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    print(f"[INFO] OTP for phone {phone} is valid")
+    otp_store.pop(phone, None)  # clear OTP after verification
+
+    # --- Clear previous user state if applicable ---
+    if user.name in user_contexts:
+        user_contexts[user.name] = []
+        print(f"[DEBUG] Cleared previous context for user {user.name}")
+
+    user_vectorstores_initialized[user.name] = False
+    print(f"[DEBUG] vectorstores_initialized for user {user.name} set to False")
+
+    # --- Remove existing session if using session management ---
+    existing_session = db.query(SessionModel).filter(SessionModel.user_id == user.id).first()
+    if existing_session:
+        db.delete(existing_session)
+        db.commit()
+        print(f"[DEBUG] Cleared existing session for user {user.id}")
+
+    # --- Set session cookie ---
     response.set_cookie(
         key="session_token",
         value=f"session_{user.id}",
         httponly=True,
         max_age=3600
     )
-    otp_dict.pop(request.phone_number, None)
-    return {
-        "message": "Login successful",
-        "username": user.name,
+
+    # --- Prepare response ---
+    user_info = {
         "id": user.id,
-        "class_name": user.class_name  # <- include class_name here
+        "name": user.name,
+        "phone_number": user.phone_number,
+        "class_name": user.class_name,
+        "class_day": user.class_day  # optional
     }
+
+    print(f"[INFO] Login successful for user {user.name}")
+    return {"message": "Login successful", "user": user_info}
+
 
 
 
@@ -626,6 +695,21 @@ def submit_answer(
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime
+
+def send_otp_email(to_email: str, otp: str):
+    message = Mail(
+        from_email='noreply@gemkidsacademy.com.au',
+        to_emails=to_email,
+        subject='Your OTP Code',
+        html_content=f'<p>Your OTP code is <strong>{otp}</strong>. It will expire in 5 minutes.</p>'
+    )
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        print(f"[INFO] Email sent to {to_email}, status code {response.status_code}")
+    except Exception as e:
+        print(f"[ERROR] Failed to send email to {to_email}: {e}")
+        raise
 
 
 def calculate_week_number(date_str: str) -> int:
