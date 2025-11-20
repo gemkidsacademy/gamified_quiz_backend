@@ -1,14 +1,12 @@
 # Backend
-fastapi==0.119.0
-uvicorn[standard]==0.37.0
-pydantic==2.12.2
+fastapi==0.140.0
+uvicorn[standard]==0.23.2
+pydantic==2.12.3
+pydantic[email]==2.12.3
 python-dotenv==1.1.1
 python-multipart>=0.0.5
-
-uvicorn[standard]==0.37.0
-
-pydantic[email]==2.12.3
 sendgrid==6.10.0
+
 # Database
 SQLAlchemy==2.0.44
 psycopg2-binary==2.9.11
@@ -23,3 +21,4 @@ langchain-openai==0.3.35
 
 # Optional / Useful
 requests==2.32.5
+email-validator==2.1.0
