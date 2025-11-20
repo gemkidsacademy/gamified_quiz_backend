@@ -137,9 +137,9 @@ class ActivityAttempt(Base):
     term_number = Column(Integer)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
-class OTPRequest(BaseModel):    
-    phone_number: str
-
+class OTPRequest(BaseModel):
+    email: str
+    
 class StudentQuiz(Base):
     __tablename__ = "student_quizzes"
 
@@ -354,39 +354,27 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
 
 @app.post("/send-otp")
 def send_otp_endpoint(request: OTPRequest, db: Session = Depends(get_db)):
-    phone = request.phone_number.strip()
-    print(f"[DEBUG] Received OTP request for phone number: {phone}")
+    email = request.email.strip().lower()
+    print(f"[DEBUG] Received OTP request for email: {email}")
 
-    if not phone:
-        raise HTTPException(status_code=400, detail="Phone number is required")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
 
-    # --- Lookup user by phone ---
-    user = db.query(User).filter(User.phone_number == phone).first()
+    user = db.query(User).filter(User.email == email).first()
     if not user:
-        print(f"[WARNING] Phone number {phone} not found in database")
-        raise HTTPException(status_code=404, detail="Phone number not registered")
+        raise HTTPException(status_code=404, detail="Email not registered")
 
-    print(f"[DEBUG] Found user {user.name} with phone {phone}")
+    otp = generate_otp()
+    otp_store[email] = {"otp": otp, "expiry": time.time() + 300}
 
-    # --- Generate OTP ---
-    otp = generate_otp()  # implement your own OTP generator
-    print(f"[DEBUG] Generated OTP {otp} for phone {phone}")
-
-    # --- Store OTP keyed by phone with 5 min expiry ---
-    otp_store[phone] = {"otp": otp, "expiry": time.time() + 300}
-    print(f"[DEBUG] Stored OTP for {phone} with 5 min expiry")
-
-    # --- Send OTP via SMS ---
+    # Call your email sending function
     try:
-        print(f"[DEBUG] Attempting to send OTP to {phone} via SMS")
-        send_otp_sms(phone, otp)  # implement your SMS sending function
-        print(f"[INFO] Successfully sent OTP to {phone}")
+        send_otp_email(email, otp)
     except Exception as e:
-        print(f"[ERROR] Error sending OTP to {phone}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error sending SMS: {e}")
+        raise HTTPException(status_code=500, detail=f"Error sending email: {e}")
 
     return {"message": "OTP sent successfully"}
-
+    
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     phone = request.phone.strip() if request.phone else None
