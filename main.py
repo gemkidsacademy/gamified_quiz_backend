@@ -58,7 +58,7 @@ def get_db():
 # ---------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
-
+otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
