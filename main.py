@@ -98,13 +98,14 @@ class QuizResult(Base):
     __tablename__ = "quiz_results"
     
     id = Column(Integer, primary_key=True)
-    quiz_id = Column(Integer, nullable=False)             # link to the quiz
-    student_id = Column(Integer, nullable=False)          # link to student
-    student_name = Column(String, nullable=False)         # store student name
-    class_name = Column(String, nullable=False)           # class the quiz belongs to
-    class_day = Column(String, nullable=True)             # class day
-    total_score = Column(Integer, nullable=False)         # total correct answers
-    total_questions = Column(Integer, nullable=False)     # total number of questions
+    quiz_id = Column(Integer, nullable=False)
+    student_id = Column(Integer, nullable=False)
+    student_name = Column(String, nullable=False)
+    class_name = Column(String, nullable=False)
+    class_day = Column(String, nullable=True)
+    week_number = Column(Integer, nullable=True)   # <-- added
+    total_score = Column(Integer, nullable=False)
+    total_questions = Column(Integer, nullable=False)
     submitted_at = Column(DateTime, default=datetime.utcnow)
     
 class Activity(Base):
