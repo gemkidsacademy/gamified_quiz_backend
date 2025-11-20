@@ -103,6 +103,7 @@ class QuizResult(Base):
     student_name = Column(String, nullable=False)         # store student name
     class_name = Column(String, nullable=False)           # class the quiz belongs to
     class_day = Column(String, nullable=True)             # class day
+    week_number = Column(Integer, nullable=True)          # week number of the class_day
     total_score = Column(Integer, nullable=False)         # total correct answers
     total_questions = Column(Integer, nullable=False)     # total number of questions
     submitted_at = Column(DateTime, default=datetime.utcnow)
@@ -584,7 +585,23 @@ from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime
 
+def calculate_week_number(date_str: str) -> int:
+    try:
+        input_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        input_monday = input_date - timedelta(days=input_date.weekday())
 
+        today = datetime.utcnow().date()
+        current_monday = today - timedelta(days=today.weekday())
+
+        delta_days = (current_monday - input_monday).days
+        if delta_days < 0:
+            raise HTTPException(status_code=400, detail="Selected date is in the future")
+
+        week_number = (delta_days // 7) + 1
+        return week_number
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        
 
 @app.post("/submit-quiz-answer")
 def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
@@ -645,12 +662,15 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         if existing_result:
             print("Result already exists, not creating a new row")
         else:
+            week_number = calculate_week_number(getattr(payload, "class_day", datetime.utcnow().strftime("%Y-%m-%d")))
+
             result = QuizResult(
                 quiz_id=quiz.quiz_id,
                 student_id=payload.student_id,
                 student_name=payload.student_name,
                 class_name=payload.class_name,
                 class_day=getattr(payload, "class_day", None),
+                week_number=week_number,   # <-- new
                 total_score=correct_count,
                 total_questions=total_questions,
                 submitted_at=datetime.utcnow()
