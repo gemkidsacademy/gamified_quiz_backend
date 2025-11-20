@@ -1,11 +1,12 @@
 # main.py
 from fastapi import FastAPI, HTTPException, Depends, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta
 import os
+
 import random
 import time
 from sendgrid.helpers.mail import Mail
@@ -92,10 +93,10 @@ class AdminDate(Base):
     date = Column(String, primary_key=True) 
     
 
-class OTPVerify(BaseModel):    
-    phone: Optional[str] = None
-    otp: str
-
+class OTPVerify(BaseModel):
+    email: EmailStr  # required email field
+    otp: str    
+    
 class OTP(Base):
     __tablename__ = "otp_store"
     id = Column(Integer, primary_key=True, index=True)
@@ -382,31 +383,46 @@ def send_otp_endpoint(request: OTPRequest, db: Session = Depends(get_db)):
     
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
-    phone = request.phone.strip() if request.phone else None
-    otp = request.otp.strip()
+    email = request.email.strip().lower()
+    otp = str(request.otp).strip()
 
-    if not phone:
-        raise HTTPException(status_code=400, detail="Phone number is required")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
 
-    if phone not in otp_dict or otp_dict[phone] != otp:
+    # --- Check if OTP exists for this email ---
+    record = otp_store.get(email)
+    if not record:
+        raise HTTPException(status_code=400, detail="OTP not sent")
+
+    # --- Check expiry ---
+    if time.time() > record["expiry"]:
+        otp_store.pop(email, None)
+        raise HTTPException(status_code=400, detail="OTP expired")
+
+    # --- Check OTP match ---
+    if otp != str(record["otp"]):
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
-    user = db.query(User).filter(User.phone_number == phone).first()
+    # --- Fetch user by email ---
+    user = db.query(User).filter(User.email == email).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Phone number not registered")
+        raise HTTPException(status_code=404, detail="Email not registered")
 
-    # Remove OTP after successful verification
-    otp_dict.pop(phone, None)
+    # --- Remove OTP after successful verification ---
+    otp_store.pop(email, None)
 
-    # Include class_name in the response
+    # --- Respond with user info ---
     return {
         "message": "OTP verified",
-        "student_id": user.id,
-        "phone_number": user.phone_number,
-        "name": user.name,
-        "class_name": user.class_name,
-        "class_day": user.class_day  # <- added this
+        "user": {
+            "student_id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "class_name": user.class_name,
+            "class_day": user.class_day
+        }
     }
+    
     
 @app.post("/login")
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
