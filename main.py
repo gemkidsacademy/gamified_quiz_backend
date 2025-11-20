@@ -83,6 +83,12 @@ class AnswerPayload(BaseModel):
     class_name: str
     class_day: str  
 
+class AdminDate(Base):
+    __tablename__ = "admin_date"
+
+    date = Column(String, primary_key=True) 
+    
+
 class OTPVerify(BaseModel):    
     phone: Optional[str] = None
     otp: str
@@ -281,10 +287,21 @@ scheduler.start()
 # ---------------------------
 
 @app.post("/retrieve-week-number")
-def retrieve_week_number(request: WeekRequest):
+def retrieve_week_number(request: WeekRequest, db: Session = Depends(get_db)):    
     try:
         # Convert input date string to date object
         input_date = datetime.strptime(request.date, "%Y-%m-%d").date()
+        # ------------------ Save or replace admin date ------------------
+        existing_entry = db.query(AdminDate).first()
+        if existing_entry:
+            existing_entry.date = request.date
+        else:
+            existing_entry = AdminDate(date=request.date)
+            db.add(existing_entry)
+
+        db.commit()
+
+        # ------------------ Calculate week number ------------------
 
         # Get the Monday of the week of the input date
         input_monday = input_date - timedelta(days=input_date.weekday())  # weekday(): Mon=0 ... Sun=6
