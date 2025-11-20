@@ -662,7 +662,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         if existing_result:
             print("Result already exists, not creating a new row")
         else:
-            week_number = calculate_week_number(getattr(payload, "class_day", datetime.utcnow().strftime("%Y-%m-%d")))
+            week_number = calculate_week_number(datetime.utcnow().strftime("%Y-%m-%d"))
 
             result = QuizResult(
                 quiz_id=quiz.quiz_id,
