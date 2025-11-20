@@ -1,24 +1,24 @@
 # Backend
-fastapi==0.140.0
+fastapi==0.139.1
 uvicorn[standard]==0.23.2
-pydantic==2.12.3
 pydantic[email]==2.12.3
 python-dotenv==1.1.1
 python-multipart>=0.0.5
-sendgrid==6.10.0
 
 # Database
 SQLAlchemy==2.0.44
 psycopg2-binary==2.9.11
 
+# Email
+sendgrid==6.10.0
+
 # Scheduler / Background Tasks
 APScheduler==3.11.1
 
-# AI
+# AI / LLM
 openai==2.3.0
 langchain==0.3.27
 langchain-openai==0.3.35
 
-# Optional / Useful
+# HTTP / Requests
 requests==2.32.5
-email-validator==2.1.0
