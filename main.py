@@ -11,6 +11,9 @@ import time
 from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
 
+
+
+
 import json
 
 from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text
@@ -69,9 +72,9 @@ class LeaderboardEntry(BaseModel):
     class_day: str
     total_score: int
     total_questions: int
-    submitted_at: str
+    submitted_at: datetime   # <-- change from str to datetime
     week_number: int
-
+    
 class WeekRequest(BaseModel):
     date: str  #
 
