@@ -535,7 +535,16 @@ def accumulative_leaderboard(
     if not admin_date_entry or not admin_date_entry.date:
         raise HTTPException(status_code=400, detail="Admin start date not set")
     
-    start_date = admin_date_entry.date
+    # Convert to datetime if stored as string
+    if isinstance(admin_date_entry.date, str):
+        try:
+            start_date = datetime.strptime(admin_date_entry.date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=500, detail="Invalid date format in AdminDate")
+    else:
+        start_date = admin_date_entry.date
+
+    # Calculate end date (10 weeks from start)
     end_date = start_date + timedelta(weeks=10)
 
     try:
@@ -556,15 +565,19 @@ def accumulative_leaderboard(
         )
 
         leaderboard = [
-            {"student_id": r.student_id, "student_name": r.student_name, "total_score": r.total_score}
+            {
+                "student_id": r.student_id,
+                "student_name": r.student_name,
+                "total_score": r.total_score
+            }
             for r in results
         ]
 
         return {
             "class_name": class_name,
             "class_day": day,
-            "start_date": start_date,
-            "end_date": end_date,
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": end_date.strftime("%Y-%m-%d"),
             "leaderboard": leaderboard
         }
 
