@@ -64,6 +64,16 @@ otp_store = {}
 # Models
 # ---------------------------
 
+class LeaderboardEntry(BaseModel):
+    student_name: str
+    class_name: str
+    class_day: str
+    total_score: int
+    total_questions: int
+    submitted_at: str
+    week_number: int
+
+
 class WeekRequest(BaseModel):
     date: str  #
 
@@ -571,6 +581,33 @@ def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to add activity: {e}")
+
+
+@app.get("/api/leaderboard/year/{year}", response_model=List[LeaderboardEntry])
+def get_year_leaderboard(
+    year: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Fetch leaderboard for a specific year.
+    Orders by total_score descending and submitted_at ascending (earlier submissions win in case of tie).
+    """
+    try:
+        query = """
+            SELECT student_name, class_name, class_day, total_score, total_questions, submitted_at, week_number
+            FROM quiz_results
+            WHERE class_name = :year
+            ORDER BY total_score DESC, submitted_at ASC
+        """
+        results = db.execute(query, {"year": year}).mappings().all()
+
+        if not results:
+            raise HTTPException(status_code=404, detail="No leaderboard data found for this year")
+
+        return results
+    except Exception as e:
+        print("Error fetching leaderboard:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/get-quiz")
