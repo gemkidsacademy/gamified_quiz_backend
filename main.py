@@ -196,12 +196,14 @@ app = FastAPI(title="Gem Kids Gamified Quiz API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://gamified-quiz-delta.vercel.app"],
+    allow_origins=[
+        "https://gamified-quiz-delta.vercel.app",
+        "https://leader-board-viewer-gamified-quiz.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # ---------------------------
 # In-memory OTP storage
 # ---------------------------
