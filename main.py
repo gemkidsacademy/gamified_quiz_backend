@@ -621,17 +621,37 @@ def get_quiz_results(
 
     return JSONResponse(content=response_data)
 
-
 @app.post("/add-activity")
 def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
-    # Validate questions field
-    if not payload.questions or not isinstance(payload.questions, list):
-        raise HTTPException(status_code=400, detail="Questions must be a non-empty JSON array")
+    """
+    Add a new activity. Front end provides a simple instructions string and other metadata.
+    The backend wraps it into the proper questions JSON structure.
+    """
+    # Validate payload
+    if not payload.instructions or not isinstance(payload.instructions, str):
+        raise HTTPException(status_code=400, detail="Instructions must be a non-empty string")
 
-    # Create new activity
+    # Optional: validate other fields
+    if not payload.class_name or not payload.class_day:
+        raise HTTPException(status_code=400, detail="class_name and class_day are required")
+
+    if not payload.week_number or not isinstance(payload.week_number, int):
+        raise HTTPException(status_code=400, detail="week_number must be an integer")
+
+    # Convert instructions string into proper questions JSON
+    questions_json = [
+        {
+            "category": "General",  # default category, could be customized
+            "prompt": payload.instructions,
+            "options": ["A", "B", "C", "D"],  # placeholder options
+            "answer": "A"  # placeholder answer
+        }
+    ]
+
+    # Create Activity object
     activity = Activity(
         instructions=payload.instructions,
-        questions=payload.questions,
+        questions=questions_json,
         score_logic=payload.score_logic,
         class_name=payload.class_name,
         class_day=payload.class_day,
@@ -649,6 +669,7 @@ def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to add activity: {e}")
+
 
 @app.get("/api/leaderboard/year/{year}", response_model=List[LeaderboardEntry])
 def get_year_leaderboard(
