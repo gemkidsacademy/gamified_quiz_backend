@@ -6,7 +6,6 @@ from typing import List
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta
 import os
-
 import random
 import time
 from sendgrid.helpers.mail import Mail
@@ -14,7 +13,7 @@ from typing import List, Dict, Any, Optional
 
 import json
 
-from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func
+from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text
 from fastapi.responses import JSONResponse
 
 
