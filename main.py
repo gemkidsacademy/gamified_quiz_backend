@@ -73,7 +73,6 @@ class LeaderboardEntry(BaseModel):
     submitted_at: str
     week_number: int
 
-
 class WeekRequest(BaseModel):
     date: str  #
 
@@ -589,26 +588,31 @@ def get_year_leaderboard(
     db: Session = Depends(get_db)
 ):
     """
-    Fetch leaderboard for a specific year.
+    Fetch leaderboard for a specific year and current week number.
     Orders by total_score descending and submitted_at ascending (earlier submissions win in case of tie).
     """
     try:
+        # Step 1: Calculate current week number
+        week_number = calculate_week_number()
+
+        # Step 2: Query filtered by year and week_number
         query = """
             SELECT student_name, class_name, class_day, total_score, total_questions, submitted_at, week_number
             FROM quiz_results
             WHERE class_name = :year
+              AND week_number = :week_number
             ORDER BY total_score DESC, submitted_at ASC
         """
-        results = db.execute(query, {"year": year}).mappings().all()
+        results = db.execute(query, {"year": year, "week_number": week_number}).mappings().all()
 
         if not results:
-            raise HTTPException(status_code=404, detail="No leaderboard data found for this year")
+            raise HTTPException(status_code=404, detail=f"No leaderboard data found for {year} in week {week_number}")
 
         return results
+
     except Exception as e:
         print("Error fetching leaderboard:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
-
 
 @app.get("/get-quiz")
 def get_quiz(
