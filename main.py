@@ -582,19 +582,18 @@ def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to add activity: {e}")
 
-
 @app.get("/api/leaderboard/year/{year}", response_model=List[LeaderboardEntry])
 def get_year_leaderboard(
     year: str,
+    day: str = Query(..., description="Class day to filter leaderboard"),
     db: Session = Depends(get_db)
 ):
     """
-    Fetch leaderboard for a specific year and current week number.
+    Fetch leaderboard for a specific year, class day, and current week number.
     Orders by total_score descending and submitted_at ascending (earlier submissions win in case of tie).
     """
     try:
         # Step 1: Calculate current week number
-        # ------------------ Calculate week_number ------------------
         admin_date_entry = db.query(AdminDate).first()
         if not admin_date_entry or not admin_date_entry.date:
             raise HTTPException(status_code=400, detail="Admin date not set")
@@ -602,19 +601,19 @@ def get_year_leaderboard(
         date_to_use = admin_date_entry.date
         week_number = calculate_week_number(date_to_use)
 
-
-        # Step 2: Query filtered by year and week_number
-        query = """
+        # Step 2: Query filtered by year, day, and week_number
+        query = text("""
             SELECT student_name, class_name, class_day, total_score, total_questions, submitted_at, week_number
             FROM quiz_results
             WHERE class_name = :year
+              AND class_day = :day
               AND week_number = :week_number
             ORDER BY total_score DESC, submitted_at ASC
-        """
-        results = db.execute(query, {"year": year, "week_number": week_number}).mappings().all()
+        """)
+        results = db.execute(query, {"year": year, "day": day, "week_number": week_number}).mappings().all()
 
         if not results:
-            raise HTTPException(status_code=404, detail=f"No leaderboard data found for {year} in week {week_number}")
+            raise HTTPException(status_code=404, detail=f"No leaderboard data found for {year} on {day} in week {week_number}")
 
         return results
 
