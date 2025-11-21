@@ -221,7 +221,6 @@ def generate_quizzes():
 
     db = SessionLocal()
     try:
-        # Get all distinct activities (classes)
         activities = db.query(Activity).all()
         if not activities:
             print("[DEBUG] No activities found in DB. Task ending.")
@@ -229,73 +228,84 @@ def generate_quizzes():
 
         for activity in activities:
             try:
-                # Use admin-provided prompt if available
-                admin_prompt = activity.admin_prompt if hasattr(activity, "admin_prompt") and activity.admin_prompt else None
+                # Admin-provided prompt stored in DB
+                prompt_text = getattr(activity, "admin_prompt", "") or ""
 
-                if admin_prompt:
-                    prompt_text = admin_prompt
-                else:
-                    prompt_text = "Create a 3-question quiz for Math, Science, English."
+                # ---- BUILD GPT PROMPT SAFELY ----
+                prompt = (
+                    "You are a quiz generator.\n"
+                    f"Create a JSON quiz for class \"{activity.class_name}\" on \"{activity.class_day}\".\n"
+                    "Use the following admin-provided topic or instructions:\n"
+                    f"{prompt_text}\n\n"
+                    "The quiz must relate DIRECTLY to this topic.\n"
+                    "The quiz must have exactly 3 questions.\n"
+                    "Each question must include:\n"
+                    "- category\n"
+                    "- prompt\n"
+                    "- 4 options\n"
+                    "- answer (exact match to one option)\n\n"
+                    "Return ONLY valid JSON. No explanation. No extra text.\n"
+                    "Example JSON structure:\n"
+                    "{\n"
+                    "  \"quiz_title\": \"Sample Quiz\",\n"
+                    "  \"instructions\": \"Answer carefully\",\n"
+                    "  \"questions\": [\n"
+                    "    {\"category\": \"Math\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
+                    "    {\"category\": \"Science\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
+                    "    {\"category\": \"English\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"}\n"
+                    "  ]\n"
+                    "}\n"
+                )
 
-                # Construct GPT system message for strict JSON output
-                prompt = f'''You are a quiz generator.
-                Create a JSON quiz for class "{activity.class_name}" on "{activity.class_day}".
-                Use the following admin-provided prompt if available:
-                "{prompt_text}"
-                The quiz must have 3 questions: Math, Science, English.
-                Each question must have:
-                - category
-                - prompt
-                - 4 options
-                - answer (exactly matching one option)
-                
-                Return ONLY valid JSON, no explanations, no extra text.
-                Example structure:
-                {{
-                  "quiz_title": "Sample Quiz",
-                  "instructions": "Answer all questions carefully",
-                  "questions": [
-                    {{"category":"Math","prompt":"...","options":["...","...","...","..."],"answer":"..."}},
-                    {{"category":"Science","prompt":"...","options":["...","...","...","..."],"answer":"..."}},
-                    {{"category":"English","prompt":"...","options":["...","...","...","..."],"answer":"..."}}
-                  ]
-                }}'''
-
-
-                # Call OpenAI API
+                # ---- CALL GPT ----
                 try:
                     response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model="gpt-4o-mini",  # good & economical
                         messages=[{"role": "system", "content": prompt}],
-                        temperature=0.7
+                        temperature=0.5
                     )
-                    quiz_content = response.choices[0].message.content.strip()
 
-                    # Try parsing JSON
+                    quiz_text = response.choices[0].message.content.strip()
+
+                    # ---- TRY TO PARSE JSON ----
                     try:
-                        parsed_json = json.loads(quiz_content)
-                    except Exception as e:
-                        print(f"[WARNING] Failed to parse AI response for class {activity.class_name}: {e}")
+                        parsed_json = json.loads(quiz_text)
+                    except Exception:
+                        print(f"[WARNING] JSON parsing failed for class {activity.class_name}. Using fallback quiz.")
                         parsed_json = None
 
                 except Exception as e:
                     print(f"[ERROR] AI call failed for class {activity.class_name}: {e}")
                     parsed_json = None
 
-                # Fallback quiz if parsing failed
+                # ---- FALLBACK QUIZ ----
                 if not parsed_json:
-                    print(f"[INFO] Using fallback quiz for class {activity.class_name}")
                     parsed_json = {
-                        "quiz_title": f"Sample Quiz for {activity.class_name}",
-                        "instructions": "This is a fallback quiz. Answer all questions carefully.",
+                        "quiz_title": f"Fallback Quiz for {activity.class_name}",
+                        "instructions": "This is a fallback quiz.",
                         "questions": [
-                            {"category": "Math", "prompt": "What is 10 + 5?", "options": ["12","15","20","25"], "answer":"15"},
-                            {"category": "Science", "prompt": "Which planet is closest to the Sun?", "options":["Earth","Mercury","Venus","Mars"], "answer":"Mercury"},
-                            {"category": "English", "prompt": "Plural of 'mouse'?", "options":["Mouses","Mice","Mouseses","Mouse"], "answer":"Mice"}
+                            {
+                                "category": "Math",
+                                "prompt": "What is 10 + 5?",
+                                "options": ["12", "15", "20", "25"],
+                                "answer": "15"
+                            },
+                            {
+                                "category": "Science",
+                                "prompt": "Which planet is closest to the Sun?",
+                                "options": ["Earth", "Mercury", "Venus", "Mars"],
+                                "answer": "Mercury"
+                            },
+                            {
+                                "category": "English",
+                                "prompt": "Plural of 'mouse'?",
+                                "options": ["Mouses", "Mice", "Mouse", "Mices"],
+                                "answer": "Mice"
+                            }
                         ]
                     }
 
-                # Save quiz to DB
+                # ---- SAVE TO DB ----
                 class_quiz = StudentQuiz(
                     quiz_json=parsed_json,
                     status="pending",
