@@ -519,6 +519,58 @@ def get_activity(student_id: int, db: Session = Depends(get_db)):
         "score_logic": activity.score_logic
     }
 
+
+@app.get("/api/leaderboard/accumulative/{class_name}")
+def accumulative_leaderboard(
+    class_name: str = Path(..., description="Class name"),
+    day: str = Query(..., description="Class day, e.g., Monday"),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns accumulative leaderboard for a given class and class day
+    within 10 weeks from admin start date.
+    """
+    # --- Get start date from AdminDate ---
+    admin_date_entry = db.query(AdminDate).first()
+    if not admin_date_entry or not admin_date_entry.date:
+        raise HTTPException(status_code=400, detail="Admin start date not set")
+    
+    start_date = admin_date_entry.date
+    end_date = start_date + timedelta(weeks=10)
+
+    try:
+        # Aggregate scores within date range and class day
+        results = (
+            db.query(
+                QuizResult.student_id,
+                QuizResult.student_name,
+                func.sum(QuizResult.total_score).label("total_score")
+            )
+            .filter(QuizResult.class_name == class_name)
+            .filter(QuizResult.class_day == day)
+            .filter(QuizResult.submitted_at >= start_date)
+            .filter(QuizResult.submitted_at <= end_date)
+            .group_by(QuizResult.student_id, QuizResult.student_name)
+            .order_by(func.sum(QuizResult.total_score).desc())
+            .all()
+        )
+
+        leaderboard = [
+            {"student_id": r.student_id, "student_name": r.student_name, "total_score": r.total_score}
+            for r in results
+        ]
+
+        return {
+            "class_name": class_name,
+            "class_day": day,
+            "start_date": start_date,
+            "end_date": end_date,
+            "leaderboard": leaderboard
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
 @app.get("/quiz-results")
 def get_quiz_results(
     class_name: str = Query(..., description="Class name to filter results"),
@@ -601,7 +653,7 @@ def get_year_leaderboard(
         if not admin_date_entry or not admin_date_entry.date:
             raise HTTPException(status_code=400, detail="Admin date not set")
         
-        date_to_use = admin_date_entry.date
+        date_to_use = admin_date_entry.date        
         week_number = calculate_week_number(date_to_use)
 
         # Step 2: Query filtered by year, day, and week_number
