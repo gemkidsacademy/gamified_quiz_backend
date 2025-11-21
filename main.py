@@ -221,7 +221,7 @@ def generate_quizzes():
 
     db = SessionLocal()
     try:
-        # Get all distinct classes from activities
+        # Get all distinct activities (classes)
         activities = db.query(Activity).all()
         if not activities:
             print("[DEBUG] No activities found in DB. Task ending.")
@@ -229,34 +229,65 @@ def generate_quizzes():
 
         for activity in activities:
             try:
-                # Prepare prompt
-                prompt_template = activity.questions[0]["prompt"] if activity.questions else "Create a simple quiz with {topics}."
-                topics = "Math, Science, English"
-                prompt = prompt_template.replace("{topics}", topics)
+                # Use admin-provided prompt if available
+                admin_prompt = activity.admin_prompt if hasattr(activity, "admin_prompt") and activity.admin_prompt else None
 
-                # Try OpenAI API call
+                if admin_prompt:
+                    prompt_text = admin_prompt
+                else:
+                    prompt_text = "Create a 3-question quiz for Math, Science, English."
+
+                # Construct GPT system message for strict JSON output
+                prompt = f'''You are a quiz generator.
+                Create a JSON quiz for class "{activity.class_name}" on "{activity.class_day}".
+                Use the following admin-provided prompt if available:
+                "{prompt_text}"
+                The quiz must have 3 questions: Math, Science, English.
+                Each question must have:
+                - category
+                - prompt
+                - 4 options
+                - answer (exactly matching one option)
+                
+                Return ONLY valid JSON, no explanations, no extra text.
+                Example structure:
+                {{
+                  "quiz_title": "Sample Quiz",
+                  "instructions": "Answer all questions carefully",
+                  "questions": [
+                    {{"category":"Math","prompt":"...","options":["...","...","...","..."],"answer":"..."}},
+                    {{"category":"Science","prompt":"...","options":["...","...","...","..."],"answer":"..."}},
+                    {{"category":"English","prompt":"...","options":["...","...","...","..."],"answer":"..."}}
+                  ]
+                }}'''
+
+
+                # Call OpenAI API
                 try:
                     response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",  # economical model
+                        model="gpt-3.5-turbo",
                         messages=[{"role": "system", "content": prompt}],
                         temperature=0.7
                     )
-                    quiz_content = response.choices[0].message.content
+                    quiz_content = response.choices[0].message.content.strip()
+
+                    # Try parsing JSON
                     try:
                         parsed_json = json.loads(quiz_content)
-                    except Exception:
-                        print(f"[WARNING] Failed to parse AI response for class {activity.class_name}. Using fallback quiz.")
+                    except Exception as e:
+                        print(f"[WARNING] Failed to parse AI response for class {activity.class_name}: {e}")
                         parsed_json = None
 
                 except Exception as e:
                     print(f"[ERROR] AI call failed for class {activity.class_name}: {e}")
                     parsed_json = None
 
-                # Fallback quiz if AI fails
+                # Fallback quiz if parsing failed
                 if not parsed_json:
+                    print(f"[INFO] Using fallback quiz for class {activity.class_name}")
                     parsed_json = {
                         "quiz_title": f"Sample Quiz for {activity.class_name}",
-                        "instructions": "This is a fallback quiz. Answer the questions carefully.",
+                        "instructions": "This is a fallback quiz. Answer all questions carefully.",
                         "questions": [
                             {"category": "Math", "prompt": "What is 10 + 5?", "options": ["12","15","20","25"], "answer":"15"},
                             {"category": "Science", "prompt": "Which planet is closest to the Sun?", "options":["Earth","Mercury","Venus","Mars"], "answer":"Mercury"},
@@ -264,7 +295,7 @@ def generate_quizzes():
                         ]
                     }
 
-                # Save class-level quiz
+                # Save quiz to DB
                 class_quiz = StudentQuiz(
                     quiz_json=parsed_json,
                     status="pending",
