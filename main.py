@@ -595,7 +595,14 @@ def get_year_leaderboard(
     """
     try:
         # Step 1: Calculate current week number
-        week_number = calculate_week_number()
+        # ------------------ Calculate week_number ------------------
+        admin_date_entry = db.query(AdminDate).first()
+        if not admin_date_entry or not admin_date_entry.date:
+            raise HTTPException(status_code=400, detail="Admin date not set")
+        
+        date_to_use = admin_date_entry.date
+        week_number = calculate_week_number(date_to_use)
+
 
         # Step 2: Query filtered by year and week_number
         query = """
