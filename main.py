@@ -222,17 +222,20 @@ def generate_quizzes():
     db = SessionLocal()
     try:
         activities = db.query(Activity).all()
+        print(f"[DEBUG] Number of activities fetched: {len(activities)}")
         if not activities:
             print("[DEBUG] No activities found in DB. Task ending.")
             return
 
-        for activity in activities:
+        for idx, activity in enumerate(activities, 1):
+            print(f"\n[DEBUG] Processing activity {idx}/{len(activities)}: {activity}")
             try:
                 # Admin-provided prompt stored in DB
-                # Extract values from activity
                 raw_prompt = getattr(activity, "admin_prompt", "") or ""
                 class_name = getattr(activity, "class_name", "") or ""
                 topic_name = getattr(activity, "instructions", "") or ""
+                print(f"[DEBUG] Extracted values -> class_name: '{class_name}', topic_name: '{topic_name}'")
+                print(f"[DEBUG] Admin prompt: {raw_prompt}")
 
                 # JSON generation instructions
                 json_instructions = (
@@ -261,6 +264,7 @@ def generate_quizzes():
                     class_name=class_name,
                     topic_name=topic_name
                 )
+                print(f"[DEBUG] Final prompt to GPT:\n{prompt_text}")
 
                 # ---- CALL GPT ----
                 try:
@@ -271,22 +275,25 @@ def generate_quizzes():
                     )
 
                     quiz_text = response.choices[0].message.content.strip()
+                    print(f"[DEBUG] Raw GPT response:\n{quiz_text}")
 
                     # ---- TRY TO PARSE JSON ----
                     try:
                         parsed_json = json.loads(quiz_text)
-                    except Exception:
-                        print(f"[WARNING] JSON parsing failed for class {activity.class_name}. Using fallback quiz.")
+                        print(f"[DEBUG] Successfully parsed GPT JSON for class {class_name}")
+                    except Exception as e_json:
+                        print(f"[WARNING] JSON parsing failed for class {class_name}: {e_json}")
                         parsed_json = None
 
-                except Exception as e:
-                    print(f"[ERROR] AI call failed for class {activity.class_name}: {e}")
+                except Exception as e_ai:
+                    print(f"[ERROR] AI call failed for class {class_name}: {e_ai}")
                     parsed_json = None
 
                 # ---- FALLBACK QUIZ ----
                 if not parsed_json:
+                    print(f"[DEBUG] Using fallback quiz for class {class_name}")
                     parsed_json = {
-                        "quiz_title": f"Fallback Quiz for {activity.class_name}",
+                        "quiz_title": f"Fallback Quiz for {class_name}",
                         "instructions": "This is a fallback quiz.",
                         "questions": [
                             {
@@ -311,17 +318,21 @@ def generate_quizzes():
                     }
 
                 # ---- SAVE TO DB ----
-                class_quiz = StudentQuiz(
-                    quiz_json=parsed_json,
-                    status="pending",
-                    created_at=datetime.utcnow(),
-                    class_name=activity.class_name,
-                    class_day=activity.class_day
-                )
-                db.add(class_quiz)
+                try:
+                    class_quiz = StudentQuiz(
+                        quiz_json=parsed_json,
+                        status="pending",
+                        created_at=datetime.utcnow(),
+                        class_name=class_name,
+                        class_day=getattr(activity, "class_day", "")
+                    )
+                    db.add(class_quiz)
+                    print(f"[DEBUG] Quiz added to DB for class {class_name}")
+                except Exception as e_db:
+                    print(f"[ERROR] Failed to save quiz for class {class_name}: {e_db}")
 
-            except Exception as e:
-                print(f"[ERROR] Failed to generate quiz for class {activity.class_name}: {e}")
+            except Exception as e_activity:
+                print(f"[ERROR] Failed to generate quiz for activity {activity}: {e_activity}")
                 continue
 
         db.commit()
@@ -334,7 +345,6 @@ def generate_quizzes():
     finally:
         db.close()
         print("[DEBUG] Database session closed.")
-
 
 
 # ---------------------------
