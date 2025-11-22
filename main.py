@@ -241,27 +241,19 @@ def generate_quizzes():
 
                 # --- JSON generation instructions ---
                 json_instructions = (
-                    "The quiz must relate DIRECTLY to this topic.\n"
-                    "The quiz must have exactly 3 questions.\n"
-                    "Each question must include:\n"
-                    "- category\n"
-                    "- prompt\n"
-                    "- 4 options\n"
-                    "- answer (exact match to one option)\n\n"
-                    "Return ONLY valid JSON. No explanation. No extra text.\n"
-                    "Example JSON structure:\n"
+                    "Return ONLY a valid JSON object exactly in this structure. Do NOT add extra text:\n"
                     "{\n"
-                    "  \"quiz_title\": \"Sample Quiz\",\n"
-                    "  \"instructions\": \"Answer carefully\",\n"
+                    "  \"quiz_title\": \"...\",\n"
+                    "  \"instructions\": \"...\",\n"
                     "  \"questions\": [\n"
-                    "    {\"category\": \"{topic_name}\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
-                    "    {\"category\": \"{topic_name}\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
-                    "    {\"category\": \"{topic_name}\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"}\n"
+                    "    {\"category\": \"...\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
+                    "    {\"category\": \"...\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
+                    "    {\"category\": \"...\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"}\n"
                     "  ]\n"
                     "}\n"
                 )
 
-                # --- Combine prompt and JSON instructions ---
+                # --- Combine admin prompt + JSON instructions ---
                 prompt_text = (raw_prompt + "\n\n" + json_instructions).format(
                     class_name=class_name,
                     topic_name=topic_name
@@ -275,23 +267,24 @@ def generate_quizzes():
                         messages=[{"role": "system", "content": prompt_text}],
                         temperature=0.5
                     )
-
                     quiz_text = response.choices[0].message.content.strip()
-                    print(f"[DEBUG] Raw GPT response:\n{quiz_text}")
+                    print(f"[DEBUG] Raw GPT response for class '{class_name}':\n{quiz_text}")
+                    print(f"[DEBUG] GPT response length: {len(quiz_text)} characters")
 
                     # ---- PARSE GPT JSON ----
                     try:
                         parsed_json = json.loads(quiz_text)
                         print(f"[DEBUG] Successfully parsed GPT JSON for class '{class_name}'")
-                    except Exception as e_json:
-                        print(f"[WARNING] JSON parsing failed for class '{class_name}': {e_json}")
+                    except json.JSONDecodeError as e_json:
+                        print(f"[ERROR] JSON parsing failed for class '{class_name}': {e_json}")
+                        print("[DEBUG] GPT response that failed parsing:\n", quiz_text)
                         parsed_json = None
 
                 except Exception as e_ai:
                     print(f"[ERROR] AI call failed for class '{class_name}': {e_ai}")
                     parsed_json = None
 
-                # ---- FALLBACK QUIZ (optional, can remove if AI is reliable) ----
+                # ---- FALLBACK QUIZ ----
                 if not parsed_json:
                     print(f"[DEBUG] Using fallback quiz for class '{class_name}'")
                     parsed_json = {
@@ -347,7 +340,6 @@ def generate_quizzes():
     finally:
         db.close()
         print("[DEBUG] Database session closed.")
-
 
 # ---------------------------
 # APScheduler Setup (weekly run)
