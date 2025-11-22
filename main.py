@@ -10,7 +10,7 @@ import random
 import time
 from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
-
+import re 
 
 
 
@@ -241,7 +241,7 @@ def generate_quizzes():
 
                 # --- JSON generation instructions ---
                 json_instructions = (
-                    "Return ONLY a valid JSON object exactly in this structure. Do NOT add extra text:\n"
+                    "Return ONLY valid JSON, strictly in this structure. No explanations, no extra text, no comments:\n"
                     "{\n"
                     "  \"quiz_title\": \"...\",\n"
                     "  \"instructions\": \"...\",\n"
@@ -270,16 +270,24 @@ def generate_quizzes():
                     quiz_text = response.choices[0].message.content.strip()
                     print(f"[DEBUG] Raw GPT response for class '{class_name}':\n{quiz_text}")
                     print(f"[DEBUG] GPT response length: {len(quiz_text)} characters")
+                    match = re.search(r"\{.*\}", quiz_text, re.DOTALL)
+                    if match:
+                        quiz_text = match.group(0)
+                        print(f"[DEBUG] Cleaned GPT JSON string:\n{quiz_text}")
+                    else:
+                        print("[WARNING] Could not find JSON object in GPT response. Using fallback.")
+                        quiz_text = None
+                        
 
                     # ---- PARSE GPT JSON ----
                     try:
-                        parsed_json = json.loads(quiz_text)
-                        print(f"[DEBUG] Successfully parsed GPT JSON for class '{class_name}'")
+                        if quiz_text:
+                            parsed_json = json.loads(quiz_text)
+                        else:
+                            parsed_json = None
                     except json.JSONDecodeError as e_json:
                         print(f"[ERROR] JSON parsing failed for class '{class_name}': {e_json}")
-                        print("[DEBUG] GPT response that failed parsing:\n", quiz_text)
                         parsed_json = None
-
                 except Exception as e_ai:
                     print(f"[ERROR] AI call failed for class '{class_name}': {e_ai}")
                     parsed_json = None
