@@ -237,11 +237,11 @@ def generate_quizzes():
                 class_name = getattr(activity, "class_name", "") or ""
                 topic_name = getattr(activity, "instructions", "") or ""
                 print(f"[DEBUG] Extracted -> class_name: '{class_name}', topic_name: '{topic_name}'")
-                print(f"[DEBUG] Admin prompt: '{raw_prompt}'")
+                print(f"[DEBUG] Admin prompt:\n{raw_prompt}")
 
                 # --- JSON generation instructions ---
                 json_instructions = (
-                    "Return ONLY valid JSON, strictly in this structure. No explanations, no extra text, no comments:\n"
+                    "Return ONLY valid JSON, strictly in this structure. No explanations, no extra text:\n"
                     "{\n"
                     "  \"quiz_title\": \"...\",\n"
                     "  \"instructions\": \"...\",\n"
@@ -261,6 +261,7 @@ def generate_quizzes():
                 print(f"[DEBUG] Final prompt sent to GPT:\n{prompt_text}")
 
                 # ---- CALL GPT ----
+                parsed_json = None
                 try:
                     response = client.chat.completions.create(
                         model="gpt-4o-mini",
@@ -270,24 +271,22 @@ def generate_quizzes():
                     quiz_text = response.choices[0].message.content.strip()
                     print(f"[DEBUG] Raw GPT response for class '{class_name}':\n{quiz_text}")
                     print(f"[DEBUG] GPT response length: {len(quiz_text)} characters")
-                    match = re.search(r"\{.*\}", quiz_text, re.DOTALL)
-                    if match:
-                        quiz_text = match.group(0)
-                        print(f"[DEBUG] Cleaned GPT JSON string:\n{quiz_text}")
-                    else:
-                        print("[WARNING] Could not find JSON object in GPT response. Using fallback.")
-                        quiz_text = None
-                        
 
-                    # ---- PARSE GPT JSON ----
-                    try:
-                        if quiz_text:
-                            parsed_json = json.loads(quiz_text)
-                        else:
+                    # --- Extract JSON from response robustly ---
+                    match = re.search(r"\{.*?\}", quiz_text, re.DOTALL)
+                    if match:
+                        quiz_text_clean = match.group(0)
+                        print(f"[DEBUG] Extracted JSON string:\n{quiz_text_clean}")
+                        try:
+                            parsed_json = json.loads(quiz_text_clean)
+                            print(f"[DEBUG] Successfully parsed JSON for class '{class_name}'")
+                        except json.JSONDecodeError as e_json:
+                            print(f"[ERROR] JSON parsing failed for class '{class_name}': {e_json}")
                             parsed_json = None
-                    except json.JSONDecodeError as e_json:
-                        print(f"[ERROR] JSON parsing failed for class '{class_name}': {e_json}")
+                    else:
+                        print("[WARNING] Could not find JSON object in GPT response.")
                         parsed_json = None
+
                 except Exception as e_ai:
                     print(f"[ERROR] AI call failed for class '{class_name}': {e_ai}")
                     parsed_json = None
