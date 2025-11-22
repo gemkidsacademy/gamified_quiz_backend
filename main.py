@@ -135,11 +135,12 @@ class Activity(Base):
 
     activity_id = Column(Integer, primary_key=True, index=True)
     instructions = Column(String)
+    admin_prompt = Column(String)       # <-- new column for admin prompt
     questions = Column(JSON)
     score_logic = Column(String)
-    class_name = Column(String)   # new column for class name
+    class_name = Column(String)         # new column for class name
     class_day = Column(String)
-    week_number = Column(Integer)  # new column for week number
+    week_number = Column(Integer)  
     
 class ActivityAttempt(Base):
     __tablename__ = "activity_attempts"
