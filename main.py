@@ -84,12 +84,13 @@ class LoginRequest(BaseModel):
 
 class ActivityPayload(BaseModel):
     instructions: str
-    questions: List[Dict[str, Any]]       # expects a JSON array of question objects
-    score_logic: Optional[str] = None
+    questions: List[Dict[str, Any]]                 # expects a JSON array of question objects
+    score_logic: Optional[str] = None              # can be used as activity type
+    admin_prompt: Optional[str] = None             # optional prompt from front end
     class_name: str
     class_day: Optional[str] = None
     week_number: Optional[int] = None
-
+    
 class AnswerPayload(BaseModel):
     question_index: int
     selected_option: str
@@ -680,33 +681,43 @@ def get_quiz_results(
 @app.post("/add-activity")
 def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
     """
-    Add a new activity. Front end provides a simple instructions string and other metadata.
-    The backend wraps it into the proper questions JSON structure.
+    Add a new activity. Front end provides instructions and score_logic (used as activity type).
+    Backend constructs admin_prompt for GPT use.
     """
-    # Validate payload
+
+    # --- Validate payload ---
     if not payload.instructions or not isinstance(payload.instructions, str):
         raise HTTPException(status_code=400, detail="Instructions must be a non-empty string")
-
-    # Optional: validate other fields
+    if not payload.score_logic or not isinstance(payload.score_logic, str):
+        raise HTTPException(status_code=400, detail="score_logic (used as activity type) must be a non-empty string")
     if not payload.class_name or not payload.class_day:
         raise HTTPException(status_code=400, detail="class_name and class_day are required")
+    if payload.week_number is not None and not isinstance(payload.week_number, int):
+        raise HTTPException(status_code=400, detail="week_number must be an integer if provided")
 
-    if not payload.week_number or not isinstance(payload.week_number, int):
-        raise HTTPException(status_code=400, detail="week_number must be an integer")
+    # --- Use score_logic as activity_type in admin_prompt ---
+    activity_type = payload.score_logic
 
-    # Convert instructions string into proper questions JSON
-    questions_json = [
+    admin_prompt = (
+        f"Create a gamified activity for students in {payload.class_name}.\n"
+        f"The activity format should be {activity_type}.\n"  # dynamic injection from score_logic
+        f"The topic taught is {payload.instructions}."
+    )
+
+    # --- Default or provided questions ---
+    questions_json = payload.questions or [
         {
-            "category": "General",  # default category, could be customized
+            "category": "General",
             "prompt": payload.instructions,
             "options": ["A", "B", "C", "D"],  # placeholder options
             "answer": "A"  # placeholder answer
         }
     ]
 
-    # Create Activity object
+    # --- Create Activity object ---
     activity = Activity(
         instructions=payload.instructions,
+        admin_prompt=admin_prompt,   # save admin prompt for AI
         questions=questions_json,
         score_logic=payload.score_logic,
         class_name=payload.class_name,
@@ -714,57 +725,19 @@ def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
         week_number=payload.week_number
     )
 
+    # --- Save to DB ---
     try:
         db.add(activity)
         db.commit()
         db.refresh(activity)
         return {
             "message": "Activity added successfully",
-            "activity_id": activity.activity_id
+            "activity_id": activity.activity_id,
+            "admin_prompt": activity.admin_prompt  # Optional: return for debugging
         }
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to add activity: {e}")
-
-
-@app.get("/api/leaderboard/year/{year}", response_model=List[LeaderboardEntry])
-def get_year_leaderboard(
-    year: str,
-    day: str = Query(..., description="Class day to filter leaderboard"),
-    db: Session = Depends(get_db)
-):
-    """
-    Fetch leaderboard for a specific year, class day, and current week number.
-    Orders by total_score descending and submitted_at ascending (earlier submissions win in case of tie).
-    """
-    try:
-        # Step 1: Calculate current week number
-        admin_date_entry = db.query(AdminDate).first()
-        if not admin_date_entry or not admin_date_entry.date:
-            raise HTTPException(status_code=400, detail="Admin date not set")
-        
-        date_to_use = admin_date_entry.date        
-        week_number = calculate_week_number(date_to_use)
-
-        # Step 2: Query filtered by year, day, and week_number
-        query = text("""
-            SELECT student_name, class_name, class_day, total_score, total_questions, submitted_at, week_number
-            FROM quiz_results
-            WHERE class_name = :year
-              AND class_day = :day
-              AND week_number = :week_number
-            ORDER BY total_score DESC, submitted_at ASC
-        """)
-        results = db.execute(query, {"year": year, "day": day, "week_number": week_number}).mappings().all()
-
-        if not results:
-            raise HTTPException(status_code=404, detail=f"No leaderboard data found for {year} on {day} in week {week_number}")
-
-        return results
-
-    except Exception as e:
-        print("Error fetching leaderboard:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/get-quiz")
 def get_quiz(
