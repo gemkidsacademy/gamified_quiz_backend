@@ -241,16 +241,24 @@ def generate_quizzes():
 
                 # --- JSON generation instructions ---
                 json_instructions = (
-                    "Return ONLY valid JSON, strictly in this structure. No explanations, no extra text:\n"
+                    "You are an AI that creates quizzes. "
+                    "Follow these rules STRICTLY:\n"
+                    "1. Return ONLY a single valid JSON object. Do NOT include any explanations, comments, or extra text.\n"
+                    "2. Use standard double quotes \". Do NOT use single quotes or fancy quotes.\n"
+                    "3. JSON must EXACTLY follow this structure:\n"
                     "{\n"
-                    "  \"quiz_title\": \"...\",\n"
-                    "  \"instructions\": \"...\",\n"
+                    "  \"quiz_title\": \"Sample Quiz\",\n"
+                    "  \"instructions\": \"Answer all questions carefully\",\n"
                     "  \"questions\": [\n"
-                    "    {\"category\": \"...\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
-                    "    {\"category\": \"...\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
-                    "    {\"category\": \"...\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"}\n"
+                    "    {\"category\": \"{topic_name}\", \"prompt\": \"Question 1 here\", \"options\": [\"A\",\"B\",\"C\",\"D\"], \"answer\": \"A\"},\n"
+                    "    {\"category\": \"{topic_name}\", \"prompt\": \"Question 2 here\", \"options\": [\"A\",\"B\",\"C\",\"D\"], \"answer\": \"B\"},\n"
+                    "    {\"category\": \"{topic_name}\", \"prompt\": \"Question 3 here\", \"options\": [\"A\",\"B\",\"C\",\"D\"], \"answer\": \"C\"}\n"
                     "  ]\n"
                     "}\n"
+                    "4. Do NOT add or remove any fields.\n"
+                    "5. The 'category' field for each question should be '{topic_name}'.\n"
+                    "6. Replace 'Question 1 here', 'Question 2 here', etc. with actual quiz questions related DIRECTLY to the topic.\n"
+                    "7. The 'options' array must contain exactly 4 options, and 'answer' must exactly match one of them.\n"
                 )
 
                 # --- Combine admin prompt + JSON instructions ---
