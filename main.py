@@ -229,14 +229,13 @@ def generate_quizzes():
         for activity in activities:
             try:
                 # Admin-provided prompt stored in DB
-                prompt_text = getattr(activity, "admin_prompt", "") or ""
+                # Extract values from activity
+                raw_prompt = getattr(activity, "admin_prompt", "") or ""
+                class_name = getattr(activity, "class_name", "") or ""
+                topic_name = getattr(activity, "instructions", "") or ""
 
-                # ---- BUILD GPT PROMPT SAFELY ----
-                prompt = (
-                    "You are a quiz generator.\n"
-                    f"Create a JSON quiz for class \"{activity.class_name}\" on \"{activity.class_day}\".\n"
-                    "Use the following admin-provided topic or instructions:\n"
-                    f"{prompt_text}\n\n"
+                # JSON generation instructions
+                json_instructions = (
                     "The quiz must relate DIRECTLY to this topic.\n"
                     "The quiz must have exactly 3 questions.\n"
                     "Each question must include:\n"
@@ -250,18 +249,24 @@ def generate_quizzes():
                     "  \"quiz_title\": \"Sample Quiz\",\n"
                     "  \"instructions\": \"Answer carefully\",\n"
                     "  \"questions\": [\n"
-                    "    {\"category\": \"Math\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
-                    "    {\"category\": \"Science\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
-                    "    {\"category\": \"English\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"}\n"
+                    "    {\"category\": \"{topic_name}\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
+                    "    {\"category\": \"{topic_name}\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"},\n"
+                    "    {\"category\": \"{topic_name}\", \"prompt\": \"...\", \"options\": [\"...\",\"...\",\"...\",\"...\"], \"answer\": \"...\"}\n"
                     "  ]\n"
                     "}\n"
+                )
+
+                # Combine admin prompt + JSON instructions and inject values
+                prompt_text = (raw_prompt + "\n\n" + json_instructions).format(
+                    class_name=class_name,
+                    topic_name=topic_name
                 )
 
                 # ---- CALL GPT ----
                 try:
                     response = client.chat.completions.create(
-                        model="gpt-4o-mini",  # good & economical
-                        messages=[{"role": "system", "content": prompt}],
+                        model="gpt-4o-mini",
+                        messages=[{"role": "system", "content": prompt_text}],
                         temperature=0.5
                     )
 
