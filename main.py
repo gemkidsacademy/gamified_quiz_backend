@@ -233,102 +233,94 @@ def generate_quizzes():
         for idx, activity in enumerate(activities, 1):
             print(f"\n[DEBUG] Processing activity {idx}/{len(activities)}: {activity}")
             print("[DEBUG] Activity object dict:", activity.__dict__)
+
+            # --- Extract activity values ---
+            raw_prompt = getattr(activity, "admin_prompt", "") or ""
+            class_name = getattr(activity, "class_name", "") or ""
+            topic_name = getattr(activity, "instructions", "") or ""
+            print(f"[DEBUG] Extracted -> class_name: '{class_name}', topic_name: '{topic_name}'")
+            print(f"[DEBUG] Admin prompt:\n{raw_prompt}")
+
+            # --- Compose strict system prompt (single triple quotes) ---
+            system_prompt = f'''
+You are a quiz-generating AI. Create a gamified quiz for students.
+Follow these rules STRICTLY:
+1. Return ONLY a single valid JSON object. NO explanations, NO extra text.
+2. Use standard double quotes " only.
+3. JSON MUST follow this exact structure:
+{{
+  "quiz_title": "Sample Quiz",
+  "instructions": "Answer all questions carefully",
+  "questions": [
+    {{"category": "{topic_name}", "prompt": "Question 1 here", "options": ["A","B","C","D"], "answer": "A"}},
+    {{"category": "{topic_name}", "prompt": "Question 2 here", "options": ["A","B","C","D"], "answer": "B"}},
+    {{"category": "{topic_name}", "prompt": "Question 3 here", "options": ["A","B","C","D"], "answer": "C"}}
+  ]
+}}
+4. Replace 'Question X here' with actual questions related DIRECTLY to the topic.
+5. The 'options' array must contain exactly 4 choices, and 'answer' must match one.
+6. Admin prompt/context for this quiz: {raw_prompt}
+'''
+
+            parsed_json = None
             try:
-                # --- Extract activity values ---
-                raw_prompt = getattr(activity, "admin_prompt", "") or ""
-                class_name = getattr(activity, "class_name", "") or ""
-                topic_name = getattr(activity, "instructions", "") or ""
-                print(f"[DEBUG] Extracted -> class_name: '{class_name}', topic_name: '{topic_name}'")
-                print(f"[DEBUG] Admin prompt:\n{raw_prompt}")
-
-                # --- STRONGER JSON generation instructions ---
-                json_instructions = (
-                    "You are an AI that creates quizzes. Follow these rules STRICTLY:\n"
-                    "1. Return ONLY a single valid JSON object. Do NOT include explanations, comments, or extra text.\n"
-                    "2. Use standard double quotes \". Do NOT use single quotes or fancy quotes.\n"
-                    "3. JSON must EXACTLY follow this structure:\n"
-                    "{\n"
-                    "  \"quiz_title\": \"Sample Quiz\",\n"
-                    "  \"instructions\": \"Answer all questions carefully\",\n"
-                    "  \"questions\": [\n"
-                    "    {\"category\": \"{topic_name}\", \"prompt\": \"Question 1 here\", \"options\": [\"A\",\"B\",\"C\",\"D\"], \"answer\": \"A\"},\n"
-                    "    {\"category\": \"{topic_name}\", \"prompt\": \"Question 2 here\", \"options\": [\"A\",\"B\",\"C\",\"D\"], \"answer\": \"B\"},\n"
-                    "    {\"category\": \"{topic_name}\", \"prompt\": \"Question 3 here\", \"options\": [\"A\",\"B\",\"C\",\"D\"], \"answer\": \"C\"}\n"
-                    "  ]\n"
-                    "}\n"
-                    "4. Do NOT add or remove any fields.\n"
-                    "5. The 'category' field for each question should be '{topic_name}'.\n"
-                    "6. Replace 'Question 1 here', 'Question 2 here', etc. with actual quiz questions related DIRECTLY to the topic.\n"
-                    "7. The 'options' array must contain exactly 4 options, and 'answer' must exactly match one of them.\n"
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "system", "content": system_prompt}],
+                    temperature=0.5
                 )
+                quiz_text = response.choices[0].message.content.strip()
+                print(f"[DEBUG] Raw GPT response for class '{class_name}':\n{quiz_text}")
 
-                # --- Combine admin prompt + JSON instructions ---
-                prompt_text = (raw_prompt + "\n\n" + json_instructions).format(
-                    topic_name=topic_name
+                # --- Direct JSON parsing (no regex) ---
+                parsed_json = json.loads(quiz_text)
+                print(f"[DEBUG] Successfully parsed JSON for class '{class_name}'")
+
+            except json.JSONDecodeError as e_json:
+                print(f"[ERROR] JSON parsing failed for class '{class_name}': {e_json}")
+            except Exception as e_ai:
+                print(f"[ERROR] AI call failed for class '{class_name}': {e_ai}")
+
+            # ---- FALLBACK QUIZ ----
+            if not parsed_json:
+                print(f"[DEBUG] Using fallback quiz for class '{class_name}'")
+                parsed_json = {
+                    "quiz_title": f"Fallback Quiz for {class_name}",
+                    "instructions": "This is a fallback quiz.",
+                    "questions": [
+                        {
+                            "category": "Math",
+                            "prompt": "What is 10 + 5?",
+                            "options": ["12", "15", "20", "25"],
+                            "answer": "15"
+                        },
+                        {
+                            "category": "Science",
+                            "prompt": "Which planet is closest to the Sun?",
+                            "options": ["Earth", "Mercury", "Venus", "Mars"],
+                            "answer": "Mercury"
+                        },
+                        {
+                            "category": "English",
+                            "prompt": "Plural of 'mouse'?","options": ["Mouses", "Mice", "Mouse", "Mices"],
+                            "answer": "Mice"
+                        }
+                    ]
+                }
+
+            # ---- SAVE QUIZ TO DB ----
+            try:
+                class_quiz = StudentQuiz(
+                    quiz_json=parsed_json,
+                    status="pending",
+                    created_at=datetime.utcnow(),
+                    class_name=class_name,
+                    class_day=getattr(activity, "class_day", "")
                 )
-                print(f"[DEBUG] Final prompt sent to GPT:\n{prompt_text}")
-
-                # ---- CALL GPT ----
-                parsed_json = None
-                try:
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "system", "content": prompt_text}],
-                        temperature=0.5
-                    )
-                    quiz_text = response.choices[0].message.content.strip()
-                    print(f"[DEBUG] Raw GPT response for class '{class_name}':\n{quiz_text}")
-                    print(f"[DEBUG] GPT response length: {len(quiz_text)} characters")
-
-                    # --- Extract JSON from response robustly ---
-                    json_matches = re.findall(r"\{.*?\}", quiz_text, re.DOTALL)
-                    if json_matches:
-                        quiz_text_clean = json_matches[0]
-                        print(f"[DEBUG] Extracted JSON string:\n{quiz_text_clean}")
-                        try:
-                            parsed_json = json.loads(quiz_text_clean)
-                            print(f"[DEBUG] Successfully parsed JSON for class '{class_name}'")
-                        except json.JSONDecodeError as e_json:
-                            print(f"[ERROR] JSON parsing failed for class '{class_name}': {e_json}")
-                            parsed_json = None
-                    else:
-                        print("[WARNING] Could not find JSON object in GPT response.")
-                        parsed_json = None
-
-                except Exception as e_ai:
-                    print(f"[ERROR] AI call failed for class '{class_name}': {e_ai}")
-                    parsed_json = None
-
-                # ---- FALLBACK QUIZ ----
-                if not parsed_json:
-                    print(f"[DEBUG] Using fallback quiz for class '{class_name}'")
-                    parsed_json = {
-                        "quiz_title": f"Fallback Quiz for {class_name}",
-                        "instructions": "This is a fallback quiz.",
-                        "questions": [
-                            {"category": "Math", "prompt": "What is 10 + 5?", "options": ["12","15","20","25"], "answer": "15"},
-                            {"category": "Science", "prompt": "Which planet is closest to the Sun?", "options": ["Earth","Mercury","Venus","Mars"], "answer": "Mercury"},
-                            {"category": "English", "prompt": "Plural of 'mouse'?", "options": ["Mouses","Mice","Mouse","Mices"], "answer": "Mice"}
-                        ]
-                    }
-
-                # ---- SAVE QUIZ TO DB ----
-                try:
-                    class_quiz = StudentQuiz(
-                        quiz_json=parsed_json,
-                        status="pending",
-                        created_at=datetime.utcnow(),
-                        class_name=class_name,
-                        class_day=getattr(activity, "class_day", "")
-                    )
-                    db.add(class_quiz)
-                    print(f"[DEBUG] Quiz added to DB for class '{class_name}'")
-                except Exception as e_db:
-                    print(f"[ERROR] Failed to save quiz for class '{class_name}': {e_db}")
-
-            except Exception as e_activity:
-                print(f"[ERROR] Failed to generate quiz for activity {activity}: {e_activity}")
-                continue
+                db.add(class_quiz)
+                print(f"[DEBUG] Quiz added to DB for class '{class_name}'")
+            except Exception as e_db:
+                print(f"[ERROR] Failed to save quiz for class '{class_name}': {e_db}")
 
         db.commit()
         print("[SCHEDULER] Successfully generated quizzes for all classes.")
