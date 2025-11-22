@@ -136,6 +136,7 @@ class Activity(Base):
     activity_id = Column(Integer, primary_key=True, index=True)
     instructions = Column(String)
     admin_prompt = Column(String)       # <-- new column for admin prompt
+    
     questions = Column(JSON)
     score_logic = Column(String)
     class_name = Column(String)         # new column for class name
@@ -231,6 +232,7 @@ def generate_quizzes():
 
         for idx, activity in enumerate(activities, 1):
             print(f"\n[DEBUG] Processing activity {idx}/{len(activities)}: {activity}")
+            print("[DEBUG] Activity object dict:", activity.__dict__)
             try:
                 # --- Extract activity values ---
                 raw_prompt = getattr(activity, "admin_prompt", "") or ""
