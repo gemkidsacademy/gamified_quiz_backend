@@ -243,7 +243,7 @@ def generate_quizzes():
 
             # --- Compose strict system prompt (single triple quotes) ---
             system_prompt = f'''
-You are a quiz-generating AI. Create a gamified quiz for students.
+You are a quiz-generating AI. Create a gamified quiz for {class_name} class students on the topic: {topic_name}.
 Follow these rules STRICTLY:
 1. Return ONLY a single valid JSON object. NO explanations, NO extra text.
 2. Use standard double quotes " only.
