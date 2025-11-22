@@ -241,11 +241,10 @@ def generate_quizzes():
                 print(f"[DEBUG] Extracted -> class_name: '{class_name}', topic_name: '{topic_name}'")
                 print(f"[DEBUG] Admin prompt:\n{raw_prompt}")
 
-                # --- JSON generation instructions ---
+                # --- STRONGER JSON generation instructions ---
                 json_instructions = (
-                    "You are an AI that creates quizzes. "
-                    "Follow these rules STRICTLY:\n"
-                    "1. Return ONLY a single valid JSON object. Do NOT include any explanations, comments, or extra text.\n"
+                    "You are an AI that creates quizzes. Follow these rules STRICTLY:\n"
+                    "1. Return ONLY a single valid JSON object. Do NOT include explanations, comments, or extra text.\n"
                     "2. Use standard double quotes \". Do NOT use single quotes or fancy quotes.\n"
                     "3. JSON must EXACTLY follow this structure:\n"
                     "{\n"
@@ -265,7 +264,6 @@ def generate_quizzes():
 
                 # --- Combine admin prompt + JSON instructions ---
                 prompt_text = (raw_prompt + "\n\n" + json_instructions).format(
-                    class_name=class_name,
                     topic_name=topic_name
                 )
                 print(f"[DEBUG] Final prompt sent to GPT:\n{prompt_text}")
@@ -283,9 +281,9 @@ def generate_quizzes():
                     print(f"[DEBUG] GPT response length: {len(quiz_text)} characters")
 
                     # --- Extract JSON from response robustly ---
-                    match = re.search(r"\{.*?\}", quiz_text, re.DOTALL)
-                    if match:
-                        quiz_text_clean = match.group(0)
+                    json_matches = re.findall(r"\{.*?\}", quiz_text, re.DOTALL)
+                    if json_matches:
+                        quiz_text_clean = json_matches[0]
                         print(f"[DEBUG] Extracted JSON string:\n{quiz_text_clean}")
                         try:
                             parsed_json = json.loads(quiz_text_clean)
@@ -308,24 +306,9 @@ def generate_quizzes():
                         "quiz_title": f"Fallback Quiz for {class_name}",
                         "instructions": "This is a fallback quiz.",
                         "questions": [
-                            {
-                                "category": "Math",
-                                "prompt": "What is 10 + 5?",
-                                "options": ["12", "15", "20", "25"],
-                                "answer": "15"
-                            },
-                            {
-                                "category": "Science",
-                                "prompt": "Which planet is closest to the Sun?",
-                                "options": ["Earth", "Mercury", "Venus", "Mars"],
-                                "answer": "Mercury"
-                            },
-                            {
-                                "category": "English",
-                                "prompt": "Plural of 'mouse'?",
-                                "options": ["Mouses", "Mice", "Mouse", "Mices"],
-                                "answer": "Mice"
-                            }
+                            {"category": "Math", "prompt": "What is 10 + 5?", "options": ["12","15","20","25"], "answer": "15"},
+                            {"category": "Science", "prompt": "Which planet is closest to the Sun?", "options": ["Earth","Mercury","Venus","Mars"], "answer": "Mercury"},
+                            {"category": "English", "prompt": "Plural of 'mouse'?", "options": ["Mouses","Mice","Mouse","Mices"], "answer": "Mice"}
                         ]
                     }
 
@@ -357,6 +340,7 @@ def generate_quizzes():
     finally:
         db.close()
         print("[DEBUG] Database session closed.")
+
 
 # ---------------------------
 # APScheduler Setup (weekly run)
