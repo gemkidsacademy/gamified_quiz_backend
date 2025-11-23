@@ -270,13 +270,15 @@ def generate_quizzes():
             raw_prompt = getattr(activity, "admin_prompt", "") or ""
             class_name = getattr(activity, "class_name", "") or ""
             topic_name = getattr(activity, "instructions", "") or ""
+            activity_type=getattr(activity,"score_logic","") or ""
             print(f"[DEBUG] Extracted -> class_name: '{class_name}', topic_name: '{topic_name}'")
             print(f"[DEBUG] Admin prompt:\n{raw_prompt}")
 
             # --- Compose strict system prompt (single triple quotes) ---
-            system_prompt = f'''
-You are a quiz-generating AI. Create a gamified quiz for Australia NSW {class_name} class students on the topic: {topic_name}.
+           system_prompt = f'''
+You are an expert quiz-generating AI and a creative educator. Create a gamified quiz for Australia NSW {class_name} class students on the topic: {topic_name}, and ensure the activity type is {activity_type}.
 Follow these rules STRICTLY:
+
 1. Return ONLY a single valid JSON object. NO explanations, NO extra text.
 2. Use standard double quotes " only.
 3. JSON MUST follow this exact structure:
@@ -289,10 +291,18 @@ Follow these rules STRICTLY:
     {{"category": "{topic_name}", "prompt": "Question 3 here", "options": ["A","B","C","D"], "answer": "C"}}
   ]
 }}
-4. Replace 'Question X here' with actual questions related DIRECTLY to the topic.
-5. The 'options' array must contain exactly 4 choices, and 'answer' must match one.
-6. Admin prompt/context for this quiz: {raw_prompt}
+
+4. Replace 'Question X here' with **engaging, thought-provoking, and gamified multiple-choice questions** directly related to the topic.
+5. Use the {activity_type} to guide the quiz format:
+   - For "Mini Path – choice answer," create a short sequence of choices leading to the correct answer.
+   - For "Pattern hunt puzzle – choice answer," embed clues or patterns in the options that require careful thinking.
+   - For "Character mission challenge – Choice answer," create a story or mission scenario where students must answer correctly to succeed.
+6. The 'options' array must contain exactly 4 choices, one of which is correct, and 'answer' must match the correct choice.
+7. Make the questions **challenging but suitable for Year 5 students**, using scenarios, mini-stories, or playful elements when appropriate.
+8. Focus on **depth, learning value, and engagement**, not just simple definitions.
+9. Admin prompt/context for this quiz: {raw_prompt}
 '''
+
 
             parsed_json = None
             try:
