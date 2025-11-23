@@ -173,7 +173,7 @@ class StudentQuiz(Base):
     # Class metadata
     class_name = Column(String, nullable=False)
     class_day = Column(String, nullable=True)
-    
+"""    
 class User(Base):
     __tablename__ = "users_temp"
     id = Column(Integer, primary_key=True, index=True)
@@ -185,6 +185,21 @@ class User(Base):
     class_day = Column(String)
     status = Column(String, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
+"""
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, nullable=False)
+    phone_number = Column(String, nullable=False)
+    class_name = Column(String, nullable=False)
+    class_day = Column(String, nullable=False)  # <-- added
+    password = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    # Establish relationship with sessions
+    sessions = relationship("SessionModel", back_populates="user", cascade="all, delete-orphan")
+
 
 
 try:
