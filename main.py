@@ -174,6 +174,7 @@ class StudentQuiz(Base):
     # Class metadata
     class_name = Column(String, nullable=False)
     class_day = Column(String, nullable=True)
+
 """    
 class User(Base):
     __tablename__ = "users_temp"
@@ -187,6 +188,18 @@ class User(Base):
     status = Column(String, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
 """
+class SessionModel(Base):  # Handles authentication sessions
+    __tablename__ = "sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_token = Column(UUID(as_uuid=True), unique=True, index=True, default=uuid.uuid4)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))  # link to User
+    is_authenticated = Column(Boolean, default=False)
+    public_token = Column(UUID(as_uuid=True), unique=True, index=True, default=uuid.uuid4)
+
+    # Establish relationship back to User
+    user = relationship("User", back_populates="sessions")
+
 
 class User(Base):
     __tablename__ = "users"
