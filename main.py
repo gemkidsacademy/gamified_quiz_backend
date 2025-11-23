@@ -275,7 +275,7 @@ def generate_quizzes():
             print(f"[DEBUG] Admin prompt:\n{raw_prompt}")
 
             # --- Compose strict system prompt (single triple quotes) ---
-           system_prompt = f'''
+            system_prompt = f'''
                 You are an expert quiz-generating AI and a creative educator. Create a gamified quiz for Australia NSW {class_name} class students on the topic: {topic_name}, and ensure the activity type is {activity_type}.
                 Follow these rules STRICTLY:
                 
