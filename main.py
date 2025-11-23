@@ -14,6 +14,7 @@ import re
 
 
 
+
 import json
 
 from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text
@@ -22,7 +23,7 @@ from fastapi.responses import JSONResponse
 
 
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, relationship
 from sqlalchemy.ext.mutable import MutableDict
 
 
