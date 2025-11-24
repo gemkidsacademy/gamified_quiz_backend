@@ -528,7 +528,7 @@ def send_otp_endpoint(request: OTPRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error sending email: {e}")
 
-    return {"message": "OTP sent successfully"}
+    return {"message": "OTP sent successfully"} 
 
 @app.post("/retrieve-term-start-date", response_model=TermStartDateResponse)
 def retrieve_term_start_date(db: Session = Depends(get_db)):
