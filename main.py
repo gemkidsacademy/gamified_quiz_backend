@@ -600,6 +600,23 @@ def set_term_data(term_data: TermDataSchema, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/get-term-dates")
+def get_term_dates(db: Session = Depends(get_db)):
+    try:
+        terms = db.query(AdminTerm).all()
+        return [
+            {
+                "id": t.id,
+                "year": t.year,
+                "termStartDate": t.term_start_date.isoformat(),
+                "termEndDate": t.term_end_date.isoformat()
+            }
+            for t in terms
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
         
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
