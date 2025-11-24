@@ -263,7 +263,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://gamified-quiz-delta.vercel.app",
-        "https://leader-board-viewer-gamified-quiz.vercel.app"
+        "https://leader-board-viewer-gamified-quiz.vercel.app",
+        "https://leaderboard.gemkidsacademy.com.au",
+        "https://gamifiedquiz.gemkidsacademy.com.au"
     ],
     allow_credentials=True,
     allow_methods=["*"],
