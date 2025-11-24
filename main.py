@@ -420,23 +420,7 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
-@app.post("/set-term-start-date")
-def set_term_start_date(term_data: AdminDateSchema, db: Session = Depends(get_db)):
-    try:
-        # Clear any previous dates (since primary key only allows unique row)
-        db.query(AdminDate).delete()
-        
-        # Add new date
-        new_date = AdminDate(date=term_data.date)
-        db.add(new_date)
-        db.commit()
-        db.refresh(new_date)
-
-        return {"message": "Term start date updated successfully", "date": new_date.date}
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+            
         
 @app.post("/retrieve-week-number")
 def retrieve_week_number(request: WeekRequest, db: Session = Depends(get_db)):    
@@ -550,6 +534,25 @@ def retrieve_term_start_date(db: Session = Depends(get_db)):
     except Exception as e:
         print("Error retrieving term start date:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/set-term-start-date")
+def set_term_start_date(term_data: AdminDateSchema, db: Session = Depends(get_db)):
+    try:
+        # Clear any previous dates (since primary key only allows unique row)
+        db.query(AdminDate).delete()
+        
+        # Add new date
+        new_date = AdminDate(date=term_data.date)
+        db.add(new_date)
+        db.commit()
+        db.refresh(new_date)
+
+        return {"message": "Term start date updated successfully", "date": new_date.date}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
         
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
