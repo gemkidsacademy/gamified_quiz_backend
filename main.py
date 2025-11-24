@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr
 from typing import List
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta,date
-
+import pandas as pd
 import os
 import random
 import time
