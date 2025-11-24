@@ -80,6 +80,20 @@ class LeaderboardEntry(BaseModel):
     total_questions: int
     submitted_at: datetime   # <-- change from str to datetime
     week_number: int
+
+class AdminTerm(Base):
+    __tablename__ = "admin_term"
+
+    id = Column(Integer, primary_key=True, index=True)
+    year = Column(String, nullable=False)
+    term_start_date = Column(Date, nullable=False)
+    term_end_date = Column(Date, nullable=False)
+
+class TermDataSchema(BaseModel):
+    year: str
+    termStartDate: str  # will parse as date
+    termEndDate: str
+
     
 class WeekRequest(BaseModel):
     date: str  #
@@ -548,6 +562,38 @@ def set_term_start_date(term_data: AdminDateSchema, db: Session = Depends(get_db
         db.refresh(new_date)
 
         return {"message": "Term start date updated successfully", "date": new_date.date}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/set-term-data")
+def set_term_data(term_data: TermDataSchema, db: Session = Depends(get_db)):
+    try:
+        # Convert strings to date objects
+        term_start = datetime.fromisoformat(term_data.termStartDate).date()
+        term_end = datetime.fromisoformat(term_data.termEndDate).date()
+
+        # Optionally, delete old data or just insert new
+        # db.query(AdminTerm).delete()  # if you want only 1 row
+
+        new_term = AdminTerm(
+            year=term_data.year,
+            term_start_date=term_start,
+            term_end_date=term_end
+        )
+        db.add(new_term)
+        db.commit()
+        db.refresh(new_term)
+
+        return {
+            "message": "Term data saved successfully",
+            "term": {
+                "year": new_term.year,
+                "termStartDate": str(new_term.term_start_date),
+                "termEndDate": str(new_term.term_end_date)
+            }
+        }
 
     except Exception as e:
         db.rollback()
