@@ -865,7 +865,7 @@ def get_quiz_results(
     return JSONResponse(content=response_data)
 
 @app.post("/add-activities-from-excel")
-def add_activities_from_excel(
+async def add_activities_from_excel(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
