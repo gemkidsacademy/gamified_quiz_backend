@@ -109,6 +109,14 @@ class AdminDate(Base):
     __tablename__ = "admin_date"
 
     date = Column(String, primary_key=True) 
+
+class TermStartDateSchema(BaseModel):
+    date: date
+
+class AdminDateSchema(BaseModel):
+    date: str  # we can use str since your column is String
+
+
     
 
 class TermStartDateResponse(BaseModel):
@@ -412,7 +420,24 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
+@app.post("/set-term-start-date")
+def set_term_start_date(term_data: AdminDateSchema, db: Session = Depends(get_db)):
+    try:
+        # Clear any previous dates (since primary key only allows unique row)
+        db.query(AdminDate).delete()
+        
+        # Add new date
+        new_date = AdminDate(date=term_data.date)
+        db.add(new_date)
+        db.commit()
+        db.refresh(new_date)
 
+        return {"message": "Term start date updated successfully", "date": new_date.date}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+        
 @app.post("/retrieve-week-number")
 def retrieve_week_number(request: WeekRequest, db: Session = Depends(get_db)):    
     try:
