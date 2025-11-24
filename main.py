@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List
 from sendgrid import SendGridAPIClient
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,date
+
 import os
 import random
 import time
@@ -13,6 +14,7 @@ from typing import List, Dict, Any, Optional
 import re 
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
+
 
 
 
@@ -512,18 +514,18 @@ def retrieve_term_start_date(db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Term start date not found")
 
         term_date = result.date
-        # Only call isoformat if it's a date/datetime object
-        if isinstance(term_date, (datetime.date, datetime.datetime)):
+        # Convert to string if needed
+        if isinstance(term_date, (date, datetime)):
             term_date_str = term_date.isoformat()
         else:
-            term_date_str = str(term_date)  # already string, just return
+            term_date_str = str(term_date)  # already string
 
         return TermStartDateResponse(date=term_date_str)
 
     except Exception as e:
         print("Error retrieving term start date:", e)
-        raise HTTPException(status_code=500, detail="Internal server error")        
-
+        raise HTTPException(status_code=500, detail="Internal server error")
+        
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     email = request.email.strip().lower()
