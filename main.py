@@ -276,31 +276,44 @@ def generate_quizzes():
 
             # --- Compose strict system prompt (single triple quotes) ---
             system_prompt = f'''
-                You are an expert quiz-generating AI and a creative educator. Create a gamified quiz for Australia NSW {class_name} class students on the topic: {topic_name}, and ensure the activity type is {activity_type}.
+                You are an expert quiz-generating AI and a creative educator. Create a gamified quiz for Australia NSW {class_name} class students on the topic: {topic_name}. The activity type is: "{activity_type}".
+                
                 Follow these rules STRICTLY:
                 
                 1. Return ONLY a single valid JSON object. NO explanations, NO extra text.
                 2. Use standard double quotes " only.
-                3. JSON MUST follow this exact structure:
-                {{
+                3. JSON MUST follow this exact structure ONLY:
+                {
                   "quiz_title": "Sample Quiz",
                   "instructions": "Answer all questions carefully",
                   "questions": [
-                    {{"category": "{topic_name}", "prompt": "Question 1 here", "options": ["A","B","C","D"], "answer": "A"}},
-                    {{"category": "{topic_name}", "prompt": "Question 2 here", "options": ["A","B","C","D"], "answer": "B"}},
-                    {{"category": "{topic_name}", "prompt": "Question 3 here", "options": ["A","B","C","D"], "answer": "C"}}
+                    {"category": "{topic_name}", "prompt": "Question 1 here", "options": ["A","B","C","D"], "answer": "A"},
+                    {"category": "{topic_name}", "prompt": "Question 2 here", "options": ["A","B","C","D"], "answer": "B"},
+                    {"category": "{topic_name}", "prompt": "Question 3 here", "options": ["A","B","C","D"], "answer": "C"}
                   ]
-                }}
+                }
                 
-                4. Replace 'Question X here' with **engaging, thought-provoking, and gamified multiple-choice questions** directly related to the topic.
-                5. Use the {activity_type} to guide the quiz format:
-                   - For "Mini Path – choice answer," create a short sequence of choices leading to the correct answer.
-                   - For "Pattern hunt puzzle – choice answer," embed clues or patterns in the options that require careful thinking.
-                   - For "Character mission challenge – Choice answer," create a story or mission scenario where students must answer correctly to succeed.
-                6. The 'options' array must contain exactly 4 choices, one of which is correct, and 'answer' must match the correct choice.
-                7. Make the questions **challenging but suitable for Year 5 students**, using scenarios, mini-stories, or playful elements when appropriate.
-                8. Focus on **depth, learning value, and engagement**, not just simple definitions.
-                9. Admin prompt/context for this quiz: {raw_prompt}
+                4. Each 'prompt' MUST contain only ONE clear question.
+                5. Each question MUST have exactly 4 options tied ONLY to that question. Do NOT reference any other question.
+                6. The 'answer' MUST match exactly one of the 4 options for that question.
+                
+                7. ENFORCED ACTIVITY TYPE LOGIC:
+                   - If activity type is "Mini Path – choice answer":
+                       *The prompt MUST describe a short, simple decision path where the student chooses the correct step.*
+                   - If activity type is "Pattern hunt puzzle – choice answer":
+                       *The prompt MUST include a hidden clue, rule, or pattern the student must identify to choose the correct option.*
+                   - If activity type is "Character mission challenge – Choice answer":
+                       *The prompt MUST present a character-based mission or adventure where the student selects the correct action.*
+                
+                8. If a different activity type is passed:
+                       *Use the name of the activity type to guide the theme, BUT DO NOT change the JSON structure or rules. Keep one question per prompt, four options, one answer.*
+                
+                9. Questions MUST be creative, fun, and age-appropriate for {class_name}.
+                
+                10. NEVER combine multiple questions inside a single prompt. NEVER produce answer options that belong to a different question.
+                
+                11. Admin prompt/context for this quiz: {raw_prompt}
+
                 '''
 
 
