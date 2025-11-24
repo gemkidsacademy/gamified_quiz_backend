@@ -847,6 +847,108 @@ def get_quiz_results(
 
     return JSONResponse(content=response_data)
 
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from sqlalchemy.orm import Session
+import pandas as pd
+
+app = FastAPI()
+
+@app.post("/add-activities-from-excel")
+def add_activities_from_excel(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Accepts an Excel file where each row corresponds to an activity.
+    Each row is mapped to ActivityPayload and saved to the database.
+    """
+
+    # --- Read Excel file into DataFrame ---
+    try:
+        df = pd.read_excel(file.file)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read Excel file: {e}")
+
+    required_columns = ["instructions", "score_logic", "class_name", "class_day", "week_number"]
+    for col in required_columns:
+        if col not in df.columns:
+            raise HTTPException(status_code=400, detail=f"Missing required column: {col}")
+
+    added_activities = []
+
+    for index, row in df.iterrows():
+        instructions = str(row.get("instructions", "")).strip()
+        score_logic = str(row.get("score_logic", "")).strip()
+        class_name = str(row.get("class_name", "")).strip()
+        class_day = str(row.get("class_day", "")).strip()
+        week_number = row.get("week_number")
+
+        # --- Validate each row ---
+        if not instructions:
+            continue  # skip invalid row
+        if not score_logic:
+            continue
+        if not class_name or not class_day:
+            continue
+        if week_number is not None:
+            try:
+                week_number = int(week_number)
+            except (ValueError, TypeError):
+                continue  # skip invalid week_number
+
+        # --- Build admin prompt ---
+        activity_type = score_logic
+        admin_prompt = (
+            f"Create a gamified activity for students in {class_name}.\n"
+            f"The activity format should be {activity_type}.\n"
+            f"The topic taught is {instructions}."
+        )
+
+        # --- Default placeholder questions ---
+        questions_json = [
+            {
+                "category": "General",
+                "prompt": instructions,
+                "options": ["A", "B", "C", "D"],  # placeholder options
+                "answer": "A"
+            }
+        ]
+
+        # --- Create Activity object ---
+        activity = Activity(
+            instructions=instructions,
+            admin_prompt=admin_prompt,
+            questions=questions_json,
+            score_logic=score_logic,
+            class_name=class_name,
+            class_day=class_day,
+            week_number=week_number
+        )
+
+        # --- Save activity ---
+        try:
+            db.add(activity)
+            db.commit()
+            db.refresh(activity)
+            added_activities.append({
+                "activity_id": activity.activity_id,
+                "instructions": instructions,
+                "week_number": week_number
+            })
+        except Exception as e:
+            db.rollback()
+            print(f"[ERROR] Failed to add activity at row {index}: {e}")
+            continue
+
+    if not added_activities:
+        raise HTTPException(status_code=400, detail="No valid activities found in the Excel file.")
+
+    return {
+        "message": f"{len(added_activities)} activities added successfully",
+        "activities": added_activities
+    }
+
+
 @app.post("/add-activity")
 def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
     """
