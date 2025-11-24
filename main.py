@@ -86,6 +86,7 @@ class LeaderboardEntry(BaseModel):
 
 class FranchiseLocation(Base):
     __tablename__ = "FranchiseLocation"
+                     
     id = Column(Integer, primary_key=True, autoincrement=True)
     country = Column(String(100), nullable=False)
     state = Column(String(100), nullable=False)
@@ -313,11 +314,13 @@ def generate_quizzes():
             print(f"[DEBUG] Admin prompt:\n{raw_prompt}")
             row = db.execute(select(FranchiseLocation)).scalar_one_or_none()
             if row:
-                country = row.country
-                state = row.state
-                print(f"Country: {country}, State: {state}")
+               country = row.country
+               state = row.state
+               print(f"Country: {country}, State: {state}")
             else:
-                print("No row found in FranchiseLocation table.")
+               print("No row found in FranchiseLocation table.")
+               country = "UnknownCountry"
+               state = "UnknownState"
 
             # --- Compose strict system prompt (single triple quotes) ---
             system_prompt = '''
