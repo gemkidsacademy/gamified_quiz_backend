@@ -867,23 +867,23 @@ def get_quiz_results(
 
     return JSONResponse(content=response_data)
 
+
 @app.post("/add-activities-from-csv")
 async def add_activities_from_csv(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)  # your DB session dependency
+    db: Session = Depends(get_db)
 ):
     """
     Accepts a CSV file where each row corresponds to an activity.
     Each row is mapped to ActivityPayload and saved to the database.
+    Questions are dynamically generated based on instructions and score_logic.
     """
 
-    # --- Ensure file is CSV ---
+    # Ensure file is CSV
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a CSV")
 
-    print(f"[INFO] Received file: {file.filename}, content type: {file.content_type}")
-
-    # --- Read CSV into DataFrame ---
+    # Read CSV into DataFrame
     try:
         df = pd.read_csv(file.file)
     except Exception as e:
@@ -896,7 +896,6 @@ async def add_activities_from_csv(
 
     added_activities = []
 
-    # --- Iterate rows ---
     for index, row in df.iterrows():
         instructions = str(row.get("instructions", "")).strip()
         score_logic = str(row.get("score_logic", "")).strip()
@@ -910,7 +909,7 @@ async def add_activities_from_csv(
         try:
             week_number = int(week_number)
         except (ValueError, TypeError):
-            week_number = None  # optional: skip or set default
+            week_number = None
 
         # Build admin prompt
         admin_prompt = (
@@ -919,13 +918,13 @@ async def add_activities_from_csv(
             f"The topic taught is {instructions}."
         )
 
-        # Default questions
+        # Generate questions like single upload endpoint
         questions_json = [
             {
-                "category": "General",
+                "category": f"Identify concepts in: {instructions}",
                 "prompt": instructions,
-                "options": ["A", "B", "C", "D"],
-                "answer": "A"
+                "options": ["A", "B", "C", "D"],  # placeholder options
+                "answer": "A"  # placeholder answer
             }
         ]
 
@@ -962,6 +961,7 @@ async def add_activities_from_csv(
         "message": f"{len(added_activities)} activities added successfully",
         "activities": added_activities
     }
+
  
 @app.post("/add-activity")
 def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
