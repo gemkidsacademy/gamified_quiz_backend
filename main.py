@@ -1,5 +1,6 @@
 # main.py
-from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path
+from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile
+ 
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List
@@ -12,6 +13,7 @@ import time
 from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
 import re 
+
 
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
@@ -81,6 +83,12 @@ class LeaderboardEntry(BaseModel):
     total_questions: int
     submitted_at: datetime   # <-- change from str to datetime
     week_number: int
+
+class FranchiseLocation(Base):
+    __tablename__ = "FranchiseLocation"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    country = Column(String(100), nullable=False)
+    state = Column(String(100), nullable=False)
 
 class AdminTerm(Base):
     __tablename__ = "admin_term"
@@ -303,10 +311,17 @@ def generate_quizzes():
             activity_type=getattr(activity,"score_logic","") or ""
             print(f"[DEBUG] Extracted -> class_name: '{class_name}', topic_name: '{topic_name}'")
             print(f"[DEBUG] Admin prompt:\n{raw_prompt}")
+            row = db.execute(select(FranchiseLocation)).scalar_one_or_none()
+            if row:
+                country = row.country
+                state = row.state
+                print(f"Country: {country}, State: {state}")
+            else:
+                print("No row found in FranchiseLocation table.")
 
             # --- Compose strict system prompt (single triple quotes) ---
             system_prompt = '''
-            You are an expert quiz-generating AI and a creative educator. Create a gamified quiz for Australia NSW {class_name} class students on the topic: {topic_name}. The activity type is: "{activity_type}".
+            You are an expert quiz-generating AI and a creative educator. Create a gamified quiz for {country} {state} {class_name} class students on the topic: {topic_name}. The activity type is: "{activity_type}".
             
             Follow these rules STRICTLY:
             
@@ -346,11 +361,13 @@ def generate_quizzes():
             
             11. Admin prompt/context for this quiz: {raw_prompt}
             '''.format(
-                class_name=class_name,
-                topic_name=topic_name,
-                activity_type=activity_type,
-                raw_prompt=raw_prompt
-            )
+            country=country,
+            state=state,
+            class_name=class_name,
+            topic_name=topic_name,
+            activity_type=activity_type,
+            raw_prompt=raw_prompt
+        )
 
 
 
