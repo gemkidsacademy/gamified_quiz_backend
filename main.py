@@ -864,22 +864,28 @@ def get_quiz_results(
 
     return JSONResponse(content=response_data)
 
-@app.post("/add-activities-from-excel")
-async def add_activities_from_excel(
+@app.post("/add-activities-from-csv")
+async def add_activities_from_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
     """
-    Accepts an Excel file where each row corresponds to an activity.
+    Accepts a CSV file where each row corresponds to an activity.
     Each row is mapped to ActivityPayload and saved to the database.
     """
 
-    # --- Read Excel file into DataFrame ---
-    try:
-        df = pd.read_excel(file.file)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read Excel file: {e}")
+    # --- Ensure CSV file ---
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a CSV")
 
+    # --- Read CSV file into DataFrame ---
+    try:
+        contents = await file.read()
+        df = pd.read_csv(pd.io.common.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV file: {e}")
+
+    # --- Validate required columns ---
     required_columns = ["instructions", "score_logic", "class_name", "class_day", "week_number"]
     for col in required_columns:
         if col not in df.columns:
@@ -895,23 +901,18 @@ async def add_activities_from_excel(
         week_number = row.get("week_number")
 
         # --- Validate each row ---
-        if not instructions:
-            continue  # skip invalid row
-        if not score_logic:
-            continue
-        if not class_name or not class_day:
+        if not instructions or not score_logic or not class_name or not class_day:
             continue
         if week_number is not None:
             try:
                 week_number = int(week_number)
             except (ValueError, TypeError):
-                continue  # skip invalid week_number
+                continue
 
         # --- Build admin prompt ---
-        activity_type = score_logic
         admin_prompt = (
             f"Create a gamified activity for students in {class_name}.\n"
-            f"The activity format should be {activity_type}.\n"
+            f"The activity format should be {score_logic}.\n"
             f"The topic taught is {instructions}."
         )
 
@@ -920,7 +921,7 @@ async def add_activities_from_excel(
             {
                 "category": "General",
                 "prompt": instructions,
-                "options": ["A", "B", "C", "D"],  # placeholder options
+                "options": ["A", "B", "C", "D"],
                 "answer": "A"
             }
         ]
@@ -952,13 +953,12 @@ async def add_activities_from_excel(
             continue
 
     if not added_activities:
-        raise HTTPException(status_code=400, detail="No valid activities found in the Excel file.")
+        raise HTTPException(status_code=400, detail="No valid activities found in the CSV file.")
 
     return {
         "message": f"{len(added_activities)} activities added successfully",
         "activities": added_activities
     }
-
 
 @app.post("/add-activity")
 def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
