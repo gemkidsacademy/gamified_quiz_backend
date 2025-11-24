@@ -277,7 +277,7 @@ def generate_quizzes():
             # --- Compose strict system prompt (single triple quotes) ---
             system_prompt = f'''
                 You are an expert quiz-generating AI and a creative educator. Create a gamified quiz for Australia NSW {class_name} class students on the topic: {topic_name}. The activity type is: "{activity_type}".
-                
+
                 Follow these rules STRICTLY:
                 
                 1. Return ONLY a single valid JSON object. NO explanations, NO extra text.
@@ -289,28 +289,30 @@ def generate_quizzes():
                   "questions": [
                     {"category": "{topic_name}", "prompt": "Question 1 here", "options": ["A","B","C","D"], "answer": "A"},
                     {"category": "{topic_name}", "prompt": "Question 2 here", "options": ["A","B","C","D"], "answer": "B"},
-                    {"category": "{topic_name}", "prompt": "Question 3 here", "options": ["A","B","C","D"], "answer": "C"}
+                    {"category": "{topic_name}", "prompt": "Question 3 here", "options": ["A","B","C","D"], "answer": "C"},
+                    {"category": "{topic_name}", "prompt": "Question 4 here", "options": ["A","B","C","D"], "answer": "D"},
+                    {"category": "{topic_name}", "prompt": "Question 5 here", "options": ["A","B","C","D"], "answer": "A"}
                   ]
                 }
                 
-                4. Each 'prompt' MUST contain only ONE clear question.
-                5. Each question MUST have exactly 4 options tied ONLY to that question. Do NOT reference any other question.
-                6. The 'answer' MUST match exactly one of the 4 options for that question.
+                4. Each 'prompt' MUST contain only ONE clear question. Never include two questions in a single prompt.
+                5. Each question MUST have exactly 4 options tied ONLY to that question.
+                6. The 'answer' MUST match exactly one of the 4 options for that specific question.
                 
-                7. ENFORCED ACTIVITY TYPE LOGIC:
+                7. ENFORCED ACTIVITY TYPE LOGIC: Apply the rules below depending on the activity type.
                    - If activity type is "Mini Path – choice answer":
-                       *The prompt MUST describe a short, simple decision path where the student chooses the correct step.*
+                       *Create a short decision step where the student chooses the correct path or action.*
                    - If activity type is "Pattern hunt puzzle – choice answer":
-                       *The prompt MUST include a hidden clue, rule, or pattern the student must identify to choose the correct option.*
+                       *Include a hidden clue, rule, or pattern the student must identify before choosing the correct option.*
                    - If activity type is "Character mission challenge – Choice answer":
-                       *The prompt MUST present a character-based mission or adventure where the student selects the correct action.*
+                       *Present a mission or adventure with a character where the student selects the correct action to succeed.*
                 
-                8. If a different activity type is passed:
-                       *Use the name of the activity type to guide the theme, BUT DO NOT change the JSON structure or rules. Keep one question per prompt, four options, one answer.*
+                8. For ANY other activity type passed through {activity_type}:
+                       *Use the name to guide theme and creativity ONLY. DO NOT modify structure or rules.*
                 
-                9. Questions MUST be creative, fun, and age-appropriate for {class_name}.
+                9. Questions MUST be fun, clear, engaging, and age-appropriate for Year 5.
                 
-                10. NEVER combine multiple questions inside a single prompt. NEVER produce answer options that belong to a different question.
+                10. NEVER blend two questions together. NEVER ask “What is X? Is it Y?” inside the same prompt.
                 
                 11. Admin prompt/context for this quiz: {raw_prompt}
 
