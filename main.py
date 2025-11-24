@@ -847,12 +847,6 @@ def get_quiz_results(
 
     return JSONResponse(content=response_data)
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
-from sqlalchemy.orm import Session
-import pandas as pd
-
-app = FastAPI()
-
 @app.post("/add-activities-from-excel")
 def add_activities_from_excel(
     file: UploadFile = File(...),
