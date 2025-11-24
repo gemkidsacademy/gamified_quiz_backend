@@ -12,6 +12,7 @@ import time
 from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
 import re 
+
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -22,7 +23,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 import json
 
-from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text, Boolean, Date
 from fastapi.responses import JSONResponse
 
 
