@@ -867,25 +867,25 @@ def get_quiz_results(
 @app.post("/add-activities-from-csv")
 async def add_activities_from_csv(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db)  # your DB session dependency
 ):
     """
     Accepts a CSV file where each row corresponds to an activity.
     Each row is mapped to ActivityPayload and saved to the database.
     """
 
-    # --- Ensure CSV file ---
+    # --- Ensure file is CSV ---
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a CSV")
 
-    # --- Read CSV file into DataFrame ---
-    try:
-        contents = await file.read()
-        df = pd.read_csv(pd.io.common.BytesIO(contents))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read CSV file: {e}")
+    print(f"[INFO] Received file: {file.filename}, content type: {file.content_type}")
 
-    # --- Validate required columns ---
+    # --- Read CSV into DataFrame ---
+    try:
+        df = pd.read_csv(file.file)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {e}")
+
     required_columns = ["instructions", "score_logic", "class_name", "class_day", "week_number"]
     for col in required_columns:
         if col not in df.columns:
@@ -893,6 +893,7 @@ async def add_activities_from_csv(
 
     added_activities = []
 
+    # --- Iterate rows ---
     for index, row in df.iterrows():
         instructions = str(row.get("instructions", "")).strip()
         score_logic = str(row.get("score_logic", "")).strip()
@@ -900,23 +901,22 @@ async def add_activities_from_csv(
         class_day = str(row.get("class_day", "")).strip()
         week_number = row.get("week_number")
 
-        # --- Validate each row ---
+        # Validate row
         if not instructions or not score_logic or not class_name or not class_day:
             continue
-        if week_number is not None:
-            try:
-                week_number = int(week_number)
-            except (ValueError, TypeError):
-                continue
+        try:
+            week_number = int(week_number)
+        except (ValueError, TypeError):
+            week_number = None  # optional: skip or set default
 
-        # --- Build admin prompt ---
+        # Build admin prompt
         admin_prompt = (
             f"Create a gamified activity for students in {class_name}.\n"
             f"The activity format should be {score_logic}.\n"
             f"The topic taught is {instructions}."
         )
 
-        # --- Default placeholder questions ---
+        # Default questions
         questions_json = [
             {
                 "category": "General",
@@ -926,7 +926,7 @@ async def add_activities_from_csv(
             }
         ]
 
-        # --- Create Activity object ---
+        # Create Activity object
         activity = Activity(
             instructions=instructions,
             admin_prompt=admin_prompt,
@@ -937,7 +937,7 @@ async def add_activities_from_csv(
             week_number=week_number
         )
 
-        # --- Save activity ---
+        # Save to DB
         try:
             db.add(activity)
             db.commit()
@@ -959,7 +959,7 @@ async def add_activities_from_csv(
         "message": f"{len(added_activities)} activities added successfully",
         "activities": added_activities
     }
-
+ 
 @app.post("/add-activity")
 def add_activity(payload: ActivityPayload, db: Session = Depends(get_db)):
     """
