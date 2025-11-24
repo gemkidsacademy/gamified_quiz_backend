@@ -109,6 +109,9 @@ class AdminDate(Base):
     date = Column(String, primary_key=True) 
     
 
+class TermStartDateResponse(BaseModel):
+    date: str  # YYYY-MM-DD
+
 class OTPVerify(BaseModel):
     email: EmailStr  # required email field
     otp: str    
@@ -498,7 +501,28 @@ def send_otp_endpoint(request: OTPRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error sending email: {e}")
 
     return {"message": "OTP sent successfully"}
-    
+
+@app.post("/retrieve-term-start-date", response_model=TermStartDateResponse)
+def retrieve_term_start_date(db: Session = Depends(get_db)):
+    """
+    Retrieve the term start date from admin_date table.
+    """
+    try:
+        # Fetch the first row in the admin_date table
+        stmt = select(AdminDate).limit(1)
+        result = db.execute(stmt).scalars().first()
+
+        if not result or not result.date:
+            raise HTTPException(status_code=404, detail="Term start date not found")
+
+        # Return date as ISO string
+        return TermStartDateResponse(date=result.date.isoformat())
+
+    except Exception as e:
+        print("Error retrieving term start date:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+        
+
 @app.post("/verify-otp")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     email = request.email.strip().lower()
