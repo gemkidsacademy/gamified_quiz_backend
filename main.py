@@ -874,16 +874,14 @@ async def add_activities_from_csv(
     db: Session = Depends(get_db)
 ):
     """
-    Accepts a CSV file where each row corresponds to an activity.
-    Each row is mapped to ActivityPayload and saved to the database.
-    Questions are dynamically generated based on instructions and score_logic.
+    Upload activities via CSV and create Activity entries identical to the /add-activity endpoint.
     """
 
-    # Ensure file is CSV
+    # --- Validate file type ---
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a CSV")
 
-    # Read CSV into DataFrame
+    # --- Read CSV ---
     try:
         df = pd.read_csv(file.file)
     except Exception as e:
@@ -896,39 +894,49 @@ async def add_activities_from_csv(
 
     added_activities = []
 
+    # --- Process each row ---
     for index, row in df.iterrows():
+
         instructions = str(row.get("instructions", "")).strip()
         score_logic = str(row.get("score_logic", "")).strip()
         class_name = str(row.get("class_name", "")).strip()
         class_day = str(row.get("class_day", "")).strip()
         week_number = row.get("week_number")
 
-        # Validate row
-        if not instructions or not score_logic or not class_name or not class_day:
+        # --- Validation (same as single-endpoint) ---
+        if not instructions or not isinstance(instructions, str):
             continue
+        if not score_logic or not isinstance(score_logic, str):
+            continue
+        if not class_name or not class_day:
+            continue
+
         try:
             week_number = int(week_number)
-        except (ValueError, TypeError):
+        except:
             week_number = None
 
-        # Build admin prompt
+        # --- activity_type comes from score_logic ---
+        activity_type = score_logic
+
+        # --- SAME admin_prompt as /add-activity ---
         admin_prompt = (
             f"Create a gamified activity for students in {class_name}.\n"
-            f"The activity format should be {score_logic}.\n"
+            f"The activity format should be {activity_type}.\n"
             f"The topic taught is {instructions}."
         )
 
-        # Generate questions like single upload endpoint
+        # --- SAME default questions as /add-activity ---
         questions_json = [
             {
-                "category": f"Identify concepts in: {instructions}",
+                "category": "General",
                 "prompt": instructions,
-                "options": ["A", "B", "C", "D"],  # placeholder options
-                "answer": "A"  # placeholder answer
+                "options": ["A", "B", "C", "D"],
+                "answer": "A"
             }
         ]
 
-        # Create Activity object
+        # --- Create Activity entry ---
         activity = Activity(
             instructions=instructions,
             admin_prompt=admin_prompt,
@@ -939,7 +947,7 @@ async def add_activities_from_csv(
             week_number=week_number
         )
 
-        # Save to DB
+        # --- Save ---
         try:
             db.add(activity)
             db.commit()
@@ -951,11 +959,14 @@ async def add_activities_from_csv(
             })
         except Exception as e:
             db.rollback()
-            print(f"[ERROR] Failed to add activity at row {index}: {e}")
+            print(f"[ERROR] Could not save activity at row {index}: {e}")
             continue
 
     if not added_activities:
-        raise HTTPException(status_code=400, detail="No valid activities found in the CSV file.")
+        raise HTTPException(
+            status_code=400,
+            detail="CSV processed but no valid activities were added."
+        )
 
     return {
         "message": f"{len(added_activities)} activities added successfully",
