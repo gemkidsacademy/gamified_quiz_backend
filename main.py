@@ -346,31 +346,38 @@ def generate_quizzes():
             4. Each 'prompt' MUST contain only ONE clear question. Never include two questions in a single prompt.
             5. Each question MUST have exactly 4 options tied ONLY to that question.
             6. The 'answer' MUST match exactly one of the 4 options for that specific question.
-            
             7. ENFORCED ACTIVITY TYPE LOGIC: Apply the rules below depending on the activity type.
-               - If activity type is "Mini Path – choice answer":
-                   *Create a short decision step where the student chooses the correct path or action.*
-               - If activity type is "Pattern hunt puzzle – choice answer":
-                   *Include a hidden clue, rule, or pattern the student must identify before choosing the correct option.*
-               - If activity type is "Character mission challenge – Choice answer":
-                   *Present a mission or adventure with a character where the student selects the correct action to succeed.*
+               - If activity type is "Mini quiz":
+                   *Create a short multiple-choice quiz with a clear learning goal.*
+               - If activity type is "Single challenge question":
+                   *Create one challenging question focused on problem-solving or reasoning.*
+               - If activity type is "Story + question":
+                   *Provide a brief story followed by a related multiple-choice question.*
+               - If activity type is "Riddle":
+                   *Create a fun riddle with 4 options, the correct answer must be among them.*
+               - If activity type is "Image-based puzzle":
+                   *Describe a visual puzzle clearly in the prompt. Provide 4 options describing possible solutions. Answer must be one of the options.*
+               - If activity type is "Logic puzzle":
+                   *Present a reasoning problem requiring logical deduction. Include 4 options, one of which is correct.*
+               - If activity type is "Word scramble":
+                   *Present 5 scrambled words. Each prompt shows a scrambled word, provide 4 options (the correct word + 3 plausible distractors). The 'answer' must match the correct unscrambled word exactly.*
+               - If activity type is "Mini path-choice scenario":
+                   *Present a short scenario with a decision to make. Student selects the correct action from 4 options.*
             
             8. For ANY other activity type passed through {activity_type}:
                    *Use the name to guide theme and creativity ONLY. DO NOT modify structure or rules.*
             
             9. Questions MUST be fun, clear, engaging, and age-appropriate for Year 5.
-            
             10. NEVER blend two questions together. NEVER ask "What is X? Is it Y?" inside the same prompt.
-            
             11. Admin prompt/context for this quiz: {raw_prompt}
             '''.format(
-            country=country,
-            state=state,
-            class_name=class_name,
-            topic_name=topic_name,
-            activity_type=activity_type,
-            raw_prompt=raw_prompt
-        )
+                country=country,
+                state=state,
+                class_name=class_name,
+                topic_name=topic_name,
+                activity_type=activity_type,
+                raw_prompt=raw_prompt
+            )
 
 
 
