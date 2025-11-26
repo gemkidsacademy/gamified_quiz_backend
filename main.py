@@ -363,6 +363,12 @@ def generate_quizzes():
                    *Present 5 scrambled words. Each prompt shows a scrambled word, provide 4 options (the correct word + 3 plausible distractors). The 'answer' must match the correct unscrambled word exactly.*
                - If activity type is "Mini path-choice scenario":
                    *Present a short scenario with a decision to make. Student selects the correct action from 4 options.*
+               - If activity type is "Word maze":
+                   *Create a vocabulary-based puzzle inspired by a 'maze' theme. 
+                    Each question presents a clue, 
+                    and the 4 options are possible words the student might 'choose' while navigating the maze. 
+                    The answer MUST be exactly one of the 4 options. 
+                    NO directional paths, NO grids, NO letters like A/B/C/D, NO maze drawings.*
             
             8. For ANY other activity type passed through {activity_type}:
                    *Use the name to guide theme and creativity ONLY. DO NOT modify structure or rules.*
