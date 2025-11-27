@@ -621,6 +621,32 @@ def retrieve_term_start_date(db: Session = Depends(get_db)):
         print("Error retrieving term start date:", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
+@app.get("/get_next_user_id_exam_module")
+def get_next_user_id_exam_module(db: Session = Depends(get_db)):
+    """
+    Returns the next student ID in the format GemXXX
+    """
+    try:
+        # Get the student with the highest ID
+        last_student = db.query(Student).order_by(Student.id.desc()).first()
+
+        if last_student:
+            # Extract numeric part of the ID
+            last_num = int(last_student.id.replace("Gem", ""))
+            next_num = last_num + 1
+        else:
+            next_num = 1
+
+        # Format as Gem001, Gem002, etc.
+        next_id = f"Gem{next_num:03d}"
+        return next_id
+
+    except Exception as e:
+        print("[ERROR] Failed to generate next ID:", e)
+        raise HTTPException(status_code=500, detail="Could not generate next user ID")
+
+
 @app.post("/set-term-start-date")
 def set_term_start_date(term_data: AdminDateSchema, db: Session = Depends(get_db)):
     try:
