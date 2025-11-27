@@ -1,6 +1,6 @@
 # main.py
 from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile
- 
+from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List
@@ -38,7 +38,7 @@ from sqlalchemy.ext.mutable import MutableDict
 
 from openai import OpenAI
 from apscheduler.schedulers.background import BackgroundScheduler
-
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # ---------------------------
 # Database Setup PGUSER,PGPASSWORD,PGHOST,PGPORT,PGDATABASE rewrite "" using PGPASSWORD=lgZmFsBTApVPJIyTegBttTLfdWnvccHj psql -h metro.proxy.rlwy.net -U postgres -p 31631 -d railway
 # ---------------------------
