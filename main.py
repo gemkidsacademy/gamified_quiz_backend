@@ -533,11 +533,11 @@ def login_exam_module(login_data: StudentLogin, db: Session = Depends(get_db)):
     if not student:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Verify password
-    if not pwd_context.verify(login_data.password, student.password):
+    # Simple password check (plaintext)
+    if login_data.password != student.password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Return student info (without password and is_admin)
+    # Return student info (without password)
     return {
         "id": student.id,
         "name": student.name
