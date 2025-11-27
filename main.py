@@ -538,9 +538,13 @@ def login_exam_module(login_data: StudentLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # Return student info (without password)
-    return {
+     return {
         "id": student.id,
-        "name": student.name
+        "password": student.password,
+        "name": student.name,
+        "parent_email": student.parent_email,
+        "class_name": student.class_name,
+        "class_day": student.class_day
     }
 
 @app.get("/student-name")
