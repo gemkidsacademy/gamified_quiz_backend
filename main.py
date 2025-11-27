@@ -81,8 +81,11 @@ class Student(Base):
     id = Column(String, primary_key=True, index=True)  # Gem001, Gem002
     password = Column(String, nullable=False)          # store hashed password in production
     name = Column(String, nullable=False)
-    is_admin = Column(Boolean, default=False)
     parent_email = Column(String, unique=True, index=True, nullable=False)  # login via email
+    
+    class_name = Column(String, nullable=False)  # e.g., Year 1, Year 2, Kindergarten
+    class_day = Column(String, nullable=False)   # e.g., Monday, Tuesday
+
 
 class StudentLogin(BaseModel):
     student_id: str  # e.g., Gem001, Gem002
