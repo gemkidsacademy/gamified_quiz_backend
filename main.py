@@ -75,6 +75,19 @@ otp_store = {}
 # Models
 # ---------------------------
 
+class Student(Base):
+    __tablename__ = "students"
+    
+    id = Column(String, primary_key=True, index=True)  # Gem001, Gem002
+    password = Column(String, nullable=False)          # store hashed password in production
+    name = Column(String, nullable=False)
+    is_admin = Column(Boolean, default=False)
+    parent_email = Column(String, unique=True, index=True, nullable=False)  # login via email
+
+class StudentLogin(BaseModel):
+    student_id: str  # e.g., Gem001, Gem002
+    password: str
+
 class LeaderboardEntry(BaseModel):
     student_name: str
     class_name: str
@@ -506,6 +519,25 @@ def retrieve_week_number(request: WeekRequest, db: Session = Depends(get_db)):
         return {"week_number": week_number}
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+
+@app.post("/login-exam-module")
+def login_exam_module(login_data: StudentLogin, db: Session = Depends(get_db)):
+    # Look up student by ID
+    student = db.query(Student).filter(Student.id == login_data.student_id).first()
+    
+    if not student:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Verify password
+    if not pwd_context.verify(login_data.password, student.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Return student info (without password and is_admin)
+    return {
+        "id": student.id,
+        "name": student.name
+    }
 
 @app.get("/student-name")
 def get_student_name(student_id: int = Query(...), db: Session = Depends(get_db)):
