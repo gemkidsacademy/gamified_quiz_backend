@@ -78,14 +78,16 @@ otp_store = {}
 class Student(Base):
     __tablename__ = "students"
     
-    id = Column(String, primary_key=True, index=True)  # Gem001, Gem002
-    password = Column(String, nullable=False)          # store hashed password in production
-    name = Column(String, nullable=False)
-    parent_email = Column(String, unique=True, index=True, nullable=False)  # login via email
+    id = Column(String, primary_key=True, index=True)   # Gem001, Gem002
+    student_id = Column(String, unique=True, index=True, nullable=False)  # New field
     
-    class_name = Column(String, nullable=False)  # e.g., Year 1, Year 2, Kindergarten
-    class_day = Column(String, nullable=False)   # e.g., Monday, Tuesday
+    password = Column(String, nullable=False)           # store hashed password in production
+    name = Column(String, nullable=False)
 
+    parent_email = Column(String, unique=True, index=True, nullable=False)
+    
+    class_name = Column(String, nullable=False)         # e.g., Year 1, Year 2, Kindergarten
+    class_day = Column(String, nullable=False)  
 
 class StudentLogin(BaseModel):
     student_id: str  # e.g., Gem001, Gem002
