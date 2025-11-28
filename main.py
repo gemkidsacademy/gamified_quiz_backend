@@ -89,6 +89,18 @@ class Student(Base):
     class_name = Column(String, nullable=False)         # e.g., Year 1, Year 2, Kindergarten
     class_day = Column(String, nullable=False)  
 
+
+class Quiz(Base):
+    __tablename__ = "quizzes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    class_name = Column(String(50), nullable=False)      # kindergarten, selective, year1-6
+    subject = Column(String(50), nullable=False)         # thinking_skills, mathematical_reasoning, reading, writing
+    difficulty = Column(String(20), nullable=False)      # easy, medium, hard
+    num_topics = Column(Integer, nullable=False)
+    topics = Column(JSON, nullable=False)                # Stores list of topic objects
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class StudentLogin(BaseModel):
     student_id: str  # e.g., Gem001, Gem002
     password: str
