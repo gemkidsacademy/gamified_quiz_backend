@@ -101,6 +101,25 @@ class Quiz(Base):
     topics = Column(JSON, nullable=False)                # Stores list of topic objects
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+
+class Question(Base):
+    __tablename__ = "questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String(50), nullable=False)         # kindergarten, selective, year1-6
+    subject = Column(String(50), nullable=False)            # thinking_skills, mathematical_reasoning, reading, writing
+    difficulty = Column(String(20), nullable=False)         # easy, medium, hard
+
+    question_type = Column(String(20), nullable=False)      # 'mcq', 'diagram_mcq', 'text_mcq', etc.
+
+    question_text = Column(Text, nullable=True)             # "Calculate the total number of boys..."
+    question_data = Column(JSON, nullable=True)             # Stores chart numbers: { "A":200, "B":150, "C":180, "D":160 }
+
+    image_url = Column(String(255), nullable=True)          # URL for diagrams like your cycle chart
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class StudentLogin(BaseModel):
     student_id: str  # e.g., Gem001, Gem002
     password: str
