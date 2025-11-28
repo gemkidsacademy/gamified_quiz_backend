@@ -107,30 +107,35 @@ class Question(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    class_name = Column(String(50), nullable=False)         
-    subject = Column(String(50), nullable=False)            
-    difficulty = Column(String(20), nullable=False)         
+    class_name = Column(String(50), nullable=False)
+    subject = Column(String(50), nullable=False)
+    difficulty = Column(String(20), nullable=False)
 
-    question_type = Column(String(20), nullable=False)      
+    question_type = Column(String(50), nullable=False)  
+    # e.g. "domino_multi_image", "chart_mcq", "text_mcq", "two_diagram_mcq"
 
     question_text = Column(Text, nullable=True)
 
-    # NEW — array of image objects
+    # NEW — structured images
     # Example:
     # [
-    #   {"id": "main", "url": "https://cdn.com/q1/main.png"},
-    #   {"id": "option_A", "url": "..."},
-    #   {"id": "option_B", "url": "..."}
+    #   {"role": "sequence", "url": "https://cdn.com/q1/sequence.png"},
+    #   {"role": "option_A", "url": "..."}, 
+    #   {"role": "option_B", "url": "..."}, 
+    #   {"role": "option_C", "url": "..."}, 
+    #   {"role": "option_D", "url": "..."}
     # ]
     images = Column(JSON, nullable=True)
 
-    # Options written as JSON for consistency
-    # Example: { "A": "Option text", "B": "Option text", ... }
+    # NEW — structured options
+    # Example:
+    # { "A": "Option text", "B": "Option text", "C": "Option text", "D": "Option text" }
     options = Column(JSON, nullable=True)
 
     correct_answer = Column(String(5), nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class StudentLogin(BaseModel):
     student_id: str  # e.g., Gem001, Gem002
     password: str
