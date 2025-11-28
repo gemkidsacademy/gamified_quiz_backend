@@ -526,28 +526,30 @@ def retrieve_week_number(request: WeekRequest, db: Session = Depends(get_db)):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-
 @app.post("/login-exam-module")
 def login_exam_module(login_data: StudentLogin, db: Session = Depends(get_db)):
-    # Look up student by ID
-    student = db.query(Student).filter(Student.id == login_data.student_id).first()
+    """
+    Login a student using student_id and password
+    """
+    # Look up student by student_id
+    student = db.query(Student).filter(Student.student_id == login_data.student_id).first()
     
     if not student:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Simple password check (plaintext)
+    # Simple password check (plaintext; replace with hashed check in production)
     if login_data.password != student.password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # Return student info (without password)
     return {
-        "id": student.id,
-        "password": student.password,
+        "student_id": student.student_id,
         "name": student.name,
         "parent_email": student.parent_email,
         "class_name": student.class_name,
         "class_day": student.class_day
     }
+
 
 @app.get("/student-name")
 def get_student_name(student_id: int = Query(...), db: Session = Depends(get_db)):
