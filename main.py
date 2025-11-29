@@ -156,6 +156,8 @@ class Quiz(Base):
     topics = Column(JSON, nullable=False)                # Stores list of topic objects
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    exams = relationship("Exam", back_populates="quiz")
+
 
 class Question(Base):
     __tablename__ = "questions"
