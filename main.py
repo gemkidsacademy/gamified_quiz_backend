@@ -75,6 +75,48 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+#when generate exam is pressed we create a row here
+class Exam(Base):
+    __tablename__ = "exams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
+    questions = Column(JSON, nullable=False)  # list of question objects
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    quiz = relationship("Quiz", back_populates="exams")
+    student_exams = relationship("StudentExam", back_populates="exam")
+
+class StudentExam(Base):
+    __tablename__ = "student_exams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+
+    status = Column(String, default="pending")  # "pending", "completed"
+    score = Column(Integer, default=0)
+
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    exam = relationship("Exam", back_populates="student_exams")
+    answers = relationship("StudentExamAnswer", back_populates="student_exam")
+
+class StudentExamAnswer(Base):
+    __tablename__ = "student_exam_answers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_exam_id = Column(Integer, ForeignKey("student_exams.id"), nullable=False)
+
+    question_id = Column(Integer, nullable=False)      # q_id inside questions JSON
+    student_answer = Column(String, nullable=False)    # e.g. "A"
+    correct_answer = Column(String, nullable=False)    # e.g. "C"
+    is_correct = Column(Boolean, default=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    student_exam = relationship("StudentExam", back_populates="answers")
 
 class Student(Base):
     __tablename__ = "students"
@@ -550,7 +592,155 @@ scheduler.start()
 # Endpoints
 # ---------------------------
             
-        
+# ai_engine.py (for example)
+def generate_exam_questions(quiz):
+    """
+    quiz.topics is like:
+    [
+      {"name": "Probability", "ai": 20, "db": 0, "total": 20},
+      {"name": "Psychology", "ai": 20, "db": 0, "total": 20}
+    ]
+    """
+    questions = []
+    q_id = 1
+
+    for topic in quiz.topics:
+        topic_name = topic["name"]
+        count = int(topic["total"])
+
+        for _ in range(count):
+            questions.append({
+                "q_id": q_id,
+                "topic": topic_name,
+                "question": f"Sample question about {topic_name} (replace with real AI call).",
+                "options": ["Option A", "Option B", "Option C", "Option D"],
+                "correct": "A"  # placeholder
+            })
+            q_id += 1
+
+    return questions
+
+
+@app.post("/api/student-exams/start")
+def start_exam(student_id: int, exam_id: int, db: Session = Depends(get_db)):
+    """
+    A student starts an exam.
+    We create a StudentExam row and return the exam questions to frontend.
+    """
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    # Create student_exam entry
+    student_exam = StudentExam(
+        student_id=student_id,
+        exam_id=exam.id,
+        status="started",
+        started_at=datetime.utcnow()
+    )
+
+    db.add(student_exam)
+    db.commit()
+    db.refresh(student_exam)
+
+    return {
+        "message": "Exam started",
+        "student_exam_id": student_exam.id,
+        "exam_id": exam.id,
+        "questions": exam.questions  # send questions to frontend
+    }
+
+@app.post("/api/student-exams/answer")
+def submit_answer(
+    student_exam_id: int,
+    question_id: int,
+    student_answer: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Save an answer for a question and evaluate correctness.
+    """
+    # 1. Get the exam session
+    student_exam = db.query(StudentExam).filter(
+        StudentExam.id == student_exam_id
+    ).first()
+
+    if not student_exam:
+        raise HTTPException(status_code=404, detail="Student exam session not found")
+
+    # 2. Find the exam the student is taking
+    exam = db.query(Exam).filter(Exam.id == student_exam.exam_id).first()
+
+    # 3. Look for the question inside exam.questions JSON
+    correct_answer = None
+    for q in exam.questions:
+        if q["q_id"] == question_id:
+            correct_answer = q["correct"]
+            break
+
+    if correct_answer is None:
+        raise HTTPException(status_code=400, detail="Invalid question ID")
+
+    # 4. Save answer in DB
+    answer_row = StudentExamAnswer(
+        student_exam_id=student_exam_id,
+        question_id=question_id,
+        student_answer=student_answer,
+        correct_answer=correct_answer,
+        is_correct=(student_answer == correct_answer)
+    )
+
+    db.add(answer_row)
+    db.commit()
+
+    return {
+        "message": "Answer saved",
+        "correct": student_answer == correct_answer
+    }
+
+@app.post("/api/exams/generate/{quiz_id}")
+def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
+    """
+    1. Fetch quiz by quiz_id
+    2. Generate questions using AI logic
+    3. Save exam in 'exams' table
+    4. Return exam JSON to frontend
+    """
+    # 1. Fetch quiz
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    # 2. Generate questions from quiz.topics
+    try:
+        questions = generate_exam_questions(quiz)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate exam: {str(e)}")
+
+    if not questions:
+        raise HTTPException(status_code=500, detail="No questions generated")
+
+    # 3. Save exam in DB
+    new_exam = Exam(
+        quiz_id=quiz.id,
+        questions=questions
+    )
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    # 4. Return to frontend
+    return {
+        "message": "Exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": quiz.id,
+        "class_name": quiz.class_name,
+        "subject": quiz.subject,
+        "difficulty": quiz.difficulty,
+        "questions": questions
+    }
+
+
 @app.post("/retrieve-week-number")
 def retrieve_week_number(request: WeekRequest, db: Session = Depends(get_db)):    
     try:
