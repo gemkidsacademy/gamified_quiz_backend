@@ -89,6 +89,19 @@ class Student(Base):
     class_name = Column(String, nullable=False)         # e.g., Year 1, Year 2, Kindergarten
     class_day = Column(String, nullable=False)  
 
+class TopicInput(BaseModel):
+    name: str
+    ai: int
+    db: int
+    total: int
+
+class QuizCreate(BaseModel):
+    className: str
+    subject: str
+    difficulty: str
+    numTopics: int
+    topics: List[TopicInput]
+
 
 class Quiz(Base):
     __tablename__ = "quizzes"
@@ -627,6 +640,34 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
         "status": quiz.status,
         "created_at": quiz.created_at
     }
+
+#endpoint to save a certain exam for Exam module
+@app.post("/api/quizzes")
+def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
+    """
+    Create a new quiz entry in the database.
+    """
+    try:
+        new_quiz = Quiz(
+            class_name = quiz.class_name,
+            subject = quiz.subject,
+            difficulty = quiz.difficulty,
+            num_topics = quiz.num_topics,
+            topics = quiz.topics,  # Already a JSON field
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        return {
+            "message": "Quiz created successfully",
+            "quiz_id": new_quiz.id
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating quiz: {str(e)}")
 
 def generate_otp():
     return random.randint(100000, 999999)
