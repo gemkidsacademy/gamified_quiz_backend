@@ -683,12 +683,13 @@ def exam_status(student_id: str, subject: str, db: Session = Depends(get_db)):
     quiz = (
         db.query(Quiz)
         .filter(
-            Quiz.class_name == student.class_name.lower(),  # match frontend (e.g., "year3")
-            Quiz.subject == subject  # already in snake_case from frontend
+            func.lower(Quiz.class_name) == student.class_name.lower(),
+            Quiz.subject == subject
         )
         .order_by(Quiz.id.desc())
         .first()
     )
+
 
     if not quiz:
         return {
