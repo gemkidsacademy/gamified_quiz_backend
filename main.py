@@ -644,20 +644,61 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
 @app.post("/api/quizzes")
 def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
-    Create a new quiz entry in the database.
+    Create a new quiz with extensive debugging.
     """
+
+    print("\n========== QUIZ CREATION START ==========")
+    
+    # Print the raw QuizCreate object
+    print("🔍 Incoming QuizCreate object:", quiz)
+
+    # Convert quiz to dict to inspect content
     try:
+        quiz_dict = quiz.dict()
+        print("📦 Parsed quiz payload:", quiz_dict)
+    except Exception as e:
+        print("❌ Failed to convert quiz to dict:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Invalid quiz model: {str(e)}")
+
+    # Debug each field
+    print("➡️ class_name:", quiz.class_name, type(quiz.class_name))
+    print("➡️ subject:", quiz.subject, type(quiz.subject))
+    print("➡️ difficulty:", quiz.difficulty, type(quiz.difficulty))
+    print("➡️ num_topics:", quiz.num_topics, type(quiz.num_topics))
+    print("➡️ topics:", quiz.topics, type(quiz.topics))
+
+    # Validate topics field
+    if not isinstance(quiz.topics, list):
+        print("❌ ERROR: topics is not a list")
+        raise HTTPException(status_code=400, detail="topics must be a list")
+
+    print("📝 Topics count:", len(quiz.topics))
+    for i, t in enumerate(quiz.topics):
+        print(f"   └─ Topic {i}: {t}")
+
+    try:
+        print("\n--- Creating SQLAlchemy Quiz object ---")
         new_quiz = Quiz(
             class_name = quiz.class_name,
             subject = quiz.subject,
             difficulty = quiz.difficulty,
             num_topics = quiz.num_topics,
-            topics = quiz.topics,  # Already a JSON field
+            topics = quiz.topics,  # JSON field
         )
+        print("✅ SQLAlchemy object created:", new_quiz)
 
+        print("\n--- Adding to DB session ---")
         db.add(new_quiz)
+
+        print("\n--- Attempting commit ---")
         db.commit()
+        print("✅ Commit successful!")
+
         db.refresh(new_quiz)
+        print("🔄 Refreshed object:", new_quiz)
+
+        print("========== QUIZ CREATION COMPLETE ==========\n")
 
         return {
             "message": "Quiz created successfully",
@@ -665,9 +706,13 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         }
 
     except Exception as e:
+        print("\n❌ EXCEPTION DURING DB OPERATION ❌")
+        print("Error message:", str(e))
+        traceback.print_exc()
+
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error creating quiz: {str(e)}")
-
+     
 def generate_otp():
     return random.randint(100000, 999999)
 
