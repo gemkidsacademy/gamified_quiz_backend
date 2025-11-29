@@ -932,6 +932,29 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
 
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error creating quiz: {str(e)}")
+
+
+@app.get("/api/quizzes")
+def get_quizzes(db: Session = Depends(get_db)):
+    """
+    Return a minimal list of quiz requirement entries for frontend selection.
+    """
+    try:
+        quizzes = db.query(Quiz).order_by(Quiz.id.desc()).all()
+        return [
+            {
+                "id": q.id,
+                "class_name": q.class_name,
+                "subject": q.subject,
+                "difficulty": q.difficulty
+            }
+            for q in quizzes
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching quizzes: {str(e)}")
+
+
      
 def generate_otp():
     return random.randint(100000, 999999)
