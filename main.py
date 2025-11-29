@@ -595,12 +595,9 @@ scheduler.start()
 # ai_engine.py (for example)
 def generate_exam_questions(quiz):
     """
-    quiz.topics is like:
-    [
-      {"name": "Probability", "ai": 20, "db": 0, "total": 20},
-      {"name": "Psychology", "ai": 20, "db": 0, "total": 20}
-    ]
+    Generate exam questions using OpenAI based on quiz topics.
     """
+
     questions = []
     q_id = 1
 
@@ -608,13 +605,45 @@ def generate_exam_questions(quiz):
         topic_name = topic["name"]
         count = int(topic["total"])
 
-        for _ in range(count):
+        # Clean, safe multi-line prompt
+        system_prompt = (
+            "You are an expert exam generator. "
+            f"Create {count} multiple-choice questions for the topic: {topic_name}.\n\n"
+            "Return the output STRICTLY as a JSON list, like this:\n"
+            "[\n"
+            "  {\n"
+            "    \"question\": \"...\",\n"
+            "    \"options\": [\"A\", \"B\", \"C\", \"D\"],\n"
+            "    \"correct\": \"A\"\n"
+            "  }\n"
+            "]\n\n"
+            "Rules:\n"
+            f"- Generate EXACTLY {count} questions.\n"
+            "- Each question must have exactly 4 options.\n"
+            "- The 'correct' field must match one of the 4 options.\n"
+            "- Do NOT add any explanation, commentary, or text outside the JSON.\n"
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": system_prompt}],
+                temperature=0.5
+            )
+
+            raw_output = response.choices[0].message.content.strip()
+            generated = json.loads(raw_output)
+
+        except Exception as e:
+            raise Exception(f"AI generation failed for topic '{topic_name}': {str(e)}")
+
+        for item in generated:
             questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
-                "question": f"Sample question about {topic_name} (replace with real AI call).",
-                "options": ["Option A", "Option B", "Option C", "Option D"],
-                "correct": "A"  # placeholder
+                "question": item["question"],
+                "options": item["options"],
+                "correct": item["correct"]
             })
             q_id += 1
 
