@@ -76,47 +76,6 @@ otp_store = {}
 # Models
 # ---------------------------
 #when generate exam is pressed we create a row here
-class Exam(Base):
-    __tablename__ = "exams"
-
-    id = Column(Integer, primary_key=True, index=True)
-    quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
-    questions = Column(JSON, nullable=False)  # list of question objects
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    quiz = relationship("Quiz", back_populates="exams")
-    student_exams = relationship("StudentExam", back_populates="exam")
-
-class StudentExam(Base):
-    __tablename__ = "student_exams"
-
-    id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
-    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
-
-    status = Column(String, default="pending")  # "pending", "completed"
-    score = Column(Integer, default=0)
-
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-
-    exam = relationship("Exam", back_populates="student_exams")
-    answers = relationship("StudentExamAnswer", back_populates="student_exam")
-
-class StudentExamAnswer(Base):
-    __tablename__ = "student_exam_answers"
-
-    id = Column(Integer, primary_key=True, index=True)
-    student_exam_id = Column(Integer, ForeignKey("student_exams.id"), nullable=False)
-
-    question_id = Column(Integer, nullable=False)      # q_id inside questions JSON
-    student_answer = Column(String, nullable=False)    # e.g. "A"
-    correct_answer = Column(String, nullable=False)    # e.g. "C"
-    is_correct = Column(Boolean, default=False)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    student_exam = relationship("StudentExam", back_populates="answers")
 
 class Student(Base):
     __tablename__ = "students"
@@ -375,6 +334,50 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     # Establish relationship with sessions
     sessions = relationship("SessionModel", back_populates="user", cascade="all, delete-orphan")
+
+
+class Exam(Base):
+    __tablename__ = "exams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
+    questions = Column(JSON, nullable=False)  # list of question objects
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    quiz = relationship("Quiz", back_populates="exams")
+    student_exams = relationship("StudentExam", back_populates="exam")
+
+class StudentExam(Base):
+    __tablename__ = "student_exams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+
+    status = Column(String, default="pending")  # "pending", "completed"
+    score = Column(Integer, default=0)
+
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    exam = relationship("Exam", back_populates="student_exams")
+    answers = relationship("StudentExamAnswer", back_populates="student_exam")
+
+class StudentExamAnswer(Base):
+    __tablename__ = "student_exam_answers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_exam_id = Column(Integer, ForeignKey("student_exams.id"), nullable=False)
+
+    question_id = Column(Integer, nullable=False)      # q_id inside questions JSON
+    student_answer = Column(String, nullable=False)    # e.g. "A"
+    correct_answer = Column(String, nullable=False)    # e.g. "C"
+    is_correct = Column(Boolean, default=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    student_exam = relationship("StudentExam", back_populates="answers")
+
 
 
 
