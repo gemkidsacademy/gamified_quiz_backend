@@ -660,6 +660,108 @@ def generate_exam_questions(quiz):
 
     return questions
 
+@app.get("/api/student/exam-status")
+def exam_status(student_id: str, subject: str, db: Session = Depends(get_db)):
+    """
+    Returns:
+    {
+        "started": true/false,
+        "completed": true/false,
+        "attempts_used": 1,
+        "attempts_allowed": 3,
+        "total_questions": 40,
+        "exam_id": 12
+    }
+    """
+
+    # 1. Validate student exists
+    student = db.query(Student).filter(Student.student_id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    # 2. Find a quiz requirement for this student's class and subject
+    quiz = (
+        db.query(Quiz)
+        .filter(
+            Quiz.class_name == student.class_name.lower(),  # match frontend (e.g., "year3")
+            Quiz.subject == subject  # already in snake_case from frontend
+        )
+        .order_by(Quiz.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        return {
+            "started": False,
+            "completed": False,
+            "attempts_used": 0,
+            "attempts_allowed": 3,
+            "total_questions": 0,
+            "exam_id": None
+        }
+
+    # Total number of questions in this quiz
+    total_questions = sum(t["total"] for t in quiz.topics)
+
+    # 3. Check if student has any exam attempts for this quiz
+    attempts = (
+        db.query(StudentExam)
+        .filter(StudentExam.student_id == student.id, StudentExam.exam_id.isnot(None))
+        .all()
+    )
+
+    attempts_used = len(attempts)
+    attempts_allowed = 3  # your rule (frontend shows 1/3)
+
+    # 4. Find the latest attempt for status
+    latest_attempt = (
+        db.query(StudentExam)
+        .filter(StudentExam.student_id == student.id)
+        .order_by(StudentExam.id.desc())
+        .first()
+    )
+
+    # If no attempts at all
+    if not latest_attempt:
+        return {
+            "started": False,
+            "completed": False,
+            "attempts_used": attempts_used,
+            "attempts_allowed": attempts_allowed,
+            "total_questions": total_questions,
+            "quiz_id": quiz.id,
+            "exam_id": None
+        }
+
+    # 5. Load the exam linked to latest attempt
+    exam = db.query(Exam).filter(Exam.id == latest_attempt.exam_id).first()
+
+    # Exam may not exist yet if not generated
+    if not exam:
+        return {
+            "started": False,
+            "completed": False,
+            "attempts_used": attempts_used,
+            "attempts_allowed": attempts_allowed,
+            "total_questions": total_questions,
+            "quiz_id": quiz.id,
+            "exam_id": None
+        }
+
+    # Determine started & completed status
+    started = latest_attempt.started_at is not None
+    completed = latest_attempt.completed_at is not None
+
+    return {
+        "started": started,
+        "completed": completed,
+        "attempts_used": attempts_used,
+        "attempts_allowed": attempts_allowed,
+        "total_questions": len(exam.questions),
+        "quiz_id": quiz.id,
+        "exam_id": exam.id
+    }
+
 
 @app.post("/api/student-exams/start")
 def start_exam(student_id: int, exam_id: int, db: Session = Depends(get_db)):
