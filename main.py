@@ -685,7 +685,7 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
             subject = quiz.subject,
             difficulty = quiz.difficulty,
             num_topics = quiz.num_topics,
-            topics = quiz.topics,  # JSON field
+            topics = [t.dict() for t in quiz.topics]   # Convert to JSON-safe dict
         )
         print("✅ SQLAlchemy object created:", new_quiz)
 
