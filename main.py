@@ -96,12 +96,11 @@ class TopicInput(BaseModel):
     total: int
 
 class QuizCreate(BaseModel):
-    className: str
+    class_name: str
     subject: str
     difficulty: str
-    numTopics: int
+    num_topics: int
     topics: List[TopicInput]
-
 
 class Quiz(Base):
     __tablename__ = "quizzes"
