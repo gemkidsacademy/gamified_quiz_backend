@@ -1164,35 +1164,51 @@ def submit_answer(
 @app.post("/api/exams/generate/{quiz_id}")
 def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
     """
+    Generates an exam based on quiz topics.
+    
+    Steps:
     1. Fetch quiz by quiz_id
-    2. Generate questions using AI logic
-    3. Save exam in 'exams' table
-    4. Return exam JSON to frontend
+    2. Generate exam questions (AI + DB mix)
+    3. Save exam into 'exams' table
+    4. Return exam to frontend
     """
+
+    # --------------------------------------
     # 1. Fetch quiz
+    # --------------------------------------
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    # 2. Generate questions from quiz.topics
+    # --------------------------------------
+    # 2. Generate questions using AI + DB
+    # --------------------------------------
     try:
-        questions = generate_exam_questions(quiz)
+        questions = generate_exam_questions(quiz, db)   # <-- IMPORTANT: pass db
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate exam: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate exam: {str(e)}"
+        )
 
     if not questions:
         raise HTTPException(status_code=500, detail="No questions generated")
 
-    # 3. Save exam in DB
+    # --------------------------------------
+    # 3. Save exam to DB
+    # --------------------------------------
     new_exam = Exam(
         quiz_id=quiz.id,
         questions=questions
     )
+
     db.add(new_exam)
     db.commit()
     db.refresh(new_exam)
 
-    # 4. Return to frontend
+    # --------------------------------------
+    # 4. Return exam payload to frontend
+    # --------------------------------------
     return {
         "message": "Exam generated successfully",
         "exam_id": new_exam.id,
