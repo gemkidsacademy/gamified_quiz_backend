@@ -663,124 +663,83 @@ def generate_exam_questions(quiz):
 
     return questions
 
-def parse_question_text_v2(text: str):
-    print("\n==================== PARSER START ====================\n")
-    print("RAW INPUT TEXT:")
-    print("------------------------------------------------------")
+
+def parse_question_text_v3(text: str):
+    print("\n====== parse_question_text_v3 START ======")
+    print("RAW BLOCK:")
     print(text)
-    print("------------------------------------------------------\n")
+    print("-----------------------------------------")
 
     data = {}
 
-    # --- Helper to extract fields ---
     def extract(label):
         pattern = rf"{label}\s*:\s*(.+)"
-        print(f"\n[EXTRACT] Looking for label: '{label}' using pattern: {pattern}")
         match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            print(f"[EXTRACT] Found {label}: {value}")
-            return value
-        else:
-            print(f"[EXTRACT] {label} NOT FOUND")
-            return None
+        value = match.group(1).strip() if match else None
+        print(f"🔎 Extract {label}: {value}")
+        return value
 
-    # Extract fields
+    # Header fields
     data["class_name"] = extract("CLASS")
     data["subject"] = extract("SUBJECT")
     data["difficulty"] = extract("DIFFICULTY")
+    data["question_type"] = extract("TYPE") or "multi_image_diagram_mcq"
 
-    # Default type
-    extracted_type = extract("TYPE")
-    if extracted_type:
-        data["question_type"] = extracted_type
-        print(f"[INFO] Using provided question_type: {extracted_type}")
-    else:
-        data["question_type"] = "multi_image_diagram_mcq"
-        print("[INFO] TYPE not found → defaulting to 'multi_image_diagram_mcq'")
-
-    # --- Extract IMAGES ---
-    print("\n[IMAGES] Checking for IMAGES block...")
+    # Images
     images_block = extract("IMAGES")
-
     if images_block:
-        print(f"[IMAGES] Raw images block: {images_block}")
-        images_list = [img.strip() for img in images_block.split(",")]
-        print(f"[IMAGES] Parsed images list: {images_list}")
-        data["images"] = images_list
+        imgs = [i.strip() for i in images_block.split(",")]
+        data["images"] = imgs
     else:
-        print("[IMAGES] No images found. Setting empty list.")
         data["images"] = []
 
-    # --- Extract QUESTION TEXT ---
-    print("\n[PARSER] Extracting QUESTION_TEXT block...")
-    q_text_match = re.search(r"QUESTION_TEXT:\s*(.+?)OPTIONS:", text, re.DOTALL | re.IGNORECASE)
+    print("🖼 IMAGES:", data["images"])
 
-    if q_text_match:
-        q_text = q_text_match.group(1).strip()
-        print("[QUESTION_TEXT] Extracted:")
-        print("------------------------------------------------------")
-        print(q_text)
-        print("------------------------------------------------------")
-        data["question_text"] = q_text
-    else:
-        print("[ERROR] QUESTION_TEXT NOT FOUND!")
-        raise Exception("QUESTION_TEXT missing")
+    # Question text
+    q_text = re.search(
+        r"QUESTION_TEXT:\s*(.+?)(OPTIONS:|$)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL
+    )
+    if not q_text:
+        raise Exception("QUESTION_TEXT missing.")
 
-    # --- Extract OPTIONS ---
-    print("\n[PARSER] Extracting OPTIONS block...")
-    options_block = re.search(r"OPTIONS:\s*(.+?)CORRECT_ANSWER", text, re.DOTALL | re.IGNORECASE)
+    data["question_text"] = q_text.group(1).strip()
+    print("📝 QUESTION_TEXT:", data["question_text"])
 
-    if not options_block:
-        print("[ERROR] OPTIONS block NOT FOUND!")
-        raise Exception("OPTIONS missing")
+    # Options
+    options_match = re.search(
+        r"OPTIONS:\s*(.+?)CORRECT_ANSWER:",
+        text,
+        flags=re.IGNORECASE | re.DOTALL
+    )
+    if not options_match:
+        raise Exception("OPTIONS missing.")
 
-    options_raw = options_block.group(1).strip()
+    raw_options = options_match.group(1).strip()
+    print("📄 OPTIONS BLOCK:\n", raw_options)
 
-    print("[OPTIONS] Raw options block:")
-    print("------------------------------------------------------")
-    print(options_raw)
-    print("------------------------------------------------------")
-
-    # Parse options A–E
-    print("[OPTIONS] Parsing individual options...")
     options = {}
-
-    for line in options_raw.split("\n"):
-        raw_line = line
+    for line in raw_options.split("\n"):
         line = line.strip()
-        print(f"  → Line: '{raw_line}' trimmed: '{line}'")
-
-        # Match A. B. C. etc
-        if re.match(r"[A-E]\.", line):
-            key = line[0]
-            value = line[2:].strip()
-            print(f"    ✔ Detected option {key}: {value}")
+        m = re.match(r"([A-Z])\.?\s*(.+)", line)
+        if m:
+            key, value = m.group(1), m.group(2)
             options[key] = value
-        else:
-            print("    ✘ Not an option line")
 
-    print(f"\n[OPTIONS] Parsed options dict: {options}")
     data["options"] = options
+    print("✅ Parsed OPTIONS:", options)
 
-    # --- Extract correct answer ---
-    print("\n[PARSER] Extracting CORRECT_ANSWER...")
+    # Correct answer
     correct = extract("CORRECT_ANSWER")
+    data["correct_answer"] = correct.replace('"', "").strip()
 
-    if not correct:
-        print("[ERROR] CORRECT_ANSWER NOT FOUND!")
-        raise Exception("CORRECT_ANSWER missing")
-
-    final_correct = correct.strip().replace('"', "")
-    print(f"[CORRECT_ANSWER] Cleaned: {final_correct}")
-
-    data["correct_answer"] = final_correct
-
-    print("\n==================== PARSER OUTPUT ====================")
-    print(data)
-    print("======================================================\n")
+    print("✔ CORRECT_ANSWER:", data["correct_answer"])
+    print("====== parse_question_text_v3 END ======\n")
 
     return data
+
+
 
 @app.post("/upload-word")
 async def upload_word(
@@ -788,54 +747,88 @@ async def upload_word(
     db: Session = Depends(get_db)
 ):
 
-    # ---------- Validate file type ----------
+    print("\n========== UPLOAD-WORD START ==========")
+    print(f"📄 Incoming file: {file.filename}, type={file.content_type}")
+
     allowed = [
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/pdf",
-        "text/plain"
+        "text/plain",
+        "application/pdf"
     ]
     if file.content_type not in allowed:
         raise HTTPException(status_code=400, detail="Invalid file type.")
 
     # ---------- Extract raw text ----------
-    if file.filename.endswith(".docx"):
-        file_bytes = await file.read()
-        doc = docx.Document(BytesIO(file_bytes))
-        raw_text = "\n".join([p.text for p in doc.paragraphs])
-    else:
-        raw_text = (await file.read()).decode("utf-8", errors="ignore")
-
-    # ---------- Normalize text ----------
-    raw_text = raw_text.replace("IMAGES :", "IMAGES:").replace("Images:", "IMAGES:").strip()
-
-    # ---------- Parse question ----------
     try:
-        question_data = parse_question_text_v2(raw_text)
+        if file.filename.endswith(".docx"):
+            content = await file.read()
+            doc = docx.Document(BytesIO(content))
+            raw_text = "\n".join([p.text for p in doc.paragraphs])
+        else:
+            raw_text = (await file.read()).decode("utf-8", errors="ignore")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Parse error: {str(e)}")
+        print("❌ ERROR reading file:", e)
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # ---------- Store in DB ----------
-    new_q = Question(
-        class_name       = question_data.get("class_name"),
-        subject          = question_data.get("subject"),
-        difficulty       = question_data.get("difficulty"),
-        question_type    = question_data.get("question_type"),  # or default
-        question_text    = question_data.get("question_text"),
-        images           = question_data.get("images", []),
-        options          = question_data.get("options", {}),
-        correct_answer   = question_data.get("correct_answer")
-    )
+    print("📌 RAW TEXT EXTRACTED:")
+    print(raw_text)
+    print("----------")
 
-    db.add(new_q)
-    db.commit()
-    db.refresh(new_q)
+    # Normalize formatting
+    raw_text = raw_text.replace("IMAGES :", "IMAGES:").replace("Images:", "IMAGES:")
+
+    # ---------- Split into question blocks ----------
+    blocks = re.split(r"(?=QUESTION_TEXT:)", raw_text, flags=re.IGNORECASE)
+
+    print(f"📦 TOTAL BLOCKS FOUND: {len(blocks)}")
+
+    saved_questions = []
+
+    for idx, block in enumerate(blocks):
+        block = block.strip()
+        if not block or "QUESTION_TEXT:" not in block:
+            continue
+
+        print(f"\n----- PARSING QUESTION BLOCK #{idx+1} -----")
+        print(block)
+        print("------------------------------------------")
+
+        try:
+            q_data = parse_question_text_v3(block)
+            print("✅ Parsed question:", q_data)
+        except Exception as e:
+            print(f"❌ Parsing failed for block #{idx+1}: {e}")
+            continue
+
+        # ---------- Save to DB ----------
+        new_q = Question(
+            class_name=q_data["class_name"],
+            subject=q_data["subject"],
+            difficulty=q_data["difficulty"],
+            question_type=q_data["question_type"],
+            question_text=q_data["question_text"],
+            images=q_data["images"],
+            options=q_data["options"],
+            correct_answer=q_data["correct_answer"]
+        )
+
+        db.add(new_q)
+        db.commit()
+        db.refresh(new_q)
+
+        saved_questions.append(new_q.id)
+
+    if not saved_questions:
+        raise HTTPException(status_code=400, detail="No valid questions found.")
+
+    print("🎉 Upload complete. Questions saved:", saved_questions)
+    print("========== UPLOAD-WORD END ==========\n")
 
     return {
         "status": "success",
-        "message": "Question saved successfully",
-        "question_id": new_q.id
+        "saved_questions": saved_questions,
+        "count": len(saved_questions)
     }
-
 
 
 
