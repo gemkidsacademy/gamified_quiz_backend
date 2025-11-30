@@ -84,6 +84,29 @@ QuestionSchema = {
     "additionalProperties": False
 }
 
+# -----------------------------
+# Google Cloud Storage Setup
+# -----------------------------
+# Path to your service account JSON for GCS
+service_account_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+if not service_account_json:
+    raise ValueError("Environment variable 'GOOGLE_APPLICATION_CREDENTIALS_JSON' is missing.")
+
+# 2️⃣ Replace literal "\n" with actual newlines for the private key
+service_account_info = json.loads(service_account_json)
+service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+
+# 3️⃣ Initialize GCS client with credentials
+gcs_client = storage.Client(
+    credentials=Credentials.from_service_account_info(service_account_info),
+    project=service_account_info["project_id"]
+)
+
+# 4️⃣ Access your bucket
+gcs_bucket_name = "exammoduleimages"
+gcs_bucket = gcs_client.bucket(gcs_bucket_name)
+
+print(f"✅ Initialized GCS client for bucket: {gcs_bucket_name}")
 
 def get_db():
     db = SessionLocal()
@@ -882,6 +905,69 @@ def parse_question_text_v3(text: str):
     print("====== parse_question_text_v3 END ======\n")
 
     return data
+
+
+def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
+    """Upload a file to Google Cloud Storage and return the public URL."""
+    if not BUCKET_NAME:
+        raise Exception("GCS_BUCKET_NAME environment variable not set!")
+
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(BUCKET_NAME)
+
+    # Generate unique filename to avoid collisions
+    unique_name = f"{uuid.uuid4()}_{filename}"
+
+    blob = bucket.blob(unique_name)
+    blob.upload_from_string(file_bytes, content_type="image/png")
+
+    # Make public
+    blob.make_public()
+
+    return blob.public_url
+
+
+@app.post("/upload-image-folder")
+async def upload_image_folder(images: List[UploadFile] = File(...)):
+    print("\n====================== FOLDER UPLOAD START ======================\n")
+    print(f"[INFO] Number of received files: {len(images)}")
+
+    if not images:
+        raise HTTPException(status_code=400, detail="No images received.")
+
+    uploaded_urls = []
+
+    for file in images:
+        try:
+            print("\n-----------------------------------------------------------")
+            print(f"[FILE] Original filename: {file.filename}")
+            print(f"[FILE] Content type: {file.content_type}")
+
+            # Read file bytes
+            file_bytes = await file.read()
+
+            # Upload to GCS
+            url = upload_to_gcs(file_bytes, file.filename)
+
+            print(f"[UPLOAD SUCCESS] → {url}")
+
+            uploaded_urls.append({
+                "original_name": file.filename,
+                "url": url
+            })
+
+        except Exception as e:
+            print(f"[ERROR] Failed to upload file '{file.filename}'")
+            print(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
+
+    print("\n====================== FOLDER UPLOAD END ========================\n")
+
+    return {
+        "status": "success",
+        "message": f"{len(uploaded_urls)} images uploaded successfully.",
+        "files": uploaded_urls
+    }
 
 
 @app.post("/upload-word")
