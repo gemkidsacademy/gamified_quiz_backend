@@ -61,6 +61,30 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+QuestionSchema = {
+    "type": "object",
+    "properties": {
+        "class_name": {"type": "string"},
+        "subject": {"type": "string"},
+        "topic": {"type": "string"},
+        "difficulty": {"type": "string"},
+        "question_text": {"type": "string"},
+        "images": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+        "options": {
+            "type": "object",
+            "additionalProperties": {"type": "string"}
+        },
+        "correct_answer": {"type": "string"},
+        "partial": {"type": "boolean"}
+    },
+    "required": ["question_text", "options", "correct_answer"],
+    "additionalProperties": False
+}
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -605,7 +629,52 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
-            
+def chunk_into_pages(paragraphs, per_page=30):
+    pages = []
+    for i in range(0, len(paragraphs), per_page):
+        pages.append("\n".join(paragraphs[i:i+per_page]))
+    return pages
+
+def group_pages(pages, size=5):
+    return [ "\n".join(pages[i:i+size]) for i in range(0, len(pages), size) ]
+ 
+async def parse_with_gpt(block_text: str):
+    completion = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "QuestionList",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "questions": {
+                            "type": "array",
+                            "items": QuestionSchema
+                        }
+                    },
+                    "required": ["questions"]
+                }
+            }
+        },
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a document parser. Extract ALL quiz questions from the text. "
+                    "Return ONLY JSON. If a question is incomplete because the text ends mid-question, "
+                    "include it but set partial=true."
+                )
+            },
+            {
+                "role": "user",
+                "content": block_text
+            }
+        ]
+    )
+    return completion.choices[0].message.parsed
+
+
 # ai_engine.py (for example)
 def generate_exam_questions(quiz):
     """
@@ -747,103 +816,99 @@ def parse_question_text_v3(text: str):
     return data
 
 
-
 @app.post("/upload-word")
 async def upload_word(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
 
-    print("\n========== UPLOAD-WORD START ==========")
-    print(f"📄 Incoming file: {file.filename}, type={file.content_type}")
+    print("\n========== GPT-UPLOAD-WORD START ==========")
+    print(f"📄 Incoming file: {file.filename} (type={file.content_type})")
 
-    allowed = [
+    # -----------------------------
+    # Validate file type
+    # -----------------------------
+    allowed = {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "text/plain",
-        "application/pdf"
-    ]
+        "text/plain"
+    }
     if file.content_type not in allowed:
         raise HTTPException(status_code=400, detail="Invalid file type.")
 
-    # ---------- Extract raw text ----------
+    # -----------------------------
+    # Extract raw text
+    # -----------------------------
     try:
-        if file.filename.endswith(".docx"):
-            content = await file.read()
-            doc = docx.Document(BytesIO(content))
-            raw_text = "\n".join([p.text for p in doc.paragraphs])
-        else:
-            raw_text = (await file.read()).decode("utf-8", errors="ignore")
+        content = await file.read()
+        doc = docx.Document(BytesIO(content))
+        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
     except Exception as e:
-        print("❌ ERROR reading file:", e)
-        raise HTTPException(status_code=400, detail=str(e))
+        print("❌ Error reading DOCX:", e)
+        raise HTTPException(status_code=400, detail="Failed to read file.")
 
-    print("📌 RAW TEXT EXTRACTED:")
-    print(raw_text)
-    print("----------")
+    # -----------------------------
+    # Convert to 5-page chunks
+    # -----------------------------
+    pages = chunk_into_pages(paragraphs, per_page=30)
+    page_groups = group_pages(pages, size=5)
 
-    # Normalize formatting
-    raw_text = raw_text.replace("IMAGES :", "IMAGES:").replace("Images:", "IMAGES:")
+    print(f"📄 Total pages: {len(pages)}")
+    print(f"📦 Blocks to process (chunks of 5 pages): {len(page_groups)}")
 
-    # ---------- Split into question blocks ----------
-    # Split blocks by one blank line
-    blocks = re.split(r"(?:\n\s*\n|[_\W]{5,})", raw_text.strip())
+    all_questions = []
 
+    # -----------------------------
+    # Process each chunk via GPT
+    # -----------------------------
+    for idx, block in enumerate(page_groups, start=1):
+        print(f"\n--- GPT Parsing Block {idx}/{len(page_groups)} ---")
 
+        result = await parse_with_gpt(block)
+        questions = result.get("questions", [])
 
+        print(f"🧩 GPT found {len(questions)} questions in block {idx}")
+        all_questions.extend(questions)
 
-    print(f"📦 TOTAL BLOCKS FOUND: {len(blocks)}")
+    # -----------------------------
+    # Save valid (non-partial) questions
+    # -----------------------------
+    saved_ids = []
 
-    saved_questions = []
-
-    for idx, block in enumerate(blocks):
-        block = block.strip()
-        print("\n=== DEBUG BLOCK ===")
-        print(block)
-        print("===================")
-
-        if not block or "QUESTION_TEXT:" not in block:
+    for q in all_questions:
+        if q.get("partial"):
+            print("⚠ Skipping partial question")
             continue
 
-        print(f"\n----- PARSING QUESTION BLOCK #{idx+1} -----")
-        print(block)
-        print("------------------------------------------")
-
-        try:
-            q_data = parse_question_text_v3(block)
-            print("✅ Parsed question:", q_data)
-        except Exception as e:
-            print(f"❌ Parsing failed for block #{idx+1}: {e}")
-            continue
-
-        # ---------- Save to DB ----------
         new_q = Question(
-            class_name=q_data["class_name"],
-            subject=q_data["subject"],
-            difficulty=q_data["difficulty"],
-            question_type=q_data["question_type"],
-            question_text=q_data["question_text"],
-            images=q_data["images"],
-            options=q_data["options"],
-            correct_answer=q_data["correct_answer"]
+            class_name=q.get("class_name"),
+            subject=q.get("subject"),
+            topic=q.get("topic"),
+            difficulty=q.get("difficulty"),
+            question_type="multi_image_diagram_mcq",
+            question_text=q.get("question_text"),
+            images=q.get("images") or [],
+            options=q.get("options"),
+            correct_answer=q.get("correct_answer")
         )
 
         db.add(new_q)
         db.commit()
         db.refresh(new_q)
 
-        saved_questions.append(new_q.id)
+        saved_ids.append(new_q.id)
 
-    if not saved_questions:
-        raise HTTPException(status_code=400, detail="No valid questions found.")
+    if not saved_ids:
+        raise HTTPException(status_code=400, detail="No valid questions parsed.")
 
-    print("🎉 Upload complete. Questions saved:", saved_questions)
-    print("========== UPLOAD-WORD END ==========\n")
+    print("\n🎉 GPT Upload complete. Questions saved:", saved_ids)
+    print("========== GPT-UPLOAD-WORD END ==========\n")
 
     return {
         "status": "success",
-        "saved_questions": saved_questions,
-        "count": len(saved_questions)
+        "saved_questions": saved_ids,
+        "count": len(saved_ids)
     }
+
 
 
 
