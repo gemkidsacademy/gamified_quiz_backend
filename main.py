@@ -675,7 +675,8 @@ async def parse_with_gpt(block_text: str):
         ]
     )
 
-    return completion.choices[0].message.parsed
+    raw = completion.choices[0].message.content
+    return json.loads(raw)
 
 
 # ai_engine.py (for example)
