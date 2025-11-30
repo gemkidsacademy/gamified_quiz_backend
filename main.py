@@ -785,7 +785,13 @@ async def upload_word(
     raw_text = raw_text.replace("IMAGES :", "IMAGES:").replace("Images:", "IMAGES:")
 
     # ---------- Split into question blocks ----------
-    blocks = re.split(r"(?=QUESTION_TEXT:)", raw_text, flags=re.IGNORECASE)
+    # Split blocks by one blank line
+    blocks = re.split(r"\n\s*\n", raw_text.strip())
+    print("\n=== DEBUG BLOCK ===")
+    print(block)
+    print("===================")
+
+
 
     print(f"📦 TOTAL BLOCKS FOUND: {len(blocks)}")
 
