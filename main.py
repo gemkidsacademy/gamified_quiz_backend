@@ -786,7 +786,8 @@ async def upload_word(
 
     # ---------- Split into question blocks ----------
     # Split blocks by one blank line
-    blocks = re.split(r"(?:\n\s*\n|_{5,})", raw_text.strip())
+    blocks = re.split(r"(?:\n\s*\n|[_\W]{5,})", raw_text.strip())
+
 
 
 
