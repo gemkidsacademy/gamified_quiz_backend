@@ -3,6 +3,8 @@ from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
+import docx
+
 from typing import List
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta,date
