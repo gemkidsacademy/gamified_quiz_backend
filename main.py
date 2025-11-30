@@ -664,6 +664,7 @@ def generate_exam_questions(quiz):
     return questions
 
 
+
 def parse_question_text_v3(text: str):
     print("\n====== parse_question_text_v3 START ======")
     print("RAW BLOCK:")
@@ -679,10 +680,16 @@ def parse_question_text_v3(text: str):
         print(f"🔎 Extract {label}: {value}")
         return value
 
+    def clean(val):
+        if not val:
+            return val
+        return val.replace('"', "").replace("“", "").replace("”", "").strip()
+
     # Header fields
-    data["class_name"] = extract("CLASS")
-    data["subject"] = extract("SUBJECT")
-    data["difficulty"] = extract("DIFFICULTY")
+    data["class_name"] = clean(extract("CLASS"))
+    data["subject"] = clean(extract("SUBJECT"))
+    data["topic"] = clean(extract("TOPIC"))
+    data["difficulty"] = clean(extract("DIFFICULTY"))
     data["question_type"] = extract("TYPE") or "multi_image_diagram_mcq"
 
     # Images
@@ -732,7 +739,7 @@ def parse_question_text_v3(text: str):
 
     # Correct answer
     correct = extract("CORRECT_ANSWER")
-    data["correct_answer"] = correct.replace('"', "").strip()
+    data["correct_answer"] = clean(correct)
 
     print("✔ CORRECT_ANSWER:", data["correct_answer"])
     print("====== parse_question_text_v3 END ======\n")
