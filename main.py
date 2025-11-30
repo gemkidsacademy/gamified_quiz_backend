@@ -787,10 +787,7 @@ async def upload_word(
     # ---------- Split into question blocks ----------
     # Split blocks by one blank line
     blocks = re.split(r"\n\s*\n", raw_text.strip())
-    print("\n=== DEBUG BLOCK ===")
-    print(block)
-    print("===================")
-
+    
 
 
     print(f"📦 TOTAL BLOCKS FOUND: {len(blocks)}")
@@ -799,6 +796,10 @@ async def upload_word(
 
     for idx, block in enumerate(blocks):
         block = block.strip()
+        print("\n=== DEBUG BLOCK ===")
+        print(block)
+        print("===================")
+
         if not block or "QUESTION_TEXT:" not in block:
             continue
 
