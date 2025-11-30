@@ -4,7 +4,7 @@ from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 import docx
-
+from io import BytesIO
 from typing import List
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta,date
@@ -799,7 +799,8 @@ async def upload_word(
 
     # ---------- Extract raw text ----------
     if file.filename.endswith(".docx"):
-        doc = docx.Document(await file.read())
+        file_bytes = await file.read()
+        doc = docx.Document(BytesIO(file_bytes))
         raw_text = "\n".join([p.text for p in doc.paragraphs])
     else:
         raw_text = (await file.read()).decode("utf-8", errors="ignore")
