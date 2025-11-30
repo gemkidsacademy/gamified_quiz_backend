@@ -675,61 +675,130 @@ async def parse_with_gpt(block_text: str):
 
 
 # ai_engine.py (for example)
-def generate_exam_questions(quiz):
-    """
-    Generate exam questions using OpenAI based on quiz topics.
-    """
+def generate_exam_questions(quiz, db):
+    print("\n===================== GENERATE EXAM START =====================\n")
+    print("QUIZ RECEIVED FROM DATABASE:")
+    print("---------------------------------------------------------------")
+    print(f"Quiz ID: {quiz.id}")
+    print(f"Class: {quiz.class_name}")
+    print(f"Subject: {quiz.subject}")
+    print(f"Difficulty: {quiz.difficulty}")
+    print(f"Topics: {quiz.topics}")
+    print("---------------------------------------------------------------\n")
 
-    questions = []
+    all_questions = []
     q_id = 1
 
+    # Iterate over each quiz topic
     for topic in quiz.topics:
-        topic_name = topic["name"]
-        count = int(topic["total"])
+        print("\n===================== PROCESSING TOPIC =====================")
+        print(f"Topic Raw Data: {topic}")
 
-        # Clean, safe multi-line prompt
-        system_prompt = (
-            "You are an expert exam generator. "
-            f"Create {count} multiple-choice questions for the topic: {topic_name}.\n\n"
-            "Return the output STRICTLY as a JSON list, like this:\n"
-            "[\n"
-            "  {\n"
-            "    \"question\": \"...\",\n"
-            "    \"options\": [\"A\", \"B\", \"C\", \"D\"],\n"
-            "    \"correct\": \"A\"\n"
-            "  }\n"
-            "]\n\n"
-            "Rules:\n"
-            f"- Generate EXACTLY {count} questions.\n"
-            "- Each question must have exactly 4 options.\n"
-            "- The 'correct' field must match one of the 4 options.\n"
-            "- Do NOT add any explanation, commentary, or text outside the JSON.\n"
-        )
+        topic_name = topic.get("name")
+        ai_count = int(topic.get("ai", 0))
+        db_count = int(topic.get("db", 0))
+
+        print(f"Topic Name: {topic_name}")
+        print(f"AI Count: {ai_count}")
+        print(f"DB Count: {db_count}")
+        print("============================================================\n")
+
+        # ===============================================================
+        # 1. FETCH QUESTIONS FROM DATABASE
+        # ===============================================================
+        print(f"[DB FETCH] Fetching {db_count} questions for topic: '{topic_name}'")
 
         try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "system", "content": system_prompt}],
-                temperature=0.5
+            db_questions = (
+                db.query(Question)
+                  .filter(Question.topic == topic_name)
+                  .order_by(func.random())
+                  .limit(db_count)
+                  .all()
             )
-
-            raw_output = response.choices[0].message.content.strip()
-            generated = json.loads(raw_output)
-
         except Exception as e:
-            raise Exception(f"AI generation failed for topic '{topic_name}': {str(e)}")
+            print("[DB ERROR] While fetching DB questions:", str(e))
+            raise
 
-        for item in generated:
-            questions.append({
+        print(f"[DB FETCH] Retrieved {len(db_questions)} questions.")
+        for q in db_questions:
+            print(f"  → DB Question ID: {q.id}, Text: {q.question_text[:60]}...")
+
+        # Append DB questions to final list
+        for q in db_questions:
+            item = {
                 "q_id": q_id,
                 "topic": topic_name,
-                "question": item["question"],
-                "options": item["options"],
-                "correct": item["correct"]
-            })
+                "question": q.question_text,
+                "options": q.options,
+                "correct": q.correct_answer,
+                "images": q.images or []
+            }
+            print(f"[APPEND DB] Adding question #{q_id}: {item}")
+            all_questions.append(item)
             q_id += 1
 
-    return questions
+        # ===============================================================
+        # 2. GENERATE QUESTIONS USING OPENAI
+        # ===============================================================
+        if ai_count > 0:
+
+            print(f"\n[AI GEN] Generating {ai_count} AI questions for topic '{topic_name}'")
+            print("---------------------------------------------------------------")
+            system_prompt = (
+                "You are an expert exam generator.\n"
+                f"Create {ai_count} MCQs for the topic: {topic_name}.\n\n"
+                "Return STRICT JSON:\n"
+                "[{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct\":\"A\"}]\n"
+                "NO explanations. ONLY JSON."
+            )
+
+            print("[AI GEN] PROMPT:")
+            print(system_prompt)
+            print("---------------------------------------------------------------")
+
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "system", "content": system_prompt}],
+                    temperature=0.4
+                )
+
+                raw_output = response.choices[0].message.content.strip()
+
+                print("[AI RAW OUTPUT]")
+                print("---------------------------------------------------------------")
+                print(raw_output)
+                print("---------------------------------------------------------------\n")
+
+                generated = json.loads(raw_output)
+
+            except Exception as e:
+                print("[AI ERROR] AI failed for topic:", topic_name)
+                print("Error Details:", str(e))
+                raise
+
+            print(f"[AI GEN] Parsed {len(generated)} questions from OpenAI")
+
+            for item in generated:
+                question_obj = {
+                    "q_id": q_id,
+                    "topic": topic_name,
+                    "question": item.get("question"),
+                    "options": item.get("options"),
+                    "correct": item.get("correct"),
+                    "images": []
+                }
+                print(f"[APPEND AI] Adding AI question #{q_id}: {question_obj}")
+                all_questions.append(question_obj)
+                q_id += 1
+
+    print("\n==================== FINAL QUESTION COUNT ====================")
+    print(f"TOTAL QUESTIONS GENERATED: {len(all_questions)}")
+    print("================================================================\n")
+
+    return all_questions
+
 
 
 
