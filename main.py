@@ -16,7 +16,7 @@ from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
 import re 
 import traceback
- 
+from openai import AsyncOpenAI
 
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
@@ -96,6 +96,7 @@ def get_db():
 # OpenAI Client
 # ---------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
+client_save_questions = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 otp_store = {}
 # ---------------------------
@@ -639,7 +640,7 @@ def group_pages(pages, size=5):
     return [ "\n".join(pages[i:i+size]) for i in range(0, len(pages), size) ]
  
 async def parse_with_gpt(block_text: str):
-    completion = await client.chat.completions.create(
+    completion = await client_save_questions.chat.completions.create(
         model="gpt-4o-mini",
         response_format={
             "type": "json_schema",
@@ -662,8 +663,9 @@ async def parse_with_gpt(block_text: str):
                 "role": "system",
                 "content": (
                     "You are a document parser. Extract ALL quiz questions from the text. "
-                    "Return ONLY JSON. If a question is incomplete because the text ends mid-question, "
-                    "include it but set partial=true."
+                    "Return ONLY valid JSON following the provided schema. "
+                    "If a question seems cut off (e.g., ends mid-sentence), "
+                    "set partial=true in that question object."
                 )
             },
             {
@@ -672,6 +674,7 @@ async def parse_with_gpt(block_text: str):
             }
         ]
     )
+
     return completion.choices[0].message.parsed
 
 
