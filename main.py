@@ -20,6 +20,7 @@ from openai import AsyncOpenAI
 
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
+from google.cloud import storage
 
 
 
