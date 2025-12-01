@@ -17,6 +17,7 @@ from typing import List, Dict, Any, Optional
 import re 
 import traceback
 from openai import AsyncOpenAI
+from google.oauth2.service_account import Credentials
 
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
