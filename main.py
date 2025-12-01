@@ -44,6 +44,8 @@ from sqlalchemy.ext.mutable import MutableDict
 from openai import OpenAI
 from apscheduler.schedulers.background import BackgroundScheduler
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+GLOBAL_IMAGE_MAP = {}
+
 # ---------------------------
 # Database Setup PGUSER,PGPASSWORD,PGHOST,PGPORT,PGDATABASE rewrite "" using PGPASSWORD=lgZmFsBTApVPJIyTegBttTLfdWnvccHj psql -h metro.proxy.rlwy.net -U postgres -p 31631 -d railway
 # ---------------------------
@@ -972,8 +974,15 @@ async def upload_image_folder(images: List[UploadFile] = File(...)):
 
             print(f"[UPLOAD SUCCESS] → {url}")
 
+            # --- NEW: Extract clean filename ---
+            clean_name = file.filename.split("/")[-1].split("\\")[-1]
+
+            # --- NEW: Save to global map ---
+            GLOBAL_IMAGE_MAP[clean_name] = url
+            print(f"[MAP] {clean_name} → {url}")
+
             uploaded_urls.append({
-                "original_name": file.filename,
+                "original_name": clean_name,
                 "url": url
             })
 
@@ -989,6 +998,7 @@ async def upload_image_folder(images: List[UploadFile] = File(...)):
         "message": f"{len(uploaded_urls)} images uploaded successfully.",
         "files": uploaded_urls
     }
+
 
 
 @app.post("/upload-word")
@@ -1053,7 +1063,17 @@ async def upload_word(
         if q.get("partial"):
             print("⚠ Skipping partial question")
             continue
-
+    
+        # --- Image filename → URL mapping ---
+        resolved_images = []
+        for img in q.get("images") or []:
+            if img in GLOBAL_IMAGE_MAP:
+                resolved_images.append(GLOBAL_IMAGE_MAP[img])
+                print(f"🔗 Mapped {img} → {GLOBAL_IMAGE_MAP[img]}")
+            else:
+                print(f"⚠ Image not found in map: {img}")
+                resolved_images.append(img)  # fallback
+                
         new_q = Question(
             class_name=q.get("class_name"),
             subject=q.get("subject"),
@@ -1061,15 +1081,15 @@ async def upload_word(
             difficulty=q.get("difficulty"),
             question_type="multi_image_diagram_mcq",
             question_text=q.get("question_text"),
-            images=q.get("images") or [],
+            images=resolved_images,
             options=q.get("options"),
             correct_answer=q.get("correct_answer")
         )
-
+    
         db.add(new_q)
         db.commit()
         db.refresh(new_q)
-
+    
         saved_ids.append(new_q.id)
 
     if not saved_ids:
