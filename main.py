@@ -933,7 +933,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
             file_bytes,
             content_type="image/png"
         )
-        blob.make_public()
+        
 
         print(f"[GCS] Uploaded successfully → {blob.public_url}")
         print("================== GCS UPLOAD END ==================\n")
