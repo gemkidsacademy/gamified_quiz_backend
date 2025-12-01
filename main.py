@@ -917,28 +917,30 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
     print(f"[GCS] Bucket: {BUCKET_NAME}")
 
     if not BUCKET_NAME:
-        raise Exception("BUCKET_NAME is not set!")
+        raise Exception("BUCKET_NAME environment variable not set!")
 
-    # Use the PRE-CONFIGURED global client with service account credentials
     bucket = gcs_client.bucket(BUCKET_NAME)
 
-    # Create a unique name to prevent overwrite
-    unique_name = f"{uuid.uuid4()}_{filename}"
-    print(f"[GCS] Unique name: {unique_name}")
+    # Strip folder names so only the actual image name remains
+    safe_filename = filename.split("/")[-1]
+    print(f"[GCS] Clean filename: {safe_filename}")
+
+    # Create a unique name
+    unique_name = f"{uuid.uuid4()}_{safe_filename}"
+    print(f"[GCS] Unique stored name: {unique_name}")
 
     blob = bucket.blob(unique_name)
 
     try:
-        blob.upload_from_string(
-            file_bytes,
-            content_type="image/png"
-        )
-        
+        blob.upload_from_string(file_bytes, content_type="image/png")
 
-        print(f"[GCS] Uploaded successfully → {blob.public_url}")
+        # NO make_public() because Uniform Bucket Access is ON
+        public_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{unique_name}"
+
+        print(f"[GCS] Upload successful → {public_url}")
         print("================== GCS UPLOAD END ==================\n")
 
-        return blob.public_url
+        return public_url
 
     except Exception as e:
         print("[GCS ERROR] Upload failed:", str(e))
