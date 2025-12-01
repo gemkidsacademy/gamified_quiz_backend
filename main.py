@@ -911,22 +911,39 @@ def parse_question_text_v3(text: str):
 
 def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
     """Upload a file to Google Cloud Storage and return the public URL."""
+
+    print("\n================== GCS UPLOAD START ==================")
+    print(f"[GCS] Incoming file: {filename}")
+    print(f"[GCS] Bucket: {BUCKET_NAME}")
+
     if not BUCKET_NAME:
-        raise Exception("GCS_BUCKET_NAME environment variable not set!")
+        raise Exception("BUCKET_NAME is not set!")
 
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(BUCKET_NAME)
+    # Use the PRE-CONFIGURED global client with service account credentials
+    bucket = gcs_client.bucket(BUCKET_NAME)
 
-    # Generate unique filename to avoid collisions
+    # Create a unique name to prevent overwrite
     unique_name = f"{uuid.uuid4()}_{filename}"
+    print(f"[GCS] Unique name: {unique_name}")
 
     blob = bucket.blob(unique_name)
-    blob.upload_from_string(file_bytes, content_type="image/png")
 
-    # Make public
-    blob.make_public()
+    try:
+        blob.upload_from_string(
+            file_bytes,
+            content_type="image/png"
+        )
+        blob.make_public()
 
-    return blob.public_url
+        print(f"[GCS] Uploaded successfully → {blob.public_url}")
+        print("================== GCS UPLOAD END ==================\n")
+
+        return blob.public_url
+
+    except Exception as e:
+        print("[GCS ERROR] Upload failed:", str(e))
+        print("================== GCS UPLOAD FAILED ==================\n")
+        raise Exception(f"GCS upload failed: {str(e)}")
 
 
 @app.post("/upload-image-folder")
