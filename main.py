@@ -104,9 +104,9 @@ gcs_client = storage.Client(
     project=service_account_info["project_id"]
 )
 
-# 4️⃣ Access your bucket
-gcs_bucket_name = "exammoduleimages"
-gcs_bucket = gcs_client.bucket(gcs_bucket_name)
+# 4️⃣ Access your bucket (GLOBAL)
+BUCKET_NAME = "exammoduleimages"
+gcs_bucket = gcs_client.bucket(BUCKET_NAME)
 
 print(f"✅ Initialized GCS client for bucket: {gcs_bucket_name}")
 
