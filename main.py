@@ -1056,12 +1056,22 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
 
 
 
+
+
 @app.get("/api/student/get-exam")
 def get_exam(session_id: int, db: Session = Depends(get_db)):
 
     session = db.query(StudentExam).filter(StudentExam.id == session_id).first()
-    exam = db.query(Exam).filter(Exam.id == session.exam_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
 
+    exam = db.query(Exam).filter(Exam.id == session.exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    # -------------------------------------
+    # TIME CALCULATION
+    # -------------------------------------
     now = datetime.utcnow()
     elapsed = (now - session.started_at).total_seconds()
     remaining = session.duration_minutes * 60 - elapsed
@@ -1071,9 +1081,38 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
         db.commit()
         remaining = 0
 
+    # -------------------------------------
+    # SANITIZE QUESTIONS + NORMALIZE OPTIONS
+    # -------------------------------------
+    normalized_questions = []
+
+    for q in exam.questions:
+        fixed = dict(q)
+
+        opts = fixed.get("options")
+
+        # Case 1 — Options missing entirely
+        if opts is None:
+            print(f"⚠️ q_id={fixed.get('q_id')} had no options, fixing to []")
+            fixed["options"] = []
+        
+        # Case 2 — Options is a dict ⇒ convert to array
+        elif isinstance(opts, dict):
+            print(f"⚠️ q_id={fixed.get('q_id')} had dict options, converting → array")
+            fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
+
+        # Case 3 — Options is string or other invalid type
+        elif not isinstance(opts, list):
+            print(f"⚠️ q_id={fixed.get('q_id')} invalid options type ({type(opts)}), fixing to []")
+            fixed["options"] = []
+
+        normalized_questions.append(fixed)
+
+    # -------------------------------------
+
     return {
-        "questions": exam.questions,
-        "total_questions": len(exam.questions),
+        "questions": normalized_questions,
+        "total_questions": len(normalized_questions),
         "remaining_time": int(remaining),
         "completed": session.completed_at is not None
     }
