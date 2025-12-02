@@ -138,27 +138,38 @@ class StudentExam(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    # MUST be String — because students.id is VARCHAR
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
+
     duration_minutes = Column(Integer, default=40)
 
+    # Relationships
+    student = relationship("Student", back_populates="student_exams")
     exam = relationship("Exam", back_populates="student_exams")
-    answers = relationship("StudentExamAnswer", back_populates="student_exam", cascade="all, delete-orphan")
+    answers = relationship(
+        "StudentExamAnswer",
+        back_populates="student_exam",
+        cascade="all, delete-orphan"
+    )
 
  
 class Student(Base):
     __tablename__ = "students"
 
-    id = Column(Integer, primary_key=True, index=True)  # internal numeric PK
-    student_id = Column(String, unique=True, nullable=False)  # "Gem002"
+    id = Column(String, primary_key=True, index=True)  # <-- VARCHAR PK
+    student_id = Column(String, unique=True, nullable=False)  # e.g. "Gem002"
     password = Column(String, nullable=False)
-    name = Column(String, nullable=True)
-    parent_email = Column(String, nullable=True)
+    name = Column(String, nullable=False)
+    parent_email = Column(String, nullable=False)
     class_name = Column(String, nullable=False)
     class_day = Column(String, nullable=True)
+
+    student_exams = relationship("StudentExam", back_populates="student")
   
 
 class TopicInput(BaseModel):
@@ -178,14 +189,15 @@ class Quiz(Base):
     __tablename__ = "quizzes"
 
     id = Column(Integer, primary_key=True, index=True)
-    class_name = Column(String(50), nullable=False)      # kindergarten, selective, year1-6
-    subject = Column(String(50), nullable=False)         # thinking_skills, mathematical_reasoning, reading, writing
-    difficulty = Column(String(20), nullable=False)      # easy, medium, hard
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
     num_topics = Column(Integer, nullable=False)
-    topics = Column(JSON, nullable=False)                # Stores list of topic objects
+    topics = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     exams = relationship("Exam", back_populates="quiz")
+
 
 class Question(Base):
     __tablename__ = "questions"
@@ -415,8 +427,12 @@ class Exam(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     quiz = relationship("Quiz", back_populates="exams")
-    student_exams = relationship("StudentExam", back_populates="exam", cascade="all, delete-orphan")
 
+    student_exams = relationship(
+        "StudentExam",
+        back_populates="exam",
+        cascade="all, delete-orphan"
+    )
 
 
 
@@ -425,7 +441,11 @@ class StudentExamAnswer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_exam_id = Column(Integer, ForeignKey("student_exams.id"), nullable=False)
+    student_exam_id = Column(
+        Integer,
+        ForeignKey("student_exams.id"),
+        nullable=False
+    )
 
     question_id = Column(Integer, nullable=False)
     student_answer = Column(String, nullable=False)
@@ -435,6 +455,7 @@ class StudentExamAnswer(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     student_exam = relationship("StudentExam", back_populates="answers")
+
 
 
 
