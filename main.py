@@ -981,15 +981,10 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 @app.post("/api/student/start-exam")
 def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db)):
-    """
-    Start an exam session based ONLY on student_id (string like 'Gem002').
-    Backend automatically figures out the class, finds the correct quiz,
-    finds/loads the generated exam, and creates the session.
-    """
 
     print("🚀 Received start-exam request:", req.dict())
 
-    # 1️⃣ Validate student using student.student_id (external string ID)
+    # 1️⃣ Validate student
     student = (
         db.query(Student)
         .filter(Student.student_id == req.student_id)
@@ -997,18 +992,33 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not student:
-        print("❌ Student not found:", req.student_id)
-        raise HTTPException(status_code=404, detail="Student not found")
+        raise HTTPException(404, "Student not found")
 
-    print(f"👤 Student OK → DB-ID={student.id}, Code={student.student_id}, Class={student.class_name}")
+    # 2️⃣ Check previous attempt
+    existing_attempt = (
+        db.query(StudentExam)
+        .filter(StudentExam.student_id == student.id)
+        .order_by(StudentExam.id.desc())
+        .first()
+    )
 
-    # Debug all quizzes to see what exists
-    all_quizzes = db.query(Quiz).all()
-    print("📚 All quizzes in DB:")
-    for q in all_quizzes:
-        print(f"   → quiz_id={q.id}, class='{q.class_name}', subject='{q.subject}', difficulty='{q.difficulty}'")
+    # 🛑 CASE 1 — Attempt already completed → DO NOT create new one
+    if existing_attempt and existing_attempt.completed_at is not None:
+        print("🛑 Student already completed exam → returning completed status.")
+        return {
+            "status": "already_completed",
+            "session_id": existing_attempt.id
+        }
 
-    # 2️⃣ Find matching quiz using only class_name (case-insensitive)
+    # 🔄 CASE 2 — Resume unfinished exam
+    if existing_attempt and existing_attempt.completed_at is None:
+        print("🔄 Resuming unfinished exam:", existing_attempt.id)
+        return {
+            "status": "resuming",
+            "session_id": existing_attempt.id
+        }
+
+    # 3️⃣ Load correct exam for the student
     quiz = (
         db.query(Quiz)
         .filter(func.lower(Quiz.class_name) == func.lower(student.class_name))
@@ -1017,12 +1027,8 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not quiz:
-        print(f"❌ No quiz found for class='{student.class_name}'")
-        raise HTTPException(status_code=404, detail="Quiz not found for class")
+        raise HTTPException(404, "Quiz not found for class")
 
-    print(f"🧩 Quiz found: quiz_id={quiz.id}, class={quiz.class_name}, subject={quiz.subject}, difficulty={quiz.difficulty}")
-
-    # 3️⃣ Load generated exam
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
@@ -1031,31 +1037,25 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not exam:
-        print(f"❌ No generated exam for quiz {quiz.id}")
-        raise HTTPException(status_code=404, detail="Exam not generated")
+        raise HTTPException(404, "Exam not generated")
 
-    print(f"📝 Exam found: exam_id={exam.id}, questions={len(exam.questions)}")
-
-    # 4️⃣ Create student exam session
-    session = StudentExam(
-        student_id=student.id,  # internal numeric PK
+    # 4️⃣ Create NEW session only for first attempt
+    new_session = StudentExam(
+        student_id=student.id,
         exam_id=exam.id,
         started_at=datetime.utcnow(),
         duration_minutes=40
     )
 
-    db.add(session)
+    db.add(new_session)
     db.commit()
-    db.refresh(session)
+    db.refresh(new_session)
 
-    print(f"🎉 Session created: session_id={session.id}")
+    print(f"🎉 New session created: {new_session.id}")
 
-    # 5️⃣ Return to frontend
     return {
-        "session_id": session.id,
-        "exam_id": exam.id,
-        "quiz_id": quiz.id,
-        "message": "Exam session started successfully."
+        "status": "started",
+        "session_id": new_session.id
     }
 
 
