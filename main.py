@@ -134,27 +134,21 @@ class StartExamRequest(BaseModel):
  
 #when generate exam is pressed we create a row here
 class StudentExam(Base):
-    __tablename__ = "student_exams"   # FIXED (plural)
+    __tablename__ = "student_exams"   # plural recommended
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
 
-    student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
+    # FIX foreign key → must point to "students.id"
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
 
-    # Correct FK to exams table
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
+
     duration_minutes = Column(Integer, default=40)
 
-    # Relationships
     exam = relationship("Exam", back_populates="student_exams")
-
-    answers = relationship(
-        "StudentExamAnswer",
-        back_populates="student_exam",
-        cascade="all, delete-orphan"
-    )
  
 class Student(Base):
     __tablename__ = "students"
@@ -409,14 +403,13 @@ class User(Base):
     # Establish relationship with sessions
     sessions = relationship("SessionModel", back_populates="user", cascade="all, delete-orphan")
 
-
 class Exam(Base):
     __tablename__ = "exams"
 
     id = Column(Integer, primary_key=True, index=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
 
-    # Metadata copied from Quiz for fast lookup & reporting
+    # Metadata copied from Quiz
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
@@ -429,14 +422,22 @@ class Exam(Base):
         server_default=func.now()
     )
 
-    # Relationships
+    # ---- Relationships ----
+
+    # Each exam belongs to ONE quiz
     quiz = relationship(
         "Quiz",
         back_populates="exams"
     )
 
-    student_exams = relationship("StudentExam", back_populates="exam")
- 
+    # An exam can have MANY student exam sessions
+    student_exams = relationship(
+        "StudentExam",
+        back_populates="exam",
+        cascade="all, delete-orphan"
+    )
+
+
 
 
 class StudentExamAnswer(Base):
