@@ -129,6 +129,10 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class FinishExamRequest(BaseModel):
+    session_id: int
+
+
 class StartExamRequest(BaseModel):
     student_id: str   # <-- MUST BE STRING
  
@@ -1118,9 +1122,9 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
     }
 
 @app.post("/api/student/finish-exam")
-def finish_exam(session_id: int, db: Session = Depends(get_db)):
+def finish_exam(req: FinishExamRequest, db: Session = Depends(get_db)):
 
-    session = db.query(StudentExam).filter(StudentExam.id == session_id).first()
+    session = db.query(StudentExam).filter(StudentExam.id == req.session_id).first()
 
     if not session:
         raise HTTPException(404, "Session not found")
@@ -1128,9 +1132,9 @@ def finish_exam(session_id: int, db: Session = Depends(get_db)):
     session.completed_at = datetime.utcnow()
     db.commit()
 
-    print(f"✔ Session {session_id} marked completed.")
+    print(f"✔ Session {req.session_id} marked completed.")
     return {"status": "completed"}
-
+ 
 
 @app.get("/api/student/get-quiz")
 def get_quiz(student_id: str, subject: str, difficulty: str, db: Session = Depends(get_db)):
