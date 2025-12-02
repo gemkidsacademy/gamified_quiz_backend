@@ -968,6 +968,105 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
 
+@app.get("/api/student/get-quiz")
+def get_quiz(student_id: str, subject: str, difficulty: str, db: Session = Depends(get_db)):
+    """
+    Returns full quiz questions for the student based on class, subject, difficulty.
+    Includes detailed debug logs for diagnosing issues.
+    """
+
+    print("\n===========================")
+    print("📥 API CALL: /api/student/get-quiz")
+    print("===========================")
+    print("🔸 Incoming parameters:")
+    print(f"   student_id: {student_id}")
+    print(f"   subject: {subject}")
+    print(f"   difficulty: {difficulty}")
+    print("---------------------------")
+
+    # -------------------------------
+    # VALIDATE STUDENT
+    # -------------------------------
+    student = db.query(Student).filter(Student.student_id == student_id).first()
+
+    if not student:
+        print("❌ ERROR: Student not found in database.")
+        print(f"   student_id searched: {student_id}")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student found:")
+    print(f"   internal_id: {student.id}")
+    print(f"   class_name: {student.class_name}")
+    print("---------------------------")
+
+    # -------------------------------
+    # FIND MATCHING QUIZ
+    # -------------------------------
+    print("🔎 Searching for quiz definition matching:")
+    print(f"   class_name: {student.class_name.lower()}")
+    print(f"   subject: {subject}")
+    print(f"   difficulty: {difficulty}")
+
+    quiz = (
+        db.query(Quiz)
+        .filter(
+            func.lower(Quiz.class_name) == student.class_name.lower(),
+            Quiz.subject == subject,
+            Quiz.difficulty == difficulty
+        )
+        .order_by(Quiz.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        print("❌ ERROR: No quiz definition found matching given params.")
+        raise HTTPException(status_code=404, detail="No quiz found")
+
+    print("✅ Quiz definition found:")
+    print(f"   quiz_id: {quiz.id}")
+    print(f"   topics: {quiz.topics}")
+    print("---------------------------")
+
+    # -------------------------------
+    # GET EXAM INSTANCE
+    # -------------------------------
+    print("🔎 Looking for generated exam linked to quiz...")
+
+    exam = (
+        db.query(Exam)
+        .filter(Exam.quiz_id == quiz.id)
+        .order_by(Exam.id.desc())
+        .first()
+    )
+
+    if not exam:
+        print("❌ ERROR: Exam instance not found — quiz not generated yet.")
+        raise HTTPException(status_code=404, detail="Quiz not generated")
+
+    print("✅ Exam found:")
+    print(f"   exam_id: {exam.id}")
+    print(f"   number_of_questions: {len(exam.questions) if exam.questions else 0}")
+    print("---------------------------")
+
+    # -------------------------------
+    # RETURN QUESTIONS
+    # -------------------------------
+    print("📤 Preparing JSON response...")
+    response = {
+        "exam_id": exam.id,
+        "quiz_id": quiz.id,
+        "questions": exam.questions
+    }
+
+    print("📦 Returning response:")
+    print(f"   exam_id: {response['exam_id']}")
+    print(f"   quiz_id: {response['quiz_id']}")
+    print(f"   total_questions: {len(response['questions'])}")
+    print("===========================\n")
+
+    return response
+
+
 
 @app.post("/upload-image-folder")
 async def upload_image_folder(images: List[UploadFile] = File(...)):
