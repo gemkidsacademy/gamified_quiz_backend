@@ -131,21 +131,28 @@ otp_store = {}
 # ---------------------------
 #when generate exam is pressed we create a row here
 class StudentExam(Base):
-    __tablename__ = "student_exam"
+    __tablename__ = "student_exams"   # FIXED (plural)
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
     student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
 
-    # THIS IS THE MOST IMPORTANT LINE
+    # Correct FK to exams table
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
     duration_minutes = Column(Integer, default=40)
 
+    # Relationships
     exam = relationship("Exam", back_populates="student_exams")
 
+    answers = relationship(
+        "StudentExamAnswer",
+        back_populates="student_exam",
+        cascade="all, delete-orphan"
+    )
+ 
 class Student(Base):
     __tablename__ = "students"
     
@@ -434,16 +441,21 @@ class StudentExamAnswer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_exam_id = Column(Integer, ForeignKey("student_exams.id"), nullable=False)
+    # MUST match the correct table name: "student_exams.id"
+    student_exam_id = Column(
+        Integer,
+        ForeignKey("student_exams.id"),
+        nullable=False
+    )
 
-    question_id = Column(Integer, nullable=False)      # q_id inside questions JSON
-    student_answer = Column(String, nullable=False)    # e.g., "A"
-    correct_answer = Column(String, nullable=False)    # e.g., "C"
+    question_id = Column(Integer, nullable=False)
+    student_answer = Column(String, nullable=False)
+    correct_answer = Column(String, nullable=False)
     is_correct = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
+    # Relationship back to StudentExam
     student_exam = relationship("StudentExam", back_populates="answers")
 
 
