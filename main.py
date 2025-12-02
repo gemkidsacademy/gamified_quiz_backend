@@ -134,14 +134,11 @@ class StartExamRequest(BaseModel):
  
 #when generate exam is pressed we create a row here
 class StudentExam(Base):
-    __tablename__ = "student_exams"   # plural table name
+    __tablename__ = "student_exams"
 
     id = Column(Integer, primary_key=True)
 
-    # FK: must match EXACT table name "students"
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
-
-    # FK: must match EXACT table name "exams"
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
     started_at = Column(DateTime, nullable=False)
@@ -149,10 +146,16 @@ class StudentExam(Base):
 
     duration_minutes = Column(Integer, default=40)
 
-    # ---------------- Relationships ---------------- #
-
-    # StudentExam belongs to ONE Exam
+    # Relationship to Exam
     exam = relationship("Exam", back_populates="student_exams")
+
+    # NEW: Relationship to answers
+    answers = relationship(
+        "StudentExamAnswer",
+        back_populates="student_exam",
+        cascade="all, delete-orphan"
+    )
+
  
 class Student(Base):
     __tablename__ = "students"
@@ -447,7 +450,7 @@ class StudentExamAnswer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # MUST match the correct table name: "student_exams.id"
+    # FK to student_exams.id
     student_exam_id = Column(
         Integer,
         ForeignKey("student_exams.id"),
@@ -459,9 +462,12 @@ class StudentExamAnswer(Base):
     correct_answer = Column(String, nullable=False)
     is_correct = Column(Boolean, default=False)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 
-    # Relationship back to StudentExam
+    # Correct relationship
     student_exam = relationship("StudentExam", back_populates="answers")
 
 
