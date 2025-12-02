@@ -130,6 +130,18 @@ otp_store = {}
 # Models
 # ---------------------------
 #when generate exam is pressed we create a row here
+class StudentExam(Base):
+    __tablename__ = "student_exam"
+
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exam.id"), nullable=False)
+
+    started_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    duration_minutes = Column(Integer, default=40)
+
 
 class Student(Base):
     __tablename__ = "students"
@@ -967,6 +979,58 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("[GCS ERROR] Upload failed:", str(e))
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
+
+@app.post("/api/student/start-exam")
+def start_exam(student_id: int, quiz_id: int, db: Session = Depends(get_db)):
+    # Create exam session
+    session = StudentExam(
+        student_id=student_id,
+        exam_id=quiz_id,
+        started_at=datetime.utcnow(),
+        duration_minutes=40
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    return {"student_exam_id": session.id}
+
+@app.get("/api/student/get-exam")
+def get_exam(session_id: int, db: Session = Depends(get_db)):
+
+    session = db.query(StudentExam).filter(StudentExam.id == session_id).first()
+    exam = db.query(Exam).filter(Exam.id == session.exam_id).first()
+
+    now = datetime.utcnow()
+    elapsed = (now - session.started_at).total_seconds()
+    remaining = session.duration_minutes * 60 - elapsed
+
+    if remaining <= 0:
+        session.completed_at = now
+        db.commit()
+        remaining = 0
+
+    return {
+        "questions": exam.questions,
+        "total_questions": len(exam.questions),
+        "remaining_time": int(remaining),
+        "completed": session.completed_at is not None
+    }
+
+@app.post("/api/student/finish-exam")
+def finish_exam(session_id: int, db: Session = Depends(get_db)):
+
+    session = db.query(StudentExam).filter(StudentExam.id == session_id).first()
+
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    session.completed_at = datetime.utcnow()
+    db.commit()
+
+    print(f"✔ Session {session_id} marked completed.")
+    return {"status": "completed"}
+
 
 @app.get("/api/student/get-quiz")
 def get_quiz(student_id: str, subject: str, difficulty: str, db: Session = Depends(get_db)):
