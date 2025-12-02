@@ -982,17 +982,23 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 @app.post("/api/student/start-exam")
 def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db)):
+
     print("🚀 Received start-exam request:", req.dict())
- 
-    # 1️⃣ Validate student
-    student = db.query(Student).filter(Student.id == req.student_id).first()
+
+    # 1️⃣ Validate student using student.student_id (string e.g. "Gem002")
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == req.student_id)   # <-- FIXED
+        .first()
+    )
+
     if not student:
         print("❌ Student not found:", req.student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"👤 Student located: {student.id} (class: {student.class_name})")
+    print(f"👤 Student located: DB-ID={student.id}, StudentCode={student.student_id}, class={student.class_name}")
 
-    # 2️⃣ Locate the quiz template for this student
+    # 2️⃣ Locate the quiz template for this student's class & subject
     quiz = (
         db.query(Quiz)
         .filter(
@@ -1004,12 +1010,12 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not quiz:
-        print("❌ Quiz not found for", req.subject, req.difficulty)
+        print(f"❌ Quiz not found for subject={req.subject}, difficulty={req.difficulty}")
         raise HTTPException(status_code=404, detail="Quiz not found")
 
     print(f"🧩 Quiz found: quiz_id={quiz.id}")
 
-    # 3️⃣ Find the generated exam for this quiz
+    # 3️⃣ Find generated exam (LLM-generated)
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
@@ -1025,7 +1031,7 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
 
     # 4️⃣ Create a student exam session
     session = StudentExam(
-        student_id=student.id,
+        student_id=student.id,  # internal numeric PK is stored here
         exam_id=exam.id,
         started_at=datetime.utcnow(),
         duration_minutes=40
