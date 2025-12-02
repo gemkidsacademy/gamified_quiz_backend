@@ -1035,6 +1035,29 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
         raise HTTPException(status_code=404, detail="Exam not generated")
 
     print(f"📝 Exam found: exam_id={exam.id}, questions={len(exam.questions)}")
+    # 🔍 3.5️⃣ Check if student already has an exam attempt
+    existing_attempt = (
+        db.query(StudentExam)
+        .filter(StudentExam.student_id == student.id)
+        .order_by(StudentExam.id.desc())
+        .first()
+    )
+    
+    # 🛑 If student has already COMPLETED exam → do NOT create new session
+    if existing_attempt and existing_attempt.completed_at is not None:
+        print("🛑 Student already completed exam → NOT creating new session.")
+        return {
+            "status": "already_completed",
+            "session_id": existing_attempt.id
+        }
+    
+    # 🔄 If student has an INCOMPLETE session → resume it
+    if existing_attempt and existing_attempt.completed_at is None:
+        print("🔄 Resuming unfinished attempt.")
+        return {
+            "status": "resuming",
+            "session_id": existing_attempt.id
+        }
 
     # 4️⃣ Create student exam session
     session = StudentExam(
