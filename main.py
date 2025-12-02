@@ -130,7 +130,7 @@ otp_store = {}
 # Models
 # ---------------------------
 class StartExamRequest(BaseModel):
-    student_id: int
+    student_id: str   # <-- MUST BE STRING
     subject: str
     difficulty: str
  
