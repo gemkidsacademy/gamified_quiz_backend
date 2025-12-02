@@ -129,6 +129,11 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StartExamRequest(BaseModel):
+    student_id: int
+    subject: str
+    difficulty: str
+ 
 #when generate exam is pressed we create a row here
 class StudentExam(Base):
     __tablename__ = "student_exams"   # FIXED (plural)
@@ -976,40 +981,52 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 
 @app.post("/api/student/start-exam")
-def start_exam(student_id: int, subject: str, difficulty: str, db: Session = Depends(get_db)):
+def start_exam(req: StartExamRequest, db: Session = Depends(get_db)):
+    print("🚀 Received start-exam request:", req.dict())
 
-    # Find student
-    student = db.query(Student).filter(Student.id == student_id).first()
+    # 1️⃣ Validate student
+    student = db.query(Student).filter(Student.id == req.student_id).first()
     if not student:
-        raise HTTPException(404, "Student not found")
+        print("❌ Student not found:", req.student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
 
-    # Find quiz definition
+    print(f"👤 Student located: {student.id} (class: {student.class_name})")
+
+    # 2️⃣ Locate the quiz template for this student
     quiz = (
         db.query(Quiz)
         .filter(
             Quiz.class_name == student.class_name,
-            Quiz.subject == subject,
-            Quiz.difficulty == difficulty
+            Quiz.subject == req.subject,
+            Quiz.difficulty == req.difficulty
         )
         .first()
     )
-    if not quiz:
-        raise HTTPException(404, "Quiz not found")
 
-    # Find or retrieve generated exam
+    if not quiz:
+        print("❌ Quiz not found for", req.subject, req.difficulty)
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    print(f"🧩 Quiz found: quiz_id={quiz.id}")
+
+    # 3️⃣ Find the generated exam for this quiz
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
         .order_by(Exam.id.desc())
         .first()
     )
-    if not exam:
-        raise HTTPException(404, "Exam not generated")
 
-    # Create student exam session
+    if not exam:
+        print("❌ No exam generated for quiz:", quiz.id)
+        raise HTTPException(status_code=404, detail="Exam not generated")
+
+    print(f"📝 Exam loaded: exam_id={exam.id}")
+
+    # 4️⃣ Create a student exam session
     session = StudentExam(
         student_id=student.id,
-        exam_id=exam.id,   # Backend chooses
+        exam_id=exam.id,
         started_at=datetime.utcnow(),
         duration_minutes=40
     )
@@ -1018,7 +1035,15 @@ def start_exam(student_id: int, subject: str, difficulty: str, db: Session = Dep
     db.commit()
     db.refresh(session)
 
-    return { "session_id": session.id }
+    print(f"🎉 StudentExam session created: session_id={session.id}")
+
+    # 5️⃣ Return session ID to frontend
+    return {
+        "session_id": session.id,
+        "exam_id": exam.id,
+        "quiz_id": quiz.id,
+        "message": "Exam session started successfully."
+    }
 
 
 @app.get("/api/student/get-exam")
