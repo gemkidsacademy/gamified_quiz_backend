@@ -980,10 +980,15 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 @app.post("/api/student/start-exam")
 def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db)):
+    """
+    Start an exam session based ONLY on student_id (string like 'Gem002').
+    Backend automatically figures out the class, finds the correct quiz,
+    finds/loads the generated exam, and creates the session.
+    """
 
     print("🚀 Received start-exam request:", req.dict())
 
-    # 1️⃣ Look up student by student_id (string like "Gem002")
+    # 1️⃣ Validate student using student.student_id (external string ID)
     student = (
         db.query(Student)
         .filter(Student.student_id == req.student_id)
@@ -994,23 +999,29 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
         print("❌ Student not found:", req.student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"👤 Student located: DB-ID={student.id}, Code={student.student_id}, Class={student.class_name}")
+    print(f"👤 Student OK → DB-ID={student.id}, Code={student.student_id}, Class={student.class_name}")
 
-    # 2️⃣ Auto-select quiz for this student's class (no subject/difficulty coming from frontend)
+    # Debug all quizzes to see what exists
+    all_quizzes = db.query(Quiz).all()
+    print("📚 All quizzes in DB:")
+    for q in all_quizzes:
+        print(f"   → quiz_id={q.id}, class='{q.class_name}', subject='{q.subject}', difficulty='{q.difficulty}'")
+
+    # 2️⃣ Find matching quiz using only class_name (case-insensitive)
     quiz = (
         db.query(Quiz)
-        .filter(Quiz.class_name == student.class_name)
-        .order_by(Quiz.id.desc())  # latest quiz
+        .filter(func.lower(Quiz.class_name) == func.lower(student.class_name))
+        .order_by(Quiz.id.desc())
         .first()
     )
 
     if not quiz:
-        print(f"❌ No quiz found for class={student.class_name}")
-        raise HTTPException(status_code=404, detail="Quiz not found for student's class")
+        print(f"❌ No quiz found for class='{student.class_name}'")
+        raise HTTPException(status_code=404, detail="Quiz not found for class")
 
-    print(f"🧩 Quiz selected: quiz_id={quiz.id}, subject={quiz.subject}, difficulty={quiz.difficulty}")
+    print(f"🧩 Quiz found: quiz_id={quiz.id}, class={quiz.class_name}, subject={quiz.subject}, difficulty={quiz.difficulty}")
 
-    # 3️⃣ Retrieve latest generated exam for this quiz
+    # 3️⃣ Load generated exam
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
@@ -1019,15 +1030,15 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not exam:
-        print(f"❌ No generated exam for quiz_id={quiz.id}")
-        raise HTTPException(status_code=404, detail="Generated exam not found")
+        print(f"❌ No generated exam for quiz {quiz.id}")
+        raise HTTPException(status_code=404, detail="Exam not generated")
 
-    print(f"📝 Exam loaded: exam_id={exam.id}")
+    print(f"📝 Exam found: exam_id={exam.id}, questions={len(exam.questions)}")
 
-    # 4️⃣ Create a new student exam session
+    # 4️⃣ Create student exam session
     session = StudentExam(
-        student_id=student.id,     # internal PK
-        exam_id=exam.id,           # which exam they will take
+        student_id=student.id,  # internal numeric PK
+        exam_id=exam.id,
         started_at=datetime.utcnow(),
         duration_minutes=40
     )
@@ -1036,15 +1047,13 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     db.commit()
     db.refresh(session)
 
-    print(f"🎉 Session created: student_exam_id={session.id}")
+    print(f"🎉 Session created: session_id={session.id}")
 
-    # 5️⃣ Return metadata to frontend
+    # 5️⃣ Return to frontend
     return {
         "session_id": session.id,
         "exam_id": exam.id,
         "quiz_id": quiz.id,
-        "subject": quiz.subject,
-        "difficulty": quiz.difficulty,
         "message": "Exam session started successfully."
     }
 
