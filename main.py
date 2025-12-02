@@ -973,13 +973,17 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
 
-@app.get("/api/student/find-exam")
-def find_exam(student_id: int, subject: str, difficulty: str, db: Session = Depends(get_db)):
 
+
+@app.post("/api/student/start-exam")
+def start_exam(student_id: int, subject: str, difficulty: str, db: Session = Depends(get_db)):
+
+    # Find student
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(404, "Student not found")
 
+    # Find quiz definition
     quiz = (
         db.query(Quiz)
         .filter(
@@ -989,39 +993,33 @@ def find_exam(student_id: int, subject: str, difficulty: str, db: Session = Depe
         )
         .first()
     )
-
     if not quiz:
         raise HTTPException(404, "Quiz not found")
 
+    # Find or retrieve generated exam
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
         .order_by(Exam.id.desc())
         .first()
     )
-
     if not exam:
         raise HTTPException(404, "Exam not generated")
 
-    return {
-        "exam_id": exam.id
-    }
-
-
-@app.post("/api/student/start-exam")
-def start_exam(student_id: int, quiz_id: int, db: Session = Depends(get_db)):
-    # Create exam session
+    # Create student exam session
     session = StudentExam(
-        student_id=student_id,
-        exam_id=quiz_id,
+        student_id=student.id,
+        exam_id=exam.id,   # Backend chooses
         started_at=datetime.utcnow(),
         duration_minutes=40
     )
+
     db.add(session)
     db.commit()
     db.refresh(session)
 
-    return {"student_exam_id": session.id}
+    return { "session_id": session.id }
+
 
 @app.get("/api/student/get-exam")
 def get_exam(session_id: int, db: Session = Depends(get_db)):
