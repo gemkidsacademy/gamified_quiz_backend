@@ -981,9 +981,9 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 
 @app.post("/api/student/start-exam")
-def start_exam(req: StartExamRequest, db: Session = Depends(get_db)):
+def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db)):
     print("🚀 Received start-exam request:", req.dict())
-
+ 
     # 1️⃣ Validate student
     student = db.query(Student).filter(Student.id == req.student_id).first()
     if not student:
