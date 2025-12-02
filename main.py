@@ -134,14 +134,17 @@ class StudentExam(Base):
     __tablename__ = "student_exam"
 
     id = Column(Integer, primary_key=True)
+
     student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
-    exam_id = Column(Integer, ForeignKey("exam.id"), nullable=False)
+
+    # THIS IS THE MOST IMPORTANT LINE
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
-
     duration_minutes = Column(Integer, default=40)
 
+    exam = relationship("Exam", back_populates="student_exams")
 
 class Student(Base):
     __tablename__ = "students"
@@ -422,11 +425,7 @@ class Exam(Base):
         back_populates="exams"
     )
 
-    student_exams = relationship(
-        "StudentExam",
-        back_populates="exam",
-        cascade="all, delete-orphan"
-    )
+    student_exams = relationship("StudentExam", back_populates="exam")
  
 
 
