@@ -131,8 +131,6 @@ otp_store = {}
 # ---------------------------
 class StartExamRequest(BaseModel):
     student_id: str   # <-- MUST BE STRING
-    subject: str
-    difficulty: str
  
 #when generate exam is pressed we create a row here
 class StudentExam(Base):
@@ -985,10 +983,10 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
 
     print("🚀 Received start-exam request:", req.dict())
 
-    # 1️⃣ Validate student using student.student_id (string e.g. "Gem002")
+    # 1️⃣ Look up student by student_id (string like "Gem002")
     student = (
         db.query(Student)
-        .filter(Student.student_id == req.student_id)   # <-- FIXED
+        .filter(Student.student_id == req.student_id)
         .first()
     )
 
@@ -996,26 +994,23 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
         print("❌ Student not found:", req.student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"👤 Student located: DB-ID={student.id}, StudentCode={student.student_id}, class={student.class_name}")
+    print(f"👤 Student located: DB-ID={student.id}, Code={student.student_id}, Class={student.class_name}")
 
-    # 2️⃣ Locate the quiz template for this student's class & subject
+    # 2️⃣ Auto-select quiz for this student's class (no subject/difficulty coming from frontend)
     quiz = (
         db.query(Quiz)
-        .filter(
-            Quiz.class_name == student.class_name,
-            Quiz.subject == req.subject,
-            Quiz.difficulty == req.difficulty
-        )
+        .filter(Quiz.class_name == student.class_name)
+        .order_by(Quiz.id.desc())  # latest quiz
         .first()
     )
 
     if not quiz:
-        print(f"❌ Quiz not found for subject={req.subject}, difficulty={req.difficulty}")
-        raise HTTPException(status_code=404, detail="Quiz not found")
+        print(f"❌ No quiz found for class={student.class_name}")
+        raise HTTPException(status_code=404, detail="Quiz not found for student's class")
 
-    print(f"🧩 Quiz found: quiz_id={quiz.id}")
+    print(f"🧩 Quiz selected: quiz_id={quiz.id}, subject={quiz.subject}, difficulty={quiz.difficulty}")
 
-    # 3️⃣ Find generated exam (LLM-generated)
+    # 3️⃣ Retrieve latest generated exam for this quiz
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
@@ -1024,15 +1019,15 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not exam:
-        print("❌ No exam generated for quiz:", quiz.id)
-        raise HTTPException(status_code=404, detail="Exam not generated")
+        print(f"❌ No generated exam for quiz_id={quiz.id}")
+        raise HTTPException(status_code=404, detail="Generated exam not found")
 
     print(f"📝 Exam loaded: exam_id={exam.id}")
 
-    # 4️⃣ Create a student exam session
+    # 4️⃣ Create a new student exam session
     session = StudentExam(
-        student_id=student.id,  # internal numeric PK is stored here
-        exam_id=exam.id,
+        student_id=student.id,     # internal PK
+        exam_id=exam.id,           # which exam they will take
         started_at=datetime.utcnow(),
         duration_minutes=40
     )
@@ -1041,15 +1036,18 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     db.commit()
     db.refresh(session)
 
-    print(f"🎉 StudentExam session created: session_id={session.id}")
+    print(f"🎉 Session created: student_exam_id={session.id}")
 
-    # 5️⃣ Return session ID to frontend
+    # 5️⃣ Return metadata to frontend
     return {
         "session_id": session.id,
         "exam_id": exam.id,
         "quiz_id": quiz.id,
+        "subject": quiz.subject,
+        "difficulty": quiz.difficulty,
         "message": "Exam session started successfully."
     }
+
 
 
 @app.get("/api/student/get-exam")
