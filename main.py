@@ -428,24 +428,6 @@ class Exam(Base):
         cascade="all, delete-orphan"
     )
  
-class StudentExam(Base):
-    __tablename__ = "student_exams"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # FIXED foreign key type: now String to match Student.id
-    student_id = Column(String, ForeignKey("students.id"), nullable=False)
-
-    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
-
-    status = Column(String, default="pending")  # "pending", "completed"
-    score = Column(Integer, default=0)
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-
-    # Relationships
-    exam = relationship("Exam", back_populates="student_exams")
-    answers = relationship("StudentExamAnswer", back_populates="student_exam", cascade="all, delete-orphan")
 
 
 class StudentExamAnswer(Base):
