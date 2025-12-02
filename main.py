@@ -136,40 +136,30 @@ class StartExamRequest(BaseModel):
 class StudentExam(Base):
     __tablename__ = "student_exams"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
-
     duration_minutes = Column(Integer, default=40)
 
-    # Relationship to Exam
     exam = relationship("Exam", back_populates="student_exams")
-
-    # NEW: Relationship to answers
-    answers = relationship(
-        "StudentExamAnswer",
-        back_populates="student_exam",
-        cascade="all, delete-orphan"
-    )
+    answers = relationship("StudentExamAnswer", back_populates="student_exam", cascade="all, delete-orphan")
 
  
 class Student(Base):
     __tablename__ = "students"
-    
-    id = Column(String, primary_key=True, index=True)   # Gem001, Gem002
-    student_id = Column(String, unique=True, index=True, nullable=False)  # New field
-    
-    password = Column(String, nullable=False)           # store hashed password in production
-    name = Column(String, nullable=False)
 
-    parent_email = Column(String, unique=True, index=True, nullable=False)
-    
-    class_name = Column(String, nullable=False)         # e.g., Year 1, Year 2, Kindergarten
-    class_day = Column(String, nullable=False)  
+    id = Column(Integer, primary_key=True, index=True)  # internal numeric PK
+    student_id = Column(String, unique=True, nullable=False)  # "Gem002"
+    password = Column(String, nullable=False)
+    name = Column(String, nullable=True)
+    parent_email = Column(String, nullable=True)
+    class_name = Column(String, nullable=False)
+    class_day = Column(String, nullable=True)
+  
 
 class TopicInput(BaseModel):
     name: str
@@ -416,31 +406,16 @@ class Exam(Base):
     id = Column(Integer, primary_key=True, index=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
 
-    # Metadata copied for fast lookup
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
 
-    # JSON list of question objects
     questions = Column(JSON, nullable=False)
 
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # ---------------- Relationships ---------------- #
-
-    # Exam belongs to one Quiz
     quiz = relationship("Quiz", back_populates="exams")
-
-    # Exam has many StudentExam sessions
-    student_exams = relationship(
-        "StudentExam",
-        back_populates="exam",
-        cascade="all, delete-orphan"
-    )
-
+    student_exams = relationship("StudentExam", back_populates="exam", cascade="all, delete-orphan")
 
 
 
@@ -450,25 +425,17 @@ class StudentExamAnswer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # FK to student_exams.id
-    student_exam_id = Column(
-        Integer,
-        ForeignKey("student_exams.id"),
-        nullable=False
-    )
+    student_exam_id = Column(Integer, ForeignKey("student_exams.id"), nullable=False)
 
     question_id = Column(Integer, nullable=False)
     student_answer = Column(String, nullable=False)
     correct_answer = Column(String, nullable=False)
     is_correct = Column(Boolean, default=False)
 
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Correct relationship
     student_exam = relationship("StudentExam", back_populates="answers")
+
 
 
 
