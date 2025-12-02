@@ -390,12 +390,31 @@ class Exam(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
-    questions = Column(JSON, nullable=False)  # list of question objects
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Metadata copied from Quiz for fast lookup & reporting
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    # JSON list of question objects
+    questions = Column(JSON, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 
     # Relationships
-    quiz = relationship("Quiz", back_populates="exams")
-    student_exams = relationship("StudentExam", back_populates="exam", cascade="all, delete-orphan")
+    quiz = relationship(
+        "Quiz",
+        back_populates="exams"
+    )
+
+    student_exams = relationship(
+        "StudentExam",
+        back_populates="exam",
+        cascade="all, delete-orphan"
+    )
  
 class StudentExam(Base):
     __tablename__ = "student_exams"
@@ -1291,27 +1310,27 @@ def submit_answer(
 @app.post("/api/exams/generate/{quiz_id}")
 def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
     """
-    Generates an exam based on quiz topics.
-    
-    Steps:
-    1. Fetch quiz by quiz_id
-    2. Generate exam questions (AI + DB mix)
-    3. Save exam into 'exams' table
-    4. Return exam to frontend
+    Generate an exam based on a quiz and its topics.
+
+    Workflow:
+    1. Fetch the quiz
+    2. Generate exam questions (AI + DB)
+    3. Store the exam record
+    4. Return the generated exam
     """
 
-    # --------------------------------------
     # 1. Fetch quiz
-    # --------------------------------------
-    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    quiz = (
+        db.query(Quiz)
+        .filter(Quiz.id == quiz_id)
+        .first()
+    )
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    # --------------------------------------
-    # 2. Generate questions using AI + DB
-    # --------------------------------------
+    # 2. Generate exam questions
     try:
-        questions = generate_exam_questions(quiz, db)   # <-- IMPORTANT: pass db
+        questions = generate_exam_questions(quiz, db)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -1321,11 +1340,12 @@ def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
     if not questions:
         raise HTTPException(status_code=500, detail="No questions generated")
 
-    # --------------------------------------
-    # 3. Save exam to DB
-    # --------------------------------------
+    # 3. Save exam (now includes class_name)
     new_exam = Exam(
         quiz_id=quiz.id,
+        class_name=quiz.class_name,      # <-- saved here
+        subject=quiz.subject,            # (optional but recommended)
+        difficulty=quiz.difficulty,      # (optional but recommended)
         questions=questions
     )
 
@@ -1333,9 +1353,7 @@ def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_exam)
 
-    # --------------------------------------
-    # 4. Return exam payload to frontend
-    # --------------------------------------
+    # 4. Return payload
     return {
         "message": "Exam generated successfully",
         "exam_id": new_exam.id,
@@ -1343,8 +1361,9 @@ def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
         "class_name": quiz.class_name,
         "subject": quiz.subject,
         "difficulty": quiz.difficulty,
-        "questions": questions
+        "questions": questions,
     }
+
 
 
 @app.post("/retrieve-week-number")
