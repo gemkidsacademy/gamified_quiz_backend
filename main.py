@@ -973,6 +973,41 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
 
+@app.get("/api/student/find-exam")
+def find_exam(student_id: int, subject: str, difficulty: str, db: Session = Depends(get_db)):
+
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(404, "Student not found")
+
+    quiz = (
+        db.query(Quiz)
+        .filter(
+            Quiz.class_name == student.class_name,
+            Quiz.subject == subject,
+            Quiz.difficulty == difficulty
+        )
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(404, "Quiz not found")
+
+    exam = (
+        db.query(Exam)
+        .filter(Exam.quiz_id == quiz.id)
+        .order_by(Exam.id.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(404, "Exam not generated")
+
+    return {
+        "exam_id": exam.id
+    }
+
+
 @app.post("/api/student/start-exam")
 def start_exam(student_id: int, quiz_id: int, db: Session = Depends(get_db)):
     # Create exam session
