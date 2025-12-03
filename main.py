@@ -735,8 +735,8 @@ def generate_exam_questions(quiz, db):
     print("QUIZ RECEIVED FROM DATABASE:")
     print("---------------------------------------------------------------")
     print(f"Quiz ID: {quiz.id}")
-    print(f"Class: {quiz.class_name}")
-    print(f"Subject: {quiz.subject}")
+    print(f"Class: {quiz.class_name}") 
+    print(f"Subject: {quiz.subject}")  
     print(f"Difficulty: {quiz.difficulty}")
     print(f"Topics: {quiz.topics}")
     print("---------------------------------------------------------------\n")
@@ -800,12 +800,38 @@ def generate_exam_questions(quiz, db):
 
             print(f"\n[AI GEN] Generating {ai_count} AI questions for topic '{topic_name}'")
             print("---------------------------------------------------------------")
+        
+            # -----------------------------
+            # Fetch the single franchise location (first row)
+            # -----------------------------
+            location = db.query(FranchiseLocation).first()
+        
+            # Safety check (optional)
+            if not location:
+                raise Exception("No franchise location found in the database.")
+        
+            country = location.country
+            state = location.state
+        
+            # -----------------------------
+            # Build system prompt
+            # -----------------------------
             system_prompt = (
                 "You are an expert exam generator.\n"
-                f"Create {ai_count} MCQs for the topic: {topic_name}.\n\n"
-                "Return STRICT JSON:\n"
+                f"Create {ai_count} MCQs.\n\n"
+                "Context for alignment:\n"
+                f"- Country: {country}\n"
+                f"- State/Region: {state}\n"
+                f"- Class: {quiz.class_name}\n"
+                f"- Subject: {quiz.subject}\n"
+                f"- Topic: {topic_name}\n\n"
+                "All questions MUST:\n"
+                "- Match the curriculum style and difficulty of the given country/state.\n"
+                "- Match the grade level of the class.\n"
+                "- Match the specific subject and topic.\n\n"
+                "Return STRICT JSON ONLY:\n"
                 "[{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct\":\"A\"}]\n"
-                "NO explanations. ONLY JSON."
+                "NO explanations. NO commentary. NO extra text. ONLY valid JSON."
             )
 
             print("[AI GEN] PROMPT:")
