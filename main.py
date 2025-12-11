@@ -1578,12 +1578,41 @@ def get_latest_generated_reading_exam(db: Session = Depends(get_db)):
     if not exam:
         raise HTTPException(status_code=404, detail="No generated exams found")
 
+    exam_json = exam.exam_json or {}
+
+    # ---------------------------------------
+    # 🔥 ENSURE answer_options ALWAYS EXISTS
+    # ---------------------------------------
+    answer_options = exam_json.get("answer_options", {})
+
+    # ---------------------------------------
+    # 🔥 ENSURE reading_material ALWAYS EXISTS
+    # ---------------------------------------
+    reading_material = exam_json.get("reading_material", {})
+
+    # ---------------------------------------
+    # 🔥 ENSURE questions ALWAYS EXISTS
+    # ---------------------------------------
+    questions = exam_json.get("questions", [])
+
+    # ---------------------------------------
+    # 🔥 RETURN CLEAN + COMPLETE STRUCTURE
+    # ---------------------------------------
     return {
         "exam_id": exam.id,
         "config_id": exam.config_id,
         "created_at": exam.created_at,
-        "duration_minutes": 40,     # 🔥 BACKEND-CONTROLLED TIMER
-        "exam_json": exam.exam_json
+        "duration_minutes": 40,   # backend-controlled
+        "exam_json": {
+            "class_name": exam_json.get("class_name"),
+            "difficulty": exam_json.get("difficulty"),
+            "subject": exam_json.get("subject"),
+            "total_questions": len(questions),
+
+            "reading_material": reading_material,
+            "answer_options": answer_options,
+            "questions": questions,
+        }
     }
 
      
