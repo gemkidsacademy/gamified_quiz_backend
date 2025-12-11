@@ -1063,67 +1063,68 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
 
 def parse_exam_with_openai(raw_text: str):
     prompt = f"""
-    You will receive a Word document containing one or more Reading Comprehension exams.
-    
-    Extract ALL exam data into JSON with EXACTLY this structure:
-    
+You will receive a Word document containing one or more Reading Comprehension exams.
+
+Extract ALL exam data into JSON with EXACTLY this structure:
+
+{{
+  "class_name": "",
+  "subject": "",
+  "difficulty": "",
+  "topic": "",
+  "total_questions": 0,
+
+  "reading_material": {{
+    "Label 1": "text",
+    "Label 2": "text"
+  }},
+
+  "answer_options": {{
+    "A": "",
+    "B": "",
+    "C": "",
+    "D": "",
+    "E": "",
+    "F": "",
+    "G": ""
+  }},
+
+  "questions": [
     {{
-      "class_name": "",
-      "subject": "",
-      "difficulty": "",
-      "topic": "",
-      "total_questions": 0,
-    
-      "reading_material": {{
-        "Label 1": "text",
-        "Label 2": "text"
-      }},
-    
-      "answer_options": {{
-        "A": "",
-        "B": "",
-        "C": "",
-        "D": "",
-        "E": "",
-        "F": "",
-        "G": ""
-      }},
-    
-      "questions": [
-        {{
-          "question_number": 1,
-          "question_text": "",
-          "correct_answer": "A"
-        }}
-      ]
+      "question_number": 1,
+      "question_text": "",
+      "correct_answer": "A"
     }}
-    
-    RULES:
-    - Extract ALL answer options (A–G, or however many appear in the document).
-    - Preserve reading material labels *exactly* as written (e.g., "Extract A", "Paragraph 1").
-    - Preserve answer option text exactly.
-    - Preserve question text exactly.
-    - Correct answers must be LETTERS only (A, B, C, etc.).
-    - Do NOT create missing options — only output those present.
-    - If multiple exams exist, output a JSON ARRAY.
-    - Return ONLY valid JSON with no explanation.
-    
-    INPUT TEXT:
-    {raw_text}
-    """
-    
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
-    
-        content = response.choices[0].message.content.strip()
-    
-        try:
-            return json.loads(content)
-        except Exception:
-            raise ValueError("OpenAI returned invalid JSON:\n" + content)
+  ]
+}}
+
+RULES:
+- Extract ALL answer options (A–G, or however many appear in the document).
+- Preserve reading material labels *exactly* as written (e.g., "Extract A", "Paragraph 1").
+- Preserve answer option text exactly.
+- Preserve question text exactly.
+- Correct answers must be LETTERS only (A, B, C, etc.).
+- Do NOT create missing options — only output those present.
+- If multiple exams exist, output a JSON ARRAY.
+- Return ONLY valid JSON with no explanation.
+
+INPUT TEXT:
+{raw_text}
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+    )
+
+    content = response.choices[0].message.content.strip()
+
+    try:
+        return json.loads(content)
+    except Exception:
+        raise ValueError("OpenAI returned invalid JSON:\n" + content)
+
 
 
 def save_exam_to_db(db: Session, exam_data: ExamReadingCreate):
