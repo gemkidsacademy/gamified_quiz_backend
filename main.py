@@ -1065,7 +1065,7 @@ def parse_exam_with_openai(raw_text: str):
     prompt = """
 You will receive a Word document containing MULTIPLE Reading Comprehension exams.
 
-Extract ALL exams into the following JSON wrapper:
+Extract ALL exams into JSON using EXACTLY this structure:
 
 {
   "exams": [
@@ -1103,13 +1103,13 @@ Extract ALL exams into the following JSON wrapper:
 }
 
 RULES:
-- Always return the JSON using the "exams" wrapper.
-- Never return a raw array.
-- Extract only answer options actually present.
-- Preserve labels and text exactly.
 - Output ONLY JSON. No explanation.
+- Never include backticks.
+- Preserve labels exactly as written.
+- Output only the answer options that exist in the document.
+- If multiple exams exist, include them in the "exams" list.
 
-INPUT TEXT:
+INPUT TEXT STARTS BELOW:
 ----------------------------------------
 {raw_text}
 ----------------------------------------
@@ -1117,7 +1117,6 @@ INPUT TEXT:
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
     )
