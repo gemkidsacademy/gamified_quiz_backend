@@ -1065,53 +1065,53 @@ def parse_exam_with_openai(raw_text: str):
     prompt = f"""
 You will receive a Word document containing MULTIPLE Reading Comprehension exams.
 
-You MUST extract ALL exams into a JSON ARRAY.
-Each exam MUST follow this exact structure:
+You MUST extract ALL exams into a JSON ARRAY inside this wrapper:
 
-[
-  {{
-    "class_name": "",
-    "subject": "",
-    "difficulty": "",
-    "topic": "",
-    "total_questions": 0,
+{
+  "exams": [
+    {
+      "class_name": "",
+      "subject": "",
+      "difficulty": "",
+      "topic": "",
+      "total_questions": 0,
 
-    "reading_material": {{
-      "Label 1": "text",
-      "Label 2": "text"
-    }},
+      "reading_material": {
+        "Label 1": "text",
+        "Label 2": "text"
+      },
 
-    "answer_options": {{
-      "A": "",
-      "B": "",
-      "C": "",
-      "D": "",
-      "E": "",
-      "F": "",
-      "G": ""
-    }},
+      "answer_options": {
+        "A": "",
+        "B": "",
+        "C": "",
+        "D": "",
+        "E": "",
+        "F": "",
+        "G": ""
+      },
 
-    "questions": [
-      {{
-        "question_number": 1,
-        "question_text": "",
-        "correct_answer": "A"
-      }}
-    ]
-  }}
-]
+      "questions": [
+        {
+          "question_number": 1,
+          "question_text": "",
+          "correct_answer": "A"
+        }
+      ]
+    }
+  ]
+}
 
 RULES:
-- ALWAYS return a JSON ARRAY, even if there is only one exam.
+- ALWAYS return the JSON nested inside the "exams" array.
+- NEVER return raw array at the root level.
 - DO NOT merge exams together.
-- Each exam MUST be a separate JSON object in the array.
-- Extract answer options exactly as written (A–G or fewer).
-- Do NOT invent missing answer options.
-- Preserve all reading material labels exactly.
-- Preserve text exactly as written.
-- Return ONLY valid JSON. No explanation, no prose.
+- Extract only the answer choices that exist in the file.
+- Preserve reading labels exactly.
+- Preserve text exactly.
+- No explanation. Output JSON only.
 
-INPUT TEXT BELOW:
+INPUT TEXT:
 ----------------------------------------
 {raw_text}
 ----------------------------------------
@@ -1119,7 +1119,7 @@ INPUT TEXT BELOW:
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        response_format={"type": "json"},  # Forces valid JSON
+        response_format={"type": "json_object"},  # REQUIRED FIX
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
     )
@@ -1127,7 +1127,8 @@ INPUT TEXT BELOW:
     content = response.choices[0].message.content.strip()
 
     try:
-        return json.loads(content)
+        parsed = json.loads(content)
+        return parsed["exams"]  # Extract array
     except Exception:
         raise ValueError("OpenAI returned invalid JSON:\n" + content)
 
