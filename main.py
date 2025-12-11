@@ -1062,34 +1062,56 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     return result.value
 
 def parse_exam_with_openai(raw_text: str):
-    prompt = (
-        "You will receive a Word document containing one or more Reading Comprehension exams.\n\n"
-        "Extract ALL exams into EXACTLY this JSON structure:\n\n"
-        "{\n"
-        "  \"exams\": [\n"
-        "    {\n"
-        "      \"class_name\": \"\",\n"
-        "      \"subject\": \"\",\n"
-        "      \"difficulty\": \"\",\n"
-        "      \"topic\": \"\",\n"
-        "      \"total_questions\": 0,\n"
-        "      \"reading_material\": {},\n"
-        "      \"answer_options\": {},\n"
-        "      \"questions\": []\n"
-        "    }\n"
-        "  ]\n"
-        "}\n\n"
-        "RULES:\n"
-        "- Output MUST be valid JSON.\n"
-        "- Output MUST begin with '{' and end with '}'.\n"
-        "- Never output raw text before JSON.\n"
-        "- Never output backticks, explanations, or anything else.\n"
-        "- Preserve all text exactly.\n"
-        "- Only include answer option letters that exist.\n"
-        "- If multiple exams exist, include them in the exams list.\n\n"
-        "INPUT TEXT:\n"
-        f"{raw_text}"
-    )
+    prompt = f"""
+You will receive a Reading Comprehension exam document.
+
+You MUST extract all exam data into this EXACT JSON wrapper:
+
+{{
+  "exams": [
+    {{
+      "class_name": "",
+      "subject": "",
+      "difficulty": "",
+      "topic": "",
+      "total_questions": 0,
+
+      "reading_material": {{}},
+
+      "answer_options": {{}},
+
+      "questions": [
+        {{
+          "question_number": 1,
+          "question_text": "",
+          "correct_answer": "A"
+        }}
+      ]
+    }}
+  ]
+}}
+
+STRICT RULES:
+- Every question in the Word document begins with a number followed by a period (e.g., "1. Question text").
+- You MUST extract the number before the period as `question_number` (INT).
+- The remaining text after the number + period must be `question_text`.
+  Example:
+    Input text: "4. Which extract discusses…"
+    Output:
+      "question_number": 4,
+      "question_text": "Which extract discusses…"
+
+- NEVER keep the number inside question_text.
+- NEVER omit question_number.
+- The output MUST ALWAYS include question_number for every question.
+
+- Extract answer options EXACTLY as written. Include only letters present (A–G).
+- Return ONLY valid JSON. No text, no backticks.
+- JSON MUST start with "{{" and end with "}}".
+
+INPUT TEXT:
+{raw_text}
+"""
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -1111,10 +1133,15 @@ def parse_exam_with_openai(raw_text: str):
 
     try:
         parsed = json.loads(json_text)
-        return parsed["exams"]
+
+        # Ensure compatibility: return list of exams
+        if "exams" in parsed:
+            return parsed["exams"]
+        else:
+            raise ValueError("JSON missing 'exams' field")
+
     except Exception:
         raise ValueError("OpenAI returned invalid JSON:\n" + json_text)
-
 
 
 def save_exam_to_db(db: Session, exam_data: ExamReadingCreate):
