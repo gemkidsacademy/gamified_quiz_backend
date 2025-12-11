@@ -1169,6 +1169,39 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
 
+
+@router.get("/api/quizzes-reading")
+def get_reading_quiz_dropdown(db: Session = Depends(get_db)):
+    """
+    Returns unique class_name + difficulty combinations 
+    from reading_exam_config for populating the dropdown.
+    """
+
+    rows = (
+        db.query(
+            ReadingExamConfig.class_name,
+            ReadingExamConfig.difficulty
+        )
+        .distinct()
+        .all()
+    )
+
+    result = []
+    seen = set()
+
+    for row in rows:
+        key = (row.class_name, row.difficulty)
+        if key not in seen:
+            seen.add(key)
+            result.append({
+                "class_name": row.class_name,
+                "difficulty": row.difficulty,
+                "label": f"{row.class_name} | {row.difficulty}"
+            })
+
+    return result
+
+
 @app.post("/upload-word-reading")
 async def upload_word(
     file: UploadFile = File(...),
