@@ -161,7 +161,30 @@ class StudentExam(Base):
         cascade="all, delete-orphan"
     )
 
- 
+
+class ReadingExamConfig(Base):
+    __tablename__ = "reading_exam_config"
+
+    id = Column(Integer, primary_key=True, index=True)
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+    num_topics = Column(Integer, nullable=False)
+    topics = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ReadingTopicItem(BaseModel):
+    topic_id: int
+    name: str
+    num_questions: int
+
+
+class ReadingExamConfigCreate(BaseModel):
+    class_name: str
+    subject: str
+    difficulty: str
+    topics: List[ReadingTopicItem]
+
 class Student(Base):
     __tablename__ = "students"
 
@@ -1003,6 +1026,45 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
 
+
+@app.post("/api/admin/create-reading-config")
+def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depends(get_db)):
+
+    # Validate input
+    if len(payload.topics) == 0:
+        raise HTTPException(status_code=400, detail="At least one topic must be provided.")
+
+    num_topics = len(payload.topics)
+
+    # Build JSON structure to save
+    topics_json = [
+        {
+            "topic_id": t.topic_id,
+            "name": t.name,
+            "num_questions": t.num_questions
+        }
+        for t in payload.topics
+    ]
+
+    # Create DB record
+    new_config = ReadingExamConfig(
+        class_name=payload.class_name,
+        subject=payload.subject,
+        difficulty=payload.difficulty,
+        num_topics=num_topics,
+        topics=topics_json
+    )
+
+    db.add(new_config)
+    db.commit()
+    db.refresh(new_config)
+
+    return {
+        "status": "success",
+        "config_id": new_config.id,
+        "message": "Reading exam configuration saved successfully.",
+        "created_at": new_config.created_at
+    }
 
 
 @app.post("/api/student/start-exam")
