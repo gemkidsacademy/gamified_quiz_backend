@@ -133,6 +133,18 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class GeneratedExamReading(Base):
+    __tablename__ = "generated_exams_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+    config_id = Column(Integer, ForeignKey("reading_exam_config.id"), nullable=True)
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+    total_questions = Column(Integer, nullable=False)
+    exam_json = Column(JSONB, nullable=False)  # reading_material + questions[]
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class FinishExamRequest(BaseModel):
     session_id: int
 
@@ -1168,6 +1180,161 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("[GCS ERROR] Upload failed:", str(e))
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
+
+@app.post("/api/exams/generate/{config_id}")
+def generate_exam_from_config(
+    config_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a reading exam using reading_exam_config rules.
+    Strategy: Option 3 — Random bundles until quota is filled.
+    Saves final exam into generated_exams_reading.
+    """
+
+    # 1) Load exam config
+    cfg: ReadingExamConfig = (
+        db.query(ReadingExamConfig)
+        .filter(ReadingExamConfig.id == config_id)
+        .first()
+    )
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Reading exam config not found")
+
+    # Extract metadata
+    class_name = cfg.class_name
+    subject = cfg.subject
+    difficulty = cfg.difficulty
+
+    # topics = [{ "name": "Comparative analysis", "num_questions": 10 }, ...]
+    try:
+        topics = cfg.topics
+    except Exception:
+        raise HTTPException(status_code=500, detail="Config.topics is not a valid JSON list")
+
+    final_questions = []
+    used_passages = {}
+    warnings = []
+
+    # 2) Process each topic requirement
+    for topic_spec in topics:
+        topic_name = topic_spec.get("name")
+        required = int(topic_spec.get("num_questions", 0))
+
+        if required <= 0:
+            continue
+
+        # Fetch all question bundles matching filters
+        bundles = (
+            db.query(Question_reading)
+            .filter(
+                Question_reading.class_name == class_name,
+                Question_reading.subject == subject,
+                Question_reading.difficulty == difficulty,
+                Question_reading.topic == topic_name,
+            )
+            .all()
+        )
+
+        if not bundles:
+            warnings.append(f"No question bundles found for topic '{topic_name}'.")
+            continue
+
+        # Shuffle bundles for randomness
+        random.shuffle(bundles)
+
+        collected = []
+
+        # Sample across bundles until quota is filled
+        for bundle in bundles:
+            bundle_json = bundle.exam_bundle or {}
+            bundle_qs = bundle_json.get("questions", [])
+            random.shuffle(bundle_qs)  # shuffle internal order
+
+            for q in bundle_qs:
+                collected.append({
+                    "source_bundle_id": bundle.id,
+                    "question": q
+                })
+                if len(collected) >= required:
+                    break
+
+            if len(collected) >= required:
+                break
+
+        if len(collected) < required:
+            warnings.append(
+                f"Only {len(collected)} questions found for '{topic_name}', required {required}."
+            )
+
+        # Trim exactly to required number
+        chosen = collected[:required]
+
+        # Add these questions and merge passages
+        for item in chosen:
+            q = item["question"]
+
+            final_questions.append({
+                "topic": topic_name,
+                "question_number": None,
+                "question_text": q.get("question_text"),
+                "correct_answer": q.get("correct_answer")
+            })
+
+            # Add reading passages from the source bundle
+            bundle_row = db.query(Question_reading).filter(
+                Question_reading.id == item["source_bundle_id"]
+            ).first()
+
+            if bundle_row:
+                reading_mat = (bundle_row.exam_bundle or {}).get("reading_material", {})
+                for label, text in reading_mat.items():
+                    if label not in used_passages:
+                        used_passages[label] = text
+
+    # 3) Renumber questions
+    for i, q in enumerate(final_questions, start=1):
+        q["question_number"] = i
+
+    total_q = len(final_questions)
+    if total_q == 0:
+        raise HTTPException(status_code=400, detail="No questions could be generated.")
+
+    # 4) Build JSON package
+    exam_json = {
+        "class_name": class_name,
+        "subject": subject,
+        "difficulty": difficulty,
+        "total_questions": total_q,
+        "reading_material": used_passages,
+        "questions": final_questions,
+    }
+
+    # 5) Save into generated_exams_reading
+    saved = GeneratedExamReading(
+        config_id=cfg.id,
+        class_name=class_name,
+        subject=subject,
+        difficulty=difficulty,
+        total_questions=total_q,
+        exam_json=exam_json,
+    )
+    db.add(saved)
+    db.commit()
+    db.refresh(saved)
+
+    # 6) API response
+    response = {
+        "generated_exam_id": saved.id,
+        "config_id": cfg.id,
+        "total_questions": total_q,
+        "exam_json": exam_json,
+    }
+
+    if warnings:
+        response["warnings"] = warnings
+
+    return response
 
 
 @app.get("/api/quizzes-reading")
