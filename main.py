@@ -1373,14 +1373,17 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
     # ------------------------------------------------------------
     # 5) BUILD FINAL EXAM JSON
     # ------------------------------------------------------------
+    duration_minutes = 40  
+
     exam_json = {
         "class_name": class_name,
         "subject": subject,
         "difficulty": difficulty,
-        "total_questions": len(final_questions),
+        "total_questions": total_q,
         "reading_material": used_passages,
-        "answer_options": merged_answer_options,   # ← FIXED
         "questions": final_questions,
+        "answer_options": {},           # optional if you want it here too
+        "duration_minutes": duration_minutes   # ⭐ ADD THIS
     }
 
     # ------------------------------------------------------------
@@ -1526,6 +1529,7 @@ async def upload_word(
 
 @app.get("/api/exams/latest-reading")
 def get_latest_generated_reading_exam(db: Session = Depends(get_db)):
+    # Fetch the latest generated reading exam
     exam = (
         db.query(GeneratedExamReading)
         .order_by(GeneratedExamReading.id.desc())
@@ -1535,35 +1539,33 @@ def get_latest_generated_reading_exam(db: Session = Depends(get_db)):
     if not exam:
         raise HTTPException(status_code=404, detail="No generated exams found")
 
+    # Safely extract exam JSON
     exam_json = exam.exam_json or {}
 
     # ---------------------------------------
-    # 🔥 ENSURE answer_options ALWAYS EXISTS
-    # ---------------------------------------
-    answer_options = exam_json.get("answer_options", {})
-
-    # ---------------------------------------
-    # 🔥 ENSURE reading_material ALWAYS EXISTS
+    # 🔥 Provide guaranteed default structures
     # ---------------------------------------
     reading_material = exam_json.get("reading_material", {})
-
-    # ---------------------------------------
-    # 🔥 ENSURE questions ALWAYS EXISTS
-    # ---------------------------------------
+    answer_options = exam_json.get("answer_options", {})
     questions = exam_json.get("questions", [])
 
     # ---------------------------------------
-    # 🔥 RETURN CLEAN + COMPLETE STRUCTURE
+    # 🔥 Backend-controlled timer (can change anytime)
+    # ---------------------------------------
+    duration_minutes = exam_json.get("duration_minutes", 40)
+
+    # ---------------------------------------
+    # 🔥 Return clean and consistent exam format
     # ---------------------------------------
     return {
         "exam_id": exam.id,
         "config_id": exam.config_id,
         "created_at": exam.created_at,
-        "duration_minutes": 40,   # backend-controlled
+        "duration_minutes": duration_minutes,  # ← frontend uses this
         "exam_json": {
             "class_name": exam_json.get("class_name"),
-            "difficulty": exam_json.get("difficulty"),
             "subject": exam_json.get("subject"),
+            "difficulty": exam_json.get("difficulty"),
             "total_questions": len(questions),
 
             "reading_material": reading_material,
@@ -1571,6 +1573,7 @@ def get_latest_generated_reading_exam(db: Session = Depends(get_db)):
             "questions": questions,
         }
     }
+
 
      
 @app.post("/api/admin/create-reading-config")
