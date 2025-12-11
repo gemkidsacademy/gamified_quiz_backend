@@ -8,6 +8,8 @@ from io import BytesIO
 from typing import List
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta,date
+from sqlalchemy.dialects.postgresql import JSONB
+
 import pandas as pd
 import os
 import random
