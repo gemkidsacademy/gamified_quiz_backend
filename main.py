@@ -197,7 +197,7 @@ class Question_reading(Base):
     # COMPLETE EXAM CONTENT
     exam_bundle = Column(JSON)  # reading_material + questions[]
 
-    exam = relationship("Exam_reading", back_populates="questions")
+
 class QuestionReadingCreate(BaseModel):
     question_number: int
     question_text: str
