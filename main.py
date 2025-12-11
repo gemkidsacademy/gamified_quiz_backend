@@ -1527,7 +1527,26 @@ async def upload_word(
         "exam_ids": saved_ids
     }
 
+@app.get("/api/exams/latest-reading")
+def get_latest_generated_reading_exam(db: Session = Depends(get_db)):
+    exam = (
+        db.query(GeneratedExamReading)
+        .order_by(GeneratedExamReading.id.desc())
+        .first()
+    )
 
+    if not exam:
+        raise HTTPException(status_code=404, detail="No generated exams found")
+
+    return {
+        "exam_id": exam.id,
+        "config_id": exam.config_id,
+        "created_at": exam.created_at,
+        "duration_minutes": 40,     # 🔥 BACKEND-CONTROLLED TIMER
+        "exam_json": exam.exam_json
+    }
+
+     
 @app.post("/api/admin/create-reading-config")
 def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depends(get_db)):
 
