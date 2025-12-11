@@ -1063,57 +1063,63 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
 
 def parse_exam_with_openai(raw_text: str):
     prompt = f"""
-You will receive a Word document containing one or more Reading Comprehension exams.
+You will receive a Word document containing MULTIPLE Reading Comprehension exams.
 
-Extract ALL exam data into JSON with EXACTLY this structure:
+You MUST extract ALL exams into a JSON ARRAY.
+Each exam MUST follow this exact structure:
 
-{{
-  "class_name": "",
-  "subject": "",
-  "difficulty": "",
-  "topic": "",
-  "total_questions": 0,
+[
+  {{
+    "class_name": "",
+    "subject": "",
+    "difficulty": "",
+    "topic": "",
+    "total_questions": 0,
 
-  "reading_material": {{
-    "Label 1": "text",
-    "Label 2": "text"
-  }},
+    "reading_material": {{
+      "Label 1": "text",
+      "Label 2": "text"
+    }},
 
-  "answer_options": {{
-    "A": "",
-    "B": "",
-    "C": "",
-    "D": "",
-    "E": "",
-    "F": "",
-    "G": ""
-  }},
+    "answer_options": {{
+      "A": "",
+      "B": "",
+      "C": "",
+      "D": "",
+      "E": "",
+      "F": "",
+      "G": ""
+    }},
 
-  "questions": [
-    {{
-      "question_number": 1,
-      "question_text": "",
-      "correct_answer": "A"
-    }}
-  ]
-}}
+    "questions": [
+      {{
+        "question_number": 1,
+        "question_text": "",
+        "correct_answer": "A"
+      }}
+    ]
+  }}
+]
 
 RULES:
-- Extract ALL answer options (A–G, or however many appear in the document).
-- Preserve reading material labels *exactly* as written (e.g., "Extract A", "Paragraph 1").
-- Preserve answer option text exactly.
-- Preserve question text exactly.
-- Correct answers must be LETTERS only (A, B, C, etc.).
-- Do NOT create missing options — only output those present.
-- If multiple exams exist, output a JSON ARRAY.
-- Return ONLY valid JSON with no explanation.
+- ALWAYS return a JSON ARRAY, even if there is only one exam.
+- DO NOT merge exams together.
+- Each exam MUST be a separate JSON object in the array.
+- Extract answer options exactly as written (A–G or fewer).
+- Do NOT invent missing answer options.
+- Preserve all reading material labels exactly.
+- Preserve text exactly as written.
+- Return ONLY valid JSON. No explanation, no prose.
 
-INPUT TEXT:
+INPUT TEXT BELOW:
+----------------------------------------
 {raw_text}
+----------------------------------------
 """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
+        response_format={"type": "json"},  # Forces valid JSON
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
     )
