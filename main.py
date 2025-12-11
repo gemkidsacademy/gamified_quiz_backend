@@ -1232,7 +1232,7 @@ from sqlalchemy import func
 def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get_db)):
     """
     Generate a reading exam using class_name + difficulty.
-    Case-insensitive matching for all text fields.
+    Now includes ANSWER OPTIONS for each topic.
     """
 
     print("\n==============================")
@@ -1240,19 +1240,14 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
     print("==============================")
     print("📥 Payload:", payload.dict())
 
-    # -----------------------------
-    # 1) Extract filters
-    # -----------------------------
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
 
     print(f"➡ Using filters: class_name={class_name}, difficulty={difficulty}")
 
-    # -----------------------------
-    # 2) Find matching exam config (case-insensitive)
-    # -----------------------------
-    print("🔎 Querying ReadingExamConfig (case-insensitive)...")
-
+    # ------------------------------------------------------------
+    # 1) Get config based on class + difficulty
+    # ------------------------------------------------------------
     cfg = (
         db.query(ReadingExamConfig)
         .filter(
@@ -1262,8 +1257,6 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         .first()
     )
 
-    print("📦 Config found:" if cfg else "❌ No config found!", cfg)
-
     if not cfg:
         raise HTTPException(
             status_code=404,
@@ -1271,47 +1264,28 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         )
 
     subject = cfg.subject
-    print(f"📘 Subject determined from config: {subject}")
+    topics = cfg.topics  # list of { name, num_questions }
 
-    # Load topics
-    try:
-        topics = cfg.topics
-        print("📚 Topics loaded:", topics)
-    except Exception:
-        print("❌ ERROR: cfg.topics is not valid JSON")
-        raise HTTPException(status_code=500, detail="Invalid topics JSON")
+    print("📚 Topics loaded:", topics)
 
     final_questions = []
     used_passages = {}
+    merged_answer_options = {}   # ← NEW: store answer choices per exam
     warnings = []
 
     print("\n==============================")
-    print("🔁 Starting Topic Processing")
+    print("🔁 START TOPIC PROCESSING")
     print("==============================")
 
-    # -----------------------------
-    # 3) Loop through each topic
-    # -----------------------------
+    # ------------------------------------------------------------
+    # 2) PROCESS EACH TOPIC
+    # ------------------------------------------------------------
     for topic_spec in topics:
         topic_name = topic_spec.get("name", "").strip()
         required = int(topic_spec.get("num_questions", 0))
 
-        print(f"\n➡ Processing Topic: '{topic_name}' — Need {required} questions")
+        print(f"\n➡ Topic: {topic_name} — Need {required}")
 
-        if required <= 0:
-            print("⚠️ Skipping: num_questions <= 0")
-            continue
-
-        # Case-insensitive debug filters
-        print("🔍 Fetching bundles with (case-insensitive):")
-        print(f"   class_name={class_name}")
-        print(f"   subject={subject}")
-        print(f"   difficulty={difficulty}")
-        print(f"   topic={topic_name}")
-
-        # -----------------------------
-        # FETCH QUESTION BUNDLES (CASE-INSENSITIVE)
-        # -----------------------------
         bundles = (
             db.query(Question_reading)
             .filter(
@@ -1323,53 +1297,58 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
             .all()
         )
 
-        print(f"📦 Found {len(bundles)} bundles for topic '{topic_name}'")
+        print(f"📦 Found {len(bundles)} bundles")
 
         if not bundles:
-            warnings.append(f"No bundles found for topic '{topic_name}'.")
+            warnings.append(f"No bundles found for topic '{topic_name}'")
             continue
 
         random.shuffle(bundles)
+
         collected = []
 
-        # -----------------------------
-        # Collect questions from bundles
-        # -----------------------------
+        # ------------------------------------------------------------
+        # 3) Extract questions + answer options + passages
+        # ------------------------------------------------------------
         for bundle in bundles:
-            print(f"   📌 Bundle ID {bundle.id} → Extracting questions...")
-
             bundle_json = bundle.exam_bundle or {}
+
             bundle_questions = bundle_json.get("questions", [])
+            answer_options = bundle_json.get("answer_options", {})   # ← NEW
+            passages = bundle_json.get("reading_material", {})
 
-            print(f"      - Found {len(bundle_questions)} questions in bundle")
+            print(f"   📌 Bundle {bundle.id}: {len(bundle_questions)} questions")
 
+            # Add passages
+            for label, text in passages.items():
+                if label not in used_passages:
+                    used_passages[label] = text
+
+            # Merge answer options if present
+            for letter, text in answer_options.items():
+                merged_answer_options[letter] = text
+
+            # Collect questions
             random.shuffle(bundle_questions)
 
             for q in bundle_questions:
                 collected.append({
-                    "source_bundle_id": bundle.id,
-                    "question": q
+                    "bundle_id": bundle.id,
+                    "q": q
                 })
 
                 if len(collected) >= required:
-                    print("   ✔ Enough questions collected")
                     break
 
             if len(collected) >= required:
                 break
 
-        print(f"   📥 Total collected for '{topic_name}': {len(collected)}")
-
-        if len(collected) < required:
-            warnings.append(
-                f"Only {len(collected)} found for '{topic_name}', required {required}."
-            )
+        print(f"   📥 Collected {len(collected)} questions")
 
         chosen = collected[:required]
 
-        # Add selected questions to exam
         for item in chosen:
-            q = item["question"]
+            q = item["q"]
 
             final_questions.append({
                 "topic": topic_name,
@@ -1378,78 +1357,56 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
                 "correct_answer": q.get("correct_answer"),
             })
 
-            # Load passages from the bundle
-            bundle_row = db.query(Question_reading).filter(
-                Question_reading.id == item["source_bundle_id"]
-            ).first()
-
-            if bundle_row:
-                materials = (bundle_row.exam_bundle or {}).get("reading_material", {})
-                for label, text in materials.items():
-                    if label not in used_passages:
-                        used_passages[label] = text
-
-    # -----------------------------
-    # 4) Finalizing Questions
-    # -----------------------------
+    # ------------------------------------------------------------
+    # 4) FINALIZE NUMBERS
+    # ------------------------------------------------------------
     print("\n==============================")
-    print("🔢 Finalizing Questions")
+    print("🔢 FINALIZING QUESTIONS")
     print("==============================")
 
     for i, q in enumerate(final_questions, start=1):
         q["question_number"] = i
 
-    total_q = len(final_questions)
-    print(f"📊 Total final questions: {total_q}")
-
-    if total_q == 0:
-        print("❌ ERROR: No questions generated!")
+    if len(final_questions) == 0:
         raise HTTPException(status_code=400, detail="No questions generated.")
 
-    # -----------------------------
-    # 5) Build exam JSON
-    # -----------------------------
+    # ------------------------------------------------------------
+    # 5) BUILD FINAL EXAM JSON
+    # ------------------------------------------------------------
     exam_json = {
         "class_name": class_name,
         "subject": subject,
         "difficulty": difficulty,
-        "total_questions": total_q,
+        "total_questions": len(final_questions),
         "reading_material": used_passages,
+        "answer_options": merged_answer_options,   # ← FIXED
         "questions": final_questions,
     }
 
-    print("📦 Exam JSON ready.")
-
-    # -----------------------------
-    # 6) Save generated exam
-    # -----------------------------
-    print("💾 Saving generated exam...")
-
+    # ------------------------------------------------------------
+    # 6) SAVE TO DB
+    # ------------------------------------------------------------
     saved = GeneratedExamReading(
         config_id=cfg.id,
         class_name=class_name,
         subject=subject,
         difficulty=difficulty,
-        total_questions=total_q,
-        exam_json=exam_json
+        total_questions=len(final_questions),
+        exam_json=exam_json,
     )
 
     db.add(saved)
     db.commit()
     db.refresh(saved)
 
-    print("✅ Saved exam ID:", saved.id)
+    print("✅ Saved Generated Exam ID:", saved.id)
 
-    # -----------------------------
-    # 7) Response
-    # -----------------------------
     return {
         "generated_exam_id": saved.id,
-        "total_questions": total_q,
+        "total_questions": len(final_questions),
         "exam_json": exam_json,
-        "warnings": warnings,
+        "warnings": warnings
     }
-
 
 
 
