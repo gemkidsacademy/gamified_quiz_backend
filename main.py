@@ -164,6 +164,43 @@ class StudentExam(Base):
     )
 
 
+class Exam_reading(Base):
+    __tablename__ = "exams_reading"   # UPDATED TABLE NAME
+
+    id = Column(Integer, primary_key=True, index=True)
+    class_name = Column(String)
+    subject = Column(String)
+    difficulty = Column(String)
+    topic = Column(String)
+    total_questions = Column(Integer)
+    reading_material = Column(JSON)  # dictionary of extracts/paragraphs
+
+
+
+class Question_reading(Base):
+    __tablename__ = "questions_reading"   # UPDATED TABLE NAME
+
+    id = Column(Integer, primary_key=True, index=True)
+    exam_id = Column(Integer, ForeignKey("exams_reading.id"))  # UPDATED FK
+    question_number = Column(Integer)
+    question_text = Column(String)
+    correct_answer = Column(String)
+
+class QuestionReadingCreate(BaseModel):
+    question_number: int
+    question_text: str
+    correct_answer: str
+
+class ExamReadingCreate(BaseModel):
+    class_name: str
+    subject: str
+    difficulty: str
+    topic: str
+    total_questions: int
+    reading_material: Dict[str, str]
+    questions: List[QuestionReadingCreate] 
+
+
 class ReadingExamConfig(Base):
     __tablename__ = "reading_exam_config"
 
@@ -988,6 +1025,82 @@ def parse_question_text_v3(text: str):
 
     return data
 
+def extract_text_from_docx(file_bytes: bytes) -> str:
+    result = mammoth.extract_raw_text(file_bytes)
+    return result.value
+
+
+def parse_exam_with_openai(raw_text: str):
+    prompt = f"""
+You will receive a Word document containing one or more exams.
+Extract ALL exam data into JSON with this structure:
+
+{{
+  "class_name": "",
+  "subject": "",
+  "difficulty": "",
+  "topic": "",
+  "total_questions": 0,
+  "reading_material": {{}},
+  "questions": [
+    {{
+      "question_number": 1,
+      "question_text": "",
+      "correct_answer": ""
+    }}
+  ]
+}}
+
+Rules:
+- Preserve exam text exactly as written.
+- Preserve questions exactly.
+- Correct answers must remain letters only.
+- If multiple exams exist, output a JSON ARRAY.
+- Return ONLY JSON. No notes or explanation.
+
+INPUT TEXT:
+{raw_text}
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+    )
+
+    content = response.choices[0].message.content.strip()
+
+    try:
+        return json.loads(content)
+    except:
+        raise ValueError("OpenAI returned invalid JSON:\n" + content)
+
+def save_exam_to_db(db: Session, exam_data: ExamReadingCreate):
+    exam = Exam_reading(
+        class_name=exam_data.class_name,
+        subject=exam_data.subject,
+        difficulty=exam_data.difficulty,
+        topic=exam_data.topic,
+        total_questions=exam_data.total_questions,
+        reading_material=exam_data.reading_material
+    )
+
+    db.add(exam)
+    db.flush()
+
+    for q in exam_data.questions:
+        question = Question_reading(
+            exam_id=exam.id,
+            question_number=q.question_number,
+            question_text=q.question_text,
+            correct_answer=q.correct_answer
+        )
+        db.add(question)
+
+    db.commit()
+    db.refresh(exam)
+    return exam
+ 
 
 def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
     """Upload a file to Google Cloud Storage and return the public URL."""
@@ -1026,6 +1139,88 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("[GCS ERROR] Upload failed:", str(e))
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
+
+@app.post("/upload-word-reading")
+async def upload_word(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================= UPLOAD WORD READING REQUEST RECEIVED =================")
+
+    # Validate file type
+    print(f"[DEBUG] Uploaded file name: {file.filename}")
+    print(f"[DEBUG] Uploaded file content-type: {file.content_type}")
+
+    if file.content_type not in [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ]:
+        print("[ERROR] Invalid file type. Must be .docx")
+        raise HTTPException(status_code=400, detail="File must be a .docx Word document")
+
+    # Read file bytes
+    raw = await file.read()
+    print(f"[DEBUG] Raw file size in bytes: {len(raw)}")
+    print("[DEBUG] File read into memory successfully.")
+
+    # ---------------------------
+    # 1. Extract text
+    # ---------------------------
+    print("\n[STEP 1] Extracting text from DOCX...")
+    extracted = extract_text_from_docx(raw)
+    print(f"[DEBUG] Extracted text length: {len(extracted)} characters")
+    print("[DEBUG] Extracted text preview:")
+    print(extracted[:300])
+    print("[DEBUG] Text extraction completed.")
+
+    # ---------------------------
+    # 2. Parse with OpenAI
+    # ---------------------------
+    print("\n[STEP 2] Parsing extracted text with OpenAI...")
+
+    try:
+        parsed = parse_exam_with_openai(extracted)
+        print("[DEBUG] OpenAI parsing successful.")
+    except Exception as e:
+        print("[ERROR] Failed to parse JSON from OpenAI:")
+        print(e)
+        raise HTTPException(status_code=500, detail="OpenAI parsing error")
+
+    print(f"[DEBUG] Parsed type: {type(parsed)}")
+    print("[DEBUG] Parsed preview:")
+    print(str(parsed)[:1200] + "...")
+
+    # Support multiple exams in one file
+    exams_to_store = parsed if isinstance(parsed, list) else [parsed]
+    print(f"[DEBUG] Exams detected: {len(exams_to_store)}")
+
+    # ---------------------------
+    # 3. Save exams to DB
+    # ---------------------------
+    print("\n[STEP 3] Saving exams to database...")
+
+    saved_ids = []
+
+    for idx, exam_json in enumerate(exams_to_store, start=1):
+        print(f"\n[DEBUG] Saving Exam #{idx}")
+        print(f"[DEBUG] Exam keys found: {list(exam_json.keys())}")
+
+        exam_obj = ExamReadingCreate(**exam_json)
+        print("[DEBUG] ExamReadingCreate validation successful.")
+
+        # Save using injected DB session
+        saved_exam = save_exam_to_db(db, exam_obj)
+
+        print(f"[DEBUG] Saved Exam #{idx} with ID: {saved_exam.id}")
+        saved_ids.append(saved_exam.id)
+
+    print("\n[STEP COMPLETE] All exams saved successfully.")
+    print(f"[DEBUG] Returning exam IDs: {saved_ids}")
+    print("================= REQUEST COMPLETE =================\n")
+
+    return {
+        "message": "Exam(s) uploaded and stored successfully.",
+        "exam_ids": saved_ids
+    }
 
 
 @app.post("/api/admin/create-reading-config")
