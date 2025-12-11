@@ -1062,58 +1062,34 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     return result.value
 
 def parse_exam_with_openai(raw_text: str):
-    prompt = """
-You will receive a Word document containing MULTIPLE Reading Comprehension exams.
-
-Extract ALL exams into JSON using EXACTLY this structure:
-
-{
-  "exams": [
-    {
-      "class_name": "",
-      "subject": "",
-      "difficulty": "",
-      "topic": "",
-      "total_questions": 0,
-
-      "reading_material": {
-        "Label 1": "text",
-        "Label 2": "text"
-      },
-
-      "answer_options": {
-        "A": "",
-        "B": "",
-        "C": "",
-        "D": "",
-        "E": "",
-        "F": "",
-        "G": ""
-      },
-
-      "questions": [
-        {
-          "question_number": 1,
-          "question_text": "",
-          "correct_answer": "A"
-        }
-      ]
-    }
-  ]
-}
-
-RULES:
-- Output ONLY JSON. No explanation.
-- Never include backticks.
-- Preserve labels exactly as written.
-- Output only the answer options that exist in the document.
-- If multiple exams exist, include them in the "exams" list.
-
-INPUT TEXT STARTS BELOW:
-----------------------------------------
-{raw_text}
-----------------------------------------
-""".format(raw_text=raw_text)
+    prompt = (
+        "You will receive a Word document containing one or more Reading Comprehension exams.\n\n"
+        "Extract ALL exams into EXACTLY this JSON structure:\n\n"
+        "{\n"
+        "  \"exams\": [\n"
+        "    {\n"
+        "      \"class_name\": \"\",\n"
+        "      \"subject\": \"\",\n"
+        "      \"difficulty\": \"\",\n"
+        "      \"topic\": \"\",\n"
+        "      \"total_questions\": 0,\n"
+        "      \"reading_material\": {},\n"
+        "      \"answer_options\": {},\n"
+        "      \"questions\": []\n"
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "RULES:\n"
+        "- Output MUST be valid JSON.\n"
+        "- Output MUST begin with '{' and end with '}'.\n"
+        "- Never output raw text before JSON.\n"
+        "- Never output backticks, explanations, or anything else.\n"
+        "- Preserve all text exactly.\n"
+        "- Only include answer option letters that exist.\n"
+        "- If multiple exams exist, include them in the exams list.\n\n"
+        "INPUT TEXT:\n"
+        f"{raw_text}"
+    )
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -1123,11 +1099,21 @@ INPUT TEXT STARTS BELOW:
 
     content = response.choices[0].message.content.strip()
 
+    # DEBUG LOG
+    print("======== RAW GPT OUTPUT ========")
+    print(content[:5000])
+    print("================================")
+
+    # Ensure JSON starts at first '{' and ends at last '}'
+    start = content.find("{")
+    end = content.rfind("}") + 1
+    json_text = content[start:end]
+
     try:
-        parsed = json.loads(content)
+        parsed = json.loads(json_text)
         return parsed["exams"]
     except Exception:
-        raise ValueError("OpenAI returned invalid JSON:\n" + content)
+        raise ValueError("OpenAI returned invalid JSON:\n" + json_text)
 
 
 
