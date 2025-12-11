@@ -1190,17 +1190,21 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get_db)):
     """
-    Generate a reading exam using class_name + difficulty supplied by frontend.
-    No config_id required. Backend will automatically find matching exam config.
+    Generate a reading exam using class_name + difficulty.
     """
 
+    print("\n==============================")
+    print("📥 Incoming Generate Reading Exam Request")
+    print("==============================")
+    print("📥 Payload:", payload.dict())
+
     # -----------------------------
-    # 1) Extract filters from body
+    # 1) Extract filters
     # -----------------------------
     class_name = payload.class_name
     difficulty = payload.difficulty
 
-    print("📥 Received:", payload.dict())
+    print(f"➡ Using filters: class_name={class_name}, difficulty={difficulty}")
 
     # -----------------------------
     # 2) Find matching exam config
@@ -1214,22 +1218,33 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         .first()
     )
 
+    print("🔎 Querying ReadingExamConfig...")
+    print("📦 Config found:" if cfg else "❌ No config found!", cfg)
+
     if not cfg:
         raise HTTPException(
             status_code=404,
             detail=f"No reading exam config found for class={class_name}, difficulty={difficulty}"
         )
 
-    subject = cfg.subject  # usually "reading"
+    subject = cfg.subject
+    print(f"📘 Subject determined from config: {subject}")
 
+    # Load topics
     try:
-        topics = cfg.topics  # list of {name, num_questions}
+        topics = cfg.topics
+        print("📚 Topics loaded:", topics)
     except Exception:
+        print("❌ ERROR: cfg.topics is not valid JSON")
         raise HTTPException(status_code=500, detail="Invalid topics JSON")
 
     final_questions = []
     used_passages = {}
     warnings = []
+
+    print("\n==============================")
+    print("🔁 Starting Topic Processing")
+    print("==============================")
 
     # -----------------------------
     # 3) Loop through topic requirements
@@ -1238,8 +1253,18 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         topic_name = topic_spec.get("name")
         required = int(topic_spec.get("num_questions", 0))
 
+        print(f"\n➡ Processing Topic: '{topic_name}' — Need {required} questions")
+
         if required <= 0:
+            print("⚠️ Skipping: num_questions <= 0")
             continue
+
+        # Debug print query filters
+        print("🔍 Fetching bundles with:")
+        print(f"   class_name={class_name}")
+        print(f"   subject={subject}")
+        print(f"   difficulty={difficulty}")
+        print(f"   topic={topic_name}")
 
         # Get all bundles for this topic
         bundles = (
@@ -1253,18 +1278,22 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
             .all()
         )
 
+        print(f"📦 Found {len(bundles)} bundles for topic '{topic_name}'")
+
         if not bundles:
             warnings.append(f"No bundles found for topic '{topic_name}'.")
             continue
 
         random.shuffle(bundles)
-
         collected = []
 
         # Collect questions from bundles
         for bundle in bundles:
+            print(f"   📌 Bundle ID {bundle.id} → extracting questions...")
             bundle_json = bundle.exam_bundle or {}
             bundle_questions = bundle_json.get("questions", [])
+            print(f"      - Found {len(bundle_questions)} questions in bundle")
+
             random.shuffle(bundle_questions)
 
             for q in bundle_questions:
@@ -1274,10 +1303,13 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
                 })
 
                 if len(collected) >= required:
+                    print("   ✔ Enough questions collected for this topic")
                     break
 
             if len(collected) >= required:
                 break
+
+        print(f"   📥 Total collected for '{topic_name}': {len(collected)}")
 
         if len(collected) < required:
             warnings.append(
@@ -1297,6 +1329,7 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
                 "correct_answer": q.get("correct_answer"),
             })
 
+            # Get reading materials
             bundle_row = db.query(Question_reading).filter(
                 Question_reading.id == item["source_bundle_id"]
             ).first()
@@ -1310,11 +1343,18 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
     # -----------------------------
     # 4) Number questions
     # -----------------------------
+    print("\n==============================")
+    print("🔢 Finalizing Questions")
+    print("==============================")
+
     for i, q in enumerate(final_questions, start=1):
         q["question_number"] = i
 
     total_q = len(final_questions)
+    print(f"📊 Total final questions: {total_q}")
+
     if total_q == 0:
+        print("❌ ERROR: No questions generated!")
         raise HTTPException(status_code=400, detail="No questions generated.")
 
     # -----------------------------
@@ -1329,9 +1369,13 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         "questions": final_questions,
     }
 
+    print("📦 Exam JSON ready.")
+
     # -----------------------------
     # 6) Save generated exam
     # -----------------------------
+    print("💾 Saving generated exam...")
+
     saved = GeneratedExamReading(
         config_id=cfg.id,
         class_name=class_name,
@@ -1345,6 +1389,8 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
     db.commit()
     db.refresh(saved)
 
+    print("✅ Saved exam ID:", saved.id)
+
     # -----------------------------
     # 7) Response
     # -----------------------------
@@ -1354,6 +1400,7 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         "exam_json": exam_json,
         "warnings": warnings,
     }
+
 
 
 @app.get("/api/quizzes-reading")
