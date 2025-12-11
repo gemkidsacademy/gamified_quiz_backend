@@ -11,6 +11,7 @@ from datetime import datetime, timedelta,date
 from sqlalchemy.dialects.postgresql import JSONB
 import mammoth
 
+
 import pandas as pd
 import os
 import random
@@ -1027,9 +1028,11 @@ def parse_question_text_v3(text: str):
     return data
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
-    result = mammoth.extract_raw_text(file_bytes)
-    return result.value
+    # Wrap bytes in a file-like object
+    file_obj = BytesIO(file_bytes)
 
+    result = mammoth.extract_raw_text(file_obj)
+    return result.value
 
 def parse_exam_with_openai(raw_text: str):
     prompt = f"""
