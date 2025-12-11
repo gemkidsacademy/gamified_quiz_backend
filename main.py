@@ -180,14 +180,24 @@ class Exam_reading(Base):
 
 
 class Question_reading(Base):
-    __tablename__ = "questions_reading"   # UPDATED TABLE NAME
+    __tablename__ = "questions_reading"
 
     id = Column(Integer, primary_key=True, index=True)
-    exam_id = Column(Integer, ForeignKey("exams_reading.id"))  # UPDATED FK
-    question_number = Column(Integer)
-    question_text = Column(String)
-    correct_answer = Column(String)
 
+    # FILTERABLE FIELDS
+    class_name = Column(String, index=True)
+    subject = Column(String, index=True)
+    difficulty = Column(String, index=True)
+    topic = Column(String, index=True)
+    total_questions = Column(Integer)
+
+    # Optional link to a full exam created by admin
+    exam_id = Column(Integer, ForeignKey("exams_reading.id"), nullable=True)
+
+    # COMPLETE EXAM CONTENT
+    exam_bundle = Column(JSON)  # reading_material + questions[]
+
+    exam = relationship("Exam_reading", back_populates="questions")
 class QuestionReadingCreate(BaseModel):
     question_number: int
     question_text: str
@@ -1080,31 +1090,46 @@ INPUT TEXT:
         raise ValueError("OpenAI returned invalid JSON:\n" + content)
 
 def save_exam_to_db(db: Session, exam_data: ExamReadingCreate):
+
+    # Still create exam metadata record (optional)
     exam = Exam_reading(
         class_name=exam_data.class_name,
         subject=exam_data.subject,
         difficulty=exam_data.difficulty,
         topic=exam_data.topic,
-        total_questions=exam_data.total_questions,
-        reading_material=exam_data.reading_material
+        total_questions=exam_data.total_questions
     )
-
     db.add(exam)
     db.flush()
 
-    for q in exam_data.questions:
-        question = Question_reading(
-            exam_id=exam.id,
-            question_number=q.question_number,
-            question_text=q.question_text,
-            correct_answer=q.correct_answer
-        )
-        db.add(question)
+    # Build full exam bundle
+    exam_bundle = {
+        "reading_material": exam_data.reading_material,
+        "questions": [
+            {
+                "question_number": q.question_number,
+                "question_text": q.question_text,
+                "correct_answer": q.correct_answer
+            }
+            for q in exam_data.questions
+        ]
+    }
 
+    # Save inside questions_reading with FULL METADATA
+    qr = Question_reading(
+        exam_id=exam.id,
+        class_name=exam_data.class_name,
+        subject=exam_data.subject,
+        difficulty=exam_data.difficulty,
+        topic=exam_data.topic,
+        total_questions=exam_data.total_questions,
+        exam_bundle=exam_bundle
+    )
+
+    db.add(qr)
     db.commit()
-    db.refresh(exam)
-    return exam
- 
+
+    return exam 
 
 def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
     """Upload a file to Google Cloud Storage and return the public URL."""
