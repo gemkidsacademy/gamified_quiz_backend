@@ -1170,7 +1170,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 
-@router.get("/api/quizzes-reading")
+@app.get("/api/quizzes-reading")
 def get_reading_quiz_dropdown(db: Session = Depends(get_db)):
     """
     Returns unique class_name + difficulty combinations 
