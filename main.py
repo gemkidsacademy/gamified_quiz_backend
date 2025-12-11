@@ -1062,10 +1062,10 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     return result.value
 
 def parse_exam_with_openai(raw_text: str):
-    prompt = f"""
+    prompt = """
 You will receive a Word document containing MULTIPLE Reading Comprehension exams.
 
-You MUST extract ALL exams into a JSON ARRAY inside this wrapper:
+Extract ALL exams into the following JSON wrapper:
 
 {
   "exams": [
@@ -1103,23 +1103,21 @@ You MUST extract ALL exams into a JSON ARRAY inside this wrapper:
 }
 
 RULES:
-- ALWAYS return the JSON nested inside the "exams" array.
-- NEVER return raw array at the root level.
-- DO NOT merge exams together.
-- Extract only the answer choices that exist in the file.
-- Preserve reading labels exactly.
-- Preserve text exactly.
-- No explanation. Output JSON only.
+- Always return the JSON using the "exams" wrapper.
+- Never return a raw array.
+- Extract only answer options actually present.
+- Preserve labels and text exactly.
+- Output ONLY JSON. No explanation.
 
 INPUT TEXT:
 ----------------------------------------
 {raw_text}
 ----------------------------------------
-"""
+""".format(raw_text=raw_text)
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        response_format={"type": "json_object"},  # REQUIRED FIX
+        response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
     )
@@ -1128,7 +1126,7 @@ INPUT TEXT:
 
     try:
         parsed = json.loads(content)
-        return parsed["exams"]  # Extract array
+        return parsed["exams"]
     except Exception:
         raise ValueError("OpenAI returned invalid JSON:\n" + content)
 
