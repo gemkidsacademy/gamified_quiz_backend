@@ -1186,11 +1186,13 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
 
+from sqlalchemy import func
 
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get_db)):
     """
     Generate a reading exam using class_name + difficulty.
+    Case-insensitive matching for all text fields.
     """
 
     print("\n==============================")
@@ -1201,24 +1203,25 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
     # -----------------------------
     # 1) Extract filters
     # -----------------------------
-    class_name = payload.class_name
-    difficulty = payload.difficulty
+    class_name = payload.class_name.strip()
+    difficulty = payload.difficulty.strip()
 
     print(f"➡ Using filters: class_name={class_name}, difficulty={difficulty}")
 
     # -----------------------------
-    # 2) Find matching exam config
+    # 2) Find matching exam config (case-insensitive)
     # -----------------------------
+    print("🔎 Querying ReadingExamConfig (case-insensitive)...")
+
     cfg = (
         db.query(ReadingExamConfig)
         .filter(
-            ReadingExamConfig.class_name == class_name,
-            ReadingExamConfig.difficulty == difficulty
+            func.lower(ReadingExamConfig.class_name) == class_name.lower(),
+            func.lower(ReadingExamConfig.difficulty) == difficulty.lower()
         )
         .first()
     )
 
-    print("🔎 Querying ReadingExamConfig...")
     print("📦 Config found:" if cfg else "❌ No config found!", cfg)
 
     if not cfg:
@@ -1247,10 +1250,10 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
     print("==============================")
 
     # -----------------------------
-    # 3) Loop through topic requirements
+    # 3) Loop through each topic
     # -----------------------------
     for topic_spec in topics:
-        topic_name = topic_spec.get("name")
+        topic_name = topic_spec.get("name", "").strip()
         required = int(topic_spec.get("num_questions", 0))
 
         print(f"\n➡ Processing Topic: '{topic_name}' — Need {required} questions")
@@ -1259,21 +1262,23 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
             print("⚠️ Skipping: num_questions <= 0")
             continue
 
-        # Debug print query filters
-        print("🔍 Fetching bundles with:")
+        # Case-insensitive debug filters
+        print("🔍 Fetching bundles with (case-insensitive):")
         print(f"   class_name={class_name}")
         print(f"   subject={subject}")
         print(f"   difficulty={difficulty}")
         print(f"   topic={topic_name}")
 
-        # Get all bundles for this topic
+        # -----------------------------
+        # FETCH QUESTION BUNDLES (CASE-INSENSITIVE)
+        # -----------------------------
         bundles = (
             db.query(Question_reading)
             .filter(
-                Question_reading.class_name == class_name,
-                Question_reading.subject == subject,
-                Question_reading.difficulty == difficulty,
-                Question_reading.topic == topic_name,
+                func.lower(Question_reading.class_name) == class_name.lower(),
+                func.lower(Question_reading.subject) == subject.lower(),
+                func.lower(Question_reading.difficulty) == difficulty.lower(),
+                func.lower(Question_reading.topic) == topic_name.lower(),
             )
             .all()
         )
@@ -1287,11 +1292,15 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         random.shuffle(bundles)
         collected = []
 
+        # -----------------------------
         # Collect questions from bundles
+        # -----------------------------
         for bundle in bundles:
-            print(f"   📌 Bundle ID {bundle.id} → extracting questions...")
+            print(f"   📌 Bundle ID {bundle.id} → Extracting questions...")
+
             bundle_json = bundle.exam_bundle or {}
             bundle_questions = bundle_json.get("questions", [])
+
             print(f"      - Found {len(bundle_questions)} questions in bundle")
 
             random.shuffle(bundle_questions)
@@ -1303,7 +1312,7 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
                 })
 
                 if len(collected) >= required:
-                    print("   ✔ Enough questions collected for this topic")
+                    print("   ✔ Enough questions collected")
                     break
 
             if len(collected) >= required:
@@ -1313,12 +1322,12 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
 
         if len(collected) < required:
             warnings.append(
-                f"Only {len(collected)} questions found for '{topic_name}', required {required}."
+                f"Only {len(collected)} found for '{topic_name}', required {required}."
             )
 
         chosen = collected[:required]
 
-        # Add questions + passages
+        # Add selected questions to exam
         for item in chosen:
             q = item["question"]
 
@@ -1329,7 +1338,7 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
                 "correct_answer": q.get("correct_answer"),
             })
 
-            # Get reading materials
+            # Load passages from the bundle
             bundle_row = db.query(Question_reading).filter(
                 Question_reading.id == item["source_bundle_id"]
             ).first()
@@ -1341,7 +1350,7 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
                         used_passages[label] = text
 
     # -----------------------------
-    # 4) Number questions
+    # 4) Finalizing Questions
     # -----------------------------
     print("\n==============================")
     print("🔢 Finalizing Questions")
@@ -1400,6 +1409,7 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         "exam_json": exam_json,
         "warnings": warnings,
     }
+
 
 
 
