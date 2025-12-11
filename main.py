@@ -1031,16 +1031,15 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 @app.post("/api/admin/create-reading-config")
 def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depends(get_db)):
 
-    # Validate input
+    # Validate topics
     if len(payload.topics) == 0:
         raise HTTPException(status_code=400, detail="At least one topic must be provided.")
 
     num_topics = len(payload.topics)
 
-    # Build JSON structure to save
+    # Build JSON structure WITHOUT topic_id
     topics_json = [
         {
-            "topic_id": t.topic_id,
             "name": t.name,
             "num_questions": t.num_questions
         }
