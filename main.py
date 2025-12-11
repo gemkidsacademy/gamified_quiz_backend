@@ -176,7 +176,6 @@ class ReadingExamConfig(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class ReadingTopicItem(BaseModel):
-    topic_id: int
     name: str
     num_questions: int
 
