@@ -227,6 +227,7 @@ class ExamReadingCreate(BaseModel):
     topic: str
     total_questions: int
     reading_material: Dict[str, str]
+    answer_options: Dict[str, str] 
     questions: List[QuestionReadingCreate] 
 
 
@@ -1160,6 +1161,7 @@ def save_exam_to_db(db: Session, exam_data: ExamReadingCreate):
     # Build full exam bundle
     exam_bundle = {
         "reading_material": exam_data.reading_material,
+        "answer_options": exam_data.answer_options,  # <-- SAVE THEM
         "questions": [
             {
                 "question_number": q.question_number,
