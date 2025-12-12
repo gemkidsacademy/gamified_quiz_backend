@@ -1379,7 +1379,7 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         "class_name": class_name,
         "subject": subject,
         "difficulty": difficulty,
-        "total_questions": total_q,
+        "total_questions": len(final_questions),
         "reading_material": used_passages,
         "questions": final_questions,
         "answer_options": {},           # optional if you want it here too
