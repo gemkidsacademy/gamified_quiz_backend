@@ -135,7 +135,6 @@ otp_store = {}
 # ---------------------------
 class WritingGenerateSchema(BaseModel):
     class_name: str
-    topic: str
     difficulty: str
  
 class StudentExamWriting(Base):
