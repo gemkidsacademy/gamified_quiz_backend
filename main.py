@@ -177,11 +177,8 @@ class SectionSchema(BaseModel):
 class QuizSetupFoundationalSchema(BaseModel):
     class_name: str
     subject: str
-
-    section1: SectionSchema
-    section2: SectionSchema
-    section3: Optional[SectionSchema] = None
-
+    sections: List[SectionSchema]
+ 
 class ReadingExamRequest(BaseModel):
     class_name: str
     difficulty: str
@@ -1280,51 +1277,55 @@ from sqlalchemy import func
 @app.post("/api/quizzes-foundational")
 def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(get_db)):
 
-    # -------------------
-    # Validate totals
-    # -------------------
+    if len(payload.sections) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 sections required")
+
+    section1 = payload.sections[0]
+    section2 = payload.sections[1]
+    section3 = payload.sections[2] if len(payload.sections) == 3 else None
+
     total_questions = (
-        payload.section1.total +
-        payload.section2.total +
-        (payload.section3.total if payload.section3 else 0)
+        section1.total +
+        section2.total +
+        (section3.total if section3 else 0)
     )
 
-    if payload.section3 is None and total_questions > 40:
+    if section3 is None and total_questions > 40:
         raise HTTPException(
             status_code=400,
-            detail="Total questions cannot exceed 40 when using 2 sections",
+            detail="Total questions cannot exceed 40 with 2 sections",
         )
 
-    if payload.section3 and total_questions > 50:
+    if section3 and total_questions > 50:
         raise HTTPException(
             status_code=400,
-            detail="Total questions cannot exceed 50 when using 3 sections",
+            detail="Total questions cannot exceed 50 with 3 sections",
         )
 
     quiz = QuizSetupFoundational(
         class_name=payload.class_name,
         subject=payload.subject,
 
-        section1_name=payload.section1.name,
-        section1_ai=payload.section1.ai,
-        section1_db=payload.section1.db,
-        section1_total=payload.section1.total,
-        section1_time=payload.section1.time,
-        section1_intro=payload.section1.intro,
+        section1_name=section1.name,
+        section1_ai=section1.ai,
+        section1_db=section1.db,
+        section1_total=section1.total,
+        section1_time=section1.time,
+        section1_intro=section1.intro,
 
-        section2_name=payload.section2.name,
-        section2_ai=payload.section2.ai,
-        section2_db=payload.section2.db,
-        section2_total=payload.section2.total,
-        section2_time=payload.section2.time,
-        section2_intro=payload.section2.intro,
+        section2_name=section2.name,
+        section2_ai=section2.ai,
+        section2_db=section2.db,
+        section2_total=section2.total,
+        section2_time=section2.time,
+        section2_intro=section2.intro,
 
-        section3_name=payload.section3.name if payload.section3 else None,
-        section3_ai=payload.section3.ai if payload.section3 else None,
-        section3_db=payload.section3.db if payload.section3 else None,
-        section3_total=payload.section3.total if payload.section3 else None,
-        section3_time=payload.section3.time if payload.section3 else None,
-        section3_intro=payload.section3.intro if payload.section3 else None,
+        section3_name=section3.name if section3 else None,
+        section3_ai=section3.ai if section3 else None,
+        section3_db=section3.db if section3 else None,
+        section3_total=section3.total if section3 else None,
+        section3_time=section3.time if section3 else None,
+        section3_intro=section3.intro if section3 else None,
     )
 
     db.add(quiz)
@@ -1335,7 +1336,6 @@ def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(
         "message": "Quiz setup saved successfully",
         "quiz_id": quiz.id,
     }
-
 
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get_db)):
