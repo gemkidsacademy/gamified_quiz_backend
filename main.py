@@ -2542,7 +2542,7 @@ async def upload_word(
         "exam_ids": saved_ids
     }
 
-@router.post("/api/exams/start-reading")
+@app.post("/api/exams/start-reading")
 def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
     """
     Start or resume a reading exam attempt for a student.
