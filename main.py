@@ -1497,17 +1497,17 @@ from sqlalchemy import func
 @app.post("/api/exams/start-reading")
 def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
 
-    # Fetch the latest generated reading exam
+    # Load latest generated reading exam
     exam = (
-        db.query(GeneratedExam)
-        .order_by(GeneratedExam.id.desc())
+        db.query(GeneratedExamReading)
+        .order_by(GeneratedExamReading.id.desc())
         .first()
     )
 
     if not exam:
         raise HTTPException(status_code=404, detail="No reading exam found")
 
-    # Check if a session already exists for this student + exam
+    # Check if the student already has a session
     existing = (
         db.query(StudentExamReading)
         .filter_by(student_id=student_id, exam_id=exam.id)
@@ -1525,17 +1525,17 @@ def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
                 detail="You have already completed this exam. Only one attempt is allowed."
             )
 
-        # Resume the same exam session (no reset)
+        # Resume the ongoing session
         return {
             "session_id": existing.id,
             "exam_json": exam.exam_json,
-            "duration_minutes": exam.duration_minutes,
+            "duration_minutes": exam.exam_json.get("duration_minutes", 40),
             "start_time": existing.started_at,
             "server_now": datetime.utcnow()
         }
 
     # ----------------------------------------------------------
-    # ✨ First time student is starting the exam — create session
+    # ✨ Create a new exam session (first attempt)
     # ----------------------------------------------------------
     new_session = StudentExamReading(
         student_id=student_id,
@@ -1549,11 +1549,10 @@ def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
     return {
         "session_id": new_session.id,
         "exam_json": exam.exam_json,
-        "duration_minutes": exam.duration_minutes,
+        "duration_minutes": exam.exam_json.get("duration_minutes", 40),
         "start_time": new_session.started_at,
         "server_now": datetime.utcnow()
     }
-
 
 @app.get("/api/foundational/classes")
 def get_foundational_classes(db: Session = Depends(get_db)):
