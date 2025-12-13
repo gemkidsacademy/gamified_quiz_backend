@@ -133,6 +133,34 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamReading(Base):
+    __tablename__ = "student_exams_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Keep consistent with writing exam (supports IDs like "Gem002")
+    student_id = Column(Text, nullable=False)
+
+    exam_id = Column(Integer, nullable=False)
+
+    started_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    finished = Column(Boolean, default=False, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
 class WritingGenerateSchema(BaseModel):
     class_name: str
     difficulty: str
@@ -1466,6 +1494,48 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
+@router.post("/api/exams/start-reading")
+def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
+
+    # Load latest reading exam
+    exam = (
+        db.query(GeneratedExam)
+        .order_by(GeneratedExam.id.desc())
+        .first()
+    )
+
+    # Check if exam already started
+    existing = (
+        db.query(StudentExamReading)
+        .filter_by(student_id=student_id, exam_id=exam.id)
+        .first()
+    )
+
+    if existing:
+        return {
+            "exam_json": exam.exam_json,
+            "duration_minutes": exam.duration_minutes,
+            "start_time": existing.start_time,
+            "server_now": datetime.utcnow()
+        }
+
+    # Create new session
+    new_session = StudentExamReading(
+        student_id=student_id,
+        exam_id=exam.id,
+        start_time=datetime.utcnow()
+    )
+    db.add(new_session)
+    db.commit()
+    db.refresh(new_session)
+
+    return {
+        "exam_json": exam.exam_json,
+        "duration_minutes": exam.duration_minutes,
+        "start_time": new_session.start_time,
+        "server_now": datetime.utcnow()
+    }
+
 @app.get("/api/foundational/classes")
 def get_foundational_classes(db: Session = Depends(get_db)):
     rows = (
@@ -2453,9 +2523,15 @@ async def upload_word(
         "exam_ids": saved_ids
     }
 
-@app.get("/api/exams/latest-reading")
-def get_latest_generated_reading_exam(db: Session = Depends(get_db)):
-    # Fetch the latest generated reading exam
+@router.post("/api/exams/start-reading")
+def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
+    """
+    Start or resume a reading exam attempt for a student.
+    This returns the SAME structure as /latest-reading,
+    but adds session_id, start_time, and server_time.
+    """
+
+    # 🔥 1. Load latest generated reading exam (same as latest-reading)
     exam = (
         db.query(GeneratedExamReading)
         .order_by(GeneratedExamReading.id.desc())
@@ -2465,29 +2541,74 @@ def get_latest_generated_reading_exam(db: Session = Depends(get_db)):
     if not exam:
         raise HTTPException(status_code=404, detail="No generated exams found")
 
-    # Safely extract exam JSON
+    # Extract exam_json safely
     exam_json = exam.exam_json or {}
 
-    # ---------------------------------------
-    # 🔥 Provide guaranteed default structures
-    # ---------------------------------------
     reading_material = exam_json.get("reading_material", {})
     answer_options = exam_json.get("answer_options", {})
     questions = exam_json.get("questions", [])
-
-    # ---------------------------------------
-    # 🔥 Backend-controlled timer (can change anytime)
-    # ---------------------------------------
     duration_minutes = exam_json.get("duration_minutes", 40)
 
-    # ---------------------------------------
-    # 🔥 Return clean and consistent exam format
-    # ---------------------------------------
+    # 🔥 2. Check if student already has a session
+    existing = (
+        db.query(StudentExamReading)
+        .filter_by(student_id=student_id, exam_id=exam.id)
+        .first()
+    )
+
+    # ------------------------------------------------------------
+    # If session exists → resume the same session (no reset cheat)
+    # ------------------------------------------------------------
+    if existing:
+        return {
+            "session_id": existing.id,
+            "exam_id": exam.id,
+            "config_id": exam.config_id,
+            "created_at": exam.created_at,
+            "duration_minutes": duration_minutes,
+
+            # provide timestamps for backend-controlled timer
+            "start_time": existing.start_time,
+            "server_now": datetime.utcnow(),
+
+            "exam_json": {
+                "class_name": exam_json.get("class_name"),
+                "subject": exam_json.get("subject"),
+                "difficulty": exam_json.get("difficulty"),
+                "total_questions": len(questions),
+
+                "reading_material": reading_material,
+                "answer_options": answer_options,
+                "questions": questions,
+            }
+        }
+
+    # ------------------------------------------------------------
+    # 3. If no session exists → create one
+    # ------------------------------------------------------------
+    new_session = StudentExamReading(
+        student_id=student_id,
+        exam_id=exam.id,
+        start_time=datetime.utcnow()
+    )
+    db.add(new_session)
+    db.commit()
+    db.refresh(new_session)
+
+    # ------------------------------------------------------------
+    # 4. Return the same structure as latest-reading + session fields
+    # ------------------------------------------------------------
     return {
+        "session_id": new_session.id,
         "exam_id": exam.id,
         "config_id": exam.config_id,
         "created_at": exam.created_at,
-        "duration_minutes": duration_minutes,  # ← frontend uses this
+        "duration_minutes": duration_minutes,
+
+        # Timer info
+        "start_time": new_session.start_time,
+        "server_now": datetime.utcnow(),
+
         "exam_json": {
             "class_name": exam_json.get("class_name"),
             "subject": exam_json.get("subject"),
@@ -2499,7 +2620,6 @@ def get_latest_generated_reading_exam(db: Session = Depends(get_db)):
             "questions": questions,
         }
     }
-
 
      
 @app.post("/api/admin/create-reading-config")
