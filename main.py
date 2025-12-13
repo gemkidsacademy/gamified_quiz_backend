@@ -977,7 +977,7 @@ def generate_quizzes():
                 class_quiz = StudentQuiz(
                     quiz_json=parsed_json,
                     status="pending",
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                     class_name=class_name,
                     class_day=getattr(activity, "class_day", "")
                 )
@@ -1566,7 +1566,7 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
         )
 
     # 2️⃣ Calculate remaining time
-    elapsed_seconds = (datetime.utcnow() - exam.created_at).total_seconds()
+    elapsed_seconds = (datetime.now(timezone.utc) - exam.created_at).total_seconds()
     total_seconds = exam.duration_minutes * 60
     remaining_seconds = max(0, int(total_seconds - elapsed_seconds))
 
@@ -2553,7 +2553,7 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     new_session = StudentExam(
         student_id=student.id,
         exam_id=exam.id,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
         duration_minutes=40
     )
 
@@ -2586,7 +2586,7 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
     # -------------------------------------
     # TIME CALCULATION
     # -------------------------------------
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     elapsed = (now - session.started_at).total_seconds()
     remaining = session.duration_minutes * 60 - elapsed
 
@@ -2639,7 +2639,7 @@ def finish_exam(req: FinishExamRequest, db: Session = Depends(get_db)):
     if not session:
         raise HTTPException(404, "Session not found")
 
-    session.completed_at = datetime.utcnow()
+    session.completed_at = datetime.now(timezone.utc)
     db.commit()
 
     print(f"✔ Session {req.session_id} marked completed.")
@@ -3022,7 +3022,7 @@ def start_exam(student_id: int, exam_id: int, db: Session = Depends(get_db)):
         student_id=student_id,
         exam_id=exam.id,
         status="started",
-        started_at=datetime.utcnow()
+        started_at=datetime.now(timezone.utc)
     )
 
     db.add(student_exam)
@@ -3164,7 +3164,7 @@ def retrieve_week_number(request: WeekRequest, db: Session = Depends(get_db)):
         input_monday = input_date - timedelta(days=input_date.weekday())  # weekday(): Mon=0 ... Sun=6
 
         # Get the current date
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         current_monday = today - timedelta(days=today.weekday())
 
         # Calculate number of weeks between input week and current week
@@ -4013,7 +4013,7 @@ def calculate_week_number(date_str: str) -> int:
         input_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         input_monday = input_date - timedelta(days=input_date.weekday())
 
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         current_monday = today - timedelta(days=today.weekday())
 
         delta_days = (current_monday - input_monday).days
@@ -4047,7 +4047,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
 
     # Start quiz if not started
     if not quiz.started_at:
-        quiz.started_at = datetime.utcnow()
+        quiz.started_at = datetime.now(timezone.utc)
 
     # Load or initialize student_answers
     student_answers = quiz.quiz_json.get("student_answers") or {}
@@ -4074,7 +4074,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
 
     if quiz_completed:
         quiz.status = "completed"
-        quiz.completed_at = datetime.utcnow()
+        quiz.completed_at = datetime.now(timezone.utc)
 
         # Check if a result already exists for this student for this quiz
         existing_result = db.query(QuizResult).filter(
@@ -4098,7 +4098,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
                 week_number=week_number,   # <-- new
                 total_score=correct_count,
                 total_questions=total_questions,
-                submitted_at=datetime.utcnow()
+                submitted_at=datetime.now(timezone.utc)
             )
             db.add(result)
             print("Result saved successfully")
