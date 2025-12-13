@@ -1497,43 +1497,63 @@ from sqlalchemy import func
 @app.post("/api/exams/start-reading")
 def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
 
+    # Fetch the latest generated reading exam
     exam = (
         db.query(GeneratedExam)
         .order_by(GeneratedExam.id.desc())
         .first()
     )
 
+    if not exam:
+        raise HTTPException(status_code=404, detail="No reading exam found")
+
+    # Check if a session already exists for this student + exam
     existing = (
         db.query(StudentExamReading)
         .filter_by(student_id=student_id, exam_id=exam.id)
         .first()
     )
 
+    # ----------------------------------------------------------
+    # 🔒 Prevent second attempt if already finished
+    # ----------------------------------------------------------
     if existing:
+
+        if existing.finished:
+            raise HTTPException(
+                status_code=403,
+                detail="You have already completed this exam. Only one attempt is allowed."
+            )
+
+        # Resume the same exam session (no reset)
         return {
-            "session_id": existing.id,     # FIX #2
+            "session_id": existing.id,
             "exam_json": exam.exam_json,
             "duration_minutes": exam.duration_minutes,
-            "start_time": existing.started_at,  # FIX #1
+            "start_time": existing.started_at,
             "server_now": datetime.utcnow()
         }
 
+    # ----------------------------------------------------------
+    # ✨ First time student is starting the exam — create session
+    # ----------------------------------------------------------
     new_session = StudentExamReading(
         student_id=student_id,
         exam_id=exam.id,
-        started_at=datetime.utcnow()  # FIX #1
+        started_at=datetime.utcnow()
     )
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
 
     return {
-        "session_id": new_session.id,  # FIX #2
+        "session_id": new_session.id,
         "exam_json": exam.exam_json,
         "duration_minutes": exam.duration_minutes,
-        "start_time": new_session.started_at,  # FIX #1
+        "start_time": new_session.started_at,
         "server_now": datetime.utcnow()
     }
+
 
 @app.get("/api/foundational/classes")
 def get_foundational_classes(db: Session = Depends(get_db)):
