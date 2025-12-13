@@ -1550,12 +1550,11 @@ def generate_exam_writing(
     payload: WritingGenerateSchema,
     db: Session = Depends(get_db)
 ):
-    # 1️⃣ Fetch ONE writing prompt (or random if you want later)
+    # 1️⃣ Fetch ONE writing prompt based on class + difficulty
     question = (
         db.query(WritingQuestionBank)
         .filter(
             WritingQuestionBank.class_name == payload.class_name,
-            WritingQuestionBank.topic == payload.topic,
             WritingQuestionBank.difficulty == payload.difficulty
         )
         .order_by(func.random())
@@ -1565,14 +1564,13 @@ def generate_exam_writing(
     if not question:
         raise HTTPException(
             status_code=404,
-            detail="No writing question found for this configuration"
+            detail="No writing question found for this class & difficulty"
         )
 
-    # 2️⃣ Save generated exam
+    # 2️⃣ Save generated exam (NO TOPIC)
     exam = GeneratedExamWriting(
         class_name=payload.class_name,
         subject="writing",
-        topic=payload.topic,
         difficulty=payload.difficulty,
         question_text=question.question_text,
         duration_minutes=40
@@ -1582,9 +1580,10 @@ def generate_exam_writing(
     db.commit()
     db.refresh(exam)
 
+    # 3️⃣ Return response
     return {
         "exam_id": exam.id,
-        "topic": exam.topic,
+        "class_name": exam.class_name,
         "difficulty": exam.difficulty,
         "question_text": exam.question_text,
         "duration_minutes": exam.duration_minutes
