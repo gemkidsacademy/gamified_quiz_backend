@@ -133,6 +133,12 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class WritingQuizSchema(BaseModel):
+    class_name: str
+    subject: str
+    topic: str
+    difficulty: str
+ 
 class GeneratedExamFoundational(Base):
     __tablename__ = "generated_exam_foundational"
 
