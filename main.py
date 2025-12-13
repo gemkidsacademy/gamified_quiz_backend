@@ -172,6 +172,20 @@ class StudentsExamFoundational(Base):
  
 class EmptyRequest(BaseModel):
     pass
+
+class QuizSetupWriting(Base):
+    __tablename__ = "quiz_setup_writing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+
+    topic = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class QuizSetupFoundational(Base):
     __tablename__ = "quiz_setup_foundational"
 
@@ -1312,6 +1326,24 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+
+@app.post("/api/quizzes-writing")
+def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db)):
+    quiz = QuizSetupWriting(
+        class_name=payload.class_name,
+        subject=payload.subject,
+        topic=payload.topic,
+        difficulty=payload.difficulty
+    )
+
+    db.add(quiz)
+    db.commit()
+    db.refresh(quiz)
+
+    return {
+        "message": "Writing quiz setup saved",
+        "quiz_id": quiz.id
+    }
 
 @app.post("/api/exams/foundational/start")
 def start_foundational_exam(
