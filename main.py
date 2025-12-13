@@ -1875,14 +1875,15 @@ def get_current_foundational_exam(db: Session = Depends(get_db)):
         "exam": exam.exam_json
     }
 
+
 @app.post("/api/exams/generate-foundational")
 def generate_exam_foundational(
-    payload: EmptyRequest,
+    payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
     """
-    Generate a Foundational exam using latest quiz_setup_foundational config.
-    No payload required.
+    Generate a Foundational exam using the latest config for the given class.
+    Backend now requires class_name from frontend.
     """
 
     print("\n==============================")
@@ -1890,10 +1891,20 @@ def generate_exam_foundational(
     print("==============================")
 
     # ------------------------------------------------------------
-    # 1) Load latest foundational config
+    # 0) Validate payload
+    # ------------------------------------------------------------
+    class_name = payload.get("class_name")
+    if not class_name:
+        raise HTTPException(400, "class_name is required")
+
+    subject = "Foundational"
+
+    # ------------------------------------------------------------
+    # 1) Load latest foundational config FOR THIS CLASS ONLY
     # ------------------------------------------------------------
     cfg = (
         db.query(QuizSetupFoundational)
+        .filter(func.lower(QuizSetupFoundational.class_name) == class_name.lower())
         .order_by(QuizSetupFoundational.id.desc())
         .first()
     )
@@ -1901,13 +1912,10 @@ def generate_exam_foundational(
     if not cfg:
         raise HTTPException(
             status_code=404,
-            detail="No foundational exam configuration found"
+            detail=f"No foundational config found for class '{class_name}'"
         )
 
-    class_name = cfg.class_name
-    subject = "Foundational"
-
-    print(f"➡ Using config ID={cfg.id}, class={class_name}")
+    print(f"➡ Using config ID={cfg.id} for class={class_name}")
 
     # ------------------------------------------------------------
     # 2) Build sections list from config
@@ -1942,7 +1950,7 @@ def generate_exam_foundational(
     warnings = []
 
     # ------------------------------------------------------------
-    # 3) Process each section
+    # 3) Fetch questions for each section
     # ------------------------------------------------------------
     for section in sections:
         difficulty = section["difficulty"]
@@ -1953,21 +1961,20 @@ def generate_exam_foundational(
         pool = (
             db.query(Question)
             .filter(
-                func.lower(Question.class_name) == class_name.lower(),
+                func.lower(Question.class_name) == class_name.lower(),   # <-- Important fix
                 func.lower(Question.subject) == subject.lower(),
                 func.lower(Question.difficulty) == difficulty.lower(),
             )
             .all()
         )
 
-        print(f"📦 Found {len(pool)} questions")
+        print(f"📦 Found {len(pool)} questions for {class_name} / {difficulty}")
 
         if not pool:
             warnings.append(f"No questions found for {difficulty}")
             continue
 
         random.shuffle(pool)
-
         chosen = pool[:required]
 
         if len(chosen) < required:
@@ -1988,13 +1995,10 @@ def generate_exam_foundational(
             })
 
     # ------------------------------------------------------------
-    # 4) Final numbering
+    # 4) Number questions
     # ------------------------------------------------------------
     if not final_questions:
-        raise HTTPException(
-            status_code=400,
-            detail="No questions generated"
-        )
+        raise HTTPException(400, "No questions generated")
 
     for i, q in enumerate(final_questions, start=1):
         q["question_number"] = i
@@ -2016,7 +2020,7 @@ def generate_exam_foundational(
     }
 
     # ------------------------------------------------------------
-    # 6) (Optional) Save generated exam
+    # 6) Save exam
     # ------------------------------------------------------------
     saved = GeneratedExamFoundational(
         class_name=class_name,
@@ -2036,8 +2040,9 @@ def generate_exam_foundational(
         "generated_exam_id": saved.id,
         "total_questions": len(final_questions),
         "exam_json": exam_json,
-        "warnings": warnings,
+        "warnings": warnings
     }
+
 
 @app.post("/api/quizzes-foundational")
 def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(get_db)):
