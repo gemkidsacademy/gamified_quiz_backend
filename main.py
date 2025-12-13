@@ -1469,13 +1469,13 @@ from sqlalchemy import func
 @app.get("/api/foundational/classes")
 def get_foundational_classes(db: Session = Depends(get_db)):
     rows = (
-        db.query(FoundationalConfig.class_name)
+        db.query(QuizSetupFoundational.class_name)
         .distinct()
         .all()
     )
 
     return [{"class_name": r.class_name} for r in rows]
-
+ 
 @app.post("/api/student/start-writing-exam")
 def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     # Get latest writing exam
