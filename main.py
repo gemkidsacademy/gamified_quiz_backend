@@ -142,7 +142,9 @@ class StudentExamWriting(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, nullable=False)
+    # Change from Integer → Text to support IDs like "Gem002"
+    student_id = Column(Text, nullable=False)
+
     exam_id = Column(Integer, nullable=False)
 
     started_at = Column(
