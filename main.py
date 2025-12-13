@@ -133,6 +133,55 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class QuizSetupFoundational(Base):
+    __tablename__ = "quiz_setup_foundational"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+
+    # -------- Section 1 --------
+    section1_name = Column(String, nullable=False)
+    section1_ai = Column(Integer, default=0)
+    section1_db = Column(Integer, default=0)
+    section1_total = Column(Integer, default=0)
+    section1_time = Column(Integer, default=0)
+    section1_intro = Column(Text, default="")
+
+    # -------- Section 2 --------
+    section2_name = Column(String, nullable=False)
+    section2_ai = Column(Integer, default=0)
+    section2_db = Column(Integer, default=0)
+    section2_total = Column(Integer, default=0)
+    section2_time = Column(Integer, default=0)
+    section2_intro = Column(Text, default="")
+
+    # -------- Section 3 (optional) --------
+    section3_name = Column(String, nullable=True)
+    section3_ai = Column(Integer, nullable=True)
+    section3_db = Column(Integer, nullable=True)
+    section3_total = Column(Integer, nullable=True)
+    section3_time = Column(Integer, nullable=True)
+    section3_intro = Column(Text, nullable=True) 
+
+class SectionSchema(BaseModel):
+    name: str
+    ai: int
+    db: int
+    total: int
+    time: int
+    intro: str
+
+
+class QuizSetupFoundationalSchema(BaseModel):
+    class_name: str
+    subject: str
+
+    section1: SectionSchema
+    section2: SectionSchema
+    section3: Optional[SectionSchema] = None
+
 class ReadingExamRequest(BaseModel):
     class_name: str
     difficulty: str
@@ -1227,6 +1276,66 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+
+@router.post("/api/quizzes-foundational")
+def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(get_db)):
+
+    # -------------------
+    # Validate totals
+    # -------------------
+    total_questions = (
+        payload.section1.total +
+        payload.section2.total +
+        (payload.section3.total if payload.section3 else 0)
+    )
+
+    if payload.section3 is None and total_questions > 40:
+        raise HTTPException(
+            status_code=400,
+            detail="Total questions cannot exceed 40 when using 2 sections",
+        )
+
+    if payload.section3 and total_questions > 50:
+        raise HTTPException(
+            status_code=400,
+            detail="Total questions cannot exceed 50 when using 3 sections",
+        )
+
+    quiz = QuizSetupFoundational(
+        class_name=payload.class_name,
+        subject=payload.subject,
+
+        section1_name=payload.section1.name,
+        section1_ai=payload.section1.ai,
+        section1_db=payload.section1.db,
+        section1_total=payload.section1.total,
+        section1_time=payload.section1.time,
+        section1_intro=payload.section1.intro,
+
+        section2_name=payload.section2.name,
+        section2_ai=payload.section2.ai,
+        section2_db=payload.section2.db,
+        section2_total=payload.section2.total,
+        section2_time=payload.section2.time,
+        section2_intro=payload.section2.intro,
+
+        section3_name=payload.section3.name if payload.section3 else None,
+        section3_ai=payload.section3.ai if payload.section3 else None,
+        section3_db=payload.section3.db if payload.section3 else None,
+        section3_total=payload.section3.total if payload.section3 else None,
+        section3_time=payload.section3.time if payload.section3 else None,
+        section3_intro=payload.section3.intro if payload.section3 else None,
+    )
+
+    db.add(quiz)
+    db.commit()
+    db.refresh(quiz)
+
+    return {
+        "message": "Quiz setup saved successfully",
+        "quiz_id": quiz.id,
+    }
+
 
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get_db)):
