@@ -133,7 +133,11 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
-
+class WritingGenerateSchema(BaseModel):
+    class_name: str
+    topic: str
+    difficulty: str
+ 
 class StudentExamWriting(Base):
     __tablename__ = "student_exam_writing"
 
