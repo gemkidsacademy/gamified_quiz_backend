@@ -133,6 +133,23 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+
+class WritingQuestionBank(Base):
+    __tablename__ = "writing_question_bank"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    topic = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    question_text = Column(Text, nullable=False)
+
+    source_file = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
+
 class WritingQuizSchema(BaseModel):
     class_name: str
     subject: str
@@ -693,6 +710,39 @@ otp_dict = {}
 # ---------------------------
 # Quiz Generation
 # ---------------------------
+
+def parse_writing_with_openai(text: str) -> list[dict]:
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": "You return strict JSON only."
+            },
+            {
+                "role": "user",
+                "content": WRITING_PARSE_PROMPT.format(text=text)
+            }
+        ],
+        temperature=0
+    )
+
+    raw = response.choices[0].message.content.strip()
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        raise ValueError("OpenAI returned invalid JSON")
+
+    if isinstance(parsed, dict):
+        return [parsed]
+
+    if not isinstance(parsed, list):
+        raise ValueError("Unexpected JSON structure")
+
+    return parsed
+ 
+
  
 def generate_quizzes():
     print("\n==============================")
@@ -1333,6 +1383,53 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
+@app.post("/upload-word-writing")
+async def upload_word_writing(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    print("\n=== UPLOAD WORD WRITING ===")
+
+    if file.content_type != (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        raise HTTPException(400, "File must be .docx")
+
+    raw = await file.read()
+    extracted_text = extract_text_from_docx(raw)
+
+    try:
+        questions = parse_writing_with_openai(extracted_text)
+    except Exception as e:
+        print("❌ OpenAI parse error:", e)
+        raise HTTPException(500, "Failed to parse writing questions")
+
+    if not questions:
+        raise HTTPException(400, "No writing questions detected")
+
+    saved_ids = []
+
+    for q in questions:
+        obj = WritingQuestionBank(
+            class_name=q["class_name"],
+            subject=q["subject"],
+            topic=q["topic"],
+            difficulty=q["difficulty"],
+            question_text=q["question_text"],
+            source_file=file.filename
+        )
+        db.add(obj)
+        db.flush()
+        saved_ids.append(obj.id)
+
+    db.commit()
+
+    return {
+        "message": "Writing questions uploaded successfully",
+        "count": len(saved_ids),
+        "question_ids": saved_ids
+    }
+ 
 @app.post("/api/quizzes-writing")
 def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db)):
     quiz = QuizSetupWriting(
