@@ -1465,6 +1465,29 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
+@app.get("/api/get-quizzes-writing")
+def get_quizzes_writing(db: Session = Depends(get_db)):
+    rows = (
+        db.query(
+            QuizSetupWriting.class_name,
+            QuizSetupWriting.difficulty
+        )
+        .distinct()
+        .order_by(
+            QuizSetupWriting.class_name,
+            QuizSetupWriting.difficulty
+        )
+        .all()
+    )
+
+    return [
+        {
+            "class_name": row.class_name,
+            "difficulty": row.difficulty
+        }
+        for row in rows
+    ]
+
 @app.post("/api/exams/writing/submit")
 def submit_writing_exam(
     payload: WritingSubmitSchema,
