@@ -1497,8 +1497,11 @@ from sqlalchemy import func
 def start_reading_exam(student_id: str, db: Session = Depends(get_db)):
     """
     Start or resume a reading exam session for a student.
-    student_id MUST be a string because student_exams_reading.student_id is TEXT.
+    Debug statements included.
     """
+
+    print("\n\n==================== /start-reading REQUEST ====================")
+    print("Incoming student_id:", student_id)
 
     # Load the latest generated reading exam
     exam = (
@@ -1507,29 +1510,43 @@ def start_reading_exam(student_id: str, db: Session = Depends(get_db)):
         .first()
     )
 
+    print("Loaded exam ID:", exam.id if exam else None)
+
     if not exam:
         raise HTTPException(status_code=404, detail="No reading exam found")
 
-    # Check if the student already has a session for this exam
+    # Debug exam_json content
+    print("Exam JSON keys:", list(exam.exam_json.keys()))
+    print("duration_minutes FROM exam_json:", exam.exam_json.get("duration_minutes"))
+    print("Full exam_json:", exam.exam_json)
+
+    # Check if the student already has a session
     existing = (
         db.query(StudentExamReading)
         .filter_by(student_id=student_id, exam_id=exam.id)
         .first()
     )
 
+    print("Existing session found?", bool(existing))
+
     # ----------------------------------------------------------
     # 🔒 Prevent second attempt if already finished
     # ----------------------------------------------------------
     if existing:
 
+        print("Existing session ID:", existing.id)
+        print("existing.started_at:", existing.started_at)
+        print("existing.finished:", existing.finished)
+        print("server_now:", datetime.utcnow())
+
         if existing.finished:
+            print("❌ STUDENT ALREADY FINISHED. BLOCKING.")
             raise HTTPException(
                 status_code=403,
                 detail="You have already completed this exam. Only one attempt is allowed."
             )
 
-        # Resume the ongoing session (same timer)
-        return {
+        response = {
             "session_id": existing.id,
             "exam_json": exam.exam_json,
             "duration_minutes": exam.exam_json.get("duration_minutes", 40),
@@ -1537,26 +1554,40 @@ def start_reading_exam(student_id: str, db: Session = Depends(get_db)):
             "server_now": datetime.utcnow(),
         }
 
+        print("Returning EXISTING session response:", response)
+        print("==============================================================\n\n")
+
+        return response
+
     # ----------------------------------------------------------
     # ✨ First-time attempt — Create a new session
     # ----------------------------------------------------------
+
+    now = datetime.utcnow()
+    print("Creating new session at:", now)
+
     new_session = StudentExamReading(
-        student_id=student_id,        # STRING ID
+        student_id=student_id,
         exam_id=exam.id,
-        started_at=datetime.utcnow()
+        started_at=now
     )
 
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
 
-    return {
+    response = {
         "session_id": new_session.id,
         "exam_json": exam.exam_json,
         "duration_minutes": exam.exam_json.get("duration_minutes", 40),
         "start_time": new_session.started_at,
         "server_now": datetime.utcnow(),
     }
+
+    print("Returning NEW session response:", response)
+    print("==============================================================\n\n")
+
+    return response
 
 
 @app.get("/api/foundational/classes")
