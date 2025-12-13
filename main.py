@@ -1313,6 +1313,35 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
+@app.post("/api/exams/foundational/start")
+def start_foundational_exam(
+    student_id: int,
+    db: Session = Depends(get_db)
+):
+    exam = (
+        db.query(GeneratedExamFoundational)
+        .filter(GeneratedExamFoundational.is_current == True)
+        .order_by(desc(GeneratedExamFoundational.created_at))
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(404, "No active exam")
+
+    attempt = StudentsExamFoundational(
+        student_id=student_id,
+        exam_id=exam.id,
+        started_at=datetime.now(timezone.utc),
+        current_section_index=0
+    )
+
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    return { "message": "Exam started" }
+
+
 @app.post("/api/exams/foundational/next-section")
 def advance_foundational_section(
     student_id: int,
