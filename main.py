@@ -1490,10 +1490,9 @@ def get_quizzes_writing(db: Session = Depends(get_db)):
 @app.post("/api/exams/writing/submit")
 def submit_writing_exam(
     payload: WritingSubmitSchema,
-    student_id: int,
+    student_id: str,
     db: Session = Depends(get_db)
 ):
-    # 1️⃣ Find active writing exam for student
     exam_state = (
         db.query(StudentExamWriting)
         .filter(
@@ -1510,7 +1509,6 @@ def submit_writing_exam(
             detail="No active writing exam found"
         )
 
-    # 2️⃣ Save answer + mark completed
     exam_state.answer_text = payload.answer_text
     exam_state.completed_at = func.now()
 
@@ -1520,6 +1518,7 @@ def submit_writing_exam(
         "message": "Writing exam submitted successfully",
         "exam_id": exam_state.exam_id
     }
+
 
 
 @app.get("/api/exams/writing/current")
