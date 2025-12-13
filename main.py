@@ -7,7 +7,7 @@ import docx
 from io import BytesIO
 from typing import List
 from sendgrid import SendGridAPIClient
-from datetime import datetime, timedelta,date
+from datetime import datetime, timedelta,date, timezone
 from sqlalchemy.dialects.postgresql import JSONB
 import mammoth
 
@@ -1312,6 +1312,135 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+
+@app.post("/api/exams/foundational/next-section")
+def advance_foundational_section(
+    student_id: int,
+    db: Session = Depends(get_db)
+):
+    # 1️⃣ Get active attempt
+    attempt = (
+        db.query(StudentsExamFoundational)
+        .filter(
+            StudentsExamFoundational.student_id == student_id,
+            StudentsExamFoundational.completed_at.is_(None)
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No active foundational exam attempt"
+        )
+
+    # 2️⃣ Load exam
+    exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
+
+    if not exam:
+        raise HTTPException(404, "Exam not found")
+
+    sections = exam.exam_json.get("sections", [])
+    total_sections = len(sections)
+
+    # 3️⃣ Check if already finished
+    if attempt.current_section_index >= total_sections - 1:
+        # Last section completed
+        attempt.completed_at = datetime.now(timezone.utc)
+        db.commit()
+
+        return {
+            "message": "Exam completed",
+            "completed": True
+        }
+
+    # 4️⃣ Advance to next section
+    attempt.current_section_index += 1
+    db.commit()
+    db.refresh(attempt)
+
+    return {
+        "message": "Section advanced",
+        "current_section_index": attempt.current_section_index,
+        "section_name": sections[attempt.current_section_index]["name"]
+    }
+
+@app.get("/api/exams/foundational/state")
+def get_foundational_exam_state(
+    student_id: int,
+    db: Session = Depends(get_db)
+):
+    attempt = (
+        db.query(StudentsExamFoundational)
+        .filter(
+            StudentsExamFoundational.student_id == student_id,
+            StudentsExamFoundational.completed_at.is_(None)
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(404, "No active exam attempt")
+
+    exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
+
+    sections = exam.exam_json["sections"]
+    now = datetime.now(timezone.utc)
+
+    # Sum time of completed sections
+    elapsed_before_section = sum(
+        sections[i]["time"] * 60
+        for i in range(attempt.current_section_index)
+    )
+
+    section_start = attempt.started_at + timedelta(
+        seconds=elapsed_before_section
+    )
+
+    section_duration = sections[attempt.current_section_index]["time"] * 60
+    section_end = section_start + timedelta(seconds=section_duration)
+
+    remaining_seconds = max(
+        0,
+        int((section_end - now).total_seconds())
+    )
+
+    return {
+        "exam": exam.exam_json,
+        "current_section_index": attempt.current_section_index,
+        "remaining_seconds": remaining_seconds
+    }
+
+@app.post("/api/exams/foundational/start")
+def start_foundational_exam(
+    student_id: int,
+    db: Session = Depends(get_db)
+):
+    exam = (
+        db.query(GeneratedExamFoundational)
+        .filter(GeneratedExamFoundational.is_current == True)
+        .order_by(desc(GeneratedExamFoundational.created_at))
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(404, "No active exam")
+
+    attempt = StudentsExamFoundational(
+        student_id=student_id,
+        exam_id=exam.id,
+        started_at=datetime.now(timezone.utc),
+        current_section_index=0
+    )
+
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    return {
+        "message": "Exam started",
+        "attempt_id": attempt.id
+    }
 
 @app.get("/api/exams/foundational/current")
 def get_current_foundational_exam(db: Session = Depends(get_db)):
