@@ -133,7 +133,7 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
- class EmptyRequest(BaseModel):
+class EmptyRequest(BaseModel):
     pass
 class QuizSetupFoundational(Base):
     __tablename__ = "quiz_setup_foundational"
