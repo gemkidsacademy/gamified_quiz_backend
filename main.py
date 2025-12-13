@@ -134,6 +134,52 @@ otp_store = {}
 # Models
 # ---------------------------
 
+class StudentExamWriting(Base):
+    __tablename__ = "student_exam_writing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+
+    started_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    duration_minutes = Column(Integer, default=40, nullable=False)
+
+    answer_text = Column(Text, nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
+class WritingSubmitSchema(BaseModel):
+    answer_text: str
+
+class GeneratedExamWriting(Base):
+    __tablename__ = "generated_exam_writing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    topic = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    question_text = Column(Text, nullable=False)
+
+    duration_minutes = Column(Integer, default=40)
+
+    is_current = Column(Boolean, default=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class WritingQuestionBank(Base):
     __tablename__ = "writing_question_bank"
 
@@ -1414,6 +1460,131 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+
+@app.post("/api/exams/writing/submit")
+def submit_writing_exam(
+    payload: WritingSubmitSchema,
+    student_id: int,
+    db: Session = Depends(get_db)
+):
+    # 1️⃣ Find active writing exam for student
+    exam_state = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.student_id == student_id,
+            StudentExamWriting.completed_at.is_(None)
+        )
+        .order_by(StudentExamWriting.started_at.desc())
+        .first()
+    )
+
+    if not exam_state:
+        raise HTTPException(
+            status_code=404,
+            detail="No active writing exam found"
+        )
+
+    # 2️⃣ Save answer + mark completed
+    exam_state.answer_text = payload.answer_text
+    exam_state.completed_at = func.now()
+
+    db.commit()
+
+    return {
+        "message": "Writing exam submitted successfully",
+        "exam_id": exam_state.exam_id
+    }
+
+
+@app.get("/api/exams/writing/current")
+def get_current_writing_exam(db: Session = Depends(get_db)):
+    exam = (
+        db.query(GeneratedExamWriting)
+        .filter(GeneratedExamWriting.is_current == True)
+        .order_by(GeneratedExamWriting.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="No active writing exam"
+        )
+
+    return {
+        "exam_id": exam.id,
+        "topic": exam.topic,
+        "difficulty": exam.difficulty,
+        "question_text": exam.question_text,
+        "duration_minutes": exam.duration_minutes
+    }
+
+@app.post("/api/exams/generate-writing")
+def generate_exam_writing(db: Session = Depends(get_db)):
+    print("\n==============================")
+    print("✍️ GENERATE WRITING EXAM")
+    print("==============================")
+
+    # ------------------------------------------------------------
+    # 1️⃣ Get all available writing questions
+    # ------------------------------------------------------------
+    questions = (
+        db.query(QuestionWriting)
+        .filter(func.lower(QuestionWriting.subject) == "writing")
+        .all()
+    )
+
+    if not questions:
+        raise HTTPException(
+            status_code=404,
+            detail="No writing questions available"
+        )
+
+    # ------------------------------------------------------------
+    # 2️⃣ Pick one question (random for now)
+    # ------------------------------------------------------------
+    selected = random.choice(questions)
+
+    print("📌 Selected question ID:", selected.id)
+
+    # ------------------------------------------------------------
+    # 3️⃣ Mark previous exams as NOT current
+    # ------------------------------------------------------------
+    db.query(GeneratedExamWriting).update(
+        {GeneratedExamWriting.is_current: False}
+    )
+
+    # ------------------------------------------------------------
+    # 4️⃣ Save generated exam
+    # ------------------------------------------------------------
+    exam = GeneratedExamWriting(
+        class_name=selected.class_name,
+        subject=selected.subject,
+        topic=selected.topic,
+        difficulty=selected.difficulty,
+        question_text=selected.question_text,
+        duration_minutes=40,
+        is_current=True
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print("✅ Writing exam saved with ID:", exam.id)
+
+    # ------------------------------------------------------------
+    # 5️⃣ Return payload for frontend
+    # ------------------------------------------------------------
+    return {
+        "exam_id": exam.id,
+        "class_name": exam.class_name,
+        "subject": exam.subject,
+        "topic": exam.topic,
+        "difficulty": exam.difficulty,
+        "question_text": exam.question_text,
+        "duration_minutes": exam.duration_minutes
+    }
 
 @app.post("/upload-word-writing")
 async def upload_word_writing(
