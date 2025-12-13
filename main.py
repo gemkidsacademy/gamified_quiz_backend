@@ -1466,6 +1466,32 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
+@app.post("/api/student/start-writing-exam")
+def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
+    # Get latest writing exam
+    exam = (
+        db.query(GeneratedExamWriting)
+        .filter(GeneratedExamWriting.is_current == True)
+        .order_by(GeneratedExamWriting.created_at.desc())
+        .first()
+    )
+    if not exam:
+        raise HTTPException(404, "No active writing exam")
+
+    # Create session
+    new_session = StudentExamWriting(
+        student_id=student_id,
+        exam_id=exam.id,
+        started_at=datetime.now(timezone.utc),
+        duration_minutes=exam.duration_minutes
+    )
+
+    db.add(new_session)
+    db.commit()
+
+    return {"status": "started"}
+
+
 @app.get("/api/get-quizzes-writing")
 def get_quizzes_writing(db: Session = Depends(get_db)):
     rows = (
