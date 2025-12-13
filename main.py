@@ -1523,7 +1523,8 @@ def submit_writing_exam(
 
 
 @app.get("/api/exams/writing/current")
-def get_current_writing_exam(db: Session = Depends(get_db)):
+def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
+    # 1️⃣ Get the latest active writing exam
     exam = (
         db.query(GeneratedExamWriting)
         .filter(GeneratedExamWriting.is_current == True)
@@ -1537,13 +1538,21 @@ def get_current_writing_exam(db: Session = Depends(get_db)):
             detail="No active writing exam"
         )
 
+    # 2️⃣ Calculate remaining time
+    elapsed_seconds = (datetime.utcnow() - exam.created_at).total_seconds()
+    total_seconds = exam.duration_minutes * 60
+    remaining_seconds = max(0, int(total_seconds - elapsed_seconds))
+
     return {
-        "exam_id": exam.id,
-        "topic": exam.topic,
-        "difficulty": exam.difficulty,
-        "question_text": exam.question_text,
-        "duration_minutes": exam.duration_minutes
+        "exam": {
+            "exam_id": exam.id,
+            "difficulty": exam.difficulty,
+            "question_text": exam.question_text,
+            "duration_minutes": exam.duration_minutes
+        },
+        "remaining_seconds": remaining_seconds
     }
+
 
 @app.post("/api/exams/generate-writing")
 def generate_exam_writing(
