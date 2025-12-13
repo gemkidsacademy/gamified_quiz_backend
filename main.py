@@ -133,6 +133,8 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+ class EmptyRequest(BaseModel):
+    pass
 class QuizSetupFoundational(Base):
     __tablename__ = "quiz_setup_foundational"
 
@@ -1273,6 +1275,170 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+
+@app.post("/api/exams/generate-foundational")
+def generate_exam_foundational(
+    payload: EmptyRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a Foundational exam using latest quiz_setup_foundational config.
+    No payload required.
+    """
+
+    print("\n==============================")
+    print("📥 Generate Foundational Exam")
+    print("==============================")
+
+    # ------------------------------------------------------------
+    # 1) Load latest foundational config
+    # ------------------------------------------------------------
+    cfg = (
+        db.query(QuizSetupFoundational)
+        .order_by(QuizSetupFoundational.id.desc())
+        .first()
+    )
+
+    if not cfg:
+        raise HTTPException(
+            status_code=404,
+            detail="No foundational exam configuration found"
+        )
+
+    class_name = cfg.class_name
+    subject = "Foundational"
+
+    print(f"➡ Using config ID={cfg.id}, class={class_name}")
+
+    # ------------------------------------------------------------
+    # 2) Build sections list from config
+    # ------------------------------------------------------------
+    sections = [
+        {
+            "name": cfg.section1_name,
+            "difficulty": cfg.section1_name,
+            "total": cfg.section1_total,
+            "time": cfg.section1_time,
+            "intro": cfg.section1_intro,
+        },
+        {
+            "name": cfg.section2_name,
+            "difficulty": cfg.section2_name,
+            "total": cfg.section2_total,
+            "time": cfg.section2_time,
+            "intro": cfg.section2_intro,
+        }
+    ]
+
+    if cfg.section3_name:
+        sections.append({
+            "name": cfg.section3_name,
+            "difficulty": cfg.section3_name,
+            "total": cfg.section3_total,
+            "time": cfg.section3_time,
+            "intro": cfg.section3_intro,
+        })
+
+    final_questions = []
+    warnings = []
+
+    # ------------------------------------------------------------
+    # 3) Process each section
+    # ------------------------------------------------------------
+    for section in sections:
+        difficulty = section["difficulty"]
+        required = int(section["total"])
+
+        print(f"\n➡ Section: {difficulty} — Need {required}")
+
+        pool = (
+            db.query(Question)
+            .filter(
+                func.lower(Question.class_name) == class_name.lower(),
+                func.lower(Question.subject) == subject.lower(),
+                func.lower(Question.difficulty) == difficulty.lower(),
+            )
+            .all()
+        )
+
+        print(f"📦 Found {len(pool)} questions")
+
+        if not pool:
+            warnings.append(f"No questions found for {difficulty}")
+            continue
+
+        random.shuffle(pool)
+
+        chosen = pool[:required]
+
+        if len(chosen) < required:
+            warnings.append(
+                f"Only {len(chosen)} questions available for {difficulty}"
+            )
+
+        for q in chosen:
+            final_questions.append({
+                "section": difficulty,
+                "question_number": None,
+                "question_text": q.question_text,
+                "options": q.options,
+                "correct_answer": q.correct_answer,
+                "question_type": q.question_type,
+                "images": q.images,
+                "topic": q.topic,
+            })
+
+    # ------------------------------------------------------------
+    # 4) Final numbering
+    # ------------------------------------------------------------
+    if not final_questions:
+        raise HTTPException(
+            status_code=400,
+            detail="No questions generated"
+        )
+
+    for i, q in enumerate(final_questions, start=1):
+        q["question_number"] = i
+
+    # ------------------------------------------------------------
+    # 5) Build exam JSON
+    # ------------------------------------------------------------
+    duration_minutes = sum(
+        s["time"] for s in sections if s.get("time")
+    )
+
+    exam_json = {
+        "class_name": class_name,
+        "subject": subject,
+        "total_questions": len(final_questions),
+        "sections": sections,
+        "questions": final_questions,
+        "duration_minutes": duration_minutes,
+    }
+
+    # ------------------------------------------------------------
+    # 6) (Optional) Save generated exam
+    # ------------------------------------------------------------
+    saved = GeneratedExamFoundational(
+        config_id=cfg.id,
+        class_name=class_name,
+        subject=subject,
+        total_questions=len(final_questions),
+        exam_json=exam_json,
+    )
+
+    db.add(saved)
+    db.commit()
+    db.refresh(saved)
+
+    print("✅ Saved Foundational Exam ID:", saved.id)
+
+    return {
+        "generated_exam_id": saved.id,
+        "total_questions": len(final_questions),
+        "exam_json": exam_json,
+        "warnings": warnings,
+    }
 
 @app.post("/api/quizzes-foundational")
 def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(get_db)):
