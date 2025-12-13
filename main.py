@@ -148,6 +148,27 @@ class GeneratedExamFoundational(Base):
     is_current = Column(Boolean, default=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class StudentsExamFoundational(Base):
+    __tablename__ = "students_exam_foundational"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, nullable=False)
+
+    exam_id = Column(
+        Integer,
+        ForeignKey("generated_exam_foundational.id"),
+        nullable=False
+    )
+
+    started_at = Column(DateTime(timezone=True), nullable=False)
+
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    current_section_index = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
  
 class EmptyRequest(BaseModel):
     pass
@@ -1436,11 +1457,11 @@ def generate_exam_foundational(
     # 6) (Optional) Save generated exam
     # ------------------------------------------------------------
     saved = GeneratedExamFoundational(
-        config_id=cfg.id,
         class_name=class_name,
         subject=subject,
         total_questions=len(final_questions),
         exam_json=exam_json,
+        is_current=True
     )
 
     db.add(saved)
