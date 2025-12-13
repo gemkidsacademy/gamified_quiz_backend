@@ -1277,7 +1277,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
-@router.post("/api/quizzes-foundational")
+@app.post("/api/quizzes-foundational")
 def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(get_db)):
 
     # -------------------
