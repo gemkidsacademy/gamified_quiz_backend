@@ -1550,12 +1550,16 @@ def generate_exam_writing(
     payload: WritingGenerateSchema,
     db: Session = Depends(get_db)
 ):
-    # 1️⃣ Fetch ONE writing prompt based on class + difficulty
+    # Normalize incoming values to lowercase
+    class_name = payload.class_name.strip().lower()
+    difficulty = payload.difficulty.strip().lower()
+
+    # 1️⃣ Fetch ONE writing question with full case-insensitive matching
     question = (
         db.query(WritingQuestionBank)
         .filter(
-            WritingQuestionBank.class_name == payload.class_name,
-            WritingQuestionBank.difficulty == payload.difficulty
+            func.lower(WritingQuestionBank.class_name) == class_name,
+            func.lower(WritingQuestionBank.difficulty) == difficulty
         )
         .order_by(func.random())
         .first()
@@ -1564,14 +1568,14 @@ def generate_exam_writing(
     if not question:
         raise HTTPException(
             status_code=404,
-            detail="No writing question found for this class & difficulty"
+            detail=f"No writing question found for class '{class_name}' with difficulty '{difficulty}'."
         )
 
-    # 2️⃣ Save generated exam (NO TOPIC)
+    # 2️⃣ Save generated exam (store normalized & pretty versions)
     exam = GeneratedExamWriting(
-        class_name=payload.class_name,
+        class_name=class_name.capitalize(),       # year5 → Year5 (optional)
         subject="writing",
-        difficulty=payload.difficulty,
+        difficulty=difficulty.capitalize(),       # easy → Easy
         question_text=question.question_text,
         duration_minutes=40
     )
