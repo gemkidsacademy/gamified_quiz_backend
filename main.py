@@ -1520,66 +1520,44 @@ def get_current_writing_exam(db: Session = Depends(get_db)):
     }
 
 @app.post("/api/exams/generate-writing")
-def generate_exam_writing(db: Session = Depends(get_db)):
-    print("\n==============================")
-    print("✍️ GENERATE WRITING EXAM")
-    print("==============================")
-
-    # ------------------------------------------------------------
-    # 1️⃣ Get all available writing questions
-    # ------------------------------------------------------------
-    questions = (
-        db.query(QuestionWriting)
-        .filter(func.lower(QuestionWriting.subject) == "writing")
-        .all()
+def generate_exam_writing(
+    payload: WritingGenerateSchema,
+    db: Session = Depends(get_db)
+):
+    # 1️⃣ Fetch ONE writing prompt (or random if you want later)
+    question = (
+        db.query(WritingQuestionBank)
+        .filter(
+            WritingQuestionBank.class_name == payload.class_name,
+            WritingQuestionBank.topic == payload.topic,
+            WritingQuestionBank.difficulty == payload.difficulty
+        )
+        .order_by(func.random())
+        .first()
     )
 
-    if not questions:
+    if not question:
         raise HTTPException(
             status_code=404,
-            detail="No writing questions available"
+            detail="No writing question found for this configuration"
         )
 
-    # ------------------------------------------------------------
-    # 2️⃣ Pick one question (random for now)
-    # ------------------------------------------------------------
-    selected = random.choice(questions)
-
-    print("📌 Selected question ID:", selected.id)
-
-    # ------------------------------------------------------------
-    # 3️⃣ Mark previous exams as NOT current
-    # ------------------------------------------------------------
-    db.query(GeneratedExamWriting).update(
-        {GeneratedExamWriting.is_current: False}
-    )
-
-    # ------------------------------------------------------------
-    # 4️⃣ Save generated exam
-    # ------------------------------------------------------------
+    # 2️⃣ Save generated exam
     exam = GeneratedExamWriting(
-        class_name=selected.class_name,
-        subject=selected.subject,
-        topic=selected.topic,
-        difficulty=selected.difficulty,
-        question_text=selected.question_text,
-        duration_minutes=40,
-        is_current=True
+        class_name=payload.class_name,
+        subject="writing",
+        topic=payload.topic,
+        difficulty=payload.difficulty,
+        question_text=question.question_text,
+        duration_minutes=40
     )
 
     db.add(exam)
     db.commit()
     db.refresh(exam)
 
-    print("✅ Writing exam saved with ID:", exam.id)
-
-    # ------------------------------------------------------------
-    # 5️⃣ Return payload for frontend
-    # ------------------------------------------------------------
     return {
         "exam_id": exam.id,
-        "class_name": exam.class_name,
-        "subject": exam.subject,
         "topic": exam.topic,
         "difficulty": exam.difficulty,
         "question_text": exam.question_text,
