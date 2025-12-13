@@ -712,6 +712,37 @@ otp_dict = {}
 # ---------------------------
 
 def parse_writing_with_openai(text: str) -> list[dict]:
+    WRITING_PARSE_PROMPT = f"""
+You are an exam content parser.
+
+Extract writing questions from the text below.
+
+STRICT RULES:
+- Return ONLY valid JSON
+- No markdown
+- No explanations
+- No comments
+- No trailing commas
+- Do not wrap in ``` blocks
+
+If multiple questions exist, return a JSON array.
+If one question exists, return a single JSON object.
+
+Each question MUST follow this schema exactly:
+
+{{
+  "class_name": string,
+  "subject": "Writing",
+  "topic": string,
+  "difficulty": string,
+  "question_text": string
+}}
+
+Text to parse:
+----------------
+{text}
+"""
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -721,7 +752,7 @@ def parse_writing_with_openai(text: str) -> list[dict]:
             },
             {
                 "role": "user",
-                "content": WRITING_PARSE_PROMPT.format(text=text)
+                "content": WRITING_PARSE_PROMPT
             }
         ],
         temperature=0
@@ -731,17 +762,18 @@ def parse_writing_with_openai(text: str) -> list[dict]:
 
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        raise ValueError("OpenAI returned invalid JSON")
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"OpenAI returned invalid JSON.\nRaw response:\n{raw}"
+        ) from e
 
     if isinstance(parsed, dict):
         return [parsed]
 
     if not isinstance(parsed, list):
-        raise ValueError("Unexpected JSON structure")
+        raise ValueError("Unexpected JSON structure from OpenAI")
 
     return parsed
- 
 
  
 def generate_quizzes():
