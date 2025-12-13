@@ -133,6 +133,22 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class GeneratedExamFoundational(Base):
+    __tablename__ = "generated_exam_foundational"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+
+    total_questions = Column(Integer, nullable=False)
+
+    exam_json = Column(JSON, nullable=False)
+
+    is_current = Column(Boolean, default=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class EmptyRequest(BaseModel):
     pass
 class QuizSetupFoundational(Base):
