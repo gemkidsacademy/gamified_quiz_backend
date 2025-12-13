@@ -1497,14 +1497,12 @@ from sqlalchemy import func
 @app.post("/api/exams/start-reading")
 def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
 
-    # Load latest reading exam
     exam = (
         db.query(GeneratedExam)
         .order_by(GeneratedExam.id.desc())
         .first()
     )
 
-    # Check if exam already started
     existing = (
         db.query(StudentExamReading)
         .filter_by(student_id=student_id, exam_id=exam.id)
@@ -1513,26 +1511,27 @@ def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
 
     if existing:
         return {
+            "session_id": existing.id,     # FIX #2
             "exam_json": exam.exam_json,
             "duration_minutes": exam.duration_minutes,
-            "start_time": existing.start_time,
+            "start_time": existing.started_at,  # FIX #1
             "server_now": datetime.utcnow()
         }
 
-    # Create new session
     new_session = StudentExamReading(
         student_id=student_id,
         exam_id=exam.id,
-        start_time=datetime.utcnow()
+        started_at=datetime.utcnow()  # FIX #1
     )
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
 
     return {
+        "session_id": new_session.id,  # FIX #2
         "exam_json": exam.exam_json,
         "duration_minutes": exam.duration_minutes,
-        "start_time": new_session.start_time,
+        "start_time": new_session.started_at,  # FIX #1
         "server_now": datetime.utcnow()
     }
 
@@ -2568,7 +2567,7 @@ def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
             "duration_minutes": duration_minutes,
 
             # provide timestamps for backend-controlled timer
-            "start_time": existing.start_time,
+            "start_time": existing.started_at,
             "server_now": datetime.utcnow(),
 
             "exam_json": {
@@ -2606,7 +2605,7 @@ def start_reading_exam(student_id: int, db: Session = Depends(get_db)):
         "duration_minutes": duration_minutes,
 
         # Timer info
-        "start_time": new_session.start_time,
+        "start_time": new_session.started_at,
         "server_now": datetime.utcnow(),
 
         "exam_json": {
