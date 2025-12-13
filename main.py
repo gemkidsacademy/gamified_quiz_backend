@@ -1493,6 +1493,26 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+
+@app.post("/api/exams/submit-reading")
+def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
+
+    session_id = payload.get("session_id")
+    answers = payload.get("answers", {})
+
+    session = db.query(StudentExamReading).filter_by(id=session_id).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Mark as completed
+    session.finished = True
+    session.completed_at = datetime.utcnow()
+
+    db.commit()
+
+    return {"status": "submitted", "message": "Reading exam submitted successfully"}
+
 @app.post("/api/exams/start-reading")
 def start_reading_exam(student_id: str, db: Session = Depends(get_db)):
     """
