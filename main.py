@@ -1313,6 +1313,29 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
+@app.get("/api/exams/foundational/current")
+def get_current_foundational_exam(db: Session = Depends(get_db)):
+    """
+    Return the currently active foundational exam for rendering.
+    """
+
+    exam = (
+        db.query(GeneratedExamFoundational)
+        .filter(GeneratedExamFoundational.is_current == True)
+        .order_by(desc(GeneratedExamFoundational.created_at))
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="No active foundational exam found"
+        )
+
+    return {
+        "exam": exam.exam_json
+    }
+
 @app.post("/api/exams/generate-foundational")
 def generate_exam_foundational(
     payload: EmptyRequest,
