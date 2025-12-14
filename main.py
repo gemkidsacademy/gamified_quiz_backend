@@ -1935,12 +1935,30 @@ def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db))
         "message": "Writing quiz setup saved",
         "quiz_id": quiz.id
     }
-
 @app.post("/api/exams/foundational/start")
 def start_foundational_exam(
-    student_id: int,
+    student_id: str = Query(...),
     db: Session = Depends(get_db)
 ):
+    # ------------------------------------------------------------
+    # 1️⃣ If an active attempt already exists, do NOT create another
+    # ------------------------------------------------------------
+    existing_attempt = (
+        db.query(StudentsExamFoundational)
+        .filter(
+            StudentsExamFoundational.student_id == student_id,
+            StudentsExamFoundational.completed_at.is_(None)
+        )
+        .order_by(StudentsExamFoundational.started_at.desc())
+        .first()
+    )
+
+    if existing_attempt:
+        return { "message": "Exam already started" }
+
+    # ------------------------------------------------------------
+    # 2️⃣ Get current foundational exam
+    # ------------------------------------------------------------
     exam = (
         db.query(GeneratedExamFoundational)
         .filter(GeneratedExamFoundational.is_current == True)
@@ -1949,8 +1967,11 @@ def start_foundational_exam(
     )
 
     if not exam:
-        raise HTTPException(404, "No active exam")
+        raise HTTPException(status_code=404, detail="No active exam")
 
+    # ------------------------------------------------------------
+    # 3️⃣ Create new attempt
+    # ------------------------------------------------------------
     attempt = StudentsExamFoundational(
         student_id=student_id,
         exam_id=exam.id,
@@ -1967,16 +1988,19 @@ def start_foundational_exam(
 
 @app.post("/api/exams/foundational/next-section")
 def advance_foundational_section(
-    student_id: int,
+    student_id: str = Query(...),
     db: Session = Depends(get_db)
 ):
-    # 1️⃣ Get active attempt
+    # ------------------------------------------------------------
+    # 1️⃣ Get active attempt (authoritative)
+    # ------------------------------------------------------------
     attempt = (
         db.query(StudentsExamFoundational)
         .filter(
             StudentsExamFoundational.student_id == student_id,
             StudentsExamFoundational.completed_at.is_(None)
         )
+        .order_by(StudentsExamFoundational.started_at.desc())
         .first()
     )
 
@@ -1986,18 +2010,31 @@ def advance_foundational_section(
             detail="No active foundational exam attempt"
         )
 
-    # 2️⃣ Load exam
-    exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
+    # ------------------------------------------------------------
+    # 2️⃣ Load exam linked to this attempt
+    # ------------------------------------------------------------
+    exam = (
+        db.query(GeneratedExamFoundational)
+        .filter(GeneratedExamFoundational.id == attempt.exam_id)
+        .first()
+    )
 
     if not exam:
-        raise HTTPException(404, "Exam not found")
+        raise HTTPException(status_code=404, detail="Exam not found")
 
     sections = exam.exam_json.get("sections", [])
     total_sections = len(sections)
 
-    # 3️⃣ Check if already finished
+    if total_sections == 0:
+        raise HTTPException(
+            status_code=500,
+            detail="Exam has no sections configured"
+        )
+
+    # ------------------------------------------------------------
+    # 3️⃣ If last section already reached → complete exam
+    # ------------------------------------------------------------
     if attempt.current_section_index >= total_sections - 1:
-        # Last section completed
         attempt.completed_at = datetime.now(timezone.utc)
         db.commit()
 
@@ -2006,17 +2043,19 @@ def advance_foundational_section(
             "completed": True
         }
 
+    # ------------------------------------------------------------
     # 4️⃣ Advance to next section
+    # ------------------------------------------------------------
     attempt.current_section_index += 1
     db.commit()
     db.refresh(attempt)
 
     return {
         "message": "Section advanced",
+        "completed": False,
         "current_section_index": attempt.current_section_index,
         "section_name": sections[attempt.current_section_index]["name"]
     }
-
 @app.get("/api/exams/foundational/state")
 def get_foundational_exam_state(
     student_id: str,
