@@ -256,7 +256,7 @@ class StudentsExamFoundational(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, nullable=False)
+    student_id = Column(String, nullable=False)
 
     exam_id = Column(
         Integer,
