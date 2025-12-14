@@ -2019,7 +2019,7 @@ def advance_foundational_section(
 
 @app.get("/api/exams/foundational/state")
 def get_foundational_exam_state(
-    student_id: int,
+    student_id: str,
     db: Session = Depends(get_db)
 ):
     attempt = (
