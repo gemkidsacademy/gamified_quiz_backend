@@ -796,8 +796,6 @@ otp_dict = {}
 # ---------------------------
 # Quiz Generation
 # ---------------------------
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
  
 def parse_writing_with_openai(text: str) -> list[dict]:
     WRITING_PARSE_PROMPT = f"""
@@ -1508,9 +1506,6 @@ def add_student_exam_module(
     payload: AddStudentExamModuleRequest,
     db: Session = Depends(get_db)
 ):
-    # -----------------------------
-    # 1) Check duplicate student_id
-    # -----------------------------
     existing_student = (
         db.query(Student)
         .filter(Student.student_id == payload.student_id)
@@ -1523,9 +1518,9 @@ def add_student_exam_module(
             detail="Student with this student_id already exists"
         )
 
-    # -----------------------------
-    # 2) Create student record
-    # -----------------------------
+    # ⚠️ Plain text password (as requested)
+    plain_password = payload.student_id  # or any value you choose
+
     student = Student(
         id=payload.id,
         student_id=payload.student_id,
@@ -1533,9 +1528,7 @@ def add_student_exam_module(
         parent_email=payload.parent_email,
         class_name=payload.class_name,
         class_day=payload.class_day,
-
-        # Default password (you can improve later)
-        password=hash_password(payload.student_id)
+        password=plain_password,  # ← STORED AS IS
     )
 
     db.add(student)
@@ -1544,8 +1537,10 @@ def add_student_exam_module(
 
     return {
         "message": "Student added successfully",
-        "student_id": student.student_id
+        "student_id": student.student_id,
+        "password": plain_password
     }
+
  
 @app.post("/api/exams/submit-reading")
 def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
