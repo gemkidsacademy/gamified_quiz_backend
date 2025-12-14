@@ -338,6 +338,13 @@ class ReadingExamRequest(BaseModel):
     class_name: str
     difficulty: str
 
+class AddStudentExamModuleRequest(BaseModel):
+    id: str                 # Backend-suggested ID (e.g. "1" or UUID)
+    student_id: str         # "Gem001"
+    name: str
+    parent_email: EmailStr
+    class_name: str
+    class_day: str
 
 class GeneratedExamReading(Base):
     __tablename__ = "generated_exams_reading"
@@ -789,7 +796,9 @@ otp_dict = {}
 # ---------------------------
 # Quiz Generation
 # ---------------------------
-
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+ 
 def parse_writing_with_openai(text: str) -> list[dict]:
     WRITING_PARSE_PROMPT = f"""
 You are an exam content parser.
@@ -1494,6 +1503,50 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
+@app.post("/add_student_exam_module")
+def add_student_exam_module(
+    payload: AddStudentExamModuleRequest,
+    db: Session = Depends(get_db)
+):
+    # -----------------------------
+    # 1) Check duplicate student_id
+    # -----------------------------
+    existing_student = (
+        db.query(Student)
+        .filter(Student.student_id == payload.student_id)
+        .first()
+    )
+
+    if existing_student:
+        raise HTTPException(
+            status_code=400,
+            detail="Student with this student_id already exists"
+        )
+
+    # -----------------------------
+    # 2) Create student record
+    # -----------------------------
+    student = Student(
+        id=payload.id,
+        student_id=payload.student_id,
+        name=payload.name,
+        parent_email=payload.parent_email,
+        class_name=payload.class_name,
+        class_day=payload.class_day,
+
+        # Default password (you can improve later)
+        password=hash_password(payload.student_id)
+    )
+
+    db.add(student)
+    db.commit()
+    db.refresh(student)
+
+    return {
+        "message": "Student added successfully",
+        "student_id": student.student_id
+    }
+ 
 @app.post("/api/exams/submit-reading")
 def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
