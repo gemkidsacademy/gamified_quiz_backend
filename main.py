@@ -1670,17 +1670,33 @@ def get_foundational_classes(db: Session = Depends(get_db)):
  
 @app.post("/api/student/start-writing-exam")
 def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
-    # Get latest writing exam
+
+    # 1️⃣ Check for existing active session
+    existing_session = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.student_id == student_id,
+            StudentExamWriting.completed_at == None
+        )
+        .order_by(StudentExamWriting.started_at.desc())
+        .first()
+    )
+
+    if existing_session:
+        return {"status": "already_started"}
+
+    # 2️⃣ Get current exam
     exam = (
         db.query(GeneratedExamWriting)
         .filter(GeneratedExamWriting.is_current == True)
         .order_by(GeneratedExamWriting.created_at.desc())
         .first()
     )
+
     if not exam:
         raise HTTPException(404, "No active writing exam")
 
-    # Create session
+    # 3️⃣ Create NEW session only if none exists
     new_session = StudentExamWriting(
         student_id=student_id,
         exam_id=exam.id,
@@ -1753,23 +1769,48 @@ def submit_writing_exam(
 
 @app.get("/api/exams/writing/current")
 def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
-    # 1️⃣ Get the latest active writing exam
+    # ------------------------------------------------------------
+    # 1️⃣ Get the student's ACTIVE writing session (NOT the exam)
+    # ------------------------------------------------------------
+    session = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.student_id == student_id,
+            StudentExamWriting.completed_at == None
+        )
+        .order_by(StudentExamWriting.started_at.desc())
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail="No active writing exam session"
+        )
+
+    # ------------------------------------------------------------
+    # 2️⃣ Fetch the exam linked to this session
+    # ------------------------------------------------------------
     exam = (
         db.query(GeneratedExamWriting)
-        .filter(GeneratedExamWriting.is_current == True)
-        .order_by(GeneratedExamWriting.created_at.desc())
+        .filter(GeneratedExamWriting.id == session.exam_id)
         .first()
     )
 
     if not exam:
         raise HTTPException(
             status_code=404,
-            detail="No active writing exam"
+            detail="Writing exam not found"
         )
 
-    # 2️⃣ Calculate remaining time
-    elapsed_seconds = (datetime.now(timezone.utc) - exam.created_at).total_seconds()
-    total_seconds = exam.duration_minutes * 60
+    # ------------------------------------------------------------
+    # 3️⃣ Calculate remaining time FROM session.started_at
+    # ------------------------------------------------------------
+    elapsed_seconds = (
+        datetime.now(timezone.utc) - session.started_at
+    ).total_seconds()
+
+    total_seconds = session.duration_minutes * 60
     remaining_seconds = max(0, int(total_seconds - elapsed_seconds))
 
     return {
@@ -1777,11 +1818,10 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
             "exam_id": exam.id,
             "difficulty": exam.difficulty,
             "question_text": exam.question_text,
-            "duration_minutes": exam.duration_minutes
+            "duration_minutes": session.duration_minutes
         },
         "remaining_seconds": remaining_seconds
     }
-
 
 @app.post("/api/exams/generate-writing")
 def generate_exam_writing(
