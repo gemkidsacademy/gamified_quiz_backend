@@ -2964,22 +2964,41 @@ def start_exam(
 @app.get("/api/student/get-exam")
 def get_exam(session_id: int, db: Session = Depends(get_db)):
 
-    session = db.query(StudentExam).filter(StudentExam.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = (
+        db.query(StudentExam)
+        .filter(StudentExam.id == session_id)
+        .first()
+    )
 
-    exam = db.query(Exam).filter(Exam.id == session.exam_id).first()
+    # ❌ Invalid or deleted session → return safe payload
+    if not session:
+        return {
+            "questions": [],
+            "total_questions": 0,
+            "remaining_time": 0,
+            "completed": True
+        }
+
+    exam = (
+        db.query(Exam)
+        .filter(Exam.id == session.exam_id)
+        .first()
+    )
+
     if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
+        return {
+            "questions": [],
+            "total_questions": 0,
+            "remaining_time": 0,
+            "completed": True
+        }
 
     # -------------------------------------
-    # TIME CALCULATION (FIXED)
+    # TIME CALCULATION (timezone-safe)
     # -------------------------------------
     now = datetime.now(timezone.utc)
 
     started_at = session.started_at
-
-    # 🔥 CRITICAL FIX: normalize naive → aware
     if started_at.tzinfo is None:
         started_at = started_at.replace(tzinfo=timezone.utc)
 
@@ -2991,16 +3010,50 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
         db.commit()
         remaining = 0
 
+    # -------------------------------------
+    # NORMALIZE QUESTIONS
+    # -------------------------------------
+    normalized_questions = []
+
+    for q in exam.questions:
+        fixed = dict(q)
+        opts = fixed.get("options")
+
+        if opts is None:
+            fixed["options"] = []
+        elif isinstance(opts, dict):
+            fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
+        elif not isinstance(opts, list):
+            fixed["options"] = []
+
+        normalized_questions.append(fixed)
+
+    return {
+        "questions": normalized_questions,
+        "total_questions": len(normalized_questions),
+        "remaining_time": int(max(remaining, 0)),
+        "completed": session.completed_at is not None
+    }
+ 
 @app.post("/api/student/finish-exam")
-def finish_exam(req: FinishExamRequest, db: Session = Depends(get_db)):
+def finish_exam(
+    req: FinishExamRequest,
+    db: Session = Depends(get_db)
+):
+    session = (
+        db.query(StudentExam)
+        .filter(StudentExam.id == req.session_id)
+        .first()
+    )
 
-    session = db.query(StudentExam).filter(StudentExam.id == req.session_id).first()
-
+    # Already deleted or invalid → treat as completed
     if not session:
-        raise HTTPException(404, "Session not found")
+        return {"status": "completed"}
 
-    session.completed_at = datetime.now(timezone.utc)
-    db.commit()
+    # Idempotent completion
+    if session.completed_at is None:
+        session.completed_at = datetime.now(timezone.utc)
+        db.commit()
 
     print(f"✔ Session {req.session_id} marked completed.")
     return {"status": "completed"}
