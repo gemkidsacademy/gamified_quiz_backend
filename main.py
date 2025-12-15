@@ -3169,35 +3169,51 @@ def finish_exam(
     req: FinishExamRequest,
     db: Session = Depends(get_db)
 ):
+    print("\n================ FINISH EXAM START ================")
+    print("📥 Incoming payload:", req.dict())
+
     # --------------------------------------------------
     # 1️⃣ Validate student (external ID → internal ID)
     # --------------------------------------------------
     student = (
         db.query(Student)
-        .filter(Student.student_id == req.student_id)  # e.g. "Gem002"
+        .filter(Student.student_id == req.student_id)
         .first()
     )
+
+    print("👤 Student lookup result:", student)
+
     if not student:
+        print("❌ Student NOT FOUND for student_id =", req.student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
+    print("✅ Student found → internal id:", student.id)
+
     # --------------------------------------------------
-    # 2️⃣ Get active exam attempt (INTEGER FK FIX)
+    # 2️⃣ Get active exam attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentExam)
         .filter(
-            StudentExam.student_id == student.id,   # ✅ INTERNAL INTEGER ID
+            StudentExam.student_id == student.id,
             StudentExam.completed_at.is_(None)
         )
         .order_by(StudentExam.started_at.desc())
         .first()
     )
 
+    print("📝 Exam attempt lookup result:", attempt)
+
     if not attempt:
+        print("⚠️ NO ACTIVE ATTEMPT FOUND for student.id =", student.id)
         return {"status": "completed"}
 
+    print("✅ Active attempt found → attempt.id =", attempt.id)
+    print("   started_at:", attempt.started_at)
+    print("   completed_at (before):", attempt.completed_at)
+
     # --------------------------------------------------
-    # 3️⃣ Idempotency guard (safe re-submit)
+    # 3️⃣ Idempotency guard
     # --------------------------------------------------
     existing_result = (
         db.query(StudentExamResultsThinkingSkills)
@@ -3207,21 +3223,34 @@ def finish_exam(
         .first()
     )
 
+    print("🧾 Existing result lookup:", existing_result)
+
     if existing_result:
+        print("⚠️ Existing result already present for attempt.id =", attempt.id)
+
         if attempt.completed_at is None:
+            print("🛠 Setting completed_at defensively")
             attempt.completed_at = datetime.now(timezone.utc)
             db.commit()
+            print("✅ completed_at updated defensively")
+
         return {"status": "completed"}
 
     # --------------------------------------------------
-    # 4️⃣ Load exam (SOURCE OF TRUTH)
+    # 4️⃣ Load exam
     # --------------------------------------------------
     exam = db.query(Exam).filter(Exam.id == attempt.exam_id).first()
+
+    print("📘 Exam lookup result:", exam)
+
     if not exam:
+        print("❌ Exam NOT FOUND for exam_id =", attempt.exam_id)
         raise HTTPException(status_code=404, detail="Exam not found")
 
     questions = exam.questions or []
     total_questions = len(questions)
+
+    print("📊 Total questions in exam:", total_questions)
 
     question_map = {q["q_id"]: q for q in questions}
 
@@ -3229,15 +3258,20 @@ def finish_exam(
     # 5️⃣ Save student responses
     # --------------------------------------------------
     correct = 0
+    saved_responses = 0
 
     for q_id_str, selected in req.answers.items():
+        print(f"➡️ Processing answer: q_id={q_id_str}, selected={selected}")
+
         try:
             q_id = int(q_id_str)
         except ValueError:
+            print("❌ Invalid q_id (not int):", q_id_str)
             continue
 
         q = question_map.get(q_id)
         if not q:
+            print("⚠️ Question not found in exam JSON for q_id =", q_id)
             continue
 
         is_correct = selected == q.get("correct")
@@ -3258,28 +3292,49 @@ def finish_exam(
             )
         )
 
+        saved_responses += 1
+        print(
+            f"   💾 Saved response → q_id={q_id}, "
+            f"is_correct={is_correct}"
+        )
+
+    print("📈 Responses saved:", saved_responses)
+    print("✅ Correct answers count:", correct)
+
     wrong = total_questions - correct
     accuracy = round((correct / total_questions) * 100, 2) if total_questions else 0
 
-    # --------------------------------------------------
-    # 6️⃣ Save summary result (ONE ROW)
-    # --------------------------------------------------
-    db.add(
-        StudentExamResultsThinkingSkills(
-            student_id=student.id,
-            exam_attempt_id=attempt.id,
-            total_questions=total_questions,
-            correct_answers=correct,
-            wrong_answers=wrong,
-            accuracy_percent=accuracy
-        )
-    )
+    print("📊 Computed result:")
+    print("   total_questions:", total_questions)
+    print("   correct:", correct)
+    print("   wrong:", wrong)
+    print("   accuracy:", accuracy)
 
     # --------------------------------------------------
-    # 7️⃣ Mark exam completed (NOW GUARANTEED)
+    # 6️⃣ Save summary result
+    # --------------------------------------------------
+    result_row = StudentExamResultsThinkingSkills(
+        student_id=student.id,
+        exam_attempt_id=attempt.id,
+        total_questions=total_questions,
+        correct_answers=correct,
+        wrong_answers=wrong,
+        accuracy_percent=accuracy
+    )
+
+    db.add(result_row)
+    print("🧾 Summary result row added")
+
+    # --------------------------------------------------
+    # 7️⃣ Mark exam completed
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
+    print("⏱ Setting completed_at to:", attempt.completed_at)
+
     db.commit()
+    print("💾 DB COMMIT COMPLETED")
+
+    print("================ FINISH EXAM END =================\n")
 
     return {
         "status": "completed",
