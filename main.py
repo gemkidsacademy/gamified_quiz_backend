@@ -1572,46 +1572,83 @@ def save_exam_results_thinkingskills(
     payload: ExamSubmissionRequest,
     db: Session = Depends(get_db)
 ):
+    # 1️⃣ Validate student
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == payload.student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # 2️⃣ Find ACTIVE exam attempt from student_exams
     attempt = (
-        db.query(StudentExamAttemptThinkingSkills)
+        db.query(StudentExam)
         .filter(
-            StudentExamAttemptThinkingSkills.session_id == payload.session_id
+            StudentExam.student_id == student.id,
+            StudentExam.completed_at.is_(None)
         )
+        .order_by(StudentExam.started_at.desc())
         .first()
     )
 
     if not attempt:
-        raise HTTPException(status_code=404, detail="Invalid exam session")
+        # No active attempt → exam already completed or never started
+        return {"status": "ignored"}
 
-    if attempt.is_completed:
-        raise HTTPException(status_code=400, detail="Exam already submitted")
+    # 3️⃣ Prevent double submission
+    existing_submission = (
+        db.query(StudentExamAttemptThinkingSkills)
+        .filter(
+            StudentExamAttemptThinkingSkills.student_exam_id == attempt.id
+        )
+        .first()
+    )
 
-    for question_id, selected_option in payload.answers.items():
-        existing = (
+    if existing_submission and existing_submission.is_completed:
+        return {"status": "already_submitted"}
+
+    # 4️⃣ Create attempt record if not exists
+    if not existing_submission:
+        existing_submission = StudentExamAttemptThinkingSkills(
+            student_exam_id=attempt.id,
+            submitted_at=None,
+            is_completed=False
+        )
+        db.add(existing_submission)
+        db.flush()  # get ID without commit
+
+    # 5️⃣ Save answers (idempotent)
+    for qid_str, selected_option in payload.answers.items():
+        question_id = int(qid_str)
+
+        exists = (
             db.query(StudentExamAnswerThinkingSkills)
             .filter(
-                StudentExamAnswerThinkingSkills.attempt_id == attempt.id,
+                StudentExamAnswerThinkingSkills.attempt_id == existing_submission.id,
                 StudentExamAnswerThinkingSkills.question_id == question_id
             )
             .first()
         )
 
-        if existing:
+        if exists:
             continue
 
         db.add(
             StudentExamAnswerThinkingSkills(
-                attempt_id=attempt.id,
+                attempt_id=existing_submission.id,
                 question_id=question_id,
                 selected_option=selected_option
             )
         )
 
-    attempt.submitted_at = datetime.now(timezone.utc)
+    # 6️⃣ Mark submission complete
+    existing_submission.submitted_at = datetime.now(timezone.utc)
+    existing_submission.is_completed = True
     db.commit()
 
     return {"status": "saved"}
-
 
 @app.post("/add_student_exam_module")
 def add_student_exam_module(
@@ -2882,7 +2919,7 @@ def start_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("🚀 Received start-exam request:", req.dict())
+    print("🚀 start-exam request:", req.dict())
 
     # 1️⃣ Validate student
     student = (
@@ -2894,28 +2931,22 @@ def start_exam(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # 2️⃣ Check latest attempt
-    existing_attempt = (
+    # 2️⃣ Check latest attempt for this student
+    attempt = (
         db.query(StudentExam)
         .filter(StudentExam.student_id == student.id)
-        .order_by(StudentExam.id.desc())
+        .order_by(StudentExam.started_at.desc())
         .first()
     )
 
-    # 🛑 CASE 1 — Attempt already completed
-    if existing_attempt and existing_attempt.completed_at is not None:
-        print("🛑 Student already completed exam")
-        return {
-            "status": "already_completed",
-            "session_id": existing_attempt.id
-        }
+    # 🛑 CASE 1 — Attempt exists AND completed
+    if attempt and attempt.completed_at is not None:
+        print("🛑 Exam already completed for student")
 
-    # 🔄 CASE 2 — Resume unfinished exam
-    if existing_attempt and existing_attempt.completed_at is None:
-        print("🔄 Resuming unfinished exam:", existing_attempt.id)
         return {
-            "status": "resuming",
-            "session_id": existing_attempt.id
+            "completed": True,
+            "questions": [],
+            "remaining_time": 0
         }
 
     # 3️⃣ Load quiz for student's class
@@ -2940,25 +2971,53 @@ def start_exam(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not generated")
 
-    # 5️⃣ Create new exam session (timezone-aware)
-    new_session = StudentExam(
+    # 5️⃣ CASE 2 — Resume unfinished attempt
+    if attempt and attempt.completed_at is None:
+        print(f"🔄 Resuming attempt {attempt.id}")
+
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        elapsed = (now - started_at).total_seconds()
+        total_seconds = attempt.duration_minutes * 60
+        remaining = max(0, int(total_seconds - elapsed))
+
+        if remaining == 0:
+            attempt.completed_at = now
+            db.commit()
+
+            return {
+                "completed": True,
+                "questions": [],
+                "remaining_time": 0
+            }
+
+        return {
+            "completed": False,
+            "questions": exam.questions,
+            "remaining_time": remaining
+        }
+
+    # 6️⃣ CASE 3 — First attempt → create new session
+    new_attempt = StudentExam(
         student_id=student.id,
         exam_id=exam.id,
-        started_at=datetime.now(timezone.utc),  # ✅ timezone-aware
+        started_at=datetime.now(timezone.utc),
         duration_minutes=40
     )
 
-    db.add(new_session)
+    db.add(new_attempt)
     db.commit()
-    db.refresh(new_session)
 
-    print(f"🎉 New session created: {new_session.id}")
+    print(f"🎉 New exam attempt created")
 
     return {
-        "status": "started",
-        "session_id": new_session.id
+        "completed": False,
+        "questions": exam.questions,
+        "remaining_time": new_attempt.duration_minutes * 60
     }
-
 
 
 @app.get("/api/student/get-exam")
@@ -3037,27 +3096,40 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
  
 @app.post("/api/student/finish-exam")
 def finish_exam(
-    req: FinishExamRequest,
+    req: StartExamRequest,   # contains student_id
     db: Session = Depends(get_db)
 ):
-    session = (
-        db.query(StudentExam)
-        .filter(StudentExam.id == req.session_id)
+    # 1️⃣ Validate student
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == req.student_id)
         .first()
     )
 
-    # Already deleted or invalid → treat as completed
-    if not session:
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # 2️⃣ Find active (unfinished) exam attempt
+    attempt = (
+        db.query(StudentExam)
+        .filter(
+            StudentExam.student_id == student.id,
+            StudentExam.completed_at.is_(None)
+        )
+        .order_by(StudentExam.started_at.desc())
+        .first()
+    )
+
+    # 🛑 No active attempt → already completed
+    if not attempt:
         return {"status": "completed"}
 
-    # Idempotent completion
-    if session.completed_at is None:
-        session.completed_at = datetime.now(timezone.utc)
-        db.commit()
+    # 3️⃣ Mark completed (idempotent)
+    attempt.completed_at = datetime.now(timezone.utc)
+    db.commit()
 
-    print(f"✔ Session {req.session_id} marked completed.")
-    return {"status": "completed"}
- 
+    print(f"✔ Exam completed for student_id={student.student_id}")
+    return {"status": "completed"} 
 
 @app.get("/api/student/get-quiz")
 def get_quiz(student_id: str, subject: str, difficulty: str, db: Session = Depends(get_db)):
