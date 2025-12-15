@@ -133,6 +133,29 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamResultsThinkingSkills(Base):
+    __tablename__ = "student_exam_results_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exams.id"),
+        nullable=False,
+        unique=True
+    )
+
+    total_questions = Column(Integer, nullable=False)
+    correct_answers = Column(Integer, nullable=False)
+    wrong_answers = Column(Integer, nullable=False)
+    accuracy_percent = Column(Float, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+ 
 class ExamSubmissionRequest(BaseModel):
     session_id: int
     answers: Dict[int, str]
@@ -3139,11 +3162,13 @@ def finish_exam(
     db: Session = Depends(get_db)
 ):
     # 1️⃣ Validate student
-    student = db.query(Student).filter(
-        Student.student_id == req.student_id
-    ).first()
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == req.student_id)
+        .first()
+    )
     if not student:
-        raise HTTPException(404, "Student not found")
+        raise HTTPException(status_code=404, detail="Student not found")
 
     # 2️⃣ Get active attempt
     attempt = (
@@ -3158,84 +3183,82 @@ def finish_exam(
     if not attempt:
         return {"status": "completed"}
 
-    # 3️⃣ Load exam JSON
+    # 3️⃣ Idempotency guard (critical)
+    existing = (
+        db.query(StudentExamResultsThinkingSkills)
+        .filter(
+            StudentExamResultsThinkingSkills.exam_attempt_id == attempt.id
+        )
+        .first()
+    )
+    if existing:
+        return {"status": "completed"}
+
+    # 4️⃣ Load exam questions
     exam = db.query(Exam).filter(Exam.id == attempt.exam_id).first()
-    questions = exam.questions   # JSON list
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
 
-    # Index questions by q_id
-    question_map = {
-        q["q_id"]: q for q in questions
-    }
+    questions = exam.questions or []
+    question_map = {q["q_id"]: q for q in questions}
 
-    # 4️⃣ Save student responses
+    # 5️⃣ Save responses + compute result
     total = 0
     correct = 0
-    topic_stats = {}
 
-    for q_id, selected in req.answers.items():
+    for q_id_str, selected in req.answers.items():
+        try:
+            q_id = int(q_id_str)
+        except ValueError:
+            continue
+
         q = question_map.get(q_id)
         if not q:
             continue
 
-        correct_option = q["correct"]
-        topic = q["topic"]
+        is_correct = selected == q.get("correct")
 
-        is_correct = selected == correct_option
-
-        db.add(StudentExamResponse(
-            student_id=student.id,
-            exam_id=exam.id,
-            exam_attempt_id=attempt.id,
-            q_id=q_id,
-            topic=topic,
-            selected_option=selected,
-            correct_option=correct_option,
-            is_correct=is_correct
-        ))
+        db.add(
+            StudentExamResponse(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=attempt.id,
+                q_id=q_id,
+                topic=q.get("topic", "Unknown"),
+                selected_option=selected,
+                correct_option=q.get("correct"),
+                is_correct=is_correct
+            )
+        )
 
         total += 1
         if is_correct:
             correct += 1
 
-        if topic not in topic_stats:
-            topic_stats[topic] = {"total": 0, "correct": 0}
-
-        topic_stats[topic]["total"] += 1
-        if is_correct:
-            topic_stats[topic]["correct"] += 1
-
-    # 5️⃣ Store overall result
     accuracy = round((correct / total) * 100, 2) if total else 0
 
-    db.add(StudentExamResult(
-        student_id=student.id,
-        exam_attempt_id=attempt.id,
-        total_questions=total,
-        correct_answers=correct,
-        wrong_answers=total - correct,
-        accuracy_percent=accuracy
-    ))
-
-    # 6️⃣ Store topic-wise results
-    for topic, data in topic_stats.items():
-        t_total = data["total"]
-        t_correct = data["correct"]
-
-        db.add(StudentExamTopicResult(
+    # 6️⃣ Save Thinking Skills result
+    db.add(
+        StudentExamResultsThinkingSkills(
             student_id=student.id,
             exam_attempt_id=attempt.id,
-            topic=topic,
-            total_questions=t_total,
-            correct_answers=t_correct,
-            wrong_answers=t_total - t_correct,
-            accuracy_percent=round((t_correct / t_total) * 100, 2)
-        ))
+            total_questions=total,
+            correct_answers=correct,
+            wrong_answers=total - correct,
+            accuracy_percent=accuracy
+        )
+    )
 
     # 7️⃣ Mark exam completed
     attempt.completed_at = datetime.now(timezone.utc)
     db.commit()
 
-    return {"status": "completed"}
+    return {
+        "status": "completed",
+        "total_questions": total,
+        "correct": correct,
+        "accuracy": accuracy
+    }
 
 
 @app.get("/api/student/get-quiz")
