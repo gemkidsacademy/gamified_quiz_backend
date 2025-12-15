@@ -3073,9 +3073,12 @@ def start_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("🚀 start-exam request:", req.dict())
+    print("\n🚀 START-EXAM REQUEST")
+    print("➡ payload:", req.dict())
 
-    # 1️⃣ Validate student
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(Student.student_id == req.student_id)
@@ -3083,9 +3086,14 @@ def start_exam(
     )
 
     if not student:
+        print("❌ Student not found")
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # 2️⃣ Check latest attempt
+    print(f"✅ Student resolved: id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest attempt (if any)
+    # --------------------------------------------------
     attempt = (
         db.query(StudentExam)
         .filter(StudentExam.student_id == student.id)
@@ -3093,15 +3101,27 @@ def start_exam(
         .first()
     )
 
-    # 🛑 CASE 1 — Exam already completed
+    if attempt:
+        print(
+            f"📘 Latest attempt found: "
+            f"id={attempt.id}, completed_at={attempt.completed_at}"
+        )
+    else:
+        print("📘 No previous attempts found")
+
+    # --------------------------------------------------
+    # 🟢 CASE A — COMPLETED attempt exists → SHOW REPORT
+    # --------------------------------------------------
     if attempt and attempt.completed_at is not None:
+        print("✅ Exam already completed → returning completed=true")
+
         return {
-            "completed": True,
-            "questions": [],
-            "remaining_time": 0
+            "completed": True
         }
 
-    # 3️⃣ Load quiz
+    # --------------------------------------------------
+    # 3️⃣ Load quiz (class-based)
+    # --------------------------------------------------
     quiz = (
         db.query(Quiz)
         .filter(func.lower(Quiz.class_name) == func.lower(student.class_name))
@@ -3110,9 +3130,12 @@ def start_exam(
     )
 
     if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found for class")
+        print("❌ Quiz not found for class")
+        raise HTTPException(status_code=404, detail="Quiz not found")
 
+    # --------------------------------------------------
     # 4️⃣ Load exam
+    # --------------------------------------------------
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
@@ -3121,49 +3144,56 @@ def start_exam(
     )
 
     if not exam:
+        print("❌ Exam not generated")
         raise HTTPException(status_code=404, detail="Exam not generated")
 
-    # 🔧 Helper — normalize options so frontend can render buttons
+    # --------------------------------------------------
+    # 🔧 Normalize questions for frontend
+    # --------------------------------------------------
     def normalize_questions(raw_questions):
         normalized = []
-    
-        for q in raw_questions:
+
+        for q in raw_questions or []:
             fixed = dict(q)
             opts = fixed.get("options")
-    
-            # CASE 1 — options is dict → convert to array
+
             if isinstance(opts, dict):
                 fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
-    
-            # CASE 2 — options already array → keep as-is
             elif isinstance(opts, list):
                 fixed["options"] = opts
-    
-            # CASE 3 — missing / invalid
             else:
                 fixed["options"] = []
-    
+
             normalized.append(fixed)
-    
+
         return normalized
 
-    # 5️⃣ CASE 2 — Resume unfinished attempt
+    # --------------------------------------------------
+    # 🟡 CASE B — ACTIVE attempt → RESUME
+    # --------------------------------------------------
     if attempt and attempt.completed_at is None:
+        print("⏳ Active attempt detected → resuming exam")
+
         started_at = attempt.started_at
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
 
         now = datetime.now(timezone.utc)
-        elapsed = (now - started_at).total_seconds()
-        remaining = max(0, attempt.duration_minutes * 60 - int(elapsed))
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
 
+        print(
+            f"⏱ elapsed={elapsed}s, remaining={remaining}s"
+        )
+
+        # ⛔ Time expired → mark completed
         if remaining == 0:
+            print("⛔ Time expired → marking completed")
             attempt.completed_at = now
             db.commit()
+
             return {
-                "completed": True,
-                "questions": [],
-                "remaining_time": 0
+                "completed": True
             }
 
         return {
@@ -3172,7 +3202,11 @@ def start_exam(
             "remaining_time": remaining
         }
 
-    # 6️⃣ CASE 3 — First attempt
+    # --------------------------------------------------
+    # 🔵 CASE C — FIRST attempt → START NEW
+    # --------------------------------------------------
+    print("🆕 No attempt found → starting new exam")
+
     new_attempt = StudentExam(
         student_id=student.id,
         exam_id=exam.id,
@@ -3182,6 +3216,8 @@ def start_exam(
 
     db.add(new_attempt)
     db.commit()
+
+    print(f"✅ New attempt created: id={new_attempt.id}")
 
     return {
         "completed": False,
