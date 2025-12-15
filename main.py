@@ -2973,52 +2973,23 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Exam not found")
 
     # -------------------------------------
-    # TIME CALCULATION
+    # TIME CALCULATION (FIXED)
     # -------------------------------------
     now = datetime.now(timezone.utc)
-    elapsed = (now - session.started_at).total_seconds()
+
+    started_at = session.started_at
+
+    # 🔥 CRITICAL FIX: normalize naive → aware
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+
+    elapsed = (now - started_at).total_seconds()
     remaining = session.duration_minutes * 60 - elapsed
 
     if remaining <= 0:
         session.completed_at = now
         db.commit()
         remaining = 0
-
-    # -------------------------------------
-    # SANITIZE QUESTIONS + NORMALIZE OPTIONS
-    # -------------------------------------
-    normalized_questions = []
-
-    for q in exam.questions:
-        fixed = dict(q)
-
-        opts = fixed.get("options")
-
-        # Case 1 — Options missing entirely
-        if opts is None:
-            print(f"⚠️ q_id={fixed.get('q_id')} had no options, fixing to []")
-            fixed["options"] = []
-        
-        # Case 2 — Options is a dict ⇒ convert to array
-        elif isinstance(opts, dict):
-            print(f"⚠️ q_id={fixed.get('q_id')} had dict options, converting → array")
-            fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
-
-        # Case 3 — Options is string or other invalid type
-        elif not isinstance(opts, list):
-            print(f"⚠️ q_id={fixed.get('q_id')} invalid options type ({type(opts)}), fixing to []")
-            fixed["options"] = []
-
-        normalized_questions.append(fixed)
-
-    # -------------------------------------
-
-    return {
-        "questions": normalized_questions,
-        "total_questions": len(normalized_questions),
-        "remaining_time": int(remaining),
-        "completed": session.completed_at is not None
-    }
 
 @app.post("/api/student/finish-exam")
 def finish_exam(req: FinishExamRequest, db: Session = Depends(get_db)):
