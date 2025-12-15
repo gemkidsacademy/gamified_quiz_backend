@@ -3170,23 +3170,23 @@ def finish_exam(
     db: Session = Depends(get_db)
 ):
     # --------------------------------------------------
-    # 1️⃣ Validate student (external ID like Gem002)
+    # 1️⃣ Validate student (external ID → internal ID)
     # --------------------------------------------------
     student = (
         db.query(Student)
-        .filter(Student.student_id == req.student_id)
+        .filter(Student.student_id == req.student_id)  # e.g. "Gem002"
         .first()
     )
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
     # --------------------------------------------------
-    # 2️⃣ Get active exam attempt (CRITICAL FIX)
+    # 2️⃣ Get active exam attempt (INTEGER FK FIX)
     # --------------------------------------------------
     attempt = (
         db.query(StudentExam)
         .filter(
-            StudentExam.student_id == req.student_id,   # ✅ FIXED
+            StudentExam.student_id == student.id,   # ✅ INTERNAL INTEGER ID
             StudentExam.completed_at.is_(None)
         )
         .order_by(StudentExam.started_at.desc())
@@ -3194,10 +3194,10 @@ def finish_exam(
     )
 
     if not attempt:
-        return {"status": "completed"}  # already finished safely
+        return {"status": "completed"}
 
     # --------------------------------------------------
-    # 3️⃣ Idempotency guard
+    # 3️⃣ Idempotency guard (safe re-submit)
     # --------------------------------------------------
     existing_result = (
         db.query(StudentExamResultsThinkingSkills)
@@ -3208,14 +3208,13 @@ def finish_exam(
     )
 
     if existing_result:
-        # Ensure completed_at is set (defensive)
         if attempt.completed_at is None:
             attempt.completed_at = datetime.now(timezone.utc)
             db.commit()
         return {"status": "completed"}
 
     # --------------------------------------------------
-    # 4️⃣ Load exam + questions (SOURCE OF TRUTH)
+    # 4️⃣ Load exam (SOURCE OF TRUTH)
     # --------------------------------------------------
     exam = db.query(Exam).filter(Exam.id == attempt.exam_id).first()
     if not exam:
@@ -3263,7 +3262,7 @@ def finish_exam(
     accuracy = round((correct / total_questions) * 100, 2) if total_questions else 0
 
     # --------------------------------------------------
-    # 6️⃣ Save Thinking Skills result (SUMMARY ROW)
+    # 6️⃣ Save summary result (ONE ROW)
     # --------------------------------------------------
     db.add(
         StudentExamResultsThinkingSkills(
