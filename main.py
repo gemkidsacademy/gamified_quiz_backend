@@ -2931,7 +2931,7 @@ def start_exam(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # 2️⃣ Check latest attempt for this student
+    # 2️⃣ Check latest attempt
     attempt = (
         db.query(StudentExam)
         .filter(StudentExam.student_id == student.id)
@@ -2939,17 +2939,15 @@ def start_exam(
         .first()
     )
 
-    # 🛑 CASE 1 — Attempt exists AND completed
+    # 🛑 CASE 1 — Exam already completed
     if attempt and attempt.completed_at is not None:
-        print("🛑 Exam already completed for student")
-
         return {
             "completed": True,
             "questions": [],
             "remaining_time": 0
         }
 
-    # 3️⃣ Load quiz for student's class
+    # 3️⃣ Load quiz
     quiz = (
         db.query(Quiz)
         .filter(func.lower(Quiz.class_name) == func.lower(student.class_name))
@@ -2960,7 +2958,7 @@ def start_exam(
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found for class")
 
-    # 4️⃣ Load generated exam
+    # 4️⃣ Load exam
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
@@ -2971,23 +2969,43 @@ def start_exam(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not generated")
 
+    # 🔧 Helper — normalize options so frontend can render buttons
+    def normalize_questions(raw_questions):
+        normalized = []
+    
+        for q in raw_questions:
+            fixed = dict(q)
+            opts = fixed.get("options")
+    
+            # CASE 1 — options is dict → convert to array
+            if isinstance(opts, dict):
+                fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
+    
+            # CASE 2 — options already array → keep as-is
+            elif isinstance(opts, list):
+                fixed["options"] = opts
+    
+            # CASE 3 — missing / invalid
+            else:
+                fixed["options"] = []
+    
+            normalized.append(fixed)
+    
+        return normalized
+
     # 5️⃣ CASE 2 — Resume unfinished attempt
     if attempt and attempt.completed_at is None:
-        print(f"🔄 Resuming attempt {attempt.id}")
-
         started_at = attempt.started_at
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
 
         now = datetime.now(timezone.utc)
         elapsed = (now - started_at).total_seconds()
-        total_seconds = attempt.duration_minutes * 60
-        remaining = max(0, int(total_seconds - elapsed))
+        remaining = max(0, attempt.duration_minutes * 60 - int(elapsed))
 
         if remaining == 0:
             attempt.completed_at = now
             db.commit()
-
             return {
                 "completed": True,
                 "questions": [],
@@ -2996,11 +3014,11 @@ def start_exam(
 
         return {
             "completed": False,
-            "questions": exam.questions,
+            "questions": normalize_questions(exam.questions),
             "remaining_time": remaining
         }
 
-    # 6️⃣ CASE 3 — First attempt → create new session
+    # 6️⃣ CASE 3 — First attempt
     new_attempt = StudentExam(
         student_id=student.id,
         exam_id=exam.id,
@@ -3011,14 +3029,11 @@ def start_exam(
     db.add(new_attempt)
     db.commit()
 
-    print(f"🎉 New exam attempt created")
-
     return {
         "completed": False,
-        "questions": exam.questions,
+        "questions": normalize_questions(exam.questions),
         "remaining_time": new_attempt.duration_minutes * 60
     }
-
 
 @app.get("/api/student/get-exam")
 def get_exam(session_id: int, db: Session = Depends(get_db)):
