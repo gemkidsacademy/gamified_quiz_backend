@@ -34,7 +34,7 @@ from google.cloud import storage
  
 import json
 
-from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text, Boolean, Date, Text, desc
+from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text, Boolean, Date, Text, desc, Float
 from fastapi.responses import JSONResponse
 
 
