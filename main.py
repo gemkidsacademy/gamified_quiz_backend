@@ -134,8 +134,8 @@ otp_store = {}
 # Models
 # ---------------------------
 class ExamSubmissionRequest(BaseModel):
-    session_id: str
-    answers: Dict[int, str]  # { question_id: selected_option }
+    session_id: int
+    answers: Dict[int, str]
  
 class StudentExamAttemptThinkingSkills(Base):
     __tablename__ = "student_exam_attempts_thinkingskills"
