@@ -3164,13 +3164,14 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
         "completed": session.completed_at is not None
     }
  
-
 @app.post("/api/student/finish-exam")
 def finish_exam(
     req: FinishExamRequest,
     db: Session = Depends(get_db)
 ):
-    # 1️⃣ Validate student
+    # --------------------------------------------------
+    # 1️⃣ Validate student (external ID like Gem002)
+    # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(Student.student_id == req.student_id)
@@ -3179,40 +3180,55 @@ def finish_exam(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # 2️⃣ Get active attempt
+    # --------------------------------------------------
+    # 2️⃣ Get active exam attempt (CRITICAL FIX)
+    # --------------------------------------------------
     attempt = (
         db.query(StudentExam)
         .filter(
-            StudentExam.student_id == student.id,
+            StudentExam.student_id == req.student_id,   # ✅ FIXED
             StudentExam.completed_at.is_(None)
         )
         .order_by(StudentExam.started_at.desc())
         .first()
     )
-    if not attempt:
-        return {"status": "completed"}
 
-    # 3️⃣ Idempotency guard (critical)
-    existing = (
+    if not attempt:
+        return {"status": "completed"}  # already finished safely
+
+    # --------------------------------------------------
+    # 3️⃣ Idempotency guard
+    # --------------------------------------------------
+    existing_result = (
         db.query(StudentExamResultsThinkingSkills)
         .filter(
             StudentExamResultsThinkingSkills.exam_attempt_id == attempt.id
         )
         .first()
     )
-    if existing:
+
+    if existing_result:
+        # Ensure completed_at is set (defensive)
+        if attempt.completed_at is None:
+            attempt.completed_at = datetime.now(timezone.utc)
+            db.commit()
         return {"status": "completed"}
 
-    # 4️⃣ Load exam questions
+    # --------------------------------------------------
+    # 4️⃣ Load exam + questions (SOURCE OF TRUTH)
+    # --------------------------------------------------
     exam = db.query(Exam).filter(Exam.id == attempt.exam_id).first()
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
     questions = exam.questions or []
+    total_questions = len(questions)
+
     question_map = {q["q_id"]: q for q in questions}
 
-    # 5️⃣ Save responses + compute result
-    total = 0
+    # --------------------------------------------------
+    # 5️⃣ Save student responses
+    # --------------------------------------------------
     correct = 0
 
     for q_id_str, selected in req.answers.items():
@@ -3227,6 +3243,9 @@ def finish_exam(
 
         is_correct = selected == q.get("correct")
 
+        if is_correct:
+            correct += 1
+
         db.add(
             StudentExamResponse(
                 student_id=student.id,
@@ -3240,34 +3259,37 @@ def finish_exam(
             )
         )
 
-        total += 1
-        if is_correct:
-            correct += 1
+    wrong = total_questions - correct
+    accuracy = round((correct / total_questions) * 100, 2) if total_questions else 0
 
-    accuracy = round((correct / total) * 100, 2) if total else 0
-
-    # 6️⃣ Save Thinking Skills result
+    # --------------------------------------------------
+    # 6️⃣ Save Thinking Skills result (SUMMARY ROW)
+    # --------------------------------------------------
     db.add(
         StudentExamResultsThinkingSkills(
             student_id=student.id,
             exam_attempt_id=attempt.id,
-            total_questions=total,
+            total_questions=total_questions,
             correct_answers=correct,
-            wrong_answers=total - correct,
+            wrong_answers=wrong,
             accuracy_percent=accuracy
         )
     )
 
-    # 7️⃣ Mark exam completed
+    # --------------------------------------------------
+    # 7️⃣ Mark exam completed (NOW GUARANTEED)
+    # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
     db.commit()
 
     return {
         "status": "completed",
-        "total_questions": total,
+        "total_questions": total_questions,
         "correct": correct,
+        "wrong": wrong,
         "accuracy": accuracy
     }
+
 
 
 @app.get("/api/student/get-quiz")
