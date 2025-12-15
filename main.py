@@ -1681,7 +1681,44 @@ def get_thinking_skills_report(
             func.count(StudentExamResponse.id).label("total"),
             func.sum(
                 case(
-                    (StudentExamRe
+                    (StudentExamResponse.is_correct == True, 1),
+                    else_=0
+                )
+            ).label("correct")
+        )
+        .filter(
+            StudentExamResponse.exam_attempt_id == attempt.id
+        )
+        .group_by(StudentExamResponse.topic)
+        .order_by(StudentExamResponse.topic)
+        .all()
+    )
+
+    topic_breakdown = []
+    for row in topic_rows:
+        total = row.total
+        correct = row.correct or 0
+
+        topic_breakdown.append({
+            "topic": row.topic,
+            "total_questions": total,
+            "correct_answers": correct,
+            "wrong_answers": total - correct,
+            "accuracy_percent": round((correct / total) * 100, 2) if total else 0
+        })
+
+    # --------------------------------------------------
+    # 5️⃣ Final UI-ready response
+    # --------------------------------------------------
+    return {
+        "summary": {
+            "total_questions": summary.total_questions,
+            "correct_answers": summary.correct_answers,
+            "wrong_answers": summary.wrong_answers,
+            "accuracy_percent": summary.accuracy_percent
+        },
+        "topic_breakdown": topic_breakdown
+    }
 
 
 @app.post("/api/student/save-exam-results-thinkingskills")
