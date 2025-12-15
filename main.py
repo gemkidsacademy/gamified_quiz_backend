@@ -1621,7 +1621,102 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.get("/api/student/exam-report/thinking-skills")
+def get_thinking_skills_report(
+    student_id: str = Query(..., description="External student id e.g. Gem002"),
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
 
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest completed Thinking Skills attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExam)
+        .join(StudentExamResultsThinkingSkills,
+              StudentExamResultsThinkingSkills.exam_attempt_id == StudentExam.id)
+        .filter(
+            StudentExam.student_id == student.id,
+            StudentExam.completed_at.isnot(None)
+        )
+        .order_by(StudentExam.completed_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(status_code=404, detail="No completed exam found")
+
+    # --------------------------------------------------
+    # 3️⃣ Load summary row (donut chart)
+    # --------------------------------------------------
+    summary = (
+        db.query(StudentExamResultsThinkingSkills)
+        .filter(
+            StudentExamResultsThinkingSkills.exam_attempt_id == attempt.id
+        )
+        .first()
+    )
+
+    if not summary:
+        raise HTTPException(status_code=404, detail="Exam result missing")
+
+    # --------------------------------------------------
+    # 4️⃣ Topic-wise breakdown (bar chart)
+    # --------------------------------------------------
+    topic_rows = (
+        db.query(
+            StudentExamResponse.topic,
+            func.count(StudentExamResponse.id).label("total"),
+            func.sum(
+                func.case(
+                    (StudentExamResponse.is_correct == True, 1),
+                    else_=0
+                )
+            ).label("correct")
+        )
+        .filter(
+            StudentExamResponse.exam_attempt_id == attempt.id
+        )
+        .group_by(StudentExamResponse.topic)
+        .all()
+    )
+
+    topic_breakdown = []
+
+    for row in topic_rows:
+        total = row.total
+        correct = row.correct or 0
+
+        topic_breakdown.append({
+            "topic": row.topic,
+            "total_questions": total,
+            "correct_answers": correct,
+            "accuracy_percent": round((correct / total) * 100, 2) if total else 0
+        })
+
+    # --------------------------------------------------
+    # 5️⃣ Final response (UI ready)
+    # --------------------------------------------------
+    return {
+        "summary": {
+            "total_questions": summary.total_questions,
+            "correct_answers": summary.correct_answers,
+            "wrong_answers": summary.wrong_answers,
+            "accuracy_percent": summary.accuracy_percent
+        },
+        "topic_breakdown": topic_breakdown
+    }
+ 
 @app.post("/api/student/save-exam-results-thinkingskills")
 def save_exam_results_thinkingskills(
     payload: ExamSubmissionRequest,
