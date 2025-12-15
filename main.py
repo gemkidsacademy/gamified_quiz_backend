@@ -138,7 +138,13 @@ class StudentExamResultsThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    # ✅ MUST be Text, not Integer
+    student_id = Column(
+        Text,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
     exam_attempt_id = Column(
         Integer,
         ForeignKey("student_exams.id"),
