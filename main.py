@@ -423,8 +423,8 @@ class GeneratedExamReading(Base):
  
 class FinishExamRequest(BaseModel):
     student_id: str
-    answers: dict[int, str]   # { q_id: selected_option }
-
+    answers: Dict[str, str]
+ 
 class StartExamRequest(BaseModel):
     student_id: str   # <-- MUST BE STRING
  
