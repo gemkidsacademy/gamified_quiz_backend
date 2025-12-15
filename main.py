@@ -136,9 +136,12 @@ otp_store = {}
 class StudentExamResultsThinkingSkills(Base):
     __tablename__ = "student_exam_results_thinking_skills"
 
+    __table_args__ = (
+        Index("idx_results_student", "student_id"),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
 
-    # ✅ MUST be Text, not Integer
     student_id = Column(
         Text,
         ForeignKey("students.id"),
