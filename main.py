@@ -1639,12 +1639,14 @@ def get_thinking_skills_report(
         raise HTTPException(status_code=404, detail="Student not found")
 
     # --------------------------------------------------
-    # 2️⃣ Get latest completed Thinking Skills attempt
+    # 2️⃣ Get latest completed exam attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentExam)
-        .join(StudentExamResultsThinkingSkills,
-              StudentExamResultsThinkingSkills.exam_attempt_id == StudentExam.id)
+        .join(
+            StudentExamResultsThinkingSkills,
+            StudentExamResultsThinkingSkills.exam_attempt_id == StudentExam.id
+        )
         .filter(
             StudentExam.student_id == student.id,
             StudentExam.completed_at.isnot(None)
@@ -1657,7 +1659,7 @@ def get_thinking_skills_report(
         raise HTTPException(status_code=404, detail="No completed exam found")
 
     # --------------------------------------------------
-    # 3️⃣ Load summary row (donut chart)
+    # 3️⃣ Load summary (donut / headline stats)
     # --------------------------------------------------
     summary = (
         db.query(StudentExamResultsThinkingSkills)
@@ -1678,45 +1680,10 @@ def get_thinking_skills_report(
             StudentExamResponse.topic,
             func.count(StudentExamResponse.id).label("total"),
             func.sum(
-                func.case(
-                    (StudentExamResponse.is_correct == True, 1),
-                    else_=0
-                )
-            ).label("correct")
-        )
-        .filter(
-            StudentExamResponse.exam_attempt_id == attempt.id
-        )
-        .group_by(StudentExamResponse.topic)
-        .all()
-    )
+                case(
+                    (StudentExamRe
 
-    topic_breakdown = []
 
-    for row in topic_rows:
-        total = row.total
-        correct = row.correct or 0
-
-        topic_breakdown.append({
-            "topic": row.topic,
-            "total_questions": total,
-            "correct_answers": correct,
-            "accuracy_percent": round((correct / total) * 100, 2) if total else 0
-        })
-
-    # --------------------------------------------------
-    # 5️⃣ Final response (UI ready)
-    # --------------------------------------------------
-    return {
-        "summary": {
-            "total_questions": summary.total_questions,
-            "correct_answers": summary.correct_answers,
-            "wrong_answers": summary.wrong_answers,
-            "accuracy_percent": summary.accuracy_percent
-        },
-        "topic_breakdown": topic_breakdown
-    }
- 
 @app.post("/api/student/save-exam-results-thinkingskills")
 def save_exam_results_thinkingskills(
     payload: ExamSubmissionRequest,
