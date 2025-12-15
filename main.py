@@ -133,6 +133,42 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamAttemptThinkingSkills(Base):
+    __tablename__ = "student_exam_attempts_thinkingskills"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Text, unique=True, nullable=False)
+    student_id = Column(Text, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    submitted_at = Column(DateTime(timezone=True))
+    is_completed = Column(Boolean, default=False)
+    score = Column(Integer)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class StudentExamAnswerThinkingSkills(Base):
+    __tablename__ = "student_exam_answers_thinkingskills"
+
+    id = Column(Integer, primary_key=True)
+    attempt_id = Column(
+        Integer,
+        ForeignKey(
+            "student_exam_attempts_thinkingskills.id",
+            ondelete="CASCADE"
+        ),
+        nullable=False
+    )
+    question_id = Column(Integer, nullable=False)
+    selected_option = Column(Text, nullable=False)
+    is_correct = Column(Boolean)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+
 class StudentExamReading(Base):
     __tablename__ = "student_exams_reading"
 
@@ -371,19 +407,45 @@ class StudentExam(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # MUST be String — because students.id is VARCHAR
-    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+    # Student ID is a string (e.g., "Gem002")
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False,
+        index=True
+    )
 
-    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    exam_id = Column(
+        Integer,
+        ForeignKey("exams.id"),
+        nullable=False,
+        index=True
+    )
 
-    started_at = Column(DateTime, nullable=False)
-    completed_at = Column(DateTime, nullable=True)
+    # Timezone-aware timestamps (UTC)
+    started_at = Column(
+        DateTime(timezone=True),
+        nullable=False
+    )
 
-    duration_minutes = Column(Integer, default=40)
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(Integer, default=40, nullable=False)
 
     # Relationships
-    student = relationship("Student", back_populates="student_exams")
-    exam = relationship("Exam", back_populates="student_exams")
+    student = relationship(
+        "Student",
+        back_populates="student_exams"
+    )
+
+    exam = relationship(
+        "Exam",
+        back_populates="student_exams"
+    )
+
     answers = relationship(
         "StudentExamAnswer",
         back_populates="student_exam",
@@ -1500,6 +1562,52 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+
+@app.post("/api/student/save-exam-results-thinkingskills")
+def save_exam_results_thinkingskills(
+    payload: ExamSubmissionRequest,
+    db: Session = Depends(get_db)
+):
+    attempt = (
+        db.query(StudentExamAttemptThinkingSkills)
+        .filter(
+            StudentExamAttemptThinkingSkills.session_id == payload.session_id
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Invalid exam session")
+
+    if attempt.is_completed:
+        raise HTTPException(status_code=400, detail="Exam already submitted")
+
+    for question_id, selected_option in payload.answers.items():
+        existing = (
+            db.query(StudentExamAnswerThinkingSkills)
+            .filter(
+                StudentExamAnswerThinkingSkills.attempt_id == attempt.id,
+                StudentExamAnswerThinkingSkills.question_id == question_id
+            )
+            .first()
+        )
+
+        if existing:
+            continue
+
+        db.add(
+            StudentExamAnswerThinkingSkills(
+                attempt_id=attempt.id,
+                question_id=question_id,
+                selected_option=selected_option
+            )
+        )
+
+    attempt.submitted_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {"status": "saved"}
+
 
 @app.post("/add_student_exam_module")
 def add_student_exam_module(
@@ -2766,8 +2874,10 @@ def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depend
 
 
 @app.post("/api/student/start-exam")
-def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db)):
-
+def start_exam(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
     print("🚀 Received start-exam request:", req.dict())
 
     # 1️⃣ Validate student
@@ -2778,9 +2888,9 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not student:
-        raise HTTPException(404, "Student not found")
+        raise HTTPException(status_code=404, detail="Student not found")
 
-    # 2️⃣ Check previous attempt
+    # 2️⃣ Check latest attempt
     existing_attempt = (
         db.query(StudentExam)
         .filter(StudentExam.student_id == student.id)
@@ -2788,9 +2898,9 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
         .first()
     )
 
-    # 🛑 CASE 1 — Attempt already completed → DO NOT create new one
+    # 🛑 CASE 1 — Attempt already completed
     if existing_attempt and existing_attempt.completed_at is not None:
-        print("🛑 Student already completed exam → returning completed status.")
+        print("🛑 Student already completed exam")
         return {
             "status": "already_completed",
             "session_id": existing_attempt.id
@@ -2804,7 +2914,7 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
             "session_id": existing_attempt.id
         }
 
-    # 3️⃣ Load correct exam for the student
+    # 3️⃣ Load quiz for student's class
     quiz = (
         db.query(Quiz)
         .filter(func.lower(Quiz.class_name) == func.lower(student.class_name))
@@ -2813,8 +2923,9 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not quiz:
-        raise HTTPException(404, "Quiz not found for class")
+        raise HTTPException(status_code=404, detail="Quiz not found for class")
 
+    # 4️⃣ Load generated exam
     exam = (
         db.query(Exam)
         .filter(Exam.quiz_id == quiz.id)
@@ -2823,13 +2934,13 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
     )
 
     if not exam:
-        raise HTTPException(404, "Exam not generated")
+        raise HTTPException(status_code=404, detail="Exam not generated")
 
-    # 4️⃣ Create NEW session only for first attempt
+    # 5️⃣ Create new exam session (timezone-aware)
     new_session = StudentExam(
         student_id=student.id,
         exam_id=exam.id,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(timezone.utc),  # ✅ timezone-aware
         duration_minutes=40
     )
 
@@ -2843,8 +2954,6 @@ def start_exam(req: StartExamRequest = Body(...), db: Session = Depends(get_db))
         "status": "started",
         "session_id": new_session.id
     }
-
-
 
 
 
