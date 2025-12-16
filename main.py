@@ -3281,11 +3281,29 @@ def get_reading_quiz_dropdown(db: Session = Depends(get_db)):
 
     return result
 
-def detect_question_type(extracted_text: str) -> str:
-    if "Gapped Text" in extracted_text or "Gap 1" in extracted_text:
-        return "gapped_text"
-    return "standard_reading"
+ 
+CANONICAL_READING_TOPICS = {
+    "comparative analysis": "Comparative analysis",
+    "gapped text": "Gapped Text",
+    "main idea & summary": "Main Idea & Summary",
+    "main idea and summary": "Main Idea & Summary",
+}
 
+def normalize_topic(raw_topic: str) -> str:
+    if not raw_topic:
+        raise HTTPException(status_code=400, detail="Missing topic")
+
+    key = raw_topic.strip().lower()
+
+    if key not in CANONICAL_READING_TOPICS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid topic '{raw_topic}'. Must match admin-defined topics."
+        )
+
+    return CANONICAL_READING_TOPICS[key]
+
+ 
 @app.post("/upload-word-reading")
 async def upload_word(
     file: UploadFile = File(...),
@@ -3322,9 +3340,11 @@ async def upload_word(
     # 2️⃣ Detect question type (responsibility boundary)
     # --------------------------------------------------
     def detect_question_type(text: str) -> str:
-        if "Gapped Text" in text or "Gap 1" in text:
-            return "gapped_text"
-        return "standard_reading"
+         t = text.lower()
+         if "gapped text" in t or "gap 1" in t:
+             return "gapped_text"
+         return "standard_reading"
+
 
     question_type = detect_question_type(extracted)
     print(f"[DEBUG] Detected question type: {question_type}")
@@ -3396,6 +3416,15 @@ async def upload_word(
 
         print("[DEBUG] Question schema validation passed")
 
+        raw_topic = exam_json.get("topic")
+        if not raw_topic:
+           raise HTTPException(
+               status_code=400,
+               detail="Parsed exam missing topic. Check Word document or parser prompt."
+           )
+     
+        exam_json["topic"] = normalize_topic(raw_topic)
+        
         exam_obj = ExamReadingCreate(**exam_json)
         saved_exam = save_exam_to_db(db, exam_obj)
 
