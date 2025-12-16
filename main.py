@@ -2560,21 +2560,23 @@ def get_foundational_exam_report(
     topic_stats: Dict[str, Dict[str, int]] = {}
 
     for section in sections:
-        topic = section.get("name", "Unknown")
-        questions = section.get("questions", [])
+      questions = section.get("questions", [])
+  
+      for q in questions:
+          topic = q.get("topic", "Unknown")
+  
+          topic_stats.setdefault(topic, {"total": 0, "correct": 0})
+  
+          qid = str(q.get("q_id"))
+          correct_option = q.get("correct_answer")
+  
+          total_questions += 1
+          topic_stats[topic]["total"] += 1
+  
+          if answers.get(qid) == correct_option:
+              correct_answers += 1
+              topic_stats[topic]["correct"] += 1
 
-        topic_stats.setdefault(topic, {"total": 0, "correct": 0})
-
-        for q in questions:
-            qid = str(q.get("q_id"))
-            correct_option = q.get("correct_answer")
-
-            total_questions += 1
-            topic_stats[topic]["total"] += 1
-
-            if answers.get(qid) == correct_option:
-                correct_answers += 1
-                topic_stats[topic]["correct"] += 1
 
     wrong_answers = total_questions - correct_answers
 
