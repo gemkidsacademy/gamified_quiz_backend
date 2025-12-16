@@ -4,7 +4,7 @@ from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 import docx
-from io import BytesIO
+from io import BytesIO 
 from typing import List
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta,date, timezone
