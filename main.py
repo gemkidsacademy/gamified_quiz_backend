@@ -3035,11 +3035,10 @@ def generate_exam_reading(
 ):
     """
     Generate a Reading Comprehension exam.
-    This version builds topic-correct answer options and
-    produces a frontend-safe exam_json.
+    Produces a STRICT frontend-safe exam_json.
     """
 
-    print("\n================ GENERATE READING EXAM =================")
+    print("\n================ GENERATE READING EXAM ================")
     print("Incoming payload:", payload.dict())
 
     class_name = payload.class_name.strip()
@@ -3058,10 +3057,7 @@ def generate_exam_reading(
     )
 
     if not cfg:
-        raise HTTPException(
-            status_code=404,
-            detail="No reading exam config found"
-        )
+        raise HTTPException(404, "No reading exam config found")
 
     subject = cfg.subject
     topics = cfg.topics
@@ -3071,19 +3067,17 @@ def generate_exam_reading(
     warnings = []
 
     # --------------------------------------------------
-    # 2️⃣ PROCESS EACH TOPIC
+    # 2️⃣ PROCESS TOPICS
     # --------------------------------------------------
     for topic_spec in topics:
-        topic_name = topic_spec.get("name", "").strip()
-        required = int(topic_spec.get("num_questions", 0))
+        topic_name = topic_spec["name"].strip()
+        required = int(topic_spec["num_questions"])
 
         print(f"\n▶ Topic: {topic_name} | Required: {required}")
 
-        # -------------------------------
-        # DEFINE ANSWER OPTIONS BY TOPIC
-        # -------------------------------
+        # ---------- Answer options per topic ----------
         if topic_name.lower() == "comparative analysis":
-            topic_answer_options = {
+            answer_options = {
                 "A": "Extract A",
                 "B": "Extract B",
                 "C": "Extract C",
@@ -3091,7 +3085,7 @@ def generate_exam_reading(
             }
 
         elif topic_name.lower() == "main idea & summary":
-            topic_answer_options = {
+            answer_options = {
                 "A": "Paragraph 1",
                 "B": "Paragraph 2",
                 "C": "Paragraph 3",
@@ -3102,14 +3096,20 @@ def generate_exam_reading(
             }
 
         elif topic_name.lower() == "gapped text":
-            topic_answer_options = {}  # frontend renders A–G
+            answer_options = {
+                "A": "A",
+                "B": "B",
+                "C": "C",
+                "D": "D",
+                "E": "E",
+                "F": "F",
+                "G": "G",
+            }
 
         else:
-            topic_answer_options = {}
+            answer_options = {}
 
-        # -------------------------------
-        # LOAD QUESTION BUNDLES
-        # -------------------------------
+        # ---------- Load bundles ----------
         bundles = (
             db.query(Question_reading)
             .filter(
@@ -3123,26 +3123,19 @@ def generate_exam_reading(
 
         if not bundles:
             warnings.append(f"No bundles found for topic '{topic_name}'")
-            print("⚠ No bundles found")
             continue
 
         random.shuffle(bundles)
-
         collected = []
 
         for bundle in bundles:
             bundle_json = bundle.exam_bundle or {}
 
-            # Passages
+            # Merge passages once
             for label, text in bundle_json.get("reading_material", {}).items():
-                if label not in used_passages:
-                    used_passages[label] = text
+                used_passages.setdefault(label, text)
 
-            # Questions
-            qs = bundle_json.get("questions", [])
-            random.shuffle(qs)
-
-            for q in qs:
+            for q in bundle_json.get("questions", []):
                 collected.append(q)
                 if len(collected) >= required:
                     break
@@ -3152,36 +3145,28 @@ def generate_exam_reading(
 
         if len(collected) < required:
             warnings.append(
-                f"Only {len(collected)} questions available for topic '{topic_name}'"
+                f"Only {len(collected)} questions found for '{topic_name}'"
             )
 
-        # -------------------------------
-        # ADD TO FINAL QUESTIONS
-        # -------------------------------
+        # ---------- Push final questions ----------
         for q in collected[:required]:
             final_questions.append({
                 "topic": topic_name,
                 "question_number": None,  # assigned later
-                "question_text": q.get("question_text"),
-                "correct_answer": q.get("correct_answer"),
-                "answer_options": topic_answer_options,
+                "question_text": q["question_text"],
+                "correct_answer": q["correct_answer"],
+                "answer_options": answer_options,
             })
 
     # --------------------------------------------------
-    # 3️⃣ FINALIZE QUESTIONS
+    # 3️⃣ FINALIZE
     # --------------------------------------------------
     if not final_questions:
-        raise HTTPException(
-            status_code=400,
-            detail="No questions generated"
-        )
+        raise HTTPException(400, "No questions generated")
 
     for i, q in enumerate(final_questions, start=1):
         q["question_number"] = i
 
-    # --------------------------------------------------
-    # 4️⃣ BUILD EXAM JSON
-    # --------------------------------------------------
     exam_json = {
         "class_name": class_name,
         "subject": subject,
@@ -3192,10 +3177,7 @@ def generate_exam_reading(
         "questions": final_questions,
     }
 
-    # --------------------------------------------------
-    # 5️⃣ SAVE GENERATED EXAM
-    # --------------------------------------------------
-    saved_exam = GeneratedExamReading(
+    saved = GeneratedExamReading(
         config_id=cfg.id,
         class_name=class_name,
         subject=subject,
@@ -3204,14 +3186,14 @@ def generate_exam_reading(
         exam_json=exam_json,
     )
 
-    db.add(saved_exam)
+    db.add(saved)
     db.commit()
-    db.refresh(saved_exam)
+    db.refresh(saved)
 
-    print("✅ Exam generated successfully. ID:", saved_exam.id)
+    print("✅ Exam generated. ID:", saved.id)
 
     return {
-        "generated_exam_id": saved_exam.id,
+        "generated_exam_id": saved.id,
         "total_questions": len(final_questions),
         "warnings": warnings,
         "exam_json": exam_json,
@@ -3275,136 +3257,83 @@ def normalize_topic(raw_topic: str) -> str:
 
  
 @app.post("/upload-word-reading")
-async def upload_word(
+async def upload_word_reading(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    print("\n================= UPLOAD WORD READING REQUEST RECEIVED =================")
+    print("\n================ UPLOAD WORD READING =================")
 
     # --------------------------------------------------
-    # 0️⃣ Validate file
+    # 1️⃣ Validate file
     # --------------------------------------------------
-    print(f"[DEBUG] Uploaded file name: {file.filename}")
-    print(f"[DEBUG] Uploaded file content-type: {file.content_type}")
-
-    if file.content_type != "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        raise HTTPException(status_code=400, detail="File must be a .docx Word document")
+    if file.content_type != (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        raise HTTPException(400, "File must be a .docx")
 
     raw = await file.read()
-    print(f"[DEBUG] Raw file size: {len(raw)} bytes")
+    text = extract_text_from_docx(raw)
+
+    if not text or len(text.strip()) < 50:
+        raise HTTPException(400, "Invalid or empty document")
 
     # --------------------------------------------------
-    # 1️⃣ Extract text
+    # 2️⃣ Parse with OpenAI
     # --------------------------------------------------
-    print("\n[STEP 1] Extracting text from DOCX")
-    extracted = extract_text_from_docx(raw)
+    parsed = parse_exam_with_openai(text)
 
-    if not extracted or len(extracted.strip()) < 50:
-        raise HTTPException(status_code=400, detail="Extracted text is empty or invalid")
-
-    print(f"[DEBUG] Extracted text length: {len(extracted)}")
-    print("[DEBUG] Text preview:")
-    print(extracted[:300])
-
-    # --------------------------------------------------
-    # 2️⃣ Detect question type (responsibility boundary)
-    # --------------------------------------------------
-    def detect_question_type(text: str) -> str:
-         t = text.lower()
-         if "gapped text" in t or "gap 1" in t:
-             return "gapped_text"
-         return "standard_reading"
-
-
-    question_type = detect_question_type(extracted)
-    print(f"[DEBUG] Detected question type: {question_type}")
-
-    # --------------------------------------------------
-    # 3️⃣ Parse with OpenAI
-    # --------------------------------------------------
-    print("\n[STEP 2] Parsing extracted text with OpenAI")
-
-    try:
-        parsed = parse_exam_with_openai(
-            extracted_text=extracted,
-            question_type=question_type
-        )
-    except Exception as e:
-        print("[ERROR] OpenAI parsing failed:", e)
-        raise HTTPException(status_code=500, detail="OpenAI parsing error")
+    if not parsed:
+        raise HTTPException(400, "Parsing failed")
 
     exams = parsed if isinstance(parsed, list) else [parsed]
-    print(f"[DEBUG] Exams detected: {len(exams)}")
-
-    # --------------------------------------------------
-    # 4️⃣ Normalization helpers
-    # --------------------------------------------------
-    def normalize_gapped_text_exam(exam_json: dict) -> dict:
-        normalized_questions = []
-
-        for q in exam_json.get("questions", []):
-            qn = q.get("question_number")
-            ca = q.get("correct_answer")
-
-            normalized_questions.append({
-                "question_number": qn,
-                "question_text": f"Gap {qn} _____",
-                "correct_answer": ca
-            })
-
-        exam_json["questions"] = normalized_questions
-        return exam_json
-
-    def validate_questions(questions: list):
-        for q in questions:
-            if not q.get("question_number"):
-                raise ValueError("Missing question_number")
-            if not q.get("question_text"):
-                raise ValueError("Missing question_text")
-            if not q.get("correct_answer"):
-                raise ValueError("Missing correct_answer")
-
-    # --------------------------------------------------
-    # 5️⃣ Save exams to DB
-    # --------------------------------------------------
-    print("\n[STEP 3] Saving exams to database")
-
     saved_ids = []
 
-    for idx, exam_json in enumerate(exams, start=1):
-        print(f"\n[DEBUG] Processing Exam #{idx}")
-        print(f"[DEBUG] Keys before normalization: {list(exam_json.keys())}")
+    # --------------------------------------------------
+    # 3️⃣ Normalize + Save
+    # --------------------------------------------------
+    for exam_json in exams:
+        topic = exam_json.get("topic")
+        if not topic:
+            raise HTTPException(400, "Parsed exam missing topic")
 
-        # Normalize Gapped Text
-        if question_type == "gapped_text":
-            exam_json = normalize_gapped_text_exam(exam_json)
-            exam_json.setdefault("meta", {})
-            exam_json["meta"]["question_type"] = "gapped_text"
+        normalized_topic = normalize_topic(topic)
 
-        # Validation gate (anti-hallucination)
-        validate_questions(exam_json.get("questions", []))
+        questions = []
+        for q in exam_json.get("questions", []):
+            if not q.get("question_text") or not q.get("correct_answer"):
+                raise HTTPException(400, "Invalid question detected")
 
-        print("[DEBUG] Question schema validation passed")
+            questions.append({
+                "question_text": q["question_text"],
+                "correct_answer": q["correct_answer"],
+            })
 
-        raw_topic = exam_json.get("topic")
-        if not raw_topic:
-           raise HTTPException(
-               status_code=400,
-               detail="Parsed exam missing topic. Check Word document or parser prompt."
-           )
-     
-        exam_json["topic"] = normalize_topic(raw_topic)
-        
-        exam_obj = ExamReadingCreate(**exam_json)
-        saved_exam = save_exam_to_db(db, exam_obj)
+        bundle = {
+            "topic": normalized_topic,
+            "reading_material": exam_json.get("reading_material", {}),
+            "questions": questions,
+            "answer_options": exam_json.get("answer_options", {}),
+        }
 
-        print(f"[DEBUG] Saved Exam #{idx} with ID: {saved_exam.id}")
-        saved_ids.append(saved_exam.id)
+        obj = Question_reading(
+            class_name=exam_json["class_name"],
+            subject=exam_json["subject"],
+            difficulty=exam_json["difficulty"],
+            topic=normalized_topic,
+            exam_bundle=bundle,
+        )
 
-    print("\n================= REQUEST COMPLETE =================")
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+
+        saved_ids.append(obj.id)
+
+    print("✅ Upload complete")
+
     return {
-        "message": "Exam(s) uploaded and stored successfully",
-        "exam_ids": saved_ids
+        "message": "Word exams uploaded successfully",
+        "bundle_ids": saved_ids,
     }
 
 
