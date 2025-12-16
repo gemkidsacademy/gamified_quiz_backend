@@ -1492,6 +1492,7 @@ GAPPED TEXT RULES:
     "correct_answer": "<LETTER>"
   }
 - DO NOT invent question wording.
+- question_number MUST be the gap number (1–N), not inferred from position.
 - DO NOT include passage text inside question_text.
 - Extract correct answers ONLY from explicit CORRECT_ANSWER fields.
 - Do NOT infer or guess missing answers.
