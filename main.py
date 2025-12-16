@@ -366,6 +366,9 @@ class StudentsExamFoundational(Base):
     current_section_index = Column(Integer, nullable=False, default=0)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    answers_json = Column(JSONB, nullable=True)
+
+    completion_reason = Column(String, nullable=True)
  
 class EmptyRequest(BaseModel):
     pass
