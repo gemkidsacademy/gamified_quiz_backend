@@ -1469,7 +1469,8 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     result = mammoth.extract_raw_text(file_obj)
     return result.value
 
-def parse_exam_with_openai(raw_text: str, question_type: str):
+def parse_exam_with_openai(extracted_text: str, question_type: str):
+
     """
     Extract exam data from a Word document.
     This function ONLY extracts data.
@@ -1550,7 +1551,7 @@ GLOBAL RULES:
 - If something is unclear, leave fields empty — NEVER guess.
 
 INPUT TEXT:
-{raw_text}
+{extracted_text}
 """
 
     response = client.chat.completions.create(
