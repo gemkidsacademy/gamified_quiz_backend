@@ -3066,6 +3066,9 @@ def generate_exam_reading(
     used_passages = {}
     warnings = []
 
+    # Gapped Text options must live at EXAM LEVEL
+    gapped_text_options = None
+
     # --------------------------------------------------
     # 2️⃣ PROCESS TOPICS
     # --------------------------------------------------
@@ -3075,17 +3078,19 @@ def generate_exam_reading(
 
         print(f"\n▶ Topic: {topic_name} | Required: {required}")
 
-        # ---------- Answer options per topic ----------
-        if topic_name.lower() == "comparative analysis":
-            answer_options = {
+        topic_lower = topic_name.lower()
+
+        # ---------- Fixed answer options (NON gapped text only) ----------
+        if topic_lower == "comparative analysis":
+            topic_answer_options = {
                 "A": "Extract A",
                 "B": "Extract B",
                 "C": "Extract C",
                 "D": "Extract D",
             }
 
-        elif topic_name.lower() == "main idea & summary":
-            answer_options = {
+        elif topic_lower == "main idea & summary":
+            topic_answer_options = {
                 "A": "Paragraph 1",
                 "B": "Paragraph 2",
                 "C": "Paragraph 3",
@@ -3095,19 +3100,8 @@ def generate_exam_reading(
                 "G": "Paragraph 7",
             }
 
-        elif topic_name.lower() == "gapped text":
-            answer_options = {
-                "A": "A",
-                "B": "B",
-                "C": "C",
-                "D": "D",
-                "E": "E",
-                "F": "F",
-                "G": "G",
-            }
-
         else:
-            answer_options = {}
+            topic_answer_options = None  # Gapped Text handled differently
 
         # ---------- Load bundles ----------
         bundles = (
@@ -3116,7 +3110,7 @@ def generate_exam_reading(
                 func.lower(Question_reading.class_name) == class_name.lower(),
                 func.lower(Question_reading.subject) == subject.lower(),
                 func.lower(Question_reading.difficulty) == difficulty.lower(),
-                func.lower(Question_reading.topic) == topic_name.lower(),
+                func.lower(Question_reading.topic) == topic_lower,
             )
             .all()
         )
@@ -3131,10 +3125,18 @@ def generate_exam_reading(
         for bundle in bundles:
             bundle_json = bundle.exam_bundle or {}
 
-            # Merge passages once
-            for label, text in bundle_json.get("reading_material", {}).items():
-                used_passages.setdefault(label, text)
+            # ---- Capture Gapped Text answer options ONCE ----
+            if topic_lower == "gapped text" and not gapped_text_options:
+                gapped_text_options = bundle_json.get("answer_options", {})
+                print("✅ Captured Gapped Text answer options")
 
+            # ---- Merge reading material safely ----
+            rm = bundle_json.get("reading_material", {})
+            if isinstance(rm, dict):
+                for k, v in rm.items():
+                    used_passages.setdefault(k, v)
+
+            # ---- Collect questions ----
             for q in bundle_json.get("questions", []):
                 collected.append(q)
                 if len(collected) >= required:
@@ -3150,13 +3152,18 @@ def generate_exam_reading(
 
         # ---------- Push final questions ----------
         for q in collected[:required]:
-            final_questions.append({
+            question_obj = {
                 "topic": topic_name,
                 "question_number": None,  # assigned later
                 "question_text": q["question_text"],
                 "correct_answer": q["correct_answer"],
-                "answer_options": answer_options,
-            })
+            }
+
+            # Only non-gapped-text questions get per-question options
+            if topic_answer_options:
+                question_obj["answer_options"] = topic_answer_options
+
+            final_questions.append(question_obj)
 
     # --------------------------------------------------
     # 3️⃣ FINALIZE
@@ -3176,6 +3183,11 @@ def generate_exam_reading(
         "reading_material": used_passages,
         "questions": final_questions,
     }
+
+    # Attach Gapped Text options at EXAM LEVEL
+    if gapped_text_options:
+        exam_json["answer_options"] = gapped_text_options
+        print("✅ Gapped Text options attached at exam level")
 
     saved = GeneratedExamReading(
         config_id=cfg.id,
@@ -3198,7 +3210,6 @@ def generate_exam_reading(
         "warnings": warnings,
         "exam_json": exam_json,
     }
-
 
 
 
