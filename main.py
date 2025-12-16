@@ -3272,7 +3272,7 @@ async def upload_word_reading(
         raise HTTPException(400, "File must be a .docx")
 
     raw = await file.read()
-    text = extract_text_from_docx(raw)
+    extracted = extract_text_from_docx(raw)
 
     if not text or len(text.strip()) < 50:
         raise HTTPException(400, "Invalid or empty document")
