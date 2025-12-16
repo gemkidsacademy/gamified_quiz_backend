@@ -133,6 +133,8 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StartExamRequestFoundational(BaseModel):
+    student_id: str
 class StudentExamResultsThinkingSkills(Base):
     __tablename__ = "student_exam_results_thinking_skills"
 
@@ -2250,87 +2252,10 @@ def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db))
 
 @app.post("/api/student/start-exam/foundational-skills")
 def start_or_resume_foundational_exam(
-    student_id: str,
+    payload: StartExamRequestFoundational,
     db: Session = Depends(get_db)
 ):
-    # ------------------------------------------------------------
-    # 1️⃣ Get latest attempt
-    # ------------------------------------------------------------
-    attempt = (
-        db.query(StudentsExamFoundational)
-        .filter(StudentsExamFoundational.student_id == student_id)
-        .order_by(StudentsExamFoundational.started_at.desc())
-        .first()
-    )
-
-    # ------------------------------------------------------------
-    # 2️⃣ Completed → load report
-    # ------------------------------------------------------------
-    if attempt and attempt.completed_at:
-        return { "completed": True }
-
-    # ------------------------------------------------------------
-    # 3️⃣ Load current exam
-    # ------------------------------------------------------------
-    exam = (
-        db.query(GeneratedExamFoundational)
-        .filter(GeneratedExamFoundational.is_current == True)
-        .order_by(desc(GeneratedExamFoundational.created_at))
-        .first()
-    )
-
-    if not exam:
-        raise HTTPException(status_code=404, detail="No active exam")
-
-    sections = exam.exam_json.get("sections", [])
-
-    if not sections:
-        raise HTTPException(
-            status_code=500,
-            detail="Exam has no sections configured"
-        )
-
-    # ------------------------------------------------------------
-    # 4️⃣ Create attempt if needed
-    # ------------------------------------------------------------
-    if not attempt:
-        attempt = StudentsExamFoundational(
-            student_id=student_id,
-            exam_id=exam.id,
-            started_at=datetime.now(timezone.utc),
-            current_section_index=0
-        )
-        db.add(attempt)
-        db.commit()
-        db.refresh(attempt)
-
-    # ------------------------------------------------------------
-    # 5️⃣ Compute remaining time
-    # ------------------------------------------------------------
-    elapsed_seconds = int(
-        (datetime.now(timezone.utc) - attempt.started_at).total_seconds()
-    )
-
-    remaining_time = max(
-        exam.duration_minutes * 60 - elapsed_seconds,
-        0
-    )
-
-    # ------------------------------------------------------------
-    # 6️⃣ Return CURRENT section only
-    # ------------------------------------------------------------
-    current_section = sections[attempt.current_section_index]
-
-    return {
-        "completed": False,
-        "current_section_index": attempt.current_section_index,
-        "section": {
-            "name": current_section.get("name"),
-            "questions": current_section.get("questions", [])
-        },
-        "remaining_time": remaining_time
-    }
-
+    student_id = payload.student_id
 
 @app.post("/api/exams/foundational/next-section")
 def advance_foundational_section(
