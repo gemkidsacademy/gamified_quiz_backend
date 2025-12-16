@@ -3029,29 +3029,25 @@ def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(
     }
 
 @app.post("/api/exams/generate-reading")
-def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get_db)):
+def generate_exam_reading(
+    payload: ReadingExamRequest,
+    db: Session = Depends(get_db)
+):
     """
-    Generate a reading exam using class_name + difficulty.
-    Includes EXTENSIVE debug statements to trace failures.
+    Generate a Reading Comprehension exam.
+    This version builds topic-correct answer options and
+    produces a frontend-safe exam_json.
     """
 
-    print("\n\n===================================================")
-    print("📥 [DEBUG] Incoming Generate Reading Exam Request")
-    print("===================================================")
-    print("➡ Raw Payload:", payload)
-    print("➡ Payload as dict:", payload.dict())
-    print("---------------------------------------------------")
+    print("\n================ GENERATE READING EXAM =================")
+    print("Incoming payload:", payload.dict())
 
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
 
-    print(f"➡ Filters Received From Frontend: class_name='{class_name}', difficulty='{difficulty}'")
-    print("---------------------------------------------------")
-
-    # ------------------------------------------------------------
-    # 1) LOAD CONFIG
-    # ------------------------------------------------------------
-    print("🔍 STEP 1: Searching for matching ReadingExamConfig...")
+    # --------------------------------------------------
+    # 1️⃣ LOAD CONFIG
+    # --------------------------------------------------
     cfg = (
         db.query(ReadingExamConfig)
         .filter(
@@ -3062,49 +3058,58 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
     )
 
     if not cfg:
-        print("❌ [ERROR] NO CONFIG FOUND for these filters!")
-        print(f"   class_name='{class_name}', difficulty='{difficulty}'")
         raise HTTPException(
             status_code=404,
-            detail=f"No reading exam config found for class={class_name}, difficulty={difficulty}"
+            detail="No reading exam config found"
         )
-
-    print("✅ Found Config!")
-    print(f"   → Config ID: {cfg.id}")
-    print(f"   → Config Subject: {cfg.subject}")
-    print(f"   → Config Topics: {cfg.topics}")
-    print("---------------------------------------------------")
 
     subject = cfg.subject
     topics = cfg.topics
 
     final_questions = []
     used_passages = {}
-    merged_answer_options = {}
     warnings = []
 
-    print("\n===================================================")
-    print("🔁 STEP 2: TOPIC PROCESSING")
-    print("===================================================")
-
-    # ------------------------------------------------------------
-    # 2) PROCESS EACH TOPIC
-    # ------------------------------------------------------------
+    # --------------------------------------------------
+    # 2️⃣ PROCESS EACH TOPIC
+    # --------------------------------------------------
     for topic_spec in topics:
         topic_name = topic_spec.get("name", "").strip()
         required = int(topic_spec.get("num_questions", 0))
 
-        print("\n---------------------------------------------------")
-        print(f"📌 Working On Topic: '{topic_name}' (Need {required} questions)")
-        print("---------------------------------------------------")
+        print(f"\n▶ Topic: {topic_name} | Required: {required}")
 
-        # Debug: what EXACTLY are we filtering?
-        print("🔍 Query Filters:")
-        print(f"   class_name = '{class_name.lower()}'")
-        print(f"   subject = '{subject.lower()}'")
-        print(f"   difficulty = '{difficulty.lower()}'")
-        print(f"   topic = '{topic_name.lower()}'")
+        # -------------------------------
+        # DEFINE ANSWER OPTIONS BY TOPIC
+        # -------------------------------
+        if topic_name.lower() == "comparative analysis":
+            topic_answer_options = {
+                "A": "Extract A",
+                "B": "Extract B",
+                "C": "Extract C",
+                "D": "Extract D",
+            }
 
+        elif topic_name.lower() == "main idea & summary":
+            topic_answer_options = {
+                "A": "Paragraph 1",
+                "B": "Paragraph 2",
+                "C": "Paragraph 3",
+                "D": "Paragraph 4",
+                "E": "Paragraph 5",
+                "F": "Paragraph 6",
+                "G": "Paragraph 7",
+            }
+
+        elif topic_name.lower() == "gapped text":
+            topic_answer_options = {}  # frontend renders A–G
+
+        else:
+            topic_answer_options = {}
+
+        # -------------------------------
+        # LOAD QUESTION BUNDLES
+        # -------------------------------
         bundles = (
             db.query(Question_reading)
             .filter(
@@ -3116,114 +3121,81 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
             .all()
         )
 
-        print(f"📦 Query Returned {len(bundles)} Bundles")
-
-        # Special debug if nothing found
-        if len(bundles) == 0:
-            print("❌ [ERROR] NO QUESTION BUNDLES FOUND FOR THIS TOPIC!")
-            print("   Possible causes:")
-            print("   - Wrong subject spelling in DB?")
-            print("   - Wrong topic name mismatch?")
-            print("   - Difficulty mismatch?")
-            print("   - Class mismatch?")
+        if not bundles:
             warnings.append(f"No bundles found for topic '{topic_name}'")
+            print("⚠ No bundles found")
             continue
 
         random.shuffle(bundles)
+
         collected = []
 
-        # ------------------------------------------------------------
-        # 3) Extract from bundles
-        # ------------------------------------------------------------
-        for b in bundles:
-            print(f"➡ Inspecting Bundle ID={b.id}")
+        for bundle in bundles:
+            bundle_json = bundle.exam_bundle or {}
 
-            bundle_json = b.exam_bundle or {}
-            
-            bundle_questions = bundle_json.get("questions", [])
-            answer_options = bundle_json.get("answer_options", {})
-            passages = bundle_json.get("reading_material", {})
-
-            print(f"   • Questions inside bundle: {len(bundle_questions)}")
-            print(f"   • Passages in bundle: {len(passages)}")
-            print(f"   • Answer options found: {len(answer_options)}")
-
-            # Save passages
-            for label, text in passages.items():
+            # Passages
+            for label, text in bundle_json.get("reading_material", {}).items():
                 if label not in used_passages:
-                    print(f"   ➕ Adding passage '{label}'")
                     used_passages[label] = text
 
-            # Merge answer options
-            for letter, text in answer_options.items():
-                merged_answer_options[letter] = text
+            # Questions
+            qs = bundle_json.get("questions", [])
+            random.shuffle(qs)
 
-            # Randomize bundle questions
-            random.shuffle(bundle_questions)
-
-            # Collect required number
-            for q in bundle_questions:
-                collected.append({"bundle_id": b.id, "q": q})
+            for q in qs:
+                collected.append(q)
                 if len(collected) >= required:
                     break
 
             if len(collected) >= required:
                 break
 
-        print(f"📥 After collection: {len(collected)} questions gathered")
-
         if len(collected) < required:
-            print(f"⚠ WARNING: Only {len(collected)} questions available for topic '{topic_name}'. Required: {required}")
+            warnings.append(
+                f"Only {len(collected)} questions available for topic '{topic_name}'"
+            )
 
-        # Push into final list
-        for item in collected[:required]:
+        # -------------------------------
+        # ADD TO FINAL QUESTIONS
+        # -------------------------------
+        for q in collected[:required]:
             final_questions.append({
                 "topic": topic_name,
-                "question_number": None,
-                "question_text": item["q"].get("question_text"),
-                "correct_answer": item["q"].get("correct_answer"),
+                "question_number": None,  # assigned later
+                "question_text": q.get("question_text"),
+                "correct_answer": q.get("correct_answer"),
+                "answer_options": topic_answer_options,
             })
 
-    # ------------------------------------------------------------
-    # 4) FINALIZE QUESTIONS
-    # ------------------------------------------------------------
-    print("\n===================================================")
-    print("🔢 STEP 3: FINALIZING QUESTIONS")
-    print("===================================================")
-
-    if len(final_questions) == 0:
-        print("❌ [FATAL ERROR] FINAL QUESTION LIST IS EMPTY — NOTHING GENERATED!")
-        print("   → Most likely cause: filter mismatch OR misspelled subject/topic/difficulty.")
-        raise HTTPException(status_code=400, detail="No questions generated.")
+    # --------------------------------------------------
+    # 3️⃣ FINALIZE QUESTIONS
+    # --------------------------------------------------
+    if not final_questions:
+        raise HTTPException(
+            status_code=400,
+            detail="No questions generated"
+        )
 
     for i, q in enumerate(final_questions, start=1):
         q["question_number"] = i
 
-    print(f"✅ TOTAL QUESTIONS BUILT: {len(final_questions)}")
-    print("---------------------------------------------------")
-
-    # ------------------------------------------------------------
-    # 5) BUILD FINAL EXAM JSON
-    # ------------------------------------------------------------
+    # --------------------------------------------------
+    # 4️⃣ BUILD EXAM JSON
+    # --------------------------------------------------
     exam_json = {
         "class_name": class_name,
         "subject": subject,
         "difficulty": difficulty,
         "total_questions": len(final_questions),
+        "duration_minutes": 40,
         "reading_material": used_passages,
         "questions": final_questions,
-        "answer_options": merged_answer_options,
-        "duration_minutes": 40
     }
 
-    # ------------------------------------------------------------
-    # 6) SAVE EXAM
-    # ------------------------------------------------------------
-    print("\n===================================================")
-    print("💾 STEP 4: SAVING GENERATED EXAM")
-    print("===================================================")
-
-    saved = GeneratedExamReading(
+    # --------------------------------------------------
+    # 5️⃣ SAVE GENERATED EXAM
+    # --------------------------------------------------
+    saved_exam = GeneratedExamReading(
         config_id=cfg.id,
         class_name=class_name,
         subject=subject,
@@ -3232,19 +3204,17 @@ def generate_exam_reading(payload: ReadingExamRequest, db: Session = Depends(get
         exam_json=exam_json,
     )
 
-    db.add(saved)
+    db.add(saved_exam)
     db.commit()
-    db.refresh(saved)
+    db.refresh(saved_exam)
 
-    print("🎉 EXAM SAVED SUCCESSFULLY!")
-    print("➡ Generated Exam ID:", saved.id)
-    print("===================================================\n\n")
+    print("✅ Exam generated successfully. ID:", saved_exam.id)
 
     return {
-        "generated_exam_id": saved.id,
+        "generated_exam_id": saved_exam.id,
         "total_questions": len(final_questions),
+        "warnings": warnings,
         "exam_json": exam_json,
-        "warnings": warnings
     }
 
 
