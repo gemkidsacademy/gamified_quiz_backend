@@ -2377,20 +2377,43 @@ def advance_foundational_section(
     )
 
     if not attempt:
-        raise HTTPException(404, "No active attempt")
+        raise HTTPException(status_code=404, detail="No active attempt")
 
     print("🧪 attempt.id:", attempt.id)
     print("   ↳ current_section_index:", attempt.current_section_index)
 
-    # 2️⃣ Load exam
+    # 2️⃣ Load exam snapshot
     exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
     if not exam:
-        raise HTTPException(404, "Exam not found")
+        raise HTTPException(status_code=404, detail="Exam not found")
 
-    # 3️⃣ Normalize sections
-    sections = build_sections_with_questions(exam.exam_json)
+    exam_json = exam.exam_json
+
+    # 3️⃣ Build sections DIRECTLY from saved exam_json
+    sections_meta = exam_json.get("sections", [])
+    all_questions = exam_json.get("questions", [])
+
+    if not sections_meta or not all_questions:
+        raise HTTPException(
+            status_code=500,
+            detail="Exam data is incomplete"
+        )
+
+    # Group questions by section name
+    sections = []
+    for sec in sections_meta:
+        sec_name = sec["name"]
+        sec_questions = [
+            q for q in all_questions
+            if q.get("section") == sec_name
+        ]
+
+        sections.append({
+            "name": sec_name,
+            "questions": sec_questions
+        })
+
     total_sections = len(sections)
-
     print("📂 Total sections:", total_sections)
 
     # 4️⃣ Last section check
@@ -2398,7 +2421,7 @@ def advance_foundational_section(
         print("🏁 Last section reached")
         return {"completed": True}
 
-    # 5️⃣ Advance
+    # 5️⃣ Advance section index
     attempt.current_section_index += 1
     db.commit()
     db.refresh(attempt)
@@ -2407,6 +2430,9 @@ def advance_foundational_section(
 
     print("➡️ Advanced to section:", current_section["name"])
     print("   ↳ questions:", len(current_section["questions"]))
+
+    if not current_section["questions"]:
+        print("⚠️ WARNING: Section has no questions")
 
     print("===========================================================\n")
 
