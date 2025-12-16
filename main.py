@@ -2567,7 +2567,8 @@ def get_foundational_exam_report(
   
           topic_stats.setdefault(topic, {"total": 0, "correct": 0})
   
-          qid = str(q.get("q_id"))
+          qid = str(q.get("question_number"))
+
           correct_option = q.get("correct_answer")
   
           total_questions += 1
