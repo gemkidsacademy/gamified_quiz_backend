@@ -342,6 +342,9 @@ class GeneratedExamFoundational(Base):
 
     total_questions = Column(Integer, nullable=False)
 
+    # Total exam duration in minutes
+    duration_minutes = Column(Integer, nullable=False)
+
     exam_json = Column(JSON, nullable=False)
 
     is_current = Column(Boolean, default=True)
