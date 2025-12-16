@@ -2596,7 +2596,7 @@ def get_foundational_exam_report(
         },
         "topic_breakdown": topic_breakdown
     }
-
+ 
 def generate_ai_questions_foundational(
     class_name: str,
     subject: str,
@@ -2609,26 +2609,76 @@ def generate_ai_questions_foundational(
     They exist only inside generated_exam_foundational.exam_json.
     """
 
+    print("\n🤖 Calling AI to generate questions")
+    print(f"🤖 class={class_name}, subject={subject}, difficulty={difficulty}, count={count}")
+
+    if count <= 0:
+        return []
+
+    prompt = f"""
+You are an expert exam question generator.
+
+Generate {count} multiple-choice questions.
+
+Constraints:
+- Class: {class_name}
+- Subject: {subject}
+- Difficulty: {difficulty}
+- Each question must have exactly 4 options (A, B, C, D)
+- Provide the correct answer letter
+- Output ONLY valid JSON
+
+JSON format:
+[
+  {{
+    "question_text": "...",
+    "options": {{
+      "A": "...",
+      "B": "...",
+      "C": "...",
+      "D": "..."
+    }},
+    "correct_answer": "A",
+    "topic": "..."
+  }}
+]
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You generate exam questions."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7
+    )
+
+    raw = response.choices[0].message.content.strip()
+    print("🤖 Raw AI response:", raw)
+
+    try:
+        parsed = json.loads(raw)
+    except Exception as e:
+        print("❌ Failed to parse AI response as JSON:", e)
+        return []
+
     ai_questions = []
 
-    for i in range(count):
+    for q in parsed:
         ai_questions.append({
             "section": difficulty,
             "question_number": None,
-            "question_text": f"[AI] {difficulty} foundational question {i + 1}",
-            "options": {
-                "A": "Option A",
-                "B": "Option B",
-                "C": "Option C",
-                "D": "Option D"
-            },
-            "correct_answer": "A",
+            "question_text": q["question_text"],
+            "options": q["options"],
+            "correct_answer": q["correct_answer"],
             "question_type": "mcq",
             "images": [],
-            "topic": "AI Generated"
+            "topic": q.get("topic", "AI Generated")
         })
 
+    print(f"🤖 Successfully generated {len(ai_questions)} AI questions")
     return ai_questions
+
 
 @app.post("/api/exams/generate-foundational")
 def generate_exam_foundational(
