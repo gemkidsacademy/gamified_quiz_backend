@@ -2252,6 +2252,24 @@ def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db))
         "quiz_id": quiz.id
     }
 
+def build_sections_with_questions(exam_json):
+    sections = exam_json.get("sections", [])
+    questions = exam_json.get("questions", [])
+
+    section_map = {}
+
+    for section in sections:
+        section_map[section["name"]] = {
+            **section,
+            "questions": []
+        }
+
+    for q in questions:
+        section_name = q.get("section")
+        if section_name in section_map:
+            section_map[section_name]["questions"].append(q)
+
+    return list(section_map.values())
 
 
 @app.post("/api/student/start-exam/foundational-skills")
@@ -2260,14 +2278,10 @@ def start_or_resume_foundational_exam(
     db: Session = Depends(get_db)
 ):
     print("\n================ START-EXAM (FOUNDATIONAL) ================")
-    print("📥 Payload received:", payload.dict())
-
     student_id = payload.student_id
-    print("👤 Student ID:", student_id)
+    print("👤 student_id:", student_id)
 
-    # ------------------------------------------------------------
     # 1️⃣ Get latest attempt
-    # ------------------------------------------------------------
     attempt = (
         db.query(StudentsExamFoundational)
         .filter(StudentsExamFoundational.student_id == student_id)
@@ -2275,25 +2289,13 @@ def start_or_resume_foundational_exam(
         .first()
     )
 
-    print("🧪 Existing attempt found:", bool(attempt))
-
     if attempt:
-        print("   ↳ attempt.id:", attempt.id)
-        print("   ↳ started_at:", attempt.started_at)
-        print("   ↳ completed_at:", attempt.completed_at)
-        print("   ↳ current_section_index:", attempt.current_section_index)
+        print("🧪 Existing attempt:", attempt.id)
+        if attempt.completed_at:
+            print("✅ Attempt already completed")
+            return {"completed": True}
 
-    # ------------------------------------------------------------
-    # 2️⃣ Completed → frontend loads report
-    # ------------------------------------------------------------
-    if attempt and attempt.completed_at:
-        print("✅ Attempt already completed. Returning completed=true")
-        print("===========================================================\n")
-        return { "completed": True }
-
-    # ------------------------------------------------------------
-    # 3️⃣ Load current exam
-    # ------------------------------------------------------------
+    # 2️⃣ Load current exam
     exam = (
         db.query(GeneratedExamFoundational)
         .filter(GeneratedExamFoundational.is_current == True)
@@ -2301,88 +2303,47 @@ def start_or_resume_foundational_exam(
         .first()
     )
 
-    print("📘 Current exam found:", bool(exam))
-
     if not exam:
-        print("❌ No active exam found. Aborting.")
-        print("===========================================================\n")
-        raise HTTPException(status_code=404, detail="No active exam")
+        raise HTTPException(404, "No active exam")
 
-    print("   ↳ exam.id:", exam.id)
-    print("   ↳ duration_minutes:", exam.duration_minutes)
+    print("📘 exam_id:", exam.id)
 
-    sections = exam.exam_json.get("sections", [])
-    print("📂 Total sections found:", len(sections))
+    # 3️⃣ Normalize sections + questions
+    sections = build_sections_with_questions(exam.exam_json)
+
+    print("📂 Sections after grouping:", len(sections))
+    for s in sections:
+        print(f"   ↳ {s['name']} → {len(s['questions'])} questions")
 
     if not sections:
-        print("❌ Exam JSON has NO sections.")
-        print("   ↳ exam_json:", exam.exam_json)
-        print("===========================================================\n")
-        raise HTTPException(
-            status_code=500,
-            detail="Exam has no sections configured"
-        )
+        raise HTTPException(500, "No sections after normalization")
 
-    # ------------------------------------------------------------
-    # 4️⃣ Create attempt if none exists
-    # ------------------------------------------------------------
+    # 4️⃣ Create attempt if needed
     if not attempt:
-        print("🆕 No attempt exists. Creating new attempt.")
-
         attempt = StudentsExamFoundational(
             student_id=student_id,
             exam_id=exam.id,
             started_at=datetime.now(timezone.utc),
             current_section_index=0
         )
-
         db.add(attempt)
         db.commit()
         db.refresh(attempt)
+        print("🆕 New attempt created:", attempt.id)
 
-        print("   ↳ New attempt created with id:", attempt.id)
-
-    # ------------------------------------------------------------
     # 5️⃣ Validate section index
-    # ------------------------------------------------------------
     if attempt.current_section_index >= len(sections):
-        print("❌ current_section_index OUT OF RANGE")
-        print("   ↳ current_section_index:", attempt.current_section_index)
-        print("   ↳ total sections:", len(sections))
-        print("===========================================================\n")
-        raise HTTPException(
-            status_code=500,
-            detail="Invalid section index"
-        )
+        raise HTTPException(500, "Invalid section index")
 
-    # ------------------------------------------------------------
-    # 6️⃣ Compute remaining time
-    # ------------------------------------------------------------
-    elapsed_seconds = int(
-        (datetime.now(timezone.utc) - attempt.started_at).total_seconds()
-    )
+    # 6️⃣ Timer
+    elapsed = int((datetime.now(timezone.utc) - attempt.started_at).total_seconds())
+    remaining_time = max(exam.duration_minutes * 60 - elapsed, 0)
 
-    remaining_time = max(
-        exam.duration_minutes * 60 - elapsed_seconds,
-        0
-    )
-
-    print("⏱️ Timer computation:")
-    print("   ↳ elapsed_seconds:", elapsed_seconds)
-    print("   ↳ remaining_time:", remaining_time)
-
-    # ------------------------------------------------------------
-    # 7️⃣ Return CURRENT section
-    # ------------------------------------------------------------
+    # 7️⃣ Return current section
     current_section = sections[attempt.current_section_index]
 
-    section_name = current_section.get("name")
-    questions = current_section.get("questions", [])
-
-    print("📤 Returning section:")
-    print("   ↳ section_index:", attempt.current_section_index)
-    print("   ↳ section_name:", section_name)
-    print("   ↳ questions_count:", len(questions))
+    print("📤 Returning section:", current_section["name"])
+    print("   ↳ questions:", len(current_section["questions"]))
 
     print("===========================================================\n")
 
@@ -2390,8 +2351,8 @@ def start_or_resume_foundational_exam(
         "completed": False,
         "current_section_index": attempt.current_section_index,
         "section": {
-            "name": section_name,
-            "questions": questions
+            "name": current_section["name"],
+            "questions": current_section["questions"]
         },
         "remaining_time": remaining_time
     }
@@ -2401,9 +2362,10 @@ def advance_foundational_section(
     student_id: str = Query(...),
     db: Session = Depends(get_db)
 ):
-    # ------------------------------------------------------------
-    # 1️⃣ Get active attempt (authoritative)
-    # ------------------------------------------------------------
+    print("\n================ NEXT-SECTION (FOUNDATIONAL) ================")
+    print("👤 student_id:", student_id)
+
+    # 1️⃣ Get active attempt
     attempt = (
         db.query(StudentsExamFoundational)
         .filter(
@@ -2415,59 +2377,45 @@ def advance_foundational_section(
     )
 
     if not attempt:
-        raise HTTPException(
-            status_code=404,
-            detail="No active foundational exam attempt"
-        )
+        raise HTTPException(404, "No active attempt")
 
-    # ------------------------------------------------------------
-    # 2️⃣ Load exam linked to this attempt
-    # ------------------------------------------------------------
-    exam = (
-        db.query(GeneratedExamFoundational)
-        .filter(GeneratedExamFoundational.id == attempt.exam_id)
-        .first()
-    )
+    print("🧪 attempt.id:", attempt.id)
+    print("   ↳ current_section_index:", attempt.current_section_index)
 
+    # 2️⃣ Load exam
+    exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
     if not exam:
-        raise HTTPException(
-            status_code=404,
-            detail="Exam not found for active attempt"
-        )
+        raise HTTPException(404, "Exam not found")
 
-    sections = exam.exam_json.get("sections", [])
+    # 3️⃣ Normalize sections
+    sections = build_sections_with_questions(exam.exam_json)
     total_sections = len(sections)
 
-    if total_sections == 0:
-        raise HTTPException(
-            status_code=500,
-            detail="Exam has no sections configured"
-        )
+    print("📂 Total sections:", total_sections)
 
-    # ------------------------------------------------------------
-    # 3️⃣ If last section already reached → signal completion
-    # ------------------------------------------------------------
+    # 4️⃣ Last section check
     if attempt.current_section_index >= total_sections - 1:
-        return {
-            "completed": True,
-            "message": "Last section already reached"
-        }
+        print("🏁 Last section reached")
+        return {"completed": True}
 
-    # ------------------------------------------------------------
-    # 4️⃣ Advance section pointer
-    # ------------------------------------------------------------
+    # 5️⃣ Advance
     attempt.current_section_index += 1
     db.commit()
     db.refresh(attempt)
 
     current_section = sections[attempt.current_section_index]
 
+    print("➡️ Advanced to section:", current_section["name"])
+    print("   ↳ questions:", len(current_section["questions"]))
+
+    print("===========================================================\n")
+
     return {
         "completed": False,
         "current_section_index": attempt.current_section_index,
         "section": {
-            "name": current_section.get("name"),
-            "questions": current_section.get("questions", [])
+            "name": current_section["name"],
+            "questions": current_section["questions"]
         }
     }
 
@@ -2523,8 +2471,11 @@ def get_foundational_exam_report(
     student_id: str = Query(...),
     db: Session = Depends(get_db)
 ):
+    print("\n================ EXAM-REPORT (FOUNDATIONAL) ================")
+    print("👤 student_id:", student_id)
+
     # ------------------------------------------------------------
-    # 1️⃣ Fetch completed attempt
+    # 1️⃣ Fetch latest completed attempt
     # ------------------------------------------------------------
     attempt = (
         db.query(StudentsExamFoundational)
@@ -2537,10 +2488,17 @@ def get_foundational_exam_report(
     )
 
     if not attempt:
+        print("❌ No completed attempt found")
+        print("===========================================================\n")
         raise HTTPException(
             status_code=404,
             detail="No completed foundational exam found"
         )
+
+    print("🧪 attempt.id:", attempt.id)
+    print("   ↳ exam_id:", attempt.exam_id)
+    print("   ↳ completed_at:", attempt.completed_at)
+    print("   ↳ completion_reason:", attempt.completion_reason)
 
     # ------------------------------------------------------------
     # 2️⃣ Load exam definition
@@ -2552,13 +2510,24 @@ def get_foundational_exam_report(
     )
 
     if not exam:
+        print("❌ Exam definition not found for exam_id:", attempt.exam_id)
+        print("===========================================================\n")
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    answers = attempt.answers_json or {}
-    sections = exam.exam_json.get("sections", [])
+    print("📘 Exam loaded:", exam.id)
 
     # ------------------------------------------------------------
-    # 3️⃣ Compute results
+    # 3️⃣ Normalize sections + questions
+    # ------------------------------------------------------------
+    answers = attempt.answers_json or {}
+    sections = build_sections_with_questions(exam.exam_json)
+
+    print("📂 Sections after normalization:", len(sections))
+    for sec in sections:
+        print(f"   ↳ {sec['name']} → {len(sec['questions'])} questions")
+
+    # ------------------------------------------------------------
+    # 4️⃣ Compute results
     # ------------------------------------------------------------
     total_questions = 0
     correct_answers = 0
@@ -2568,11 +2537,7 @@ def get_foundational_exam_report(
         topic = section.get("name", "Unknown")
         questions = section.get("questions", [])
 
-        if topic not in topic_stats:
-            topic_stats[topic] = {
-                "total": 0,
-                "correct": 0
-            }
+        topic_stats.setdefault(topic, {"total": 0, "correct": 0})
 
         for q in questions:
             qid = str(q.get("q_id"))
@@ -2586,12 +2551,19 @@ def get_foundational_exam_report(
                 topic_stats[topic]["correct"] += 1
 
     wrong_answers = total_questions - correct_answers
+
     accuracy_percent = round(
         (correct_answers / total_questions) * 100
     ) if total_questions > 0 else 0
 
+    print("📊 Overall stats:")
+    print("   ↳ total_questions:", total_questions)
+    print("   ↳ correct_answers:", correct_answers)
+    print("   ↳ wrong_answers:", wrong_answers)
+    print("   ↳ accuracy_percent:", accuracy_percent)
+
     # ------------------------------------------------------------
-    # 4️⃣ Build topic breakdown
+    # 5️⃣ Build topic breakdown
     # ------------------------------------------------------------
     topic_breakdown: List[Dict] = []
 
@@ -2605,8 +2577,15 @@ def get_foundational_exam_report(
             "accuracy_percent": percent
         })
 
+        print(
+            f"   ↳ {topic}: "
+            f"{stats['correct']}/{stats['total']} → {percent}%"
+        )
+
+    print("===========================================================\n")
+
     # ------------------------------------------------------------
-    # 5️⃣ Return report payload
+    # 6️⃣ Return report payload
     # ------------------------------------------------------------
     return {
         "summary": {
