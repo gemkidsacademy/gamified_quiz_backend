@@ -3280,7 +3280,11 @@ async def upload_word_reading(
     # --------------------------------------------------
     # 2️⃣ Parse with OpenAI
     # --------------------------------------------------
-    parsed = parse_exam_with_openai(text)
+    parsed = parse_exam_with_openai(
+        extracted_text=extracted,
+        question_type=question_type
+    )
+
 
     if not parsed:
         raise HTTPException(400, "Parsing failed")
