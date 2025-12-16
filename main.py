@@ -2259,7 +2259,11 @@ def start_or_resume_foundational_exam(
     payload: StartExamRequestFoundational,
     db: Session = Depends(get_db)
 ):
+    print("\n================ START-EXAM (FOUNDATIONAL) ================")
+    print("📥 Payload received:", payload.dict())
+
     student_id = payload.student_id
+    print("👤 Student ID:", student_id)
 
     # ------------------------------------------------------------
     # 1️⃣ Get latest attempt
@@ -2271,10 +2275,20 @@ def start_or_resume_foundational_exam(
         .first()
     )
 
+    print("🧪 Existing attempt found:", bool(attempt))
+
+    if attempt:
+        print("   ↳ attempt.id:", attempt.id)
+        print("   ↳ started_at:", attempt.started_at)
+        print("   ↳ completed_at:", attempt.completed_at)
+        print("   ↳ current_section_index:", attempt.current_section_index)
+
     # ------------------------------------------------------------
     # 2️⃣ Completed → frontend loads report
     # ------------------------------------------------------------
     if attempt and attempt.completed_at:
+        print("✅ Attempt already completed. Returning completed=true")
+        print("===========================================================\n")
         return { "completed": True }
 
     # ------------------------------------------------------------
@@ -2287,11 +2301,23 @@ def start_or_resume_foundational_exam(
         .first()
     )
 
+    print("📘 Current exam found:", bool(exam))
+
     if not exam:
+        print("❌ No active exam found. Aborting.")
+        print("===========================================================\n")
         raise HTTPException(status_code=404, detail="No active exam")
 
+    print("   ↳ exam.id:", exam.id)
+    print("   ↳ duration_minutes:", exam.duration_minutes)
+
     sections = exam.exam_json.get("sections", [])
+    print("📂 Total sections found:", len(sections))
+
     if not sections:
+        print("❌ Exam JSON has NO sections.")
+        print("   ↳ exam_json:", exam.exam_json)
+        print("===========================================================\n")
         raise HTTPException(
             status_code=500,
             detail="Exam has no sections configured"
@@ -2301,18 +2327,36 @@ def start_or_resume_foundational_exam(
     # 4️⃣ Create attempt if none exists
     # ------------------------------------------------------------
     if not attempt:
+        print("🆕 No attempt exists. Creating new attempt.")
+
         attempt = StudentsExamFoundational(
             student_id=student_id,
             exam_id=exam.id,
             started_at=datetime.now(timezone.utc),
             current_section_index=0
         )
+
         db.add(attempt)
         db.commit()
         db.refresh(attempt)
 
+        print("   ↳ New attempt created with id:", attempt.id)
+
     # ------------------------------------------------------------
-    # 5️⃣ Compute remaining time
+    # 5️⃣ Validate section index
+    # ------------------------------------------------------------
+    if attempt.current_section_index >= len(sections):
+        print("❌ current_section_index OUT OF RANGE")
+        print("   ↳ current_section_index:", attempt.current_section_index)
+        print("   ↳ total sections:", len(sections))
+        print("===========================================================\n")
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid section index"
+        )
+
+    # ------------------------------------------------------------
+    # 6️⃣ Compute remaining time
     # ------------------------------------------------------------
     elapsed_seconds = int(
         (datetime.now(timezone.utc) - attempt.started_at).total_seconds()
@@ -2323,17 +2367,31 @@ def start_or_resume_foundational_exam(
         0
     )
 
+    print("⏱️ Timer computation:")
+    print("   ↳ elapsed_seconds:", elapsed_seconds)
+    print("   ↳ remaining_time:", remaining_time)
+
     # ------------------------------------------------------------
-    # 6️⃣ Return CURRENT section
+    # 7️⃣ Return CURRENT section
     # ------------------------------------------------------------
     current_section = sections[attempt.current_section_index]
+
+    section_name = current_section.get("name")
+    questions = current_section.get("questions", [])
+
+    print("📤 Returning section:")
+    print("   ↳ section_index:", attempt.current_section_index)
+    print("   ↳ section_name:", section_name)
+    print("   ↳ questions_count:", len(questions))
+
+    print("===========================================================\n")
 
     return {
         "completed": False,
         "current_section_index": attempt.current_section_index,
         "section": {
-            "name": current_section.get("name"),
-            "questions": current_section.get("questions", [])
+            "name": section_name,
+            "questions": questions
         },
         "remaining_time": remaining_time
     }
