@@ -3269,43 +3269,70 @@ async def upload_word_reading(
     if file.content_type != (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ):
-        raise HTTPException(400, "File must be a .docx")
+        raise HTTPException(status_code=400, detail="File must be a .docx")
 
     raw = await file.read()
+
     extracted = extract_text_from_docx(raw)
-
-    if not text or len(text.strip()) < 50:
-        raise HTTPException(400, "Invalid or empty document")
+    if not extracted or len(extracted.strip()) < 50:
+        raise HTTPException(status_code=400, detail="Invalid or empty document")
 
     # --------------------------------------------------
-    # 2️⃣ Parse with OpenAI
+    # 2️⃣ Detect question type
     # --------------------------------------------------
-    parsed = parse_exam_with_openai(
-        extracted_text=extracted,
-        question_type=question_type
-    )
+    lower_text = extracted.lower()
+    if "gapped text" in lower_text or "gap 1" in lower_text:
+        question_type = "gapped_text"
+    else:
+        question_type = "standard_reading"
 
+    print("Detected question type:", question_type)
+
+    # --------------------------------------------------
+    # 3️⃣ Parse with OpenAI
+    # --------------------------------------------------
+    try:
+        parsed = parse_exam_with_openai(
+            extracted_text=extracted,
+            question_type=question_type
+        )
+    except Exception as e:
+        print("❌ OpenAI parsing error:", e)
+        raise HTTPException(status_code=500, detail="Parsing failed")
 
     if not parsed:
-        raise HTTPException(400, "Parsing failed")
+        raise HTTPException(status_code=400, detail="No exam data parsed")
 
     exams = parsed if isinstance(parsed, list) else [parsed]
     saved_ids = []
 
     # --------------------------------------------------
-    # 3️⃣ Normalize + Save
+    # 4️⃣ Normalize + Save bundles
     # --------------------------------------------------
     for exam_json in exams:
-        topic = exam_json.get("topic")
-        if not topic:
-            raise HTTPException(400, "Parsed exam missing topic")
+        raw_topic = exam_json.get("topic")
+        if not raw_topic:
+            raise HTTPException(
+                status_code=400,
+                detail="Parsed exam missing topic"
+            )
 
-        normalized_topic = normalize_topic(topic)
+        topic = normalize_topic(raw_topic)
+
+        raw_questions = exam_json.get("questions", [])
+        if not raw_questions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No questions found for topic '{topic}'"
+            )
 
         questions = []
-        for q in exam_json.get("questions", []):
+        for q in raw_questions:
             if not q.get("question_text") or not q.get("correct_answer"):
-                raise HTTPException(400, "Invalid question detected")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid question structure detected"
+                )
 
             questions.append({
                 "question_text": q["question_text"],
@@ -3313,17 +3340,18 @@ async def upload_word_reading(
             })
 
         bundle = {
-            "topic": normalized_topic,
+            "topic": topic,
             "reading_material": exam_json.get("reading_material", {}),
             "questions": questions,
             "answer_options": exam_json.get("answer_options", {}),
         }
 
+        # 🔒 SYSTEM FIELDS ARE CONTROLLED HERE (NOT BY OPENAI)
         obj = Question_reading(
-            class_name=exam_json["class_name"],
-            subject=exam_json["subject"],
-            difficulty=exam_json["difficulty"],
-            topic=normalized_topic,
+            class_name="selective",
+            subject="Reading Comprehension",
+            difficulty="medium",
+            topic=topic,
             exam_bundle=bundle,
         )
 
@@ -3332,14 +3360,14 @@ async def upload_word_reading(
         db.refresh(obj)
 
         saved_ids.append(obj.id)
+        print(f"Saved bundle ID: {obj.id} | Topic: {topic}")
 
     print("✅ Upload complete")
 
     return {
-        "message": "Word exams uploaded successfully",
+        "message": "Word reading exams uploaded successfully",
         "bundle_ids": saved_ids,
     }
-
 
      
 @app.post("/api/admin/create-reading-config")
