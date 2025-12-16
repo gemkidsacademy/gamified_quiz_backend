@@ -3376,7 +3376,7 @@ async def upload_word_reading_gapped_multi_ai(
     db: Session = Depends(get_db)
 ):
     print("\n===================================================")
-    print("📄 START: MULTI GAPPED TEXT WORD UPLOAD (AI)")
+    print("📄 START: MULTI GAPPED TEXT WORD UPLOAD (AI - STRICT)")
     print("===================================================")
 
     # --------------------------------------------------
@@ -3393,47 +3393,45 @@ async def upload_word_reading_gapped_multi_ai(
     if not full_text or len(full_text.strip()) < 300:
         raise HTTPException(status_code=400, detail="Invalid document")
 
-    print("✅ Document extracted")
-    print("   → Characters:", len(full_text))
+    print("✅ Document extracted | chars:", len(full_text))
 
     # --------------------------------------------------
-    # 2️⃣ Split into Gapped Text blocks (NO AI)
+    # 2️⃣ Split into logical blocks
     # --------------------------------------------------
-    print("\n🔪 Splitting document into Gapped Text blocks")
-
     raw_blocks = full_text.split("CLASS:")
-    blocks = []
-
-    for b in raw_blocks:
-        if b.strip():
-            blocks.append("CLASS:" + b.strip())
+    blocks = ["CLASS:" + b.strip() for b in raw_blocks if b.strip()]
 
     print("✅ Blocks detected:", len(blocks))
-
     if not blocks:
         raise HTTPException(status_code=400, detail="No gapped text blocks found")
 
     saved_ids = []
 
     # --------------------------------------------------
-    # 3️⃣ Process each block independently
+    # 3️⃣ Process blocks
     # --------------------------------------------------
     for idx, block in enumerate(blocks, start=1):
         print("\n---------------------------------------------------")
-        print(f"🔹 Processing block {idx}/{len(blocks)}")
-        print("   → Preview:", block[:300], "...")
+        print(f"🔹 Block {idx}/{len(blocks)}")
+        print("   → Preview:", block[:250], "...")
 
         system_prompt = """
 You are an exam content extraction engine.
 
-Extract ONE complete GAPPED TEXT reading comprehension exam.
+You MUST extract ONE COMPLETE GAPPED TEXT reading exam.
 
-STRICT RULES:
-- Do NOT generate new content
-- Do NOT rewrite text
-- Extract ONLY what exists
-- Output VALID JSON ONLY
-- If the block is incomplete, return {}
+CRITICAL RULES (FAIL HARD):
+- DO NOT generate, infer, or rewrite content
+- Extract ONLY what exists in the document
+- reading_material.content MUST contain the FULL passage
+- answer_options MUST contain ALL options A through G
+- questions MUST be EXACTLY 6
+- If ANY required field is missing or empty, RETURN {}
+
+OUTPUT:
+- VALID JSON ONLY
+- No markdown
+- No explanations
 
 SCHEMA:
 {
@@ -3468,53 +3466,61 @@ SCHEMA:
                 model="gpt-4o-mini",
                 temperature=0,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt
-                    },
+                    {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
-                        "content": block
+                        "content": f"BEGIN_DOCUMENT\n{block}\nEND_DOCUMENT"
                     }
                 ]
             )
         except Exception as e:
-            print(f"❌ OpenAI failed for block {idx}")
-            print("   → Error:", str(e))
+            print(f"❌ OpenAI call failed | block {idx}")
+            print("   →", str(e))
             continue
 
         raw_output = response.choices[0].message.content.strip()
-        print("🤖 AI response received")
+
+        if not raw_output.startswith("{"):
+            print(f"❌ Non-JSON output | block {idx}")
+            continue
 
         try:
             parsed = json.loads(raw_output)
         except Exception:
-            print(f"❌ Invalid JSON for block {idx}")
+            print(f"❌ JSON parse failed | block {idx}")
             continue
 
         if not parsed:
-            print(f"⚠️ Empty extraction for block {idx}")
+            print(f"⚠️ Empty extraction | block {idx}")
             continue
 
         # --------------------------------------------------
-        # 4️⃣ Validate extracted structure
+        # 4️⃣ HARD validation (this fixes your bug)
         # --------------------------------------------------
-        if len(parsed.get("questions", [])) != 6:
-            print(f"❌ Invalid question count in block {idx}")
+        rm = parsed.get("reading_material", {})
+        if not rm.get("content") or len(rm["content"].strip()) < 300:
+            print(f"❌ Missing or empty reading material | block {idx}")
             continue
 
-        if len(parsed.get("answer_options", {})) < 6:
-            print(f"❌ Missing answer options in block {idx}")
+        opts = parsed.get("answer_options", {})
+        required_opts = ["A","B","C","D","E","F","G"]
+        if not all(k in opts and opts[k].strip() for k in required_opts):
+            print(f"❌ Incomplete answer options | block {idx}")
+            continue
+
+        qs = parsed.get("questions", [])
+        if len(qs) != 6:
+            print(f"❌ Invalid question count | block {idx}")
             continue
 
         # --------------------------------------------------
-        # 5️⃣ Save to DB
+        # 5️⃣ Save clean bundle
         # --------------------------------------------------
         bundle = {
             "topic": parsed["topic"],
-            "reading_material": parsed["reading_material"],
-            "questions": parsed["questions"],
-            "answer_options": parsed["answer_options"]
+            "reading_material": rm,
+            "questions": qs,
+            "answer_options": opts
         }
 
         obj = Question_reading(
@@ -3530,15 +3536,14 @@ SCHEMA:
         db.refresh(obj)
 
         saved_ids.append(obj.id)
-
-        print(f"✅ Block {idx} saved | ID: {obj.id}")
+        print(f"✅ Saved block {idx} | ID {obj.id}")
 
     # --------------------------------------------------
     # 6️⃣ Final response
     # --------------------------------------------------
     print("\n===================================================")
-    print("🎉 MULTI GAPPED TEXT UPLOAD COMPLETE")
-    print("   → Total saved:", len(saved_ids))
+    print("🎉 UPLOAD COMPLETE")
+    print("   → Saved:", len(saved_ids))
     print("===================================================")
 
     return {
