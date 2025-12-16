@@ -1469,12 +1469,54 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     result = mammoth.extract_raw_text(file_obj)
     return result.value
 
-def parse_exam_with_openai(raw_text: str):
+def parse_exam_with_openai(raw_text: str, question_type: str):
+    """
+    Extract exam data from a Word document.
+    This function ONLY extracts data.
+    It does NOT invent structure or fill missing information.
+    """
+
+    # -------------------------------
+    # Task-specific rules
+    # -------------------------------
+    if question_type == "gapped_text":
+        task_rules = """
+GAPPED TEXT RULES:
+- This is a GAPPED TEXT exam.
+- Questions represent gaps, not full sentences.
+- Each question MUST be extracted as:
+  {
+    "question_number": <gap_number>,
+    "question_text": "Gap <gap_number> _____",
+    "correct_answer": "<LETTER>"
+  }
+- DO NOT invent question wording.
+- DO NOT include passage text inside question_text.
+- Extract correct answers ONLY from explicit CORRECT_ANSWER fields.
+- Do NOT infer or guess missing answers.
+"""
+    else:
+        task_rules = """
+STANDARD READING RULES:
+- Every question begins with a number followed by a period (e.g., "1. Question text").
+- Extract the number as question_number (INT).
+- The remaining text MUST be question_text.
+- NEVER keep the number inside question_text.
+"""
+
+    # -------------------------------
+    # Prompt
+    # -------------------------------
     prompt = f"""
 You will receive a Reading Comprehension exam document.
 
-You MUST extract all exam data into this EXACT JSON wrapper:
+QUESTION TYPE: {question_type}
 
+You MUST extract exam data into the EXACT JSON structure below.
+
+{task_rules}
+
+OUTPUT FORMAT (STRICT):
 {{
   "exams": [
     {{
@@ -1499,23 +1541,13 @@ You MUST extract all exam data into this EXACT JSON wrapper:
   ]
 }}
 
-STRICT RULES:
-- Every question in the Word document begins with a number followed by a period (e.g., "1. Question text").
-- You MUST extract the number before the period as `question_number` (INT).
-- The remaining text after the number + period must be `question_text`.
-  Example:
-    Input text: "4. Which extract discusses…"
-    Output:
-      "question_number": 4,
-      "question_text": "Which extract discusses…"
-
-- NEVER keep the number inside question_text.
-- NEVER omit question_number.
-- The output MUST ALWAYS include question_number for every question.
-
-- Extract answer options EXACTLY as written. Include only letters present (A–G).
-- Return ONLY valid JSON. No text, no backticks.
+GLOBAL RULES:
+- DO NOT add or remove fields.
+- DO NOT rename keys.
+- DO NOT include explanations or comments.
+- Return ONLY valid JSON.
 - JSON MUST start with "{{" and end with "}}".
+- If something is unclear, leave fields empty — NEVER guess.
 
 INPUT TEXT:
 {raw_text}
@@ -1529,27 +1561,39 @@ INPUT TEXT:
 
     content = response.choices[0].message.content.strip()
 
-    # DEBUG LOG
+    # -------------------------------
+    # Debug logging
+    # -------------------------------
     print("======== RAW GPT OUTPUT ========")
     print(content[:5000])
     print("================================")
 
-    # Ensure JSON starts at first '{' and ends at last '}'
+    # -------------------------------
+    # Strict JSON extraction
+    # -------------------------------
     start = content.find("{")
     end = content.rfind("}") + 1
+
+    if start == -1 or end == -1:
+        raise ValueError("No JSON object found in model output")
+
     json_text = content[start:end]
 
     try:
         parsed = json.loads(json_text)
 
-        # Ensure compatibility: return list of exams
-        if "exams" in parsed:
-            return parsed["exams"]
-        else:
-            raise ValueError("JSON missing 'exams' field")
+        if "exams" not in parsed or not isinstance(parsed["exams"], list):
+            raise ValueError("JSON missing 'exams' list")
 
-    except Exception:
-        raise ValueError("OpenAI returned invalid JSON:\n" + json_text)
+        # IMPORTANT: Do not normalize here.
+        # Normalization happens in the endpoint.
+        return parsed["exams"]
+
+    except Exception as e:
+        raise ValueError(
+            "OpenAI returned invalid JSON or schema mismatch:\n"
+            + json_text
+        ) from e
 
 
 def save_exam_to_db(db: Session, exam_data: ExamReadingCreate):
@@ -3235,6 +3279,10 @@ def get_reading_quiz_dropdown(db: Session = Depends(get_db)):
 
     return result
 
+def detect_question_type(extracted_text: str) -> str:
+    if "Gapped Text" in extracted_text or "Gap 1" in extracted_text:
+        return "gapped_text"
+    return "standard_reading"
 
 @app.post("/upload-word-reading")
 async def upload_word(
@@ -3243,78 +3291,118 @@ async def upload_word(
 ):
     print("\n================= UPLOAD WORD READING REQUEST RECEIVED =================")
 
-    # Validate file type
+    # --------------------------------------------------
+    # 0️⃣ Validate file
+    # --------------------------------------------------
     print(f"[DEBUG] Uploaded file name: {file.filename}")
     print(f"[DEBUG] Uploaded file content-type: {file.content_type}")
 
-    if file.content_type not in [
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ]:
-        print("[ERROR] Invalid file type. Must be .docx")
+    if file.content_type != "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         raise HTTPException(status_code=400, detail="File must be a .docx Word document")
 
-    # Read file bytes
     raw = await file.read()
-    print(f"[DEBUG] Raw file size in bytes: {len(raw)}")
-    print("[DEBUG] File read into memory successfully.")
+    print(f"[DEBUG] Raw file size: {len(raw)} bytes")
 
-    # ---------------------------
-    # 1. Extract text
-    # ---------------------------
-    print("\n[STEP 1] Extracting text from DOCX...")
+    # --------------------------------------------------
+    # 1️⃣ Extract text
+    # --------------------------------------------------
+    print("\n[STEP 1] Extracting text from DOCX")
     extracted = extract_text_from_docx(raw)
-    print(f"[DEBUG] Extracted text length: {len(extracted)} characters")
-    print("[DEBUG] Extracted text preview:")
-    print(extracted[:300])
-    print("[DEBUG] Text extraction completed.")
 
-    # ---------------------------
-    # 2. Parse with OpenAI
-    # ---------------------------
-    print("\n[STEP 2] Parsing extracted text with OpenAI...")
+    if not extracted or len(extracted.strip()) < 50:
+        raise HTTPException(status_code=400, detail="Extracted text is empty or invalid")
+
+    print(f"[DEBUG] Extracted text length: {len(extracted)}")
+    print("[DEBUG] Text preview:")
+    print(extracted[:300])
+
+    # --------------------------------------------------
+    # 2️⃣ Detect question type (responsibility boundary)
+    # --------------------------------------------------
+    def detect_question_type(text: str) -> str:
+        if "Gapped Text" in text or "Gap 1" in text:
+            return "gapped_text"
+        return "standard_reading"
+
+    question_type = detect_question_type(extracted)
+    print(f"[DEBUG] Detected question type: {question_type}")
+
+    # --------------------------------------------------
+    # 3️⃣ Parse with OpenAI
+    # --------------------------------------------------
+    print("\n[STEP 2] Parsing extracted text with OpenAI")
 
     try:
-        parsed = parse_exam_with_openai(extracted)
-        print("[DEBUG] OpenAI parsing successful.")
+        parsed = parse_exam_with_openai(
+            extracted_text=extracted,
+            question_type=question_type
+        )
     except Exception as e:
-        print("[ERROR] Failed to parse JSON from OpenAI:")
-        print(e)
+        print("[ERROR] OpenAI parsing failed:", e)
         raise HTTPException(status_code=500, detail="OpenAI parsing error")
 
-    print(f"[DEBUG] Parsed type: {type(parsed)}")
-    print("[DEBUG] Parsed preview:")
-    print(str(parsed)[:1200] + "...")
+    exams = parsed if isinstance(parsed, list) else [parsed]
+    print(f"[DEBUG] Exams detected: {len(exams)}")
 
-    # Support multiple exams in one file
-    exams_to_store = parsed if isinstance(parsed, list) else [parsed]
-    print(f"[DEBUG] Exams detected: {len(exams_to_store)}")
+    # --------------------------------------------------
+    # 4️⃣ Normalization helpers
+    # --------------------------------------------------
+    def normalize_gapped_text_exam(exam_json: dict) -> dict:
+        normalized_questions = []
 
-    # ---------------------------
-    # 3. Save exams to DB
-    # ---------------------------
-    print("\n[STEP 3] Saving exams to database...")
+        for q in exam_json.get("questions", []):
+            qn = q.get("question_number")
+            ca = q.get("correct_answer")
+
+            normalized_questions.append({
+                "question_number": qn,
+                "question_text": f"Gap {qn} _____",
+                "correct_answer": ca
+            })
+
+        exam_json["questions"] = normalized_questions
+        return exam_json
+
+    def validate_questions(questions: list):
+        for q in questions:
+            if not q.get("question_number"):
+                raise ValueError("Missing question_number")
+            if not q.get("question_text"):
+                raise ValueError("Missing question_text")
+            if not q.get("correct_answer"):
+                raise ValueError("Missing correct_answer")
+
+    # --------------------------------------------------
+    # 5️⃣ Save exams to DB
+    # --------------------------------------------------
+    print("\n[STEP 3] Saving exams to database")
 
     saved_ids = []
 
-    for idx, exam_json in enumerate(exams_to_store, start=1):
-        print(f"\n[DEBUG] Saving Exam #{idx}")
-        print(f"[DEBUG] Exam keys found: {list(exam_json.keys())}")
+    for idx, exam_json in enumerate(exams, start=1):
+        print(f"\n[DEBUG] Processing Exam #{idx}")
+        print(f"[DEBUG] Keys before normalization: {list(exam_json.keys())}")
+
+        # Normalize Gapped Text
+        if question_type == "gapped_text":
+            exam_json = normalize_gapped_text_exam(exam_json)
+            exam_json.setdefault("meta", {})
+            exam_json["meta"]["question_type"] = "gapped_text"
+
+        # Validation gate (anti-hallucination)
+        validate_questions(exam_json.get("questions", []))
+
+        print("[DEBUG] Question schema validation passed")
 
         exam_obj = ExamReadingCreate(**exam_json)
-        print("[DEBUG] ExamReadingCreate validation successful.")
-
-        # Save using injected DB session
         saved_exam = save_exam_to_db(db, exam_obj)
 
         print(f"[DEBUG] Saved Exam #{idx} with ID: {saved_exam.id}")
         saved_ids.append(saved_exam.id)
 
-    print("\n[STEP COMPLETE] All exams saved successfully.")
-    print(f"[DEBUG] Returning exam IDs: {saved_ids}")
-    print("================= REQUEST COMPLETE =================\n")
-
+    print("\n================= REQUEST COMPLETE =================")
     return {
-        "message": "Exam(s) uploaded and stored successfully.",
+        "message": "Exam(s) uploaded and stored successfully",
         "exam_ids": saved_ids
     }
 
