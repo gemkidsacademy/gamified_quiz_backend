@@ -3369,7 +3369,185 @@ async def upload_word_reading(
         "bundle_ids": saved_ids,
     }
 
-     
+
+@app.post("/upload-word-reading-gapped-multi-ai")
+async def upload_word_reading_gapped_multi_ai(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    print("\n===================================================")
+    print("📄 START: MULTI GAPPED TEXT WORD UPLOAD (AI)")
+    print("===================================================")
+
+    # --------------------------------------------------
+    # 1️⃣ Validate & extract text
+    # --------------------------------------------------
+    if file.content_type != (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        raise HTTPException(status_code=400, detail="File must be .docx")
+
+    raw = await file.read()
+    full_text = extract_text_from_docx(raw)
+
+    if not full_text or len(full_text.strip()) < 300:
+        raise HTTPException(status_code=400, detail="Invalid document")
+
+    print("✅ Document extracted")
+    print("   → Characters:", len(full_text))
+
+    # --------------------------------------------------
+    # 2️⃣ Split into Gapped Text blocks (NO AI)
+    # --------------------------------------------------
+    print("\n🔪 Splitting document into Gapped Text blocks")
+
+    raw_blocks = full_text.split("CLASS:")
+    blocks = []
+
+    for b in raw_blocks:
+        if b.strip():
+            blocks.append("CLASS:" + b.strip())
+
+    print("✅ Blocks detected:", len(blocks))
+
+    if not blocks:
+        raise HTTPException(status_code=400, detail="No gapped text blocks found")
+
+    saved_ids = []
+
+    # --------------------------------------------------
+    # 3️⃣ Process each block independently
+    # --------------------------------------------------
+    for idx, block in enumerate(blocks, start=1):
+        print("\n---------------------------------------------------")
+        print(f"🔹 Processing block {idx}/{len(blocks)}")
+        print("   → Preview:", block[:300], "...")
+
+        system_prompt = """
+You are an exam content extraction engine.
+
+Extract ONE complete GAPPED TEXT reading comprehension exam.
+
+STRICT RULES:
+- Do NOT generate new content
+- Do NOT rewrite text
+- Extract ONLY what exists
+- Output VALID JSON ONLY
+- If the block is incomplete, return {}
+
+SCHEMA:
+{
+  "class_name": string,
+  "subject": string,
+  "topic": string,
+  "difficulty": string,
+  "reading_material": {
+    "title": string,
+    "content": string
+  },
+  "answer_options": {
+    "A": string,
+    "B": string,
+    "C": string,
+    "D": string,
+    "E": string,
+    "F": string,
+    "G": string
+  },
+  "questions": [
+    {
+      "question_text": string,
+      "correct_answer": "A|B|C|D|E|F|G"
+    }
+  ]
+}
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt
+                    },
+                    {
+                        "role": "user",
+                        "content": block
+                    }
+                ]
+            )
+        except Exception as e:
+            print(f"❌ OpenAI failed for block {idx}")
+            print("   → Error:", str(e))
+            continue
+
+        raw_output = response.choices[0].message.content.strip()
+        print("🤖 AI response received")
+
+        try:
+            parsed = json.loads(raw_output)
+        except Exception:
+            print(f"❌ Invalid JSON for block {idx}")
+            continue
+
+        if not parsed:
+            print(f"⚠️ Empty extraction for block {idx}")
+            continue
+
+        # --------------------------------------------------
+        # 4️⃣ Validate extracted structure
+        # --------------------------------------------------
+        if len(parsed.get("questions", [])) != 6:
+            print(f"❌ Invalid question count in block {idx}")
+            continue
+
+        if len(parsed.get("answer_options", {})) < 6:
+            print(f"❌ Missing answer options in block {idx}")
+            continue
+
+        # --------------------------------------------------
+        # 5️⃣ Save to DB
+        # --------------------------------------------------
+        bundle = {
+            "topic": parsed["topic"],
+            "reading_material": parsed["reading_material"],
+            "questions": parsed["questions"],
+            "answer_options": parsed["answer_options"]
+        }
+
+        obj = Question_reading(
+            class_name=parsed["class_name"].lower(),
+            subject=parsed["subject"],
+            difficulty=parsed["difficulty"].lower(),
+            topic=parsed["topic"],
+            exam_bundle=bundle
+        )
+
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+
+        saved_ids.append(obj.id)
+
+        print(f"✅ Block {idx} saved | ID: {obj.id}")
+
+    # --------------------------------------------------
+    # 6️⃣ Final response
+    # --------------------------------------------------
+    print("\n===================================================")
+    print("🎉 MULTI GAPPED TEXT UPLOAD COMPLETE")
+    print("   → Total saved:", len(saved_ids))
+    print("===================================================")
+
+    return {
+        "message": "Gapped Text documents processed",
+        "saved_count": len(saved_ids),
+        "bundle_ids": saved_ids
+    }
+
+
 @app.post("/api/admin/create-reading-config")
 def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depends(get_db)):
 
