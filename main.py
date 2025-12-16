@@ -2607,7 +2607,6 @@ def generate_exam_foundational(
 ):
     """
     Generate a Foundational exam using the latest config for the given class.
-    Backend now requires class_name from frontend.
     """
 
     print("\n==============================")
@@ -2619,12 +2618,12 @@ def generate_exam_foundational(
     # ------------------------------------------------------------
     class_name = payload.get("class_name")
     if not class_name:
-        raise HTTPException(400, "class_name is required")
+        raise HTTPException(status_code=400, detail="class_name is required")
 
     subject = "Foundational"
 
     # ------------------------------------------------------------
-    # 1) Load latest foundational config FOR THIS CLASS ONLY
+    # 1) Load latest config for class
     # ------------------------------------------------------------
     cfg = (
         db.query(QuizSetupFoundational)
@@ -2642,21 +2641,21 @@ def generate_exam_foundational(
     print(f"➡ Using config ID={cfg.id} for class={class_name}")
 
     # ------------------------------------------------------------
-    # 2) Build sections list from config
+    # 2) Build sections
     # ------------------------------------------------------------
     sections = [
         {
             "name": cfg.section1_name,
             "difficulty": cfg.section1_name,
             "total": cfg.section1_total,
-            "time": cfg.section1_time,
+            "time": cfg.section1_time or 0,
             "intro": cfg.section1_intro,
         },
         {
             "name": cfg.section2_name,
             "difficulty": cfg.section2_name,
             "total": cfg.section2_total,
-            "time": cfg.section2_time,
+            "time": cfg.section2_time or 0,
             "intro": cfg.section2_intro,
         }
     ]
@@ -2666,7 +2665,7 @@ def generate_exam_foundational(
             "name": cfg.section3_name,
             "difficulty": cfg.section3_name,
             "total": cfg.section3_total,
-            "time": cfg.section3_time,
+            "time": cfg.section3_time or 0,
             "intro": cfg.section3_intro,
         })
 
@@ -2674,25 +2673,28 @@ def generate_exam_foundational(
     warnings = []
 
     # ------------------------------------------------------------
-    # 3) Fetch questions for each section
+    # 3) Fetch questions per section
     # ------------------------------------------------------------
     for section in sections:
         difficulty = section["difficulty"]
-        required = int(section["total"])
+        required = int(section["total"] or 0)
 
         print(f"\n➡ Section: {difficulty} — Need {required}")
+
+        if required <= 0:
+            continue
 
         pool = (
             db.query(Question)
             .filter(
-                func.lower(Question.class_name) == class_name.lower(),   # <-- Important fix
+                func.lower(Question.class_name) == class_name.lower(),
                 func.lower(Question.subject) == subject.lower(),
                 func.lower(Question.difficulty) == difficulty.lower(),
             )
             .all()
         )
 
-        print(f"📦 Found {len(pool)} questions for {class_name} / {difficulty}")
+        print(f"📦 Found {len(pool)} questions")
 
         if not pool:
             warnings.append(f"No questions found for {difficulty}")
@@ -2722,18 +2724,25 @@ def generate_exam_foundational(
     # 4) Number questions
     # ------------------------------------------------------------
     if not final_questions:
-        raise HTTPException(400, "No questions generated")
+        raise HTTPException(status_code=400, detail="No questions generated")
 
     for i, q in enumerate(final_questions, start=1):
         q["question_number"] = i
 
     # ------------------------------------------------------------
-    # 5) Build exam JSON
+    # 5) Compute duration (CRITICAL FIX)
     # ------------------------------------------------------------
-    duration_minutes = sum(
-        s["time"] for s in sections if s.get("time")
-    )
+    duration_minutes = sum(s["time"] for s in sections)
 
+    if duration_minutes <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid exam duration calculated"
+        )
+
+    # ------------------------------------------------------------
+    # 6) Build exam JSON
+    # ------------------------------------------------------------
     exam_json = {
         "class_name": class_name,
         "subject": subject,
@@ -2744,12 +2753,13 @@ def generate_exam_foundational(
     }
 
     # ------------------------------------------------------------
-    # 6) Save exam
+    # 7) Save exam (FIXED)
     # ------------------------------------------------------------
     saved = GeneratedExamFoundational(
         class_name=class_name,
         subject=subject,
         total_questions=len(final_questions),
+        duration_minutes=duration_minutes,   # ✅ FIX
         exam_json=exam_json,
         is_current=True
     )
@@ -2763,10 +2773,10 @@ def generate_exam_foundational(
     return {
         "generated_exam_id": saved.id,
         "total_questions": len(final_questions),
+        "duration_minutes": duration_minutes,
         "exam_json": exam_json,
         "warnings": warnings
     }
-
 
 @app.post("/api/quizzes-foundational")
 def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(get_db)):
