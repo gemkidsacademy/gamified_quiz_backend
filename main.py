@@ -3563,6 +3563,170 @@ SCHEMA:
         "bundle_ids": saved_ids
     }
 
+@app.post("/upload-word-reading-comparative-ai")
+async def upload_word_reading_comparative_ai(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    print("\n===================================================")
+    print("📄 START: COMPARATIVE ANALYSIS WORD UPLOAD (AI)")
+    print("===================================================")
+
+    # --------------------------------------------------
+    # 1️⃣ Validate file
+    # --------------------------------------------------
+    if file.content_type != (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        raise HTTPException(status_code=400, detail="File must be .docx")
+
+    raw = await file.read()
+    full_text = extract_text_from_docx(raw)
+
+    if not full_text or len(full_text.strip()) < 300:
+        raise HTTPException(status_code=400, detail="Invalid document")
+
+    print("✅ Document extracted | chars:", len(full_text))
+
+    # --------------------------------------------------
+    # 2️⃣ Build STRICT extraction prompt
+    # --------------------------------------------------
+    system_prompt = """
+You are an exam content extraction engine.
+
+You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
+
+CRITICAL RULES (FAIL HARD):
+- DO NOT generate, infer, or rewrite any content
+- Extract ONLY what exists in the document
+- Preserve wording exactly
+- reading_material MUST include ALL extracts with labels
+- questions MUST match Total_Questions exactly
+- correct_answer MUST be one of: A, B, C, D
+- If ANY required field is missing or empty, RETURN {}
+
+OUTPUT:
+- VALID JSON ONLY
+- No markdown
+- No explanations
+
+SCHEMA:
+{
+  "class_name": string,
+  "subject": string,
+  "topic": string,
+  "difficulty": string,
+  "reading_material": {
+    "title": string,
+    "extracts": {
+      "A": string,
+      "B": string,
+      "C": string,
+      "D": string
+    }
+  },
+  "questions": [
+    {
+      "question_text": string,
+      "correct_answer": "A|B|C|D"
+    }
+  ]
+}
+"""
+
+    # --------------------------------------------------
+    # 3️⃣ OpenAI extraction
+    # --------------------------------------------------
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": f"BEGIN_DOCUMENT\n{full_text}\nEND_DOCUMENT"
+                }
+            ]
+        )
+    except Exception as e:
+        print("❌ OpenAI call failed")
+        raise HTTPException(status_code=500, detail="AI extraction failed")
+
+    raw_output = response.choices[0].message.content.strip()
+
+    if not raw_output.startswith("{"):
+        raise HTTPException(status_code=400, detail="Invalid AI output")
+
+    try:
+        parsed = json.loads(raw_output)
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON parse failed")
+
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Empty extraction")
+
+    # --------------------------------------------------
+    # 4️⃣ HARD validation
+    # --------------------------------------------------
+    rm = parsed.get("reading_material", {})
+    extracts = rm.get("extracts", {})
+
+    for k in ["A", "B", "C", "D"]:
+        if k not in extracts or not extracts[k].strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing extract {k}"
+            )
+
+    questions = parsed.get("questions", [])
+    if not questions or len(questions) < 1:
+        raise HTTPException(status_code=400, detail="No questions found")
+
+    for q in questions:
+        if (
+            "question_text" not in q
+            or "correct_answer" not in q
+            or q["correct_answer"] not in ["A", "B", "C", "D"]
+        ):
+            raise HTTPException(status_code=400, detail="Invalid question format")
+
+    # --------------------------------------------------
+    # 5️⃣ Save to SAME table
+    # --------------------------------------------------
+    bundle = {
+        "topic": parsed["topic"],
+        "reading_material": rm,
+        "questions": questions
+    }
+
+    obj = Question_reading(
+        class_name=parsed["class_name"].lower(),
+        subject=parsed["subject"],
+        difficulty=parsed["difficulty"].lower(),
+        topic=parsed["topic"],
+        exam_bundle=bundle
+    )
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+
+    print(f"✅ Saved Comparative Analysis | ID {obj.id}")
+
+    # --------------------------------------------------
+    # 6️⃣ Final response
+    # --------------------------------------------------
+    print("\n===================================================")
+    print("🎉 UPLOAD COMPLETE")
+    print("===================================================")
+
+    return {
+        "message": "Comparative Analysis document processed",
+        "saved_count": 1,
+        "bundle_ids": [obj.id]
+    }
+
 
 @app.post("/api/admin/create-reading-config")
 def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depends(get_db)):
