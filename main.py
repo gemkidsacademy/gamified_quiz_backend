@@ -3781,7 +3781,30 @@ async def upload_word_reading_comparative_ai(
     print("✅ Document extracted | chars:", len(full_text))
 
     # --------------------------------------------------
-    # 2️⃣ STRICT extraction prompt (NO generation)
+    # 2️⃣ Split document into EXAM blocks
+    # --------------------------------------------------
+    blocks = []
+    start_token = "=== EXAM START ==="
+    end_token = "=== EXAM END ==="
+
+    parts = full_text.split(start_token)
+
+    for part in parts[1:]:  # skip anything before first EXAM START
+        if end_token in part:
+            block = part.split(end_token)[0].strip()
+            if len(block) > 200:
+                blocks.append(block)
+
+    if not blocks:
+        raise HTTPException(
+            status_code=400,
+            detail="No exam blocks found. Missing EXAM START/END markers."
+        )
+
+    print(f"🧩 Found {len(blocks)} exam block(s)")
+
+    # --------------------------------------------------
+    # 3️⃣ STRICT extraction prompt (unchanged)
     # --------------------------------------------------
     system_prompt = """
 You are an exam content extraction engine.
@@ -3826,108 +3849,116 @@ SCHEMA:
 }
 """
 
+    saved_ids = []
+
     # --------------------------------------------------
-    # 3️⃣ OpenAI extraction
+    # 4️⃣ Process EACH exam block independently
     # --------------------------------------------------
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": f"BEGIN_DOCUMENT\n{full_text}\nEND_DOCUMENT"
-                }
-            ]
+    for index, block_text in enumerate(blocks, start=1):
+        print(f"\n🔍 Processing exam block {index}")
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
+                    }
+                ]
+            )
+        except Exception:
+            print("❌ OpenAI extraction failed")
+            continue
+
+        raw_output = response.choices[0].message.content.strip()
+
+        if not raw_output.startswith("{"):
+            print("❌ Invalid AI output format")
+            continue
+
+        try:
+            parsed = json.loads(raw_output)
+        except Exception:
+            print("❌ JSON parse failed")
+            continue
+
+        if not parsed:
+            print("⚠️ Empty extraction result")
+            continue
+
+        # --------------------------------------------------
+        # 5️⃣ HARD validation
+        # --------------------------------------------------
+        rm = parsed.get("reading_material", {})
+        extracts = rm.get("extracts", {})
+
+        if any(k not in extracts or not extracts[k].strip() for k in ["A", "B", "C", "D"]):
+            print("❌ Missing extracts")
+            continue
+
+        questions = parsed.get("questions", [])
+        if not questions:
+            print("❌ No questions found")
+            continue
+
+        for q in questions:
+            if (
+                "question_text" not in q
+                or "correct_answer" not in q
+                or q["correct_answer"] not in ["A", "B", "C", "D"]
+            ):
+                print("❌ Invalid question format")
+                continue
+
+        # --------------------------------------------------
+        # 6️⃣ Enrich bundle (quiz-ready)
+        # --------------------------------------------------
+        answer_options = {
+            "A": "Extract A",
+            "B": "Extract B",
+            "C": "Extract C",
+            "D": "Extract D"
+        }
+
+        for i, q in enumerate(questions, start=1):
+            q["question_id"] = f"CA_Q{i}"
+
+        bundle = {
+            "topic": parsed["topic"],
+            "reading_material": rm,
+            "answer_options": answer_options,
+            "questions": questions
+        }
+
+        # --------------------------------------------------
+        # 7️⃣ Save ONE ROW per exam block
+        # --------------------------------------------------
+        obj = QuestionReading(
+            class_name=parsed["class_name"].lower(),
+            subject=parsed["subject"],
+            difficulty=parsed["difficulty"].lower(),
+            topic=parsed["topic"],
+            total_questions=len(questions),
+            exam_bundle=bundle
         )
-    except Exception:
-        raise HTTPException(status_code=500, detail="AI extraction failed")
 
-    raw_output = response.choices[0].message.content.strip()
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
 
-    if not raw_output.startswith("{"):
-        raise HTTPException(status_code=400, detail="Invalid AI output")
-
-    try:
-        parsed = json.loads(raw_output)
-    except Exception:
-        raise HTTPException(status_code=400, detail="JSON parse failed")
-
-    if not parsed:
-        raise HTTPException(status_code=400, detail="Empty extraction")
+        saved_ids.append(obj.id)
+        print(f"✅ Saved exam block {index} | ID {obj.id}")
 
     # --------------------------------------------------
-    # 4️⃣ HARD validation
+    # 8️⃣ Final response
     # --------------------------------------------------
-    rm = parsed.get("reading_material", {})
-    extracts = rm.get("extracts", {})
-
-    for k in ["A", "B", "C", "D"]:
-        if k not in extracts or not extracts[k].strip():
-            raise HTTPException(status_code=400, detail=f"Missing extract {k}")
-
-    questions = parsed.get("questions", [])
-    if not questions:
-        raise HTTPException(status_code=400, detail="No questions found")
-
-    for q in questions:
-        if (
-            "question_text" not in q
-            or "correct_answer" not in q
-            or q["correct_answer"] not in ["A", "B", "C", "D"]
-        ):
-            raise HTTPException(status_code=400, detail="Invalid question format")
-
-    # --------------------------------------------------
-    # 5️⃣ Enrich bundle for QUIZ RENDERING (backend-owned)
-    # --------------------------------------------------
-    answer_options = {
-        "A": "Extract A",
-        "B": "Extract B",
-        "C": "Extract C",
-        "D": "Extract D"
-    }
-
-    for idx, q in enumerate(questions, start=1):
-        q["question_id"] = f"CA_Q{idx}"
-
-    bundle = {
-        "topic": parsed["topic"],
-        "reading_material": rm,
-        "answer_options": answer_options,
-        "questions": questions
-    }
-
-    # --------------------------------------------------
-    # 6️⃣ Save to DB
-    # --------------------------------------------------
-    obj = QuestionReading(
-        class_name=parsed["class_name"].lower(),
-        subject=parsed["subject"],
-        difficulty=parsed["difficulty"].lower(),
-        topic=parsed["topic"],
-        total_questions=len(questions),
-        exam_bundle=bundle
-    )
-
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-
-    print(f"✅ Saved Comparative Analysis | ID {obj.id}")
-
-    # --------------------------------------------------
-    # 7️⃣ Final response
-    # --------------------------------------------------
-    print("\n===================================================")
-    print("🎉 UPLOAD COMPLETE")
-    print("===================================================")
-
     return {
         "message": "Comparative Analysis document processed",
-        "saved_count": 1,
-        "bundle_ids": [obj.id]
+        "saved_count": len(saved_ids),
+        "bundle_ids": saved_ids
     }
 
 
