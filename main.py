@@ -3418,15 +3418,27 @@ async def upload_word_reading_gapped_multi_ai(
     print("✅ Document extracted | chars:", len(full_text))
 
     # --------------------------------------------------
-    # 2️⃣ Split into logical GAPPED TEXT blocks
+    # 2️⃣ Split using EXAM START / EXAM END (FIX)
     # --------------------------------------------------
-    raw_blocks = full_text.split("CLASS:")
-    blocks = ["CLASS:" + b.strip() for b in raw_blocks if b.strip()]
+    start_token = "=== EXAM START ==="
+    end_token = "=== EXAM END ==="
+
+    blocks = []
+    parts = full_text.split(start_token)
+
+    for part in parts[1:]:  # ignore anything before first EXAM START
+        if end_token in part:
+            block = part.split(end_token)[0].strip()
+            if len(block) > 500:  # safety guard
+                blocks.append(block)
 
     if not blocks:
-        raise HTTPException(status_code=400, detail="No gapped text blocks found")
+        raise HTTPException(
+            status_code=400,
+            detail="No exam blocks found. Missing EXAM START / EXAM END markers."
+        )
 
-    print(f"🧩 Found {len(blocks)} block(s)")
+    print(f"🧩 Found {len(blocks)} exam block(s)")
     saved_ids = []
 
     # --------------------------------------------------
@@ -3480,7 +3492,7 @@ SCHEMA:
 """
 
     # --------------------------------------------------
-    # 4️⃣ Process EACH block independently
+    # 4️⃣ Process EACH exam block independently
     # --------------------------------------------------
     for block_idx, block_text in enumerate(blocks, start=1):
         print(f"\n🔍 Processing block {block_idx}/{len(blocks)}")
@@ -3549,7 +3561,7 @@ SCHEMA:
             })
 
         # --------------------------------------------------
-        # 7️⃣ Final bundle (RENDER-SAFE)
+        # 7️⃣ Final bundle (QUIZ-READY)
         # --------------------------------------------------
         bundle = {
             "question_type": "gapped_text",
@@ -3560,7 +3572,7 @@ SCHEMA:
         }
 
         # --------------------------------------------------
-        # 8️⃣ Save ONE row per block
+        # 8️⃣ Save ONE row per exam
         # --------------------------------------------------
         obj = QuestionReading(
             class_name=parsed["class_name"].lower(),
@@ -3591,6 +3603,7 @@ SCHEMA:
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
+
 
 
 @app.post("/upload-word-reading-main-idea-ai")
