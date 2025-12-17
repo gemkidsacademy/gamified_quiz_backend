@@ -3091,15 +3091,16 @@ def generate_exam_reading(
         # Load question bundles
         # --------------------------------------------------
         bundles = (
-            db.query(Question_reading)
+            db.query(QuestionReading)
             .filter(
-                func.lower(Question_reading.class_name) == class_name.lower(),
-                func.lower(Question_reading.subject) == subject.lower(),
-                func.lower(Question_reading.difficulty) == difficulty.lower(),
-                func.lower(Question_reading.topic) == topic_lower,
+                func.lower(QuestionReading.class_name) == class_name.lower(),
+                func.lower(QuestionReading.subject) == subject.lower(),
+                func.lower(QuestionReading.difficulty) == difficulty.lower(),
+                func.lower(QuestionReading.topic) == topic_lower,
             )
             .all()
         )
+
 
         if not bundles:
             warnings.append(f"No bundles found for topic '{topic_name}'")
