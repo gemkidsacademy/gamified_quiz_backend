@@ -3616,7 +3616,7 @@ async def upload_word_reading_main_idea_ai(
     print("===================================================")
 
     # --------------------------------------------------
-    # 1️⃣ Validate file
+    # 1️⃣ Validate & extract text
     # --------------------------------------------------
     if file.content_type != (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -3632,7 +3632,31 @@ async def upload_word_reading_main_idea_ai(
     print("✅ Document extracted | chars:", len(full_text))
 
     # --------------------------------------------------
-    # 2️⃣ STRICT extraction prompt
+    # 2️⃣ Split using EXAM START / EXAM END
+    # --------------------------------------------------
+    start_token = "=== EXAM START ==="
+    end_token = "=== EXAM END ==="
+
+    blocks = []
+    parts = full_text.split(start_token)
+
+    for part in parts[1:]:
+        if end_token in part:
+            block = part.split(end_token)[0].strip()
+            if len(block) > 500:
+                blocks.append(block)
+
+    if not blocks:
+        raise HTTPException(
+            status_code=400,
+            detail="No exam blocks found. Missing EXAM START / EXAM END markers."
+        )
+
+    print(f"🧩 Found {len(blocks)} exam block(s)")
+    saved_ids = []
+
+    # --------------------------------------------------
+    # 3️⃣ STRICT extraction prompt
     # --------------------------------------------------
     system_prompt = """
 You are an exam content extraction engine.
@@ -3640,9 +3664,8 @@ You are an exam content extraction engine.
 You MUST extract ONE COMPLETE MAIN IDEA & SUMMARY reading exam.
 
 CRITICAL RULES (FAIL HARD):
-- DO NOT generate, infer, or rewrite any content
+- DO NOT generate, infer, or rewrite content
 - Extract ONLY what exists in the document
-- Preserve wording exactly
 - reading_material MUST contain ALL paragraphs
 - answer_options MUST be shared and contain A–G
 - questions MUST match Total_Questions exactly
@@ -3682,7 +3705,6 @@ SCHEMA:
   },
   "questions": [
     {
-      "question_text": string,
       "paragraph": number,
       "correct_answer": "A|B|C|D|E|F|G"
     }
@@ -3691,98 +3713,117 @@ SCHEMA:
 """
 
     # --------------------------------------------------
-    # 3️⃣ OpenAI extraction
+    # 4️⃣ Process EACH exam block
     # --------------------------------------------------
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": f"BEGIN_DOCUMENT\n{full_text}\nEND_DOCUMENT"
-                }
-            ]
+    for block_idx, block_text in enumerate(blocks, start=1):
+        print(f"\n🔍 Processing block {block_idx}/{len(blocks)}")
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
+                    }
+                ]
+            )
+        except Exception as e:
+            print(f"❌ OpenAI call failed | block {block_idx}")
+            print(str(e))
+            continue
+
+        raw_output = response.choices[0].message.content.strip()
+        if not raw_output.startswith("{"):
+            print(f"❌ Non-JSON output | block {block_idx}")
+            continue
+
+        try:
+            parsed = json.loads(raw_output)
+        except Exception:
+            print(f"❌ JSON parse failed | block {block_idx}")
+            continue
+
+        if not parsed:
+            print(f"⚠️ Empty extraction | block {block_idx}")
+            continue
+
+        # --------------------------------------------------
+        # 5️⃣ HARD validation
+        # --------------------------------------------------
+        rm = parsed.get("reading_material", {})
+        paragraphs = rm.get("paragraphs", {})
+        if not paragraphs or len(paragraphs) < 1:
+            print(f"❌ Missing paragraphs | block {block_idx}")
+            continue
+
+        opts = parsed.get("answer_options", {})
+        required_opts = ["A", "B", "C", "D", "E", "F", "G"]
+        if not all(k in opts and opts[k].strip() for k in required_opts):
+            print(f"❌ Incomplete answer options | block {block_idx}")
+            continue
+
+        questions = parsed.get("questions", [])
+        if not questions:
+            print(f"❌ No questions found | block {block_idx}")
+            continue
+
+        # --------------------------------------------------
+        # 6️⃣ Enrich questions (IDs + paragraph mapping)
+        # --------------------------------------------------
+        enriched_questions = []
+        for i, q in enumerate(questions, start=1):
+            enriched_questions.append({
+                "question_id": f"MI_Q{i}",
+                "paragraph": q["paragraph"],
+                "question_text": f"Paragraph {q['paragraph']}",
+                "correct_answer": q["correct_answer"]
+            })
+
+        # --------------------------------------------------
+        # 7️⃣ Final bundle (RENDER-SAFE)
+        # --------------------------------------------------
+        bundle = {
+            "question_type": "main_idea",
+            "topic": parsed["topic"],
+            "reading_material": rm,
+            "answer_options": opts,
+            "questions": enriched_questions
+        }
+
+        # --------------------------------------------------
+        # 8️⃣ Save ONE row per exam
+        # --------------------------------------------------
+        obj = QuestionReading(
+            class_name=parsed["class_name"].lower(),
+            subject=parsed["subject"],
+            difficulty=parsed["difficulty"].lower(),
+            topic=parsed["topic"],
+            total_questions=len(enriched_questions),
+            exam_bundle=bundle
         )
-    except Exception:
-        raise HTTPException(status_code=500, detail="AI extraction failed")
 
-    raw_output = response.choices[0].message.content.strip()
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
 
-    if not raw_output.startswith("{"):
-        raise HTTPException(status_code=400, detail="Invalid AI output")
-
-    try:
-        parsed = json.loads(raw_output)
-    except Exception:
-        raise HTTPException(status_code=400, detail="JSON parse failed")
-
-    if not parsed:
-        raise HTTPException(status_code=400, detail="Empty extraction")
+        saved_ids.append(obj.id)
+        print(f"✅ Saved block {block_idx} | ID {obj.id}")
 
     # --------------------------------------------------
-    # 4️⃣ HARD validation
-    # --------------------------------------------------
-    rm = parsed.get("reading_material", {})
-    paragraphs = rm.get("paragraphs", {})
-
-    if not paragraphs or len(paragraphs) < 1:
-        raise HTTPException(status_code=400, detail="Missing paragraphs")
-
-    opts = parsed.get("answer_options", {})
-    required_opts = ["A", "B", "C", "D", "E", "F", "G"]
-    if not all(k in opts and opts[k].strip() for k in required_opts):
-        raise HTTPException(status_code=400, detail="Incomplete answer options")
-
-    questions = parsed.get("questions", [])
-    if not questions:
-        raise HTTPException(status_code=400, detail="No questions found")
-
-    for q in questions:
-        if (
-            "question_text" not in q
-            or "paragraph" not in q
-            or "correct_answer" not in q
-            or q["correct_answer"] not in required_opts
-        ):
-            raise HTTPException(status_code=400, detail="Invalid question format")
-
-    # --------------------------------------------------
-    # 5️⃣ Save to SAME table
-    # --------------------------------------------------
-    bundle = {
-        "topic": parsed["topic"],
-        "reading_material": rm,
-        "answer_options": opts,
-        "questions": questions
-    }
-
-    obj = Question_reading(
-        class_name=parsed["class_name"].lower(),
-        subject=parsed["subject"],
-        difficulty=parsed["difficulty"].lower(),
-        topic=parsed["topic"],
-        exam_bundle=bundle
-    )
-
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-
-    print(f"✅ Saved Main Idea & Summary | ID {obj.id}")
-
-    # --------------------------------------------------
-    # 6️⃣ Final response
+    # 9️⃣ Final response
     # --------------------------------------------------
     print("\n===================================================")
     print("🎉 UPLOAD COMPLETE")
+    print("   → Saved:", len(saved_ids))
     print("===================================================")
 
     return {
-        "message": "Main Idea and Summary document processed",
-        "saved_count": 1,
-        "bundle_ids": [obj.id]
+        "message": "Main Idea & Summary documents processed",
+        "saved_count": len(saved_ids),
+        "bundle_ids": saved_ids
     }
 
 
