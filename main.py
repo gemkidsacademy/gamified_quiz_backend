@@ -538,23 +538,35 @@ class Exam_reading(Base):
 
 
 
-class Question_reading(Base):
+class QuestionReading(Base):
     __tablename__ = "questions_reading"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # FILTERABLE FIELDS
-    class_name = Column(String, index=True)
-    subject = Column(String, index=True)
-    difficulty = Column(String, index=True)
-    topic = Column(String, index=True)
-    total_questions = Column(Integer)
+    # --------------------------------------------------
+    # FILTERABLE / SEARCH FIELDS
+    # --------------------------------------------------
+    class_name = Column(String, index=True, nullable=False)
+    subject = Column(String, index=True, nullable=False)
+    difficulty = Column(String, index=True, nullable=False)
+    topic = Column(String, index=True, nullable=False)
 
-    # Optional link to a full exam created by admin
-    exam_id = Column(Integer, ForeignKey("exams_reading.id"), nullable=True)
+    # Explicit for admin sanity & validation
+    total_questions = Column(Integer, nullable=False)
 
-    # COMPLETE EXAM CONTENT
-    exam_bundle = Column(JSON)  # reading_material + questions[]
+    # --------------------------------------------------
+    # OPTIONAL EXAM LINK (ADMIN-CREATED EXAMS)
+    # --------------------------------------------------
+    exam_id = Column(
+        Integer,
+        ForeignKey("exams_reading.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    # --------------------------------------------------
+    # COMPLETE SELF-DESCRIBING QUIZ PAYLOAD
+    # --------------------------------------------------
+    exam_bundle = Column(JSON, nullable=False)
 
 
 class QuestionReadingCreate(BaseModel):
@@ -3563,6 +3575,186 @@ SCHEMA:
         "bundle_ids": saved_ids
     }
 
+@app.post("/upload-word-reading-main-idea-ai")
+async def upload_word_reading_main_idea_ai(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    print("\n===================================================")
+    print("📄 START: MAIN IDEA & SUMMARY WORD UPLOAD (AI)")
+    print("===================================================")
+
+    # --------------------------------------------------
+    # 1️⃣ Validate file
+    # --------------------------------------------------
+    if file.content_type != (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        raise HTTPException(status_code=400, detail="File must be .docx")
+
+    raw = await file.read()
+    full_text = extract_text_from_docx(raw)
+
+    if not full_text or len(full_text.strip()) < 300:
+        raise HTTPException(status_code=400, detail="Invalid document")
+
+    print("✅ Document extracted | chars:", len(full_text))
+
+    # --------------------------------------------------
+    # 2️⃣ STRICT extraction prompt
+    # --------------------------------------------------
+    system_prompt = """
+You are an exam content extraction engine.
+
+You MUST extract ONE COMPLETE MAIN IDEA & SUMMARY reading exam.
+
+CRITICAL RULES (FAIL HARD):
+- DO NOT generate, infer, or rewrite any content
+- Extract ONLY what exists in the document
+- Preserve wording exactly
+- reading_material MUST contain ALL paragraphs
+- answer_options MUST be shared and contain A–G
+- questions MUST match Total_Questions exactly
+- correct_answer MUST be one of A–G
+- If ANY required field is missing or empty, RETURN {}
+
+OUTPUT:
+- VALID JSON ONLY
+- No markdown
+- No explanations
+
+SCHEMA:
+{
+  "class_name": string,
+  "subject": string,
+  "topic": string,
+  "difficulty": string,
+  "reading_material": {
+    "title": string,
+    "paragraphs": {
+      "1": string,
+      "2": string,
+      "3": string,
+      "4": string,
+      "5": string,
+      "6": string
+    }
+  },
+  "answer_options": {
+    "A": string,
+    "B": string,
+    "C": string,
+    "D": string,
+    "E": string,
+    "F": string,
+    "G": string
+  },
+  "questions": [
+    {
+      "question_text": string,
+      "paragraph": number,
+      "correct_answer": "A|B|C|D|E|F|G"
+    }
+  ]
+}
+"""
+
+    # --------------------------------------------------
+    # 3️⃣ OpenAI extraction
+    # --------------------------------------------------
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": f"BEGIN_DOCUMENT\n{full_text}\nEND_DOCUMENT"
+                }
+            ]
+        )
+    except Exception:
+        raise HTTPException(status_code=500, detail="AI extraction failed")
+
+    raw_output = response.choices[0].message.content.strip()
+
+    if not raw_output.startswith("{"):
+        raise HTTPException(status_code=400, detail="Invalid AI output")
+
+    try:
+        parsed = json.loads(raw_output)
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON parse failed")
+
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Empty extraction")
+
+    # --------------------------------------------------
+    # 4️⃣ HARD validation
+    # --------------------------------------------------
+    rm = parsed.get("reading_material", {})
+    paragraphs = rm.get("paragraphs", {})
+
+    if not paragraphs or len(paragraphs) < 1:
+        raise HTTPException(status_code=400, detail="Missing paragraphs")
+
+    opts = parsed.get("answer_options", {})
+    required_opts = ["A", "B", "C", "D", "E", "F", "G"]
+    if not all(k in opts and opts[k].strip() for k in required_opts):
+        raise HTTPException(status_code=400, detail="Incomplete answer options")
+
+    questions = parsed.get("questions", [])
+    if not questions:
+        raise HTTPException(status_code=400, detail="No questions found")
+
+    for q in questions:
+        if (
+            "question_text" not in q
+            or "paragraph" not in q
+            or "correct_answer" not in q
+            or q["correct_answer"] not in required_opts
+        ):
+            raise HTTPException(status_code=400, detail="Invalid question format")
+
+    # --------------------------------------------------
+    # 5️⃣ Save to SAME table
+    # --------------------------------------------------
+    bundle = {
+        "topic": parsed["topic"],
+        "reading_material": rm,
+        "answer_options": opts,
+        "questions": questions
+    }
+
+    obj = Question_reading(
+        class_name=parsed["class_name"].lower(),
+        subject=parsed["subject"],
+        difficulty=parsed["difficulty"].lower(),
+        topic=parsed["topic"],
+        exam_bundle=bundle
+    )
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+
+    print(f"✅ Saved Main Idea & Summary | ID {obj.id}")
+
+    # --------------------------------------------------
+    # 6️⃣ Final response
+    # --------------------------------------------------
+    print("\n===================================================")
+    print("🎉 UPLOAD COMPLETE")
+    print("===================================================")
+
+    return {
+        "message": "Main Idea and Summary document processed",
+        "saved_count": 1,
+        "bundle_ids": [obj.id]
+    }
+
+
 @app.post("/upload-word-reading-comparative-ai")
 async def upload_word_reading_comparative_ai(
     file: UploadFile = File(...),
@@ -3589,7 +3781,7 @@ async def upload_word_reading_comparative_ai(
     print("✅ Document extracted | chars:", len(full_text))
 
     # --------------------------------------------------
-    # 2️⃣ Build STRICT extraction prompt
+    # 2️⃣ STRICT extraction prompt (NO generation)
     # --------------------------------------------------
     system_prompt = """
 You are an exam content extraction engine.
@@ -3649,8 +3841,7 @@ SCHEMA:
                 }
             ]
         )
-    except Exception as e:
-        print("❌ OpenAI call failed")
+    except Exception:
         raise HTTPException(status_code=500, detail="AI extraction failed")
 
     raw_output = response.choices[0].message.content.strip()
@@ -3674,13 +3865,10 @@ SCHEMA:
 
     for k in ["A", "B", "C", "D"]:
         if k not in extracts or not extracts[k].strip():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Missing extract {k}"
-            )
+            raise HTTPException(status_code=400, detail=f"Missing extract {k}")
 
     questions = parsed.get("questions", [])
-    if not questions or len(questions) < 1:
+    if not questions:
         raise HTTPException(status_code=400, detail="No questions found")
 
     for q in questions:
@@ -3692,19 +3880,34 @@ SCHEMA:
             raise HTTPException(status_code=400, detail="Invalid question format")
 
     # --------------------------------------------------
-    # 5️⃣ Save to SAME table
+    # 5️⃣ Enrich bundle for QUIZ RENDERING (backend-owned)
     # --------------------------------------------------
+    answer_options = {
+        "A": "Extract A",
+        "B": "Extract B",
+        "C": "Extract C",
+        "D": "Extract D"
+    }
+
+    for idx, q in enumerate(questions, start=1):
+        q["question_id"] = f"CA_Q{idx}"
+
     bundle = {
         "topic": parsed["topic"],
         "reading_material": rm,
+        "answer_options": answer_options,
         "questions": questions
     }
 
-    obj = Question_reading(
+    # --------------------------------------------------
+    # 6️⃣ Save to DB
+    # --------------------------------------------------
+    obj = QuestionReading(
         class_name=parsed["class_name"].lower(),
         subject=parsed["subject"],
         difficulty=parsed["difficulty"].lower(),
         topic=parsed["topic"],
+        total_questions=len(questions),
         exam_bundle=bundle
     )
 
@@ -3715,7 +3918,7 @@ SCHEMA:
     print(f"✅ Saved Comparative Analysis | ID {obj.id}")
 
     # --------------------------------------------------
-    # 6️⃣ Final response
+    # 7️⃣ Final response
     # --------------------------------------------------
     print("\n===================================================")
     print("🎉 UPLOAD COMPLETE")
