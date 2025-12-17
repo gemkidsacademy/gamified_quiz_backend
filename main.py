@@ -3047,7 +3047,7 @@ def generate_exam_reading(
 ):
     """
     Generate a Reading Comprehension exam.
-    Produces a STRICT frontend-safe exam_json.
+    Produces a STRICT, frontend-safe exam_json with SECTIONED structure.
     """
 
     print("\n================ GENERATE READING EXAM ================")
@@ -3063,7 +3063,7 @@ def generate_exam_reading(
         db.query(ReadingExamConfig)
         .filter(
             func.lower(ReadingExamConfig.class_name) == class_name.lower(),
-            func.lower(ReadingExamConfig.difficulty) == difficulty.lower()
+            func.lower(ReadingExamConfig.difficulty) == difficulty.lower(),
         )
         .first()
     )
@@ -3073,49 +3073,23 @@ def generate_exam_reading(
 
     subject = cfg.subject
     topics = cfg.topics
-
-    final_questions = []
-    used_passages = {}
     warnings = []
 
-    # Gapped Text options must live at EXAM LEVEL
-    gapped_text_options = None
+    sections = []
 
     # --------------------------------------------------
-    # 2️⃣ PROCESS TOPICS
+    # 2️⃣ PROCESS EACH TOPIC AS A SECTION
     # --------------------------------------------------
     for topic_spec in topics:
         topic_name = topic_spec["name"].strip()
         required = int(topic_spec["num_questions"])
+        topic_lower = topic_name.lower()
 
         print(f"\n▶ Topic: {topic_name} | Required: {required}")
 
-        topic_lower = topic_name.lower()
-
-        # ---------- Fixed answer options (NON gapped text only) ----------
-        if topic_lower == "comparative analysis":
-            topic_answer_options = {
-                "A": "Extract A",
-                "B": "Extract B",
-                "C": "Extract C",
-                "D": "Extract D",
-            }
-
-        elif topic_lower == "main idea & summary":
-            topic_answer_options = {
-                "A": "Paragraph 1",
-                "B": "Paragraph 2",
-                "C": "Paragraph 3",
-                "D": "Paragraph 4",
-                "E": "Paragraph 5",
-                "F": "Paragraph 6",
-                "G": "Paragraph 7",
-            }
-
-        else:
-            topic_answer_options = None  # Gapped Text handled differently
-
-        # ---------- Load bundles ----------
+        # --------------------------------------------------
+        # Load question bundles
+        # --------------------------------------------------
         bundles = (
             db.query(Question_reading)
             .filter(
@@ -3132,81 +3106,88 @@ def generate_exam_reading(
             continue
 
         random.shuffle(bundles)
-        collected = []
 
+        collected_questions = []
+        reading_material = None
+        answer_options = None
+        question_type = None
+
+        # --------------------------------------------------
+        # Collect questions safely
+        # --------------------------------------------------
         for bundle in bundles:
             bundle_json = bundle.exam_bundle or {}
 
-            # ---- Capture Gapped Text answer options ONCE ----
-            if topic_lower == "gapped text" and not gapped_text_options:
-                gapped_text_options = bundle_json.get("answer_options", {})
-                print("✅ Captured Gapped Text answer options")
+            if not question_type:
+                question_type = bundle_json.get("question_type")
 
-            # ---- Merge reading material safely ----
-            rm = bundle_json.get("reading_material", {})
-            if isinstance(rm, dict):
-                for k, v in rm.items():
-                    used_passages.setdefault(k, v)
+            if not reading_material:
+                reading_material = bundle_json.get("reading_material")
 
-            # ---- Collect questions ----
+            if not answer_options:
+                answer_options = bundle_json.get("answer_options")
+
             for q in bundle_json.get("questions", []):
-                collected.append(q)
-                if len(collected) >= required:
+                collected_questions.append(q)
+                if len(collected_questions) >= required:
                     break
 
-            if len(collected) >= required:
+            if len(collected_questions) >= required:
                 break
 
-        if len(collected) < required:
+        if len(collected_questions) < required:
             warnings.append(
-                f"Only {len(collected)} questions found for '{topic_name}'"
+                f"Only {len(collected_questions)} questions found for '{topic_name}'"
             )
 
-        # ---------- Push final questions ----------
-        for q in collected[:required]:
-            question_obj = {
-                "topic": topic_name,
-                "question_number": None,  # assigned later
-                "question_text": q["question_text"],
-                "correct_answer": q["correct_answer"],
-            }
+        if not collected_questions:
+            continue
 
-            # Only non-gapped-text questions get per-question options
-            if topic_answer_options:
-                question_obj["answer_options"] = topic_answer_options
+        # --------------------------------------------------
+        # Normalize question numbering (per section)
+        # --------------------------------------------------
+        for idx, q in enumerate(collected_questions, start=1):
+            q["question_number"] = idx
 
-            final_questions.append(question_obj)
+        # --------------------------------------------------
+        # Build SECTION (frontend-safe)
+        # --------------------------------------------------
+        section = {
+            "question_type": question_type,
+            "topic": topic_name,
+            "reading_material": reading_material,
+            "questions": collected_questions,
+        }
+
+        # Only attach answer_options if they exist
+        if answer_options:
+            section["answer_options"] = answer_options
+
+        sections.append(section)
 
     # --------------------------------------------------
-    # 3️⃣ FINALIZE
+    # 3️⃣ FINALIZE EXAM
     # --------------------------------------------------
-    if not final_questions:
-        raise HTTPException(400, "No questions generated")
+    if not sections:
+        raise HTTPException(400, "No exam sections generated")
 
-    for i, q in enumerate(final_questions, start=1):
-        q["question_number"] = i
+    total_questions = sum(len(s["questions"]) for s in sections)
 
     exam_json = {
         "class_name": class_name,
         "subject": subject,
         "difficulty": difficulty,
-        "total_questions": len(final_questions),
         "duration_minutes": 40,
-        "reading_material": used_passages,
-        "questions": final_questions,
+        "total_questions": total_questions,
+        "sections": sections,
     }
-
-    # Attach Gapped Text options at EXAM LEVEL
-    if gapped_text_options:
-        exam_json["answer_options"] = gapped_text_options
-        print("✅ Gapped Text options attached at exam level")
 
     saved = GeneratedExamReading(
         config_id=cfg.id,
         class_name=class_name,
         subject=subject,
         difficulty=difficulty,
-        total_questions=len(final_questions),
+        total_questions=total_questions,
         exam_json=exam_json,
     )
 
@@ -3218,7 +3199,7 @@ def generate_exam_reading(
 
     return {
         "generated_exam_id": saved.id,
-        "total_questions": len(final_questions),
+        "total_questions": total_questions,
         "warnings": warnings,
         "exam_json": exam_json,
     }
