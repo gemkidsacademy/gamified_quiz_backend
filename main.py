@@ -3392,7 +3392,6 @@ async def upload_word_reading(
         "bundle_ids": saved_ids,
     }
 
-
 @app.post("/upload-word-reading-gapped-multi-ai")
 async def upload_word_reading_gapped_multi_ai(
     file: UploadFile = File(...),
@@ -3419,26 +3418,21 @@ async def upload_word_reading_gapped_multi_ai(
     print("✅ Document extracted | chars:", len(full_text))
 
     # --------------------------------------------------
-    # 2️⃣ Split into logical blocks
+    # 2️⃣ Split into logical GAPPED TEXT blocks
     # --------------------------------------------------
     raw_blocks = full_text.split("CLASS:")
     blocks = ["CLASS:" + b.strip() for b in raw_blocks if b.strip()]
 
-    print("✅ Blocks detected:", len(blocks))
     if not blocks:
         raise HTTPException(status_code=400, detail="No gapped text blocks found")
 
+    print(f"🧩 Found {len(blocks)} block(s)")
     saved_ids = []
 
     # --------------------------------------------------
-    # 3️⃣ Process blocks
+    # 3️⃣ STRICT extraction prompt (gapped text only)
     # --------------------------------------------------
-    for idx, block in enumerate(blocks, start=1):
-        print("\n---------------------------------------------------")
-        print(f"🔹 Block {idx}/{len(blocks)}")
-        print("   → Preview:", block[:250], "...")
-
-        system_prompt = """
+    system_prompt = """
 You are an exam content extraction engine.
 
 You MUST extract ONE COMPLETE GAPPED TEXT reading exam.
@@ -3449,6 +3443,7 @@ CRITICAL RULES (FAIL HARD):
 - reading_material.content MUST contain the FULL passage
 - answer_options MUST contain ALL options A through G
 - questions MUST be EXACTLY 6
+- correct_answer MUST be one of: A|B|C|D|E|F|G
 - If ANY required field is missing or empty, RETURN {}
 
 OUTPUT:
@@ -3484,6 +3479,12 @@ SCHEMA:
 }
 """
 
+    # --------------------------------------------------
+    # 4️⃣ Process EACH block independently
+    # --------------------------------------------------
+    for block_idx, block_text in enumerate(blocks, start=1):
+        print(f"\n🔍 Processing block {block_idx}/{len(blocks)}")
+
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -3492,66 +3493,81 @@ SCHEMA:
                     {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
-                        "content": f"BEGIN_DOCUMENT\n{block}\nEND_DOCUMENT"
+                        "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
                     }
                 ]
             )
         except Exception as e:
-            print(f"❌ OpenAI call failed | block {idx}")
-            print("   →", str(e))
+            print(f"❌ OpenAI call failed | block {block_idx}")
+            print(str(e))
             continue
 
         raw_output = response.choices[0].message.content.strip()
-
         if not raw_output.startswith("{"):
-            print(f"❌ Non-JSON output | block {idx}")
+            print(f"❌ Non-JSON output | block {block_idx}")
             continue
 
         try:
             parsed = json.loads(raw_output)
         except Exception:
-            print(f"❌ JSON parse failed | block {idx}")
+            print(f"❌ JSON parse failed | block {block_idx}")
             continue
 
         if not parsed:
-            print(f"⚠️ Empty extraction | block {idx}")
+            print(f"⚠️ Empty extraction | block {block_idx}")
             continue
 
         # --------------------------------------------------
-        # 4️⃣ HARD validation (this fixes your bug)
+        # 5️⃣ HARD validation
         # --------------------------------------------------
         rm = parsed.get("reading_material", {})
         if not rm.get("content") or len(rm["content"].strip()) < 300:
-            print(f"❌ Missing or empty reading material | block {idx}")
+            print(f"❌ Invalid reading material | block {block_idx}")
             continue
 
         opts = parsed.get("answer_options", {})
-        required_opts = ["A","B","C","D","E","F","G"]
+        required_opts = ["A", "B", "C", "D", "E", "F", "G"]
         if not all(k in opts and opts[k].strip() for k in required_opts):
-            print(f"❌ Incomplete answer options | block {idx}")
+            print(f"❌ Missing answer options | block {block_idx}")
             continue
 
-        qs = parsed.get("questions", [])
-        if len(qs) != 6:
-            print(f"❌ Invalid question count | block {idx}")
+        questions = parsed.get("questions", [])
+        if len(questions) != 6:
+            print(f"❌ Invalid question count | block {block_idx}")
             continue
 
         # --------------------------------------------------
-        # 5️⃣ Save clean bundle
+        # 6️⃣ Enrich questions (IDs + gap numbers)
+        # --------------------------------------------------
+        enriched_questions = []
+        for i, q in enumerate(questions, start=1):
+            enriched_questions.append({
+                "question_id": f"GT_Q{i}",
+                "gap_number": i,
+                "question_text": f"Gap {i}",
+                "correct_answer": q["correct_answer"]
+            })
+
+        # --------------------------------------------------
+        # 7️⃣ Final bundle (RENDER-SAFE)
         # --------------------------------------------------
         bundle = {
+            "question_type": "gapped_text",
             "topic": parsed["topic"],
             "reading_material": rm,
-            "questions": qs,
-            "answer_options": opts
+            "answer_options": opts,
+            "questions": enriched_questions
         }
 
+        # --------------------------------------------------
+        # 8️⃣ Save ONE row per block
+        # --------------------------------------------------
         obj = QuestionReading(
             class_name=parsed["class_name"].lower(),
             subject=parsed["subject"],
             difficulty=parsed["difficulty"].lower(),
             topic=parsed["topic"],
-            total_questions=len(qs),   # ✅ REQUIRED
+            total_questions=len(enriched_questions),
             exam_bundle=bundle
         )
 
@@ -3560,10 +3576,10 @@ SCHEMA:
         db.refresh(obj)
 
         saved_ids.append(obj.id)
-        print(f"✅ Saved block {idx} | ID {obj.id}")
+        print(f"✅ Saved block {block_idx} | ID {obj.id}")
 
     # --------------------------------------------------
-    # 6️⃣ Final response
+    # 9️⃣ Final response
     # --------------------------------------------------
     print("\n===================================================")
     print("🎉 UPLOAD COMPLETE")
@@ -3575,6 +3591,7 @@ SCHEMA:
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
+
 
 @app.post("/upload-word-reading-main-idea-ai")
 async def upload_word_reading_main_idea_ai(
