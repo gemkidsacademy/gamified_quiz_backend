@@ -3782,15 +3782,15 @@ async def upload_word_reading_comparative_ai(
     print("✅ Document extracted | chars:", len(full_text))
 
     # --------------------------------------------------
-    # 2️⃣ Split document into EXAM blocks
+    # 2️⃣ Split document into exam blocks
     # --------------------------------------------------
-    blocks = []
     start_token = "=== EXAM START ==="
     end_token = "=== EXAM END ==="
 
+    blocks = []
     parts = full_text.split(start_token)
 
-    for part in parts[1:]:  # skip anything before first EXAM START
+    for part in parts[1:]:
         if end_token in part:
             block = part.split(end_token)[0].strip()
             if len(block) > 200:
@@ -3799,13 +3799,13 @@ async def upload_word_reading_comparative_ai(
     if not blocks:
         raise HTTPException(
             status_code=400,
-            detail="No exam blocks found. Missing EXAM START/END markers."
+            detail="No exam blocks found. Missing EXAM START / EXAM END markers."
         )
 
     print(f"🧩 Found {len(blocks)} exam block(s)")
 
     # --------------------------------------------------
-    # 3️⃣ STRICT extraction prompt (unchanged)
+    # 3️⃣ STRICT extraction prompt (comparative only)
     # --------------------------------------------------
     system_prompt = """
 You are an exam content extraction engine.
@@ -3816,7 +3816,7 @@ CRITICAL RULES (FAIL HARD):
 - DO NOT generate, infer, or rewrite any content
 - Extract ONLY what exists in the document
 - Preserve wording exactly
-- reading_material MUST include ALL extracts with labels
+- reading_material MUST include ALL extracts with labels A–D
 - questions MUST match Total_Questions exactly
 - correct_answer MUST be one of: A, B, C, D
 - If ANY required field is missing or empty, RETURN {}
@@ -3853,10 +3853,10 @@ SCHEMA:
     saved_ids = []
 
     # --------------------------------------------------
-    # 4️⃣ Process EACH exam block independently
+    # 4️⃣ Process each exam block independently
     # --------------------------------------------------
-    for index, block_text in enumerate(blocks, start=1):
-        print(f"\n🔍 Processing exam block {index}")
+    for idx, block_text in enumerate(blocks, start=1):
+        print(f"\n🔍 Processing exam block {idx}")
 
         try:
             response = client.chat.completions.create(
@@ -3875,9 +3875,8 @@ SCHEMA:
             continue
 
         raw_output = response.choices[0].message.content.strip()
-
         if not raw_output.startswith("{"):
-            print("❌ Invalid AI output format")
+            print("❌ Invalid AI output")
             continue
 
         try:
@@ -3887,11 +3886,11 @@ SCHEMA:
             continue
 
         if not parsed:
-            print("⚠️ Empty extraction result")
+            print("⚠️ Empty extraction")
             continue
 
         # --------------------------------------------------
-        # 5️⃣ HARD validation
+        # 5️⃣ Hard validation
         # --------------------------------------------------
         rm = parsed.get("reading_material", {})
         extracts = rm.get("extracts", {})
@@ -3915,7 +3914,7 @@ SCHEMA:
                 continue
 
         # --------------------------------------------------
-        # 6️⃣ Enrich bundle (quiz-ready)
+        # 6️⃣ Enrich bundle (RENDER-SAFE)
         # --------------------------------------------------
         answer_options = {
             "A": "Extract A",
@@ -3928,6 +3927,7 @@ SCHEMA:
             q["question_id"] = f"CA_Q{i}"
 
         bundle = {
+            "question_type": "comparative_analysis",
             "topic": parsed["topic"],
             "reading_material": rm,
             "answer_options": answer_options,
@@ -3935,7 +3935,7 @@ SCHEMA:
         }
 
         # --------------------------------------------------
-        # 7️⃣ Save ONE ROW per exam block
+        # 7️⃣ Save ONE ROW per exam
         # --------------------------------------------------
         obj = QuestionReading(
             class_name=parsed["class_name"].lower(),
@@ -3951,7 +3951,7 @@ SCHEMA:
         db.refresh(obj)
 
         saved_ids.append(obj.id)
-        print(f"✅ Saved exam block {index} | ID {obj.id}")
+        print(f"✅ Saved exam {idx} | ID {obj.id}")
 
     # --------------------------------------------------
     # 8️⃣ Final response
