@@ -3546,11 +3546,12 @@ SCHEMA:
             "answer_options": opts
         }
 
-        obj = Question_reading(
+        obj = QuestionReading(
             class_name=parsed["class_name"].lower(),
             subject=parsed["subject"],
             difficulty=parsed["difficulty"].lower(),
             topic=parsed["topic"],
+            total_questions=len(qs),   # ✅ REQUIRED
             exam_bundle=bundle
         )
 
