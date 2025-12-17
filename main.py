@@ -1936,78 +1936,71 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
     return {"status": "submitted", "message": "Reading exam submitted successfully"}
 
 @app.post("/api/exams/start-reading")
-def start_reading_exam(student_id: str, db: Session = Depends(get_db)):
+def start_reading_exam(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
     """
-    Start or resume a reading exam session for a student.
-    Debug statements included.
+    Start or resume a Reading Comprehension exam session.
+    Assumes exam_json is already frontend-safe and self-contained.
     """
 
-    print("\n\n==================== /start-reading REQUEST ====================")
-    print("Incoming student_id:", student_id)
+    print("\n==================== START READING EXAM ====================")
+    print("Student ID:", student_id)
 
-    # Load the latest generated reading exam
+    # --------------------------------------------------
+    # 1️⃣ Load latest generated reading exam
+    # --------------------------------------------------
     exam = (
         db.query(GeneratedExamReading)
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
 
-    print("Loaded exam ID:", exam.id if exam else None)
-
     if not exam:
-        raise HTTPException(status_code=404, detail="No reading exam found")
+        raise HTTPException(404, "No reading exam found")
 
-    # Debug exam_json content
-    print("Exam JSON keys:", list(exam.exam_json.keys()))
-    print("duration_minutes FROM exam_json:", exam.exam_json.get("duration_minutes"))
-    print("Full exam_json:", exam.exam_json)
+    print("Loaded exam ID:", exam.id)
 
-    # Check if the student already has a session
-    existing = (
+    exam_json = exam.exam_json or {}
+
+    # --------------------------------------------------
+    # 2️⃣ Check existing student session
+    # --------------------------------------------------
+    session = (
         db.query(StudentExamReading)
-        .filter_by(student_id=student_id, exam_id=exam.id)
+        .filter(
+            StudentExamReading.student_id == student_id,
+            StudentExamReading.exam_id == exam.id
+        )
         .first()
     )
 
-    print("Existing session found?", bool(existing))
+    now = datetime.utcnow()
 
-    # ----------------------------------------------------------
-    # 🔒 Prevent second attempt if already finished
-    # ----------------------------------------------------------
-    if existing:
+    # --------------------------------------------------
+    # 3️⃣ Resume existing unfinished session
+    # --------------------------------------------------
+    if session:
+        print("Existing session found:", session.id)
 
-        print("Existing session ID:", existing.id)
-        print("existing.started_at:", existing.started_at)
-        print("existing.finished:", existing.finished)
-        print("server_now:", datetime.utcnow())
-
-        if existing.finished:
-            print("❌ STUDENT ALREADY FINISHED. BLOCKING.")
+        if session.finished:
             raise HTTPException(
                 status_code=403,
-                detail="You have already completed this exam. Only one attempt is allowed."
+                detail="You have already completed this exam."
             )
 
-        response = {
-            "session_id": existing.id,
-            "exam_json": exam.exam_json,
-            "duration_minutes": exam.exam_json.get("duration_minutes", 40),
-            "start_time": existing.started_at,
-            "server_now": datetime.utcnow(),
+        return {
+            "session_id": session.id,
+            "exam_json": exam_json,
+            "duration_minutes": exam_json.get("duration_minutes", 40),
+            "start_time": session.started_at,
+            "server_now": now,
         }
 
-        print("Returning EXISTING session response:", response)
-        print("==============================================================\n\n")
-
-        return response
-
-    # ----------------------------------------------------------
-    # ✨ First-time attempt — Create a new session
-    # ----------------------------------------------------------
-
-    now = datetime.utcnow()
-    print("Creating new session at:", now)
-
+    # --------------------------------------------------
+    # 4️⃣ Create new session
+    # --------------------------------------------------
     new_session = StudentExamReading(
         student_id=student_id,
         exam_id=exam.id,
@@ -2018,18 +2011,15 @@ def start_reading_exam(student_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_session)
 
-    response = {
+    print("New session created:", new_session.id)
+
+    return {
         "session_id": new_session.id,
-        "exam_json": exam.exam_json,
-        "duration_minutes": exam.exam_json.get("duration_minutes", 40),
+        "exam_json": exam_json,
+        "duration_minutes": exam_json.get("duration_minutes", 40),
         "start_time": new_session.started_at,
-        "server_now": datetime.utcnow(),
+        "server_now": now,
     }
-
-    print("Returning NEW session response:", response)
-    print("==============================================================\n\n")
-
-    return response
 
 
 @app.get("/api/foundational/classes")
