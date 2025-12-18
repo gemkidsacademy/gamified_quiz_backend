@@ -257,6 +257,8 @@ class StudentExamReading(Base):
         DateTime(timezone=True),
         server_default=func.now()
     )
+    report_json = Column(JSON, nullable=True)
+
 
 class WritingGenerateSchema(BaseModel):
     class_name: str
@@ -1918,23 +1920,52 @@ def add_student_exam_module(
  
 @app.post("/api/exams/submit-reading")
 def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
-
     session_id = payload.get("session_id")
     answers = payload.get("answers", {})
+    report = payload.get("report")
 
-    session = db.query(StudentExamReading).filter_by(id=session_id).first()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    if not report:
+        raise HTTPException(status_code=400, detail="report data is required")
+
+    # --------------------------------------------------
+    # 1️⃣ Load session
+    # --------------------------------------------------
+    session = (
+        db.query(StudentExamReading)
+        .filter(StudentExamReading.id == session_id)
+        .first()
+    )
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Mark as completed
+    if session.finished:
+        # Idempotency: prevent double-submit
+        return {
+            "status": "ok",
+            "message": "Exam already submitted"
+        }
+
+    # --------------------------------------------------
+    # 2️⃣ Persist report + mark session finished
+    # --------------------------------------------------
     session.finished = True
     session.completed_at = datetime.utcnow()
+    session.report_json = report   # 👈 persisted frontend report
 
     db.commit()
 
-    return {"status": "submitted", "message": "Reading exam submitted successfully"}
-
+    # --------------------------------------------------
+    # 3️⃣ Return success
+    # --------------------------------------------------
+    return {
+        "status": "submitted",
+        "message": "Reading exam submitted successfully"
+    }
+ 
 @app.post("/api/exams/start-reading")
 def start_reading_exam(
     student_id: str,
