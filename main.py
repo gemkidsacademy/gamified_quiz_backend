@@ -1724,23 +1724,44 @@ def get_reading_report(
             detail="Reading report not available"
         )
 
+    report = session.report_json
+
     # --------------------------------------------------
-    # 2️⃣ Return stored report (UI-ready)
+    # 2️⃣ Case 1: Already Reading-style (CORRECT FORMAT)
     # --------------------------------------------------
-    return {
-        "score": session.report_json["summary"]["correct_answers"],
-        "total": session.report_json["summary"]["total_questions"],
-        "correct": session.report_json["summary"]["correct_answers"],
-        "wrong": session.report_json["summary"]["wrong_answers"],
-        "accuracy": session.report_json["summary"]["accuracy_percent"],
-        "topics": [
-            {
-                "topic": t["topic"],
-                "accuracy": t["accuracy_percent"]
-            }
-            for t in session.report_json["topic_breakdown"]
-        ]
-    }
+    if (
+        isinstance(report, dict)
+        and "score" in report
+        and "topics" in report
+    ):
+        return report
+
+    # --------------------------------------------------
+    # 3️⃣ Case 2: Old Thinking-style report → normalize
+    # --------------------------------------------------
+    if "summary" in report and "topic_breakdown" in report:
+        return {
+            "score": report["summary"]["correct_answers"],
+            "total": report["summary"]["total_questions"],
+            "correct": report["summary"]["correct_answers"],
+            "wrong": report["summary"]["wrong_answers"],
+            "accuracy": report["summary"]["accuracy_percent"],
+            "topics": [
+                {
+                    "topic": t["topic"],
+                    "accuracy": t["accuracy_percent"]
+                }
+                for t in report["topic_breakdown"]
+            ]
+        }
+
+    # --------------------------------------------------
+    # 4️⃣ Unknown / corrupt format
+    # --------------------------------------------------
+    raise HTTPException(
+        status_code=500,
+        detail="Invalid reading report format"
+    )
 
  
 @app.get("/api/student/exam-report/thinking-skills")
