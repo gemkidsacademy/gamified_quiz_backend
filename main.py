@@ -1694,7 +1694,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
- @app.get("/api/exams/reading-report")
+@app.get("/api/exams/reading-report")
 def get_reading_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
     db: Session = Depends(get_db)
