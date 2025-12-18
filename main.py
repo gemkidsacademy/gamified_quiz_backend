@@ -1982,21 +1982,17 @@ def start_reading_exam(
     # 3️⃣ Resume existing unfinished session
     # --------------------------------------------------
     if session:
-        print("Existing session found:", session.id)
+      print("Existing session found:", session.id)
+  
+      return {
+          "session_id": session.id,
+          "exam_json": exam_json,
+          "duration_minutes": exam_json.get("duration_minutes", 40),
+          "start_time": session.started_at,
+          "server_now": now,
+          "finished": bool(session.finished)
+      }
 
-        if session.finished:
-            raise HTTPException(
-                status_code=403,
-                detail="You have already completed this exam."
-            )
-
-        return {
-            "session_id": session.id,
-            "exam_json": exam_json,
-            "duration_minutes": exam_json.get("duration_minutes", 40),
-            "start_time": session.started_at,
-            "server_now": now,
-        }
 
     # --------------------------------------------------
     # 4️⃣ Create new session
