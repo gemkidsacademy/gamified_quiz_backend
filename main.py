@@ -2035,7 +2035,11 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         "status": "submitted",
         "message": "Reading exam submitted successfully"
     }
- 
+
+from datetime import datetime, timezone
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+
 @app.post("/api/exams/start-reading")
 def start_reading_exam(
     student_id: str,
@@ -2050,7 +2054,7 @@ def start_reading_exam(
     print("Student ID:", student_id)
 
     # --------------------------------------------------
-    # 1️⃣ Load latest generated reading exam
+    # 1) Load latest generated reading exam
     # --------------------------------------------------
     exam = (
         db.query(GeneratedExamReading)
@@ -2059,14 +2063,14 @@ def start_reading_exam(
     )
 
     if not exam:
-        raise HTTPException(404, "No reading exam found")
+        raise HTTPException(status_code=404, detail="No reading exam found")
 
     print("Loaded exam ID:", exam.id)
 
     exam_json = exam.exam_json or {}
 
     # --------------------------------------------------
-    # 2️⃣ Check existing student session
+    # 2) Check existing student session
     # --------------------------------------------------
     session = (
         db.query(StudentExamReading)
@@ -2077,26 +2081,32 @@ def start_reading_exam(
         .first()
     )
 
-    now = datetime.utcnow()
+    # Always use timezone-aware UTC
+    now = datetime.now(timezone.utc)
 
     # --------------------------------------------------
-    # 3️⃣ Resume existing unfinished session
+    # 3) Resume existing session
     # --------------------------------------------------
     if session:
-      print("Existing session found:", session.id)
-  
-      return {
-          "session_id": session.id,
-          "exam_json": exam_json,
-          "duration_minutes": exam_json.get("duration_minutes", 40),
-          "start_time": session.started_at,
-          "server_now": now,
-          "finished": bool(session.finished)
-      }
+        print("Existing session found:", session.id)
 
+        start_time = session.started_at
+
+        # Normalize old rows that may be timezone-naive
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+
+        return {
+            "session_id": session.id,
+            "exam_json": exam_json,
+            "duration_minutes": exam_json.get("duration_minutes", 40),
+            "start_time": start_time,
+            "server_now": now,
+            "finished": bool(session.finished)
+        }
 
     # --------------------------------------------------
-    # 4️⃣ Create new session
+    # 4) Create new session
     # --------------------------------------------------
     new_session = StudentExamReading(
         student_id=student_id,
@@ -2116,7 +2126,9 @@ def start_reading_exam(
         "duration_minutes": exam_json.get("duration_minutes", 40),
         "start_time": new_session.started_at,
         "server_now": now,
+        "finished": False
     }
+
 
 
 @app.get("/api/foundational/classes")
