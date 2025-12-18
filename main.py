@@ -1727,7 +1727,22 @@ def get_reading_report(
     # --------------------------------------------------
     # 2️⃣ Return stored report (UI-ready)
     # --------------------------------------------------
-    return session.report_json
+    return {
+        "score": session.report_json["summary"]["correct_answers"],
+        "total": session.report_json["summary"]["total_questions"],
+        "correct": session.report_json["summary"]["correct_answers"],
+        "wrong": session.report_json["summary"]["wrong_answers"],
+        "accuracy": session.report_json["summary"]["accuracy_percent"],
+        "topics": [
+            {
+                "topic": t["topic"],
+                "accuracy": t["accuracy_percent"]
+            }
+            for t in session.report_json["topic_breakdown"]
+        ]
+    }
+
+ 
 @app.get("/api/student/exam-report/thinking-skills")
 def get_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
