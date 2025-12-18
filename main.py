@@ -1694,6 +1694,40 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+ @app.get("/api/exams/reading-report")
+def get_reading_report(
+    student_id: str = Query(..., description="External student id e.g. Gem002"),
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Load latest finished reading session
+    # --------------------------------------------------
+    session = (
+        db.query(StudentExamReading)
+        .filter(
+            StudentExamReading.student_id == student_id,
+            StudentExamReading.finished == True
+        )
+        .order_by(StudentExamReading.completed_at.desc())
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed reading exam found"
+        )
+
+    if not session.report_json:
+        raise HTTPException(
+            status_code=404,
+            detail="Reading report not available"
+        )
+
+    # --------------------------------------------------
+    # 2️⃣ Return stored report (UI-ready)
+    # --------------------------------------------------
+    return session.report_json
 @app.get("/api/student/exam-report/thinking-skills")
 def get_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
