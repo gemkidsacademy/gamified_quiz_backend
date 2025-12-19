@@ -4308,12 +4308,18 @@ def start_exam(
     # --------------------------------------------------
     # ✅ PRE-CREATE RESPONSE ROWS (for reporting)
     # --------------------------------------------------
-    for q in exam.questions or []:
+    for idx, q in enumerate(exam.questions or []):
         db.add(StudentExamResponse(
+            student_id=student.id,
+            exam_id=exam.id,
             exam_attempt_id=new_attempt.id,
-            question_id=q.get("id"),
+    
+            q_id=idx + 1,                     # stable per-attempt question index
             topic=q.get("topic"),
-            is_correct=None
+    
+            selected_option=None,
+            correct_option=q.get("correct_answer"),
+            is_correct=None                  # NULL = not attempted
         ))
     
     db.commit()
