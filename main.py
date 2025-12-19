@@ -1731,13 +1731,7 @@ def get_reading_report(
         .first()
     )
 
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail="No completed reading exam found"
-        )
-
-    if not session.report_json:
+    if not session or not session.report_json:
         raise HTTPException(
             status_code=404,
             detail="Reading report not available"
@@ -1746,41 +1740,61 @@ def get_reading_report(
     report = session.report_json
 
     # --------------------------------------------------
-    # 2️⃣ Case 1: Already Reading-style (CORRECT FORMAT)
+    # 2️⃣ If already normalized (preferred format)
     # --------------------------------------------------
-    if (
-        isinstance(report, dict)
-        and "score" in report
-        and "topics" in report
-    ):
+    if "summary" in report and "topics" in report:
         return report
 
     # --------------------------------------------------
-    # 3️⃣ Case 2: Old Thinking-style report → normalize
+    # 3️⃣ Normalize legacy / frontend-built report
     # --------------------------------------------------
-    if "summary" in report and "topic_breakdown" in report:
-        return {
-            "score": report["summary"]["correct_answers"],
-            "total": report["summary"]["total_questions"],
-            "correct": report["summary"]["correct_answers"],
-            "wrong": report["summary"]["wrong_answers"],
-            "accuracy": report["summary"]["accuracy_percent"],
-            "topics": [
-                {
-                    "topic": t["topic"],
-                    "accuracy": t["accuracy_percent"]
-                }
-                for t in report["topic_breakdown"]
-            ]
-        }
+    # Expected legacy shape:
+    # {
+    #   total, attempted, correct, wrong, accuracy, topics[]
+    # }
+
+    total = report.get("total", 0)
+    attempted = report.get("attempted", report.get("correct", 0) + report.get("wrong", 0))
+    correct = report.get("correct", 0)
+    incorrect = report.get("wrong", 0)
+    not_attempted = total - attempted
+    accuracy = report.get("accuracy", 0)
+
+    normalized_topics = []
+
+    for t in report.get("topics", []):
+        t_total = t.get("total", 0)
+        t_attempted = t.get("attempted", t.get("correct", 0) + t.get("incorrect", 0))
+        t_correct = t.get("correct", 0)
+        t_incorrect = t_attempted - t_correct
+        t_not_attempted = t_total - t_attempted
+
+        normalized_topics.append({
+            "topic": t.get("topic"),
+            "total_questions": t_total,
+            "attempted": t_attempted,
+            "correct": t_correct,
+            "incorrect": t_incorrect,
+            "not_attempted": t_not_attempted,
+            "accuracy_percent": round(
+                (t_correct / t_total) * 100, 2
+            ) if t_total else 0
+        })
 
     # --------------------------------------------------
-    # 4️⃣ Unknown / corrupt format
+    # 4️⃣ Final unified response
     # --------------------------------------------------
-    raise HTTPException(
-        status_code=500,
-        detail="Invalid reading report format"
-    )
+    return {
+        "summary": {
+            "total_questions": total,
+            "attempted": attempted,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy_percent": accuracy
+        },
+        "topics": normalized_topics
+    }
 
  
 @app.get("/api/student/exam-report/thinking-skills")
