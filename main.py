@@ -2729,6 +2729,8 @@ def finish_foundational_exam(
     # ------------------------------------------------------------
     # 3️⃣ Load exam & build question lookup
     # ------------------------------------------------------------
+    question_lookup = {}
+
     exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
     questions = exam.exam_json.get("questions", [])
 
