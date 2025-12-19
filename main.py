@@ -2515,11 +2515,9 @@ def start_or_resume_foundational_exam(
         .first()
     )
 
-    if attempt:
-        print("🧪 Existing attempt:", attempt.id)
-        if attempt.completed_at:
-            print("✅ Attempt already completed")
-            return {"completed": True}
+    if attempt and attempt.completed_at:
+        print("✅ Attempt already completed")
+        return {"completed": True}
 
     # 2️⃣ Load current exam
     exam = (
@@ -2532,14 +2530,8 @@ def start_or_resume_foundational_exam(
     if not exam:
         raise HTTPException(404, "No active exam")
 
-    print("📘 exam_id:", exam.id)
-
     # 3️⃣ Normalize sections + questions
     sections = build_sections_with_questions(exam.exam_json)
-
-    print("📂 Sections after grouping:", len(sections))
-    for s in sections:
-        print(f"   ↳ {s['name']} → {len(s['questions'])} questions")
 
     if not sections:
         raise HTTPException(500, "No sections after normalization")
@@ -2555,7 +2547,6 @@ def start_or_resume_foundational_exam(
         db.add(attempt)
         db.commit()
         db.refresh(attempt)
-        print("🆕 New attempt created:", attempt.id)
 
     # 5️⃣ Validate section index
     if attempt.current_section_index >= len(sections):
@@ -2565,20 +2556,30 @@ def start_or_resume_foundational_exam(
     elapsed = int((datetime.now(timezone.utc) - attempt.started_at).total_seconds())
     remaining_time = max(exam.duration_minutes * 60 - elapsed, 0)
 
-    # 7️⃣ Return current section
+    # 7️⃣ Normalize questions for frontend (🔥 CRITICAL FIX)
     current_section = sections[attempt.current_section_index]
 
-    print("📤 Returning section:", current_section["name"])
-    print("   ↳ questions:", len(current_section["questions"]))
+    normalized_questions = []
+    for q in current_section["questions"]:
+        fixed = dict(q)
 
-    print("===========================================================\n")
+        opts = fixed.get("options")
+        if isinstance(opts, dict):
+            fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
+        elif isinstance(opts, list):
+            fixed["options"] = opts
+        else:
+            fixed["options"] = []
 
+        normalized_questions.append(fixed)
+
+    # 8️⃣ Return section in frontend-safe format
     return {
         "completed": False,
         "current_section_index": attempt.current_section_index,
         "section": {
             "name": current_section["name"],
-            "questions": current_section["questions"]
+            "questions": normalized_questions
         },
         "remaining_time": remaining_time
     }
