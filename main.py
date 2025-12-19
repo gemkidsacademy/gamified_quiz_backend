@@ -133,6 +133,31 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+
+class StudentExamReportReading(Base):
+    __tablename__ = "student_exam_report_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 🔑 Identity
+    student_id = Column(String, index=True, nullable=False)
+    exam_id = Column(Integer, index=True, nullable=False)
+    session_id = Column(Integer, index=True, nullable=False, unique=True)
+
+    # 🔎 Question-level data
+    topic = Column(String, index=True, nullable=False)
+    question_id = Column(String, index=True, nullable=False)
+
+    selected_answer = Column(String, nullable=True)
+    correct_answer = Column(String, nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+
+    # 🧾 Snapshot (optional but powerful)
+    question_snapshot = Column(JSON, nullable=True)
+
+    # 🕒 Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class StudentExamResponseFoundational(Base):
     __tablename__ = "student_exam_response_foundational"
 
@@ -2073,15 +2098,26 @@ def add_student_exam_module(
  
 @app.post("/api/exams/submit-reading")
 def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
+
+    print("\n================ SUBMIT READING EXAM ================")
+    print("📥 Raw payload received:", payload)
+
+    # --------------------------------------------------
+    # 0️⃣ Validate payload
+    # --------------------------------------------------
     session_id = payload.get("session_id")
     answers = payload.get("answers", {})
-    report = payload.get("report")
+
+    print("🆔 session_id:", session_id)
+    print("📝 answers keys:", list(answers.keys()) if isinstance(answers, dict) else answers)
 
     if not session_id:
+        print("❌ ERROR: session_id missing")
         raise HTTPException(status_code=400, detail="session_id is required")
 
-    if not report:
-        raise HTTPException(status_code=400, detail="report data is required")
+    if not isinstance(answers, dict):
+        print("❌ ERROR: answers is not a dict")
+        raise HTTPException(status_code=400, detail="answers must be a dictionary")
 
     # --------------------------------------------------
     # 1️⃣ Load session
@@ -2093,30 +2129,166 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
     )
 
     if not session:
+        print("❌ ERROR: Session not found for session_id:", session_id)
         raise HTTPException(status_code=404, detail="Session not found")
 
+    print("✅ Session loaded:", {
+        "session_id": session.id,
+        "student_id": session.student_id,
+        "exam_id": session.exam_id,
+        "finished": session.finished
+    })
+
     if session.finished:
-        # Idempotency: prevent double-submit
+        print("⚠️ Session already finished — idempotent exit")
         return {
             "status": "ok",
             "message": "Exam already submitted"
         }
 
     # --------------------------------------------------
-    # 2️⃣ Persist report + mark session finished
+    # 2️⃣ Load exam
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.id == session.exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        print("❌ ERROR: Exam or exam_json missing for exam_id:", session.exam_id)
+        raise HTTPException(status_code=500, detail="Exam data not found")
+
+    sections = exam.exam_json.get("sections", [])
+    print("📚 Sections found:", len(sections))
+
+    # --------------------------------------------------
+    # 3️⃣ Initialize counters
+    # --------------------------------------------------
+    topic_stats = {}
+    total_questions = attempted = correct = incorrect = not_attempted = 0
+
+    # --------------------------------------------------
+    # 4️⃣ Evaluate questions
+    # --------------------------------------------------
+    for section_idx, section in enumerate(sections):
+        topic = section.get("topic", "Other")
+        questions = section.get("questions", [])
+
+        print(f"\n📂 Section {section_idx + 1}: {topic}")
+        print("❓ Questions in section:", len(questions))
+
+        if topic not in topic_stats:
+            topic_stats[topic] = {
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        for q_idx, q in enumerate(questions):
+            question_id = q.get("question_id")
+            correct_answer = q.get("correct_answer")
+            selected_answer = answers.get(question_id)
+
+            print(f"   🔹 Q{q_idx + 1} | ID:", question_id)
+            print("      ➜ correct_answer:", correct_answer)
+            print("      ➜ selected_answer:", selected_answer)
+
+            is_attempted = selected_answer is not None
+            is_correct = is_attempted and selected_answer == correct_answer
+
+            total_questions += 1
+            topic_stats[topic]["total"] += 1
+
+            if is_attempted:
+                attempted += 1
+                topic_stats[topic]["attempted"] += 1
+                if is_correct:
+                    correct += 1
+                    topic_stats[topic]["correct"] += 1
+                    print("      ✅ Correct")
+                else:
+                    incorrect += 1
+                    topic_stats[topic]["incorrect"] += 1
+                    print("      ❌ Incorrect")
+            else:
+                not_attempted += 1
+                topic_stats[topic]["not_attempted"] += 1
+                print("      ⚠️ Not Attempted")
+
+            # Persist per-question row
+            db.add(StudentExamReportReading(
+                student_id=session.student_id,
+                exam_id=session.exam_id,
+                session_id=session.id,
+                topic=topic,
+                question_id=question_id,
+                selected_answer=selected_answer,
+                correct_answer=correct_answer,
+                is_correct=is_correct
+            ))
+
+    # --------------------------------------------------
+    # 5️⃣ Build report
+    # --------------------------------------------------
+    print("\n📊 Building report summary")
+
+    topics_report = []
+    for topic, stats in topic_stats.items():
+        accuracy = (
+            round((stats["correct"] / stats["attempted"]) * 100, 2)
+            if stats["attempted"] > 0 else 0.0
+        )
+
+        print(f"   📌 {topic} →", stats, "accuracy:", accuracy)
+
+        topics_report.append({
+            "topic": topic,
+            **stats,
+            "accuracy": accuracy
+        })
+
+    overall_accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+
+    report_json = {
+        "overall": {
+            "total_questions": total_questions,
+            "attempted": attempted,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy": overall_accuracy
+        },
+        "topics": topics_report,
+        "improvement_order": [
+            t["topic"] for t in sorted(topics_report, key=lambda x: x["accuracy"])
+        ]
+    }
+
+    print("\n📈 Final overall report:", report_json["overall"])
+    print("📉 Improvement order:", report_json["improvement_order"])
+
+    # --------------------------------------------------
+    # 6️⃣ Mark session finished
     # --------------------------------------------------
     session.finished = True
-    session.completed_at = datetime.utcnow()
-    session.report_json = report   # 👈 persisted frontend report
+    session.completed_at = datetime.now(timezone.utc)
+    session.report_json = report_json
 
     db.commit()
 
+    print("✅ Exam submission committed successfully")
+    print("================ END SUBMIT READING EXAM ================\n")
+
     # --------------------------------------------------
-    # 3️⃣ Return success
+    # 7️⃣ Return response
     # --------------------------------------------------
     return {
         "status": "submitted",
-        "message": "Reading exam submitted successfully"
+        "message": "Reading exam submitted successfully",
+        "report": report_json
     }
 
 from datetime import datetime, timezone
