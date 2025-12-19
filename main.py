@@ -2768,7 +2768,7 @@ def finish_foundational_exam(
             exam_id=attempt.exam_id,
             attempt_id=attempt.id,
             section_name=meta["section"],
-            q_id=q_id,
+            question_id=qid,   # ✅ matches model
             selected_answer=selected_answer,
             correct_answer=correct_answer,
             is_correct=is_correct
