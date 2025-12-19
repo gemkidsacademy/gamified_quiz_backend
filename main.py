@@ -4499,53 +4499,60 @@ def finish_exam(
     # --------------------------------------------------
     correct = 0
     saved_responses = 0
-
+    
     for q_id_str, selected in req.answers.items():
         print(f"➡️ Processing answer: q_id={q_id_str}, selected={selected}")
-
+    
         try:
             q_id = int(q_id_str)
         except ValueError:
             print("❌ Invalid q_id (not int):", q_id_str)
             continue
-
+    
         q = question_map.get(q_id)
         if not q:
             print("⚠️ Question not found in exam JSON for q_id =", q_id)
             continue
-
+    
         is_correct = selected == q.get("correct")
-
+    
         if is_correct:
             correct += 1
-
-        db.add(
-            StudentExamResponse(
-                student_id=student.id,
-                exam_id=exam.id,
-                exam_attempt_id=attempt.id,
-                q_id=q_id,
-                topic=q.get("topic", "Unknown"),
-                selected_option=selected,
-                correct_option=q.get("correct"),
-                is_correct=is_correct
+    
+        # 🔒 UPDATE existing response row (do NOT insert)
+        response = (
+            db.query(StudentExamResponse)
+            .filter(
+                StudentExamResponse.exam_attempt_id == attempt.id,
+                StudentExamResponse.q_id == q_id
             )
+            .first()
         )
-
+    
+        if not response:
+            print("❌ Response row missing for q_id =", q_id)
+            continue
+    
+        response.selected_option = selected
+        response.correct_option = q.get("correct")
+        response.is_correct = is_correct
+    
         saved_responses += 1
         print(
-            f"   💾 Saved response → q_id={q_id}, "
+            f"   🔁 Updated response → q_id={q_id}, "
             f"is_correct={is_correct}"
         )
-
-    print("📈 Responses saved:", saved_responses)
+    
+    print("📈 Responses updated:", saved_responses)
     print("✅ Correct answers count:", correct)
-
-    wrong = total_questions - correct
-    accuracy = round((correct / total_questions) * 100, 2) if total_questions else 0
-
+    
+    # ✔ Correct calculation (based on attempted questions)
+    wrong = saved_responses - correct
+    accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
+    
     print("📊 Computed result:")
     print("   total_questions:", total_questions)
+    print("   attempted:", saved_responses)
     print("   correct:", correct)
     print("   wrong:", wrong)
     print("   accuracy:", accuracy)
