@@ -1770,26 +1770,21 @@ def get_thinking_skills_report(
     db: Session = Depends(get_db)
 ):
     # --------------------------------------------------
-    # 1️⃣ Resolve student (external → internal)
+    # 1️⃣ Resolve student
     # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(Student.student_id == student_id)
         .first()
     )
-
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
     # --------------------------------------------------
-    # 2️⃣ Get latest completed exam attempt
+    # 2️⃣ Get latest completed attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentExam)
-        .join(
-            StudentExamResultsThinkingSkills,
-            StudentExamResultsThinkingSkills.exam_attempt_id == StudentExam.id
-        )
         .filter(
             StudentExam.student_id == student.id,
             StudentExam.completed_at.isnot(None)
@@ -1802,65 +1797,120 @@ def get_thinking_skills_report(
         raise HTTPException(status_code=404, detail="No completed exam found")
 
     # --------------------------------------------------
-    # 3️⃣ Load summary (donut / headline stats)
+    # 3️⃣ Load all responses for this attempt
     # --------------------------------------------------
-    summary = (
-        db.query(StudentExamResultsThinkingSkills)
-        .filter(
-            StudentExamResultsThinkingSkills.exam_attempt_id == attempt.id
-        )
-        .first()
-    )
-
-    if not summary:
-        raise HTTPException(status_code=404, detail="Exam result missing")
-
-    # --------------------------------------------------
-    # 4️⃣ Topic-wise breakdown (bar chart)
-    # --------------------------------------------------
-    topic_rows = (
-        db.query(
-            StudentExamResponse.topic,
-            func.count(StudentExamResponse.id).label("total"),
-            func.sum(
-                case(
-                    (StudentExamResponse.is_correct == True, 1),
-                    else_=0
-                )
-            ).label("correct")
-        )
-        .filter(
-            StudentExamResponse.exam_attempt_id == attempt.id
-        )
-        .group_by(StudentExamResponse.topic)
-        .order_by(StudentExamResponse.topic)
+    responses = (
+        db.query(StudentExamResponse)
+        .filter(StudentExamResponse.exam_attempt_id == attempt.id)
         .all()
     )
 
-    topic_breakdown = []
-    for row in topic_rows:
-        total = row.total
-        correct = row.correct or 0
+    if not responses:
+        raise HTTPException(status_code=404, detail="No responses found")
 
-        topic_breakdown.append({
-            "topic": row.topic,
-            "total_questions": total,
-            "correct_answers": correct,
-            "wrong_answers": total - correct,
-            "accuracy_percent": round((correct / total) * 100, 2) if total else 0
+    # --------------------------------------------------
+    # 4️⃣ OVERALL SUMMARY (Report B)
+    # --------------------------------------------------
+    total_questions = len(responses)
+    attempted = sum(1 for r in responses if r.is_correct is not None)
+    correct = sum(1 for r in responses if r.is_correct is True)
+    incorrect = sum(1 for r in responses if r.is_correct is False)
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
+    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent,
+        "pass": None  # set rule later if required
+    }
+
+    # --------------------------------------------------
+    # 5️⃣ TOPIC-WISE PERFORMANCE (Report A)
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        topic_map[topic]["total"] += 1
+
+        if r.is_correct is None:
+            topic_map[topic]["not_attempted"] += 1
+        else:
+            topic_map[topic]["attempted"] += 1
+            if r.is_correct:
+                topic_map[topic]["correct"] += 1
+            else:
+                topic_map[topic]["incorrect"] += 1
+
+    topic_wise_performance = list(topic_map.values())
+
+    # --------------------------------------------------
+    # 6️⃣ TOPIC ACCURACY & RESULT (Report C)
+    # --------------------------------------------------
+    topic_accuracy = []
+
+    for t in topic_wise_performance:
+        attempted_t = t["attempted"]
+        accuracy_t = (
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
+        )
+        score_t = round((t["correct"] / t["total"]) * 100, 2)
+
+        topic_accuracy.append({
+            "topic": t["topic"],
+            "total_questions": t["total"],
+            "attempted": attempted_t,
+            "correct": t["correct"],
+            "incorrect": t["incorrect"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": score_t,
+            "pass": None
         })
 
     # --------------------------------------------------
-    # 5️⃣ Final UI-ready response
+    # 7️⃣ IMPROVEMENT AREAS (Report D)
+    # --------------------------------------------------
+    improvement_areas = []
+
+    for t in topic_accuracy:
+        limited_data = t["total_questions"] < 5
+
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy_percent": t["accuracy_percent"],
+            "score_percent": t["score_percent"],
+            "total_questions": t["total_questions"],
+            "limited_data": limited_data
+        })
+
+    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+
+    # --------------------------------------------------
+    # 8️⃣ Final response
     # --------------------------------------------------
     return {
-        "summary": {
-            "total_questions": summary.total_questions,
-            "correct_answers": summary.correct_answers,
-            "wrong_answers": summary.wrong_answers,
-            "accuracy_percent": summary.accuracy_percent
-        },
-        "topic_breakdown": topic_breakdown
+        "overall": overall,                         # Report B
+        "topic_wise_performance": topic_wise_performance,  # Report A
+        "topic_accuracy": topic_accuracy,           # Report C
+        "improvement_areas": improvement_areas      # Report D
     }
 
 
