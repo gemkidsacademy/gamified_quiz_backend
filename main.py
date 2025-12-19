@@ -2478,18 +2478,30 @@ def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db))
         "quiz_id": quiz.id
     }
 
+
+# ------------------------------------------------------------
+# 🔧 Helper: Build sections with questions (FOUNDATIONAL)
+# ------------------------------------------------------------
 def build_sections_with_questions(exam_json):
-    sections = exam_json.get("sections", [])
+    sections_meta = exam_json.get("sections", [])
     questions = exam_json.get("questions", [])
 
     section_map = {}
 
-    for section in sections:
-        section_map[section["name"]] = {
-            **section,
+    # Initialize sections
+    for s in sections_meta:
+        name = s.get("name")
+        if not name:
+            continue
+
+        section_map[name] = {
+            "name": name,
+            "time": s.get("time"),
+            "intro": s.get("intro"),
             "questions": []
         }
 
+    # Assign questions to sections (🔥 CRITICAL FIX)
     for q in questions:
         section_name = q.get("section")
         if section_name in section_map:
@@ -2498,6 +2510,8 @@ def build_sections_with_questions(exam_json):
     return list(section_map.values())
 
 
+
+ 
 @app.post("/api/student/start-exam/foundational-skills")
 def start_or_resume_foundational_exam(
     payload: StartExamRequestFoundational,
