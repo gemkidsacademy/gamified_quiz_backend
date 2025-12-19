@@ -2730,19 +2730,17 @@ def finish_foundational_exam(
     # 3️⃣ Load exam & build question lookup
     # ------------------------------------------------------------
     exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
-    sections = build_sections_with_questions(exam.exam_json)
+    questions = exam.exam_json.get("questions", [])
 
-    question_lookup = {}
-
-    for section in sections:
-        section_name = section["name"]
-        for q in section["questions"]:
-            qid = str(q.get("question_number"))
+    for q in questions:
+        qid = q.get("q_id")
+        if qid is None:
+            continue
     
-            question_lookup[qid] = {
-                "section": section_name,
-                "correct_answer": q.get("correct_answer")
-            }
+        question_lookup[qid] = {
+            "section": q.get("section"),
+            "correct_answer": q.get("correct_answer")
+        }
 
     # ------------------------------------------------------------
     # 4️⃣ Persist per-question responses
