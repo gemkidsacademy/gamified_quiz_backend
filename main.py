@@ -133,6 +133,25 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamResponseFoundational(Base):
+    __tablename__ = "student_exam_response_foundational"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, index=True, nullable=False)
+    exam_id = Column(Integer, index=True, nullable=False)
+    attempt_id = Column(Integer, index=True, nullable=False)
+
+    section_name = Column(String, index=True, nullable=False)  # topic
+    question_id = Column(String, index=True, nullable=False)
+
+    selected_answer = Column(String, nullable=True)
+    correct_answer = Column(String, nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class StartExamRequestFoundational(BaseModel):
     student_id: str
 class StudentExamResultsThinkingSkills(Base):
@@ -2672,7 +2691,7 @@ def finish_foundational_exam(
     )
 
     # ------------------------------------------------------------
-    # 2️⃣ Idempotency guard
+    # 2️⃣ Idempotency guard (attempt-level)
     # ------------------------------------------------------------
     if not attempt:
         return {
@@ -2681,9 +2700,66 @@ def finish_foundational_exam(
         }
 
     # ------------------------------------------------------------
-    # 3️⃣ Persist answers and complete exam
+    # 3️⃣ Prevent duplicate response inserts
     # ------------------------------------------------------------
-    attempt.answers_json = payload.answers
+    existing = (
+        db.query(StudentExamResponseFoundational)
+        .filter(StudentExamResponseFoundational.attempt_id == attempt.id)
+        .first()
+    )
+
+    if existing:
+        return {
+            "success": True,
+            "message": "Responses already recorded"
+        }
+
+    # ------------------------------------------------------------
+    # 4️⃣ Load exam & build question lookup
+    # ------------------------------------------------------------
+    exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
+    sections = build_sections_with_questions(exam.exam_json)
+
+    question_lookup = {}
+
+    for section in sections:
+        section_name = section["name"]
+        for q in section["questions"]:
+            question_lookup[q["id"]] = {
+                "section": section_name,
+                "correct_answer": q.get("correct_answer")
+            }
+
+    # ------------------------------------------------------------
+    # 5️⃣ Persist per-question responses
+    # ------------------------------------------------------------
+    answers = payload.answers or {}
+
+    for question_id, selected_answer in answers.items():
+        meta = question_lookup.get(question_id)
+        if not meta:
+            continue
+
+        correct_answer = meta["correct_answer"]
+        is_correct = selected_answer == correct_answer
+
+        response = StudentExamResponseFoundational(
+            student_id=payload.student_id,
+            exam_id=attempt.exam_id,
+            attempt_id=attempt.id,
+            section_name=meta["section"],
+            question_id=question_id,
+            selected_answer=selected_answer,
+            correct_answer=correct_answer,
+            is_correct=is_correct
+        )
+
+        db.add(response)
+
+    # ------------------------------------------------------------
+    # 6️⃣ Finalize attempt
+    # ------------------------------------------------------------
+    attempt.answers_json = answers
     attempt.completed_at = datetime.now(timezone.utc)
     attempt.completion_reason = payload.reason
 
@@ -2694,6 +2770,7 @@ def finish_foundational_exam(
         "success": True,
         "message": "Exam completed successfully"
     }
+
 
 
 # ------------------------------------------------------------
