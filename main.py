@@ -2737,14 +2737,20 @@ def finish_foundational_exam(
     # ------------------------------------------------------------
     answers = payload.answers or {}
 
-    for q_id, selected_answer in answers.items():
+    for q_id_raw, selected_answer in answers.items():
+        try:
+            q_id = int(q_id_raw)   # 🔑 CRITICAL FIX
+        except (TypeError, ValueError):
+            continue
+    
         meta = question_lookup.get(q_id)
         if not meta:
+            print("❌ No meta for q_id:", q_id)
             continue
-
+    
         correct_answer = meta["correct_answer"]
         is_correct = selected_answer == correct_answer
-
+    
         response = StudentExamResponseFoundational(
             student_id=payload.student_id,
             exam_id=attempt.exam_id,
@@ -2755,7 +2761,7 @@ def finish_foundational_exam(
             correct_answer=correct_answer,
             is_correct=is_correct
         )
-
+    
         db.add(response)
 
     # ------------------------------------------------------------
