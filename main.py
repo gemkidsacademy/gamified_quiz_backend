@@ -3151,7 +3151,8 @@ def generate_exam_foundational(
     # 5) Number questions
     # ------------------------------------------------------------
     for i, q in enumerate(final_questions, start=1):
-        q["question_number"] = i
+        q["q_id"] = i               # 🔑 used by backend & frontend
+        q["question_number"] = i    # optional, for display only
 
     # ------------------------------------------------------------
     # 6) Compute duration
