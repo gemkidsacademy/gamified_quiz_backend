@@ -4305,6 +4305,19 @@ def start_exam(
 
     print(f"✅ New attempt created: id={new_attempt.id}")
 
+    # --------------------------------------------------
+    # ✅ PRE-CREATE RESPONSE ROWS (for reporting)
+    # --------------------------------------------------
+    for q in exam.questions or []:
+        db.add(StudentExamResponse(
+            exam_attempt_id=new_attempt.id,
+            question_id=q.get("id"),
+            topic=q.get("topic"),
+            is_correct=None
+        ))
+    
+    db.commit()
+
     return {
         "completed": False,
         "questions": normalize_questions(exam.questions),
