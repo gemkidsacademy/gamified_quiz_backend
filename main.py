@@ -2690,9 +2690,6 @@ def finish_foundational_exam(
         .first()
     )
 
-    # ------------------------------------------------------------
-    # 2️⃣ Idempotency guard (attempt-level)
-    # ------------------------------------------------------------
     if not attempt:
         return {
             "success": True,
@@ -2700,7 +2697,7 @@ def finish_foundational_exam(
         }
 
     # ------------------------------------------------------------
-    # 3️⃣ Prevent duplicate response inserts
+    # 2️⃣ Idempotency guard (attempt-level)
     # ------------------------------------------------------------
     existing = (
         db.query(StudentExamResponseFoundational)
@@ -2715,7 +2712,7 @@ def finish_foundational_exam(
         }
 
     # ------------------------------------------------------------
-    # 4️⃣ Load exam & build question lookup
+    # 3️⃣ Load exam & build question lookup
     # ------------------------------------------------------------
     exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
     sections = build_sections_with_questions(exam.exam_json)
@@ -2723,20 +2720,25 @@ def finish_foundational_exam(
     question_lookup = {}
 
     for section in sections:
-        section_name = section["name"]
-        for q in section["questions"]:
-            question_lookup[q["id"]] = {
-                "section": section_name,
-                "correct_answer": q.get("correct_answer")
+        section_name = section.get("name")
+
+        for q in section.get("questions", []):
+            q_id = q.get("q_id")
+            if q_id is None:
+                continue
+
+            question_lookup[q_id] = {
+                "correct_answer": q.get("correct"),
+                "section": section_name
             }
 
     # ------------------------------------------------------------
-    # 5️⃣ Persist per-question responses
+    # 4️⃣ Persist per-question responses
     # ------------------------------------------------------------
     answers = payload.answers or {}
 
-    for question_id, selected_answer in answers.items():
-        meta = question_lookup.get(question_id)
+    for q_id, selected_answer in answers.items():
+        meta = question_lookup.get(q_id)
         if not meta:
             continue
 
@@ -2748,7 +2750,7 @@ def finish_foundational_exam(
             exam_id=attempt.exam_id,
             attempt_id=attempt.id,
             section_name=meta["section"],
-            question_id=question_id,
+            q_id=q_id,
             selected_answer=selected_answer,
             correct_answer=correct_answer,
             is_correct=is_correct
@@ -2757,7 +2759,7 @@ def finish_foundational_exam(
         db.add(response)
 
     # ------------------------------------------------------------
-    # 6️⃣ Finalize attempt
+    # 5️⃣ Finalize attempt
     # ------------------------------------------------------------
     attempt.answers_json = answers
     attempt.completed_at = datetime.now(timezone.utc)
@@ -2770,7 +2772,6 @@ def finish_foundational_exam(
         "success": True,
         "message": "Exam completed successfully"
     }
-
 
 
 # ------------------------------------------------------------
@@ -2798,20 +2799,13 @@ def get_foundational_exam_report(
     )
 
     if not attempt:
-        print("❌ No completed attempt found")
-        print("===========================================================\n")
         raise HTTPException(
             status_code=404,
             detail="No completed foundational exam found"
         )
 
-    print("🧪 attempt.id:", attempt.id)
-    print("   ↳ exam_id:", attempt.exam_id)
-    print("   ↳ completed_at:", attempt.completed_at)
-    print("   ↳ completion_reason:", attempt.completion_reason)
-
     # ------------------------------------------------------------
-    # 2️⃣ Load exam definition
+    # 2️⃣ Load exam definition (for totals)
     # ------------------------------------------------------------
     exam = (
         db.query(GeneratedExamFoundational)
@@ -2820,94 +2814,99 @@ def get_foundational_exam_report(
     )
 
     if not exam:
-        print("❌ Exam definition not found for exam_id:", attempt.exam_id)
-        print("===========================================================\n")
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    print("📘 Exam loaded:", exam.id)
-
-    # ------------------------------------------------------------
-    # 3️⃣ Normalize sections + questions
-    # ------------------------------------------------------------
-    answers = attempt.answers_json or {}
     sections = build_sections_with_questions(exam.exam_json)
 
-    print("📂 Sections after normalization:", len(sections))
-    for sec in sections:
-        print(f"   ↳ {sec['name']} → {len(sec['questions'])} questions")
-
-    # ------------------------------------------------------------
-    # 4️⃣ Compute results
-    # ------------------------------------------------------------
+    # Build total questions per section
+    section_totals = {}
     total_questions = 0
-    correct_answers = 0
-    topic_stats: Dict[str, Dict[str, int]] = {}
 
-    for section in sections:
-      questions = section.get("questions", [])
-  
-      for q in questions:
-          topic = q.get("topic", "Unknown")
-  
-          topic_stats.setdefault(topic, {"total": 0, "correct": 0})
-  
-          qid = str(q.get("question_number"))
-
-          correct_option = q.get("correct_answer")
-  
-          total_questions += 1
-          topic_stats[topic]["total"] += 1
-  
-          if answers.get(qid) == correct_option:
-              correct_answers += 1
-              topic_stats[topic]["correct"] += 1
-
-
-    wrong_answers = total_questions - correct_answers
-
-    accuracy_percent = round(
-        (correct_answers / total_questions) * 100
-    ) if total_questions > 0 else 0
-
-    print("📊 Overall stats:")
-    print("   ↳ total_questions:", total_questions)
-    print("   ↳ correct_answers:", correct_answers)
-    print("   ↳ wrong_answers:", wrong_answers)
-    print("   ↳ accuracy_percent:", accuracy_percent)
+    for sec in sections:
+        count = len(sec.get("questions", []))
+        section_totals[sec["name"]] = count
+        total_questions += count
 
     # ------------------------------------------------------------
-    # 5️⃣ Build topic breakdown
+    # 3️⃣ Load persisted responses (NEW TABLE)
     # ------------------------------------------------------------
-    topic_breakdown: List[Dict] = []
+    responses = (
+        db.query(StudentExamResponseFoundational)
+        .filter(StudentExamResponseFoundational.attempt_id == attempt.id)
+        .all()
+    )
 
-    for topic, stats in topic_stats.items():
-        percent = round(
-            (stats["correct"] / stats["total"]) * 100
-        ) if stats["total"] > 0 else 0
+    # ------------------------------------------------------------
+    # 4️⃣ Aggregate topic-wise performance
+    # ------------------------------------------------------------
+    topic_stats = {}
 
-        topic_breakdown.append({
+    for topic, total in section_totals.items():
+        topic_stats[topic] = {
             "topic": topic,
-            "accuracy_percent": percent
+            "total": total,
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "not_attempted": total
+        }
+
+    for r in responses:
+        stats = topic_stats.get(r.section_name)
+        if not stats:
+            continue
+
+        stats["attempted"] += 1
+        stats["not_attempted"] -= 1
+
+        if r.is_correct:
+            stats["correct"] += 1
+        else:
+            stats["incorrect"] += 1
+
+    topic_wise_performance = list(topic_stats.values())
+
+    # ------------------------------------------------------------
+    # 5️⃣ Overall accuracy & result
+    # ------------------------------------------------------------
+    attempted = sum(t["attempted"] for t in topic_wise_performance)
+    correct = sum(t["correct"] for t in topic_wise_performance)
+    incorrect = sum(t["incorrect"] for t in topic_wise_performance)
+    not_attempted = total_questions - attempted
+
+    accuracy = round((correct / attempted) * 100, 1) if attempted else 0
+    score = round((correct / total_questions) * 100, 1) if total_questions else 0
+
+    # ------------------------------------------------------------
+    # 6️⃣ Improvement areas (weakest → strongest)
+    # ------------------------------------------------------------
+    improvement_areas = []
+
+    for t in topic_wise_performance:
+        acc = round((t["correct"] / t["total"]) * 100, 1) if t["total"] else 0
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy": acc,
+            "limited_data": t["total"] < 3
         })
 
-        print(
-            f"   ↳ {topic}: "
-            f"{stats['correct']}/{stats['total']} → {percent}%"
-        )
-
-    print("===========================================================\n")
+    improvement_areas.sort(key=lambda x: x["accuracy"])
 
     # ------------------------------------------------------------
-    # 6️⃣ Return report payload
+    # 7️⃣ Return frontend-ready payload
     # ------------------------------------------------------------
     return {
-        "summary": {
+        "overall": {
             "total_questions": total_questions,
-            "correct_answers": correct_answers,
-            "wrong_answers": wrong_answers,
-            "accuracy_percent": accuracy_percent
+            "attempted": attempted,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy_percent": accuracy,
+            "score_percent": score
         },
-        "topic_breakdown": topic_breakdown
+        "topic_wise_performance": topic_wise_performance,
+        "improvement_areas": improvement_areas
     }
  
 def generate_ai_questions_foundational(
