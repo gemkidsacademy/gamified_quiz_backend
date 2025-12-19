@@ -2720,16 +2720,13 @@ def finish_foundational_exam(
     question_lookup = {}
 
     for section in sections:
-        section_name = section.get("name")
-
-        for q in section.get("questions", []):
-            q_id = q.get("q_id")
-            if q_id is None:
-                continue
-
-            question_lookup[q_id] = {
-                "correct_answer": q.get("correct"),
-                "section": section_name
+        section_name = section["name"]
+        for q in section["questions"]:
+            qid = str(q.get("question_number"))
+    
+            question_lookup[qid] = {
+                "section": section_name,
+                "correct_answer": q.get("correct_answer")
             }
 
     # ------------------------------------------------------------
