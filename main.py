@@ -166,23 +166,23 @@ class StudentExamReportReading(Base):
     # 🕒 Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
  
-class StudentExamResponseFoundational(Base):
-    __tablename__ = "student_exam_response_foundational"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    student_id = Column(String, index=True, nullable=False)
-    exam_id = Column(Integer, index=True, nullable=False)
-    attempt_id = Column(Integer, index=True, nullable=False)
-
-    section_name = Column(String, index=True, nullable=False)  # topic
-    question_id = Column(String, index=True, nullable=False)
-
-    selected_answer = Column(String, nullable=True)
-    correct_answer = Column(String, nullable=False)
-    is_correct = Column(Boolean, nullable=False)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ class StudentExamResponseFoundational(Base):
+     __tablename__ = "student_exam_response_foundational"
+ 
+     id = Column(Integer, primary_key=True, index=True)
+ 
+     student_id = Column(String, index=True, nullable=False)
+     exam_id = Column(Integer, index=True, nullable=False)
+     attempt_id = Column(Integer, index=True, nullable=False)
+ 
+     section_name = Column(String, index=True, nullable=False)  # topic
+     question_id = Column(String, index=True, nullable=False)
+ 
+     selected_answer = Column(String, nullable=True)
+     correct_answer = Column(String, nullable=False)
+     is_correct = Column(Boolean, nullable=False)
+ 
+     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class StartExamRequestFoundational(BaseModel):
@@ -3071,13 +3071,15 @@ def get_foundational_exam_report(
     sections = build_sections_with_questions(exam.exam_json)
 
     # Build total questions per section
-    section_totals = {}
+    topic_totals = {}
     total_questions = 0
-
+    
     for sec in sections:
-        count = len(sec.get("questions", []))
-        section_totals[sec["name"]] = count
-        total_questions += count
+        for q in sec.get("questions", []):
+            topic = q.get("topic", "Unknown")
+            topic_totals.setdefault(topic, 0)
+            topic_totals[topic] += 1
+            total_questions += 1
 
     # ------------------------------------------------------------
     # 3️⃣ Load persisted responses (NEW TABLE)
@@ -3093,7 +3095,7 @@ def get_foundational_exam_report(
     # ------------------------------------------------------------
     topic_stats = {}
 
-    for topic, total in section_totals.items():
+    for topic, total in topic_totals.items():
         topic_stats[topic] = {
             "topic": topic,
             "total": total,
@@ -3103,18 +3105,23 @@ def get_foundational_exam_report(
             "not_attempted": total
         }
 
+
+
     for r in responses:
-        stats = topic_stats.get(r.section_name)
+        topic = r.section_name  # this column already stores TOPIC
+        stats = topic_stats.get(topic)
+    
         if not stats:
             continue
-
+    
         stats["attempted"] += 1
         stats["not_attempted"] -= 1
-
+    
         if r.is_correct:
             stats["correct"] += 1
         else:
             stats["incorrect"] += 1
+
 
     topic_wise_performance = list(topic_stats.values())
 
