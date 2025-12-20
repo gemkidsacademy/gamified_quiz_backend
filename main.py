@@ -4511,8 +4511,11 @@ def start_exam(
     # --------------------------------------------------
     exam = (
         db.query(Exam)
-        .filter(Exam.quiz_id == quiz.id)
-        .order_by(Exam.id.desc())
+        .filter(
+            func.lower(Exam.class_name) ==
+            func.lower(student.class_name)
+        )
+        .order_by(Exam.created_at.desc())
         .first()
     )
 
