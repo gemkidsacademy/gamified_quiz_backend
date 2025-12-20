@@ -133,6 +133,33 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class QuizMathematicalReasoning(Base):
+    __tablename__ = "quiz_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+
+    # Stores topic configs as JSON
+    topics = Column(JSON, nullable=False)
+
+class TopicConfigMathematicalReasoning(BaseModel):
+    name: str
+    ai: int
+    db: int
+    total: int
+
+class TopicConfigMathematicalReasoningCreate(BaseModel):
+    class_name: str
+    subject: str
+    difficulty: str
+    num_topics: int
+    topics: List[TopicConfigMathematicalReasoning]
+
 class UpdateStudentRequest(BaseModel):
     student_id: str  # identifier (cannot be changed)
 
@@ -1748,6 +1775,66 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.post("/api/quizzes/mathematical-reasoning")
+def create_topic_config_mathematical_reasoning(
+    payload: TopicConfigMathematicalReasoningCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create Mathematical Reasoning topic configuration.
+    """
+
+    print("\n========== MATHEMATICAL REASONING TOPIC CONFIG ==========")
+
+    try:
+        # Debug incoming payload
+        payload_dict = payload.dict()
+        print("📦 Incoming payload:", payload_dict)
+
+        # Validate subject explicitly
+        if payload.subject != "mathematical_reasoning":
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid subject. Expected 'mathematical_reasoning'."
+            )
+
+        # Create DB record
+        topic_config = TopicConfigMathematicalReasoning(
+            class_name=payload.class_name.strip(),
+            subject=payload.subject.strip(),
+            difficulty=payload.difficulty.strip(),
+            num_topics=payload.num_topics,
+            topics=[t.dict() for t in payload.topics]
+        )
+
+        db.add(topic_config)
+        db.commit()
+        db.refresh(topic_config)
+
+        print(
+            "✅ Saved topicConfig_mathematical_reasoning | ID:",
+            topic_config.id
+        )
+        print("=======================================================\n")
+
+        return {
+            "message": "Mathematical Reasoning topic config saved successfully",
+            "topic_config_id": topic_config.id
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("❌ ERROR saving Mathematical Reasoning topic config")
+        print("Error:", str(e))
+        traceback.print_exc()
+
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Error saving Mathematical Reasoning topic configuration"
+        )
 
 @app.get("/users-exam-module/list")
 def get_users_exam_module(
