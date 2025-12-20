@@ -974,7 +974,8 @@ app.add_middleware(
         "https://leader-board-viewer-gamified-quiz.vercel.app",
         "https://leaderboard.gemkidsacademy.com.au",
         "https://gamifiedquiz.gemkidsacademy.com.au",
-        "https://exam-module-pink.vercel.app"  # added origin
+        "https://exam.gemkidsacademy.com.au",
+        "https://exam-module-pink.vercel.app" 
     ],
     allow_credentials=True,
     allow_methods=["*"],
