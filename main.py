@@ -530,6 +530,8 @@ class StartExamRequest(BaseModel):
 #when generate exam is pressed we create a row here
 class StudentExam(Base):
     __tablename__ = "student_exams"
+    
+    
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -1747,6 +1749,29 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
+@app.get("/api/users-exam-module")
+def get_users_exam_module(
+    db: Session = Depends(get_db)
+):
+    users = (
+        db.query(Student)
+        .order_by(Student.student_id.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": u.id,
+            "student_id": u.student_id,
+            "name": u.name,
+            "parent_email": u.parent_email,
+            "class_name": u.class_name,
+            "class_day": u.class_day
+            # password intentionally excluded
+        }
+        for u in users
+    ]
+
 @app.get("/get_all_students_exam_module")
 def get_all_students_exam_module(
     db: Session = Depends(get_db)
@@ -1765,6 +1790,7 @@ def get_all_students_exam_module(
         }
         for s in students
     ]
+ 
 @app.put("/edit_student_exam_module")
 def edit_student_exam_module(
     payload: UpdateStudentRequest,
