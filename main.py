@@ -1749,7 +1749,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 
-@app.get("/api/users-exam-module")
+@app.get("/users-exam-module")
 def get_users_exam_module(
     db: Session = Depends(get_db)
 ):
