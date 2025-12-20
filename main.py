@@ -1746,6 +1746,25 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+
+@app.get("/get_all_students_exam_module")
+def get_all_students_exam_module(
+    db: Session = Depends(get_db)
+):
+    students = db.query(Student).order_by(Student.student_id.asc()).all()
+
+    return [
+        {
+            "id": s.id,
+            "student_id": s.student_id,
+            "name": s.name,
+            "parent_email": s.parent_email,
+            "class_name": s.class_name,
+            "class_day": s.class_day
+            # ❌ password intentionally excluded
+        }
+        for s in students
+    ]
 @app.put("/edit_student_exam_module")
 def edit_student_exam_module(
     payload: UpdateStudentRequest,
