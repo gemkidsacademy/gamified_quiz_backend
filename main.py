@@ -133,7 +133,15 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class UpdateStudentRequest(BaseModel):
+    student_id: str  # identifier (cannot be changed)
 
+    name: Optional[str] = None
+    parent_email: Optional[str] = None
+    class_name: Optional[str] = None
+    class_day: Optional[str] = None
+    password: Optional[str] = None  # plain text (as per your system)
+ 
 class StudentExamReportReading(Base):
     __tablename__ = "student_exam_report_reading"
 
@@ -1738,6 +1746,49 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.put("/edit_student_exam_module")
+def edit_student_exam_module(
+    payload: UpdateStudentRequest,
+    db: Session = Depends(get_db)
+):
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == payload.student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    # --------------------------------------------------
+    # Update fields ONLY if provided
+    # --------------------------------------------------
+    if payload.name is not None:
+        student.name = payload.name
+
+    if payload.parent_email is not None:
+        student.parent_email = payload.parent_email
+
+    if payload.class_name is not None:
+        student.class_name = payload.class_name
+
+    if payload.class_day is not None:
+        student.class_day = payload.class_day
+
+    if payload.password is not None:
+        student.password = payload.password  # plain text (intentional)
+
+    db.commit()
+    db.refresh(student)
+
+    return {
+        "message": "Student updated successfully",
+        "student_id": student.student_id
+    }
+ 
 @app.get("/api/exams/reading-report")
 def get_reading_report(
     session_id: int = Query(..., description="Exam session ID"),
