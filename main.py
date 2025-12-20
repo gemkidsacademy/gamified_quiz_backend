@@ -1799,7 +1799,7 @@ def create_topic_config_mathematical_reasoning(
             )
 
         # Create DB record
-        topic_config = TopicConfigMathematicalReasoning(
+        quiz_config = QuizMathematicalReasoning(
             class_name=payload.class_name.strip(),
             subject=payload.subject.strip(),
             difficulty=payload.difficulty.strip(),
@@ -1807,19 +1807,20 @@ def create_topic_config_mathematical_reasoning(
             topics=[t.dict() for t in payload.topics]
         )
 
-        db.add(topic_config)
+        db.add(quiz_config)
         db.commit()
-        db.refresh(topic_config)
+        db.refresh(quiz_config)
+
 
         print(
             "✅ Saved topicConfig_mathematical_reasoning | ID:",
-            topic_config.id
+            quiz_config.id
         )
         print("=======================================================\n")
 
         return {
             "message": "Mathematical Reasoning topic config saved successfully",
-            "topic_config_id": topic_config.id
+            "topic_config_id": quiz_config.id
         }
 
     except HTTPException:
