@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body 
+from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -974,8 +974,7 @@ app.add_middleware(
         "https://leader-board-viewer-gamified-quiz.vercel.app",
         "https://leaderboard.gemkidsacademy.com.au",
         "https://gamifiedquiz.gemkidsacademy.com.au",
-        "https://exam.gemkidsacademy.com.au",
-        "https://exam-module-pink.vercel.app" 
+        "https://exam-module-pink.vercel.app"  # added origin
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -4451,13 +4450,17 @@ def start_exam(
     # --------------------------------------------------
     student = (
         db.query(Student)
-        .filter(Student.student_id == req.student_id)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
         .first()
     )
-
+    
     if not student:
-        print("❌ Student not found")
+        print(f"❌ Student not found (raw={repr(req.student_id)})")
         raise HTTPException(status_code=404, detail="Student not found")
+
 
     print(f"✅ Student resolved: id={student.id}")
 
