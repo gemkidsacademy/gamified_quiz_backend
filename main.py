@@ -166,7 +166,7 @@ class StudentExamReportReading(Base):
     # 🕒 Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
  
- class StudentExamResponseFoundational(Base):
+class StudentExamResponseFoundational(Base):
      __tablename__ = "student_exam_response_foundational"
  
      id = Column(Integer, primary_key=True, index=True)
