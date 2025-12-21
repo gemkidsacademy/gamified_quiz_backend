@@ -5277,7 +5277,173 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
         "remaining_time": int(max(remaining, 0)),
         "completed": session.completed_at is not None
     }
- 
+
+@app.post("/api/student/finish-exam/thinking-skills")
+def finish_thinking_skills_exam(
+    req: FinishExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ FINISH THINKING SKILLS EXAM START ================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Validate student (external ID → internal ID)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == req.student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND for student_id =", req.student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student found → internal id:", student.id)
+
+    # --------------------------------------------------
+    # 2️⃣ Get active THINKING SKILLS attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamThinkingSkills)
+        .filter(
+            StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.completed_at.is_(None)
+        )
+        .order_by(StudentExamThinkingSkills.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("⚠️ No active Thinking Skills attempt found")
+        return {"status": "completed"}
+
+    print("✅ Active attempt found → attempt.id =", attempt.id)
+
+    # --------------------------------------------------
+    # 3️⃣ Idempotency guard (result already saved)
+    # --------------------------------------------------
+    existing_result = (
+        db.query(StudentExamResultsThinkingSkills)
+        .filter(
+            StudentExamResultsThinkingSkills.exam_attempt_id == attempt.id
+        )
+        .first()
+    )
+
+    if existing_result:
+        print("⚠️ Result already exists → idempotent return")
+
+        if attempt.completed_at is None:
+            attempt.completed_at = datetime.now(timezone.utc)
+            db.commit()
+
+        return {"status": "completed"}
+
+    # --------------------------------------------------
+    # 4️⃣ Load exam (Thinking Skills only)
+    # --------------------------------------------------
+    exam = (
+        db.query(Exam)
+        .filter(
+            Exam.id == attempt.exam_id,
+            Exam.subject == "thinking_skills"
+        )
+        .first()
+    )
+
+    if not exam:
+        print("❌ Exam NOT FOUND for exam_id =", attempt.exam_id)
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    questions = exam.questions or []
+    total_questions = len(questions)
+
+    question_map = {q["q_id"]: q for q in questions}
+
+    print("📊 Total questions in exam:", total_questions)
+
+    # --------------------------------------------------
+    # 5️⃣ Update student responses (DO NOT INSERT)
+    # --------------------------------------------------
+    correct = 0
+    saved_responses = 0
+
+    for q_id_str, selected in req.answers.items():
+        print(f"➡️ Processing answer: q_id={q_id_str}, selected={selected}")
+
+        try:
+            q_id = int(q_id_str)
+        except ValueError:
+            print("❌ Invalid q_id:", q_id_str)
+            continue
+
+        q = question_map.get(q_id)
+        if not q:
+            print("⚠️ Question not found in exam JSON for q_id =", q_id)
+            continue
+
+        is_correct = selected == q.get("correct")
+        if is_correct:
+            correct += 1
+
+        response = (
+            db.query(StudentExamResponseThinkingSkills)
+            .filter(
+                StudentExamResponseThinkingSkills.exam_attempt_id == attempt.id,
+                StudentExamResponseThinkingSkills.q_id == q_id
+            )
+            .first()
+        )
+
+        if not response:
+            print("❌ Response row missing for q_id =", q_id)
+            continue
+
+        response.selected_option = selected
+        response.correct_option = q.get("correct")
+        response.is_correct = is_correct
+
+        saved_responses += 1
+
+    print("📈 Responses updated:", saved_responses)
+    print("✅ Correct answers:", correct)
+
+    wrong = saved_responses - correct
+    accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
+
+    # --------------------------------------------------
+    # 6️⃣ Save summary result
+    # --------------------------------------------------
+    result_row = StudentExamResultsThinkingSkills(
+        student_id=student.id,
+        exam_attempt_id=attempt.id,
+        total_questions=total_questions,
+        correct_answers=correct,
+        wrong_answers=wrong,
+        accuracy_percent=accuracy
+    )
+
+    db.add(result_row)
+
+    # --------------------------------------------------
+    # 7️⃣ Mark attempt completed
+    # --------------------------------------------------
+    attempt.completed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    print("================ FINISH THINKING SKILLS EXAM END =================\n")
+
+    return {
+        "status": "completed",
+        "total_questions": total_questions,
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    }
+
+
 @app.post("/api/student/finish-exam")
 def finish_exam(
     req: FinishExamRequest,
