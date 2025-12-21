@@ -5065,7 +5065,7 @@ def start_exam(
     # 2️⃣ Get latest attempt (if any)
     # --------------------------------------------------
     attempt = (
-        db.query(c)
+        db.query(StudentExam)
         .filter(StudentExam.student_id == student.id)
         .order_by(StudentExam.started_at.desc())
         .first()
