@@ -159,32 +159,7 @@ class QuizMathematicalReasoning(Base):
     # Stores topic configs as JSON
     topics = Column(JSON, nullable=False)
  
-class QuizMathematicalReasoning(Base):
-    __tablename__ = "quiz_mathematical_reasoning"
 
-    id = Column(Integer, primary_key=True, index=True)
-
-    class_name = Column(String, nullable=False)
-    subject = Column(String, nullable=False)
-    difficulty = Column(String, nullable=False)
-
-    num_topics = Column(Integer, nullable=False)
-
-    # Stores topic configs as JSON
-    topics = Column(JSON, nullable=False)
-
-class TopicConfigMathematicalReasoning(BaseModel):
-    name: str
-    ai: int
-    db: int
-    total: int
-
-class TopicConfigMathematicalReasoningCreate(BaseModel):
-    class_name: str
-    subject: str
-    difficulty: str
-    num_topics: int
-    topics: List[TopicConfigMathematicalReasoning]
 
 class UpdateStudentRequest(BaseModel):
     student_id: str  # identifier (cannot be changed)
