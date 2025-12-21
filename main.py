@@ -133,6 +133,33 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamResultsMathematicalReasoning(Base):
+    __tablename__ = "student_exam_results_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exams.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True
+    )
+
+    total_questions = Column(Integer, nullable=False)
+    correct_answers = Column(Integer, nullable=False)
+    wrong_answers = Column(Integer, nullable=False)
+    accuracy_percent = Column(Numeric(5, 2), nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # relationships (optional but recommended)
+    attempt = relationship("StudentExam")
+    student = relationship("Student")
 class StudentExamThinkingSkills(Base):
     __tablename__ = "student_exam_thinking_skills"
 
