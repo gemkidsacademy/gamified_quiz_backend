@@ -1784,6 +1784,27 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.get("/api/quizzes/thinking-skills/difficulty")
+def get_thinking_skills_difficulty(db: Session = Depends(get_db)):
+    """
+    Return the difficulty level for the latest Thinking Skills quiz.
+    """
+
+    quiz = (
+        db.query(Quiz)
+        .filter(Quiz.subject == "thinking_skills")
+        .order_by(Quiz.created_at.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No Thinking Skills quiz found"
+        )
+
+    return quiz.difficulty
+
 @app.post("/api/quizzes/mathematical-reasoning")
 def create_quiz_mathematical_reasoning(
     quiz: QuizMathematicalReasoningCreate,
