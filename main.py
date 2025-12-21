@@ -2203,7 +2203,167 @@ def get_reading_report(
     # 2️⃣ Return authoritative report
     # --------------------------------------------------
     return session.report_json
- 
+
+
+@app.get("/api/student/exam-report/thinking-skills")
+def get_thinking_skills_report(
+    student_id: str = Query(..., description="External student id e.g. Gem002"),
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest completed THINKING SKILLS attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamThinkingSkills)
+        .filter(
+            StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(StudentExamThinkingSkills.completed_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Thinking Skills exam found"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Load all responses for this attempt
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseThinkingSkills)
+        .filter(
+            StudentExamResponseThinkingSkills.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for Thinking Skills exam"
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ OVERALL SUMMARY (Report B)
+    # --------------------------------------------------
+    total_questions = len(responses)
+    attempted = sum(1 for r in responses if r.is_correct is not None)
+    correct = sum(1 for r in responses if r.is_correct is True)
+    incorrect = sum(1 for r in responses if r.is_correct is False)
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
+    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent,
+        "pass": None
+    }
+
+    # --------------------------------------------------
+    # 5️⃣ TOPIC-WISE PERFORMANCE (Report A)
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic or "Unknown"
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        topic_map[topic]["total"] += 1
+
+        if r.is_correct is None:
+            topic_map[topic]["not_attempted"] += 1
+        else:
+            topic_map[topic]["attempted"] += 1
+            if r.is_correct:
+                topic_map[topic]["correct"] += 1
+            else:
+                topic_map[topic]["incorrect"] += 1
+
+    topic_wise_performance = list(topic_map.values())
+
+    # --------------------------------------------------
+    # 6️⃣ TOPIC ACCURACY & RESULT (Report C)
+    # --------------------------------------------------
+    topic_accuracy = []
+
+    for t in topic_wise_performance:
+        attempted_t = t["attempted"]
+        accuracy_t = (
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
+        )
+        score_t = round((t["correct"] / t["total"]) * 100, 2)
+
+        topic_accuracy.append({
+            "topic": t["topic"],
+            "total_questions": t["total"],
+            "attempted": attempted_t,
+            "correct": t["correct"],
+            "incorrect": t["incorrect"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": score_t,
+            "pass": None
+        })
+
+    # --------------------------------------------------
+    # 7️⃣ IMPROVEMENT AREAS (Report D)
+    # --------------------------------------------------
+    improvement_areas = []
+
+    for t in topic_accuracy:
+        limited_data = t["total_questions"] < 5
+
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy_percent": t["accuracy_percent"],
+            "score_percent": t["score_percent"],
+            "total_questions": t["total_questions"],
+            "limited_data": limited_data
+        })
+
+    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+
+    # --------------------------------------------------
+    # 8️⃣ Final response
+    # --------------------------------------------------
+    return {
+        "overall": overall,                                 # Report B
+        "topic_wise_performance": topic_wise_performance,   # Report A
+        "topic_accuracy": topic_accuracy,                   # Report C
+        "improvement_areas": improvement_areas              # Report D
+    }
+
 @app.get("/api/student/exam-report/mathematical-reasoning")
 def get_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
