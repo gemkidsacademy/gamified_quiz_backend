@@ -139,6 +139,13 @@ class TopicConfigMathematicalReasoning(BaseModel):
     db: int
     total: int
 
+class TopicConfigMathematicalReasoningCreate(BaseModel):
+    class_name: str
+    subject: str
+    difficulty: str
+    num_topics: int
+    topics: List[TopicConfigMathematicalReasoning]
+
 class QuizMathematicalReasoningCreate(BaseModel):
     class_name: str
     subject: str
