@@ -133,6 +133,32 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class TopicConfigMathematicalReasoning(BaseModel):
+    name: str
+    ai: int
+    db: int
+    total: int
+
+class QuizMathematicalReasoningCreate(BaseModel):
+    class_name: str
+    subject: str
+    difficulty: str
+    num_topics: int
+    topics: List[TopicConfigMathematicalReasoning]
+class QuizMathematicalReasoning(Base):
+    __tablename__ = "quiz_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)  # always mathematical_reasoning
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+
+    # Stores topic configs as JSON
+    topics = Column(JSON, nullable=False)
+ 
 class QuizMathematicalReasoning(Base):
     __tablename__ = "quiz_mathematical_reasoning"
 
@@ -1776,6 +1802,77 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.post("/api/quizzes/mathematical-reasoning")
+def create_quiz_mathematical_reasoning(
+    quiz: QuizMathematicalReasoningCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a Mathematical Reasoning quiz (admin specification).
+    Stored in quiz_mathematical_reasoning table.
+    """
+
+    print("\n========== MATHEMATICAL REASONING QUIZ CREATION START ==========")
+
+    print("🔍 Incoming payload:", quiz)
+
+    # Convert to dict for debugging
+    try:
+        quiz_dict = quiz.dict()
+        print("📦 Parsed quiz payload:", quiz_dict)
+    except Exception as e:
+        print("❌ Invalid payload")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Enforce subject correctness
+    if quiz.subject != "mathematical_reasoning":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid subject. Expected 'mathematical_reasoning'."
+        )
+
+    # Validate topics
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a list"
+        )
+
+    print("📝 Topics count:", len(quiz.topics))
+    for i, t in enumerate(quiz.topics):
+        print(f"   └─ Topic {i}: {t}")
+
+    try:
+        print("\n--- Creating SQLAlchemy object ---")
+
+        new_quiz = QuizMathematicalReasoning(
+            class_name=quiz.class_name.strip(),
+            subject="mathematical_reasoning",  # forced
+            difficulty=quiz.difficulty.strip(),
+            num_topics=quiz.num_topics,
+            topics=[t.dict() for t in quiz.topics]
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        print("✅ Quiz saved with ID:", new_quiz.id)
+        print("========== QUIZ CREATION COMPLETE ==========\n")
+
+        return {
+            "message": "Mathematical Reasoning quiz created successfully",
+            "quiz_id": new_quiz.id
+        }
+
+    except Exception as e:
+        print("❌ DB error:", str(e))
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Error creating Mathematical Reasoning quiz"
+        )
+
 @app.post("/api/quizzes/mathematical-reasoning")
 def create_topic_config_mathematical_reasoning(
     payload: TopicConfigMathematicalReasoningCreate,
