@@ -133,6 +133,70 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamThinkingSkills(Base):
+    __tablename__ = "student_exam_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(Integer, nullable=False)
+
+    # -----------------------------
+    # Relationships (optional but recommended)
+    # -----------------------------
+    student = relationship("Student")
+    exam = relationship("Exam")
+    responses = relationship(
+        "StudentExamResponseThinkingSkills",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
+
+class StudentExamResponseThinkingSkills(Base):
+    __tablename__ = "student_exam_response_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_thinking_skills.id"),
+        nullable=False
+    )
+
+    q_id = Column(Integer, nullable=False)      # stable per-attempt index
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True) # NULL = not attempted
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentExamThinkingSkills",
+        back_populates="responses"
+    )
+    student = relationship("Student")
+    exam = relationship("Exam")
+
+
 class TopicConfigMathematicalReasoning(BaseModel):
     name: str
     ai: int
