@@ -5065,7 +5065,7 @@ def start_exam(
     # 2️⃣ Get latest attempt (if any)
     # --------------------------------------------------
     attempt = (
-        db.query(StudentExam)
+        db.query(c)
         .filter(StudentExam.student_id == student.id)
         .order_by(StudentExam.started_at.desc())
         .first()
@@ -5109,12 +5109,13 @@ def start_exam(
     exam = (
         db.query(Exam)
         .filter(
-            func.lower(Exam.class_name) ==
-            func.lower(student.class_name)
+            func.lower(Exam.class_name) == func.lower(student.class_name),
+            Exam.subject == "mathematical_reasoning"
         )
         .order_by(Exam.created_at.desc())
         .first()
     )
+
 
     if not exam:
         print("❌ Exam not generated")
