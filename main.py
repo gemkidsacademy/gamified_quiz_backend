@@ -1784,6 +1784,71 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.post("/api/exams/generate-thinking-skills/{quiz_id}")
+def generate_thinking_skills_exam(
+    quiz_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a Thinking Skills exam based on a quiz and its topics.
+    """
+
+    # 1. Fetch quiz
+    quiz = (
+        db.query(Quiz)
+        .filter(Quiz.id == quiz_id)
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    # 2. Enforce correct subject
+    if quiz.subject != "thinking_skills":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid quiz subject. Expected 'thinking_skills'."
+        )
+
+    # 3. Generate exam questions
+    try:
+        questions = generate_exam_questions(quiz, db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate Thinking Skills exam: {str(e)}"
+        )
+
+    if not questions:
+        raise HTTPException(
+            status_code=500,
+            detail="No questions generated for Thinking Skills exam"
+        )
+
+    # 4. Save exam
+    new_exam = Exam(
+        quiz_id=quiz.id,
+        class_name=quiz.class_name,
+        subject=quiz.subject,
+        difficulty=quiz.difficulty,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    # 5. Return payload
+    return {
+        "message": "Thinking Skills exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": quiz.id,
+        "class_name": quiz.class_name,
+        "subject": quiz.subject,
+        "difficulty": quiz.difficulty,
+        "questions": questions,
+    }
+
 @app.get("/api/quizzes/thinking-skills/difficulty")
 def get_thinking_skills_difficulty(db: Session = Depends(get_db)):
     """
