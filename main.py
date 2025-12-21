@@ -5573,6 +5573,19 @@ def finish_thinking_skills_exam(
     wrong = saved_responses - correct
     accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
 
+    # 🔒 HARD SAFETY CHECK — attempt must still exist
+    attempt_exists = (
+        db.query(StudentExamThinkingSkills.id)
+        .filter(StudentExamThinkingSkills.id == attempt.id)
+        .first()
+    )
+    
+    if not attempt_exists:
+        raise HTTPException(
+            status_code=409,
+            detail="Thinking Skills exam attempt no longer exists. Please restart the exam."
+        )
+
     # --------------------------------------------------
     # 6️⃣ Save summary result
     # --------------------------------------------------
