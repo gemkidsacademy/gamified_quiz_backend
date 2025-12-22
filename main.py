@@ -821,14 +821,15 @@ class Quiz(Base):
     __tablename__ = "quizzes"
 
     id = Column(Integer, primary_key=True, index=True)
+
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
+
     num_topics = Column(Integer, nullable=False)
     topics = Column(JSON, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    exams = relationship("Exam", back_populates="quiz")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class Question(Base):
