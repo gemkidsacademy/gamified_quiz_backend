@@ -3890,33 +3890,55 @@ def generate_ai_questions_foundational(
         return []
 
     prompt = f"""
-You are an expert exam question generator.
+You are a STRICT JSON generator for an automated exam system.
 
-Generate {count} multiple-choice questions.
+TASK:
+Generate EXACTLY {count} multiple-choice questions.
 
-Constraints:
+ABSOLUTE RULES (DO NOT BREAK):
+- Output MUST be VALID JSON
+- Output MUST be a JSON ARRAY
+- Each array item MUST be a JSON OBJECT
+- NO trailing commas
+- NO duplicate keys
+- NO missing fields
+- NO extra fields
+- NO explanations
+- NO comments
+- NO markdown
+- NO text outside JSON
+
+REQUIRED JSON SCHEMA (EVERY QUESTION):
+{{
+  "question_text": "string",
+  "options": {{
+    "A": "string",
+    "B": "string",
+    "C": "string",
+    "D": "string"
+  }},
+  "correct_answer": "A|B|C|D",
+  "topic": "string"
+}}
+
+CONSTRAINTS:
 - Class: {class_name}
 - Subject: {subject}
 - Difficulty: {difficulty}
-- Each question must have exactly 4 options (A, B, C, D)
-- Provide the correct answer letter
-- Output ONLY valid JSON
+- Age appropriate
+- Curriculum aligned
 
-JSON format:
-[
-  {{
-    "question_text": "...",
-    "options": {{
-      "A": "...",
-      "B": "...",
-      "C": "...",
-      "D": "..."
-    }},
-    "correct_answer": "A",
-    "topic": "..."
-  }}
-]
+FINAL CHECK BEFORE RESPONDING:
+- Count items = {count}
+- Each object has ALL required keys
+- JSON parses with json.loads()
+
+If you cannot comply perfectly, RETURN AN EMPTY JSON ARRAY: []
+
+OUTPUT:
+[{{...}}]
 """
+
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
