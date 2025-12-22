@@ -1957,6 +1957,26 @@ def generate_thinking_skills_exam(
             status_code=400,
             detail="Difficulty is required to generate the exam"
         )
+     # --------------------------------------------------
+    # 0️⃣ Clear previous Thinking Skills exams
+    # --------------------------------------------------
+    # 1️⃣ Delete student exams for thinking skills
+    # ✅ STEP 1: delete dependent StudentExam rows (SAFE)
+    exam_ids_subq = db.query(Exam.id).filter(
+        Exam.subject == "thinking_skills"
+    ).subquery()
+    
+    db.query(StudentExam).filter(
+        StudentExam.exam_id.in_(exam_ids_subq)
+    ).delete(synchronize_session=False)
+    
+    # ✅ STEP 2: delete Exam rows
+    db.query(Exam).filter(
+        Exam.subject == "thinking_skills"
+    ).delete(synchronize_session=False)
+    
+    db.commit()
+
 
     # --------------------------------------------------
     # 1️⃣ Fetch latest Thinking Skills quiz for difficulty
