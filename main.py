@@ -3982,6 +3982,8 @@ def generate_exam_foundational(
     class_name = payload.get("class_name")
     if not class_name:
         raise HTTPException(400, "class_name is required")
+    db.query(GeneratedExamFoundational).delete(synchronize_session=False)
+    db.commit()
 
     # ------------------------------------------------------------
     # 1️⃣ Load LATEST config for class (highest ID)
