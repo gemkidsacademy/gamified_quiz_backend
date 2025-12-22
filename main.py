@@ -2110,28 +2110,6 @@ def create_topic_config_mathematical_reasoning(
             detail="Error saving Mathematical Reasoning topic configuration"
         )
 
-@app.get("/users-exam-module/list")
-def get_users_exam_module(
-    db: Session = Depends(get_db)
-):
-    users = (
-        db.query(Student)
-        .order_by(Student.student_id.asc())
-        .all()
-    )
-
-    return [
-        {
-            "id": u.id,
-            "student_id": u.student_id,
-            "name": u.name,
-            "parent_email": u.parent_email,
-            "class_name": u.class_name,
-            "class_day": u.class_day
-            # password intentionally excluded
-        }
-        for u in users
-    ]
 
 @app.get("/get_all_students_exam_module")
 def get_all_students_exam_module(
