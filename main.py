@@ -3879,8 +3879,7 @@ def generate_ai_questions_foundational(
 ):
     """
     Generate AI questions for a Foundational exam section.
-    These questions are NOT saved to the questions table.
-    They exist only inside generated_exam_foundational.exam_json.
+    Questions are generated in SMALL CHUNKS to guarantee valid JSON.
     """
 
     print("\n🤖 Calling AI to generate questions")
@@ -3889,11 +3888,19 @@ def generate_ai_questions_foundational(
     if count <= 0:
         return []
 
-    prompt = f"""
+    CHUNK_SIZE = 5              # 🔑 critical fix
+    MAX_RETRIES = 2
+    remaining = count
+    all_questions = []
+
+    while remaining > 0:
+        batch_size = min(CHUNK_SIZE, remaining)
+
+        prompt = f"""
 You are a STRICT JSON generator for an automated exam system.
 
 TASK:
-Generate EXACTLY {count} multiple-choice questions.
+Generate EXACTLY {batch_size} multiple-choice questions.
 
 ABSOLUTE RULES (DO NOT BREAK):
 - Output MUST be VALID JSON
@@ -3908,7 +3915,7 @@ ABSOLUTE RULES (DO NOT BREAK):
 - NO markdown
 - NO text outside JSON
 
-REQUIRED JSON SCHEMA (EVERY QUESTION):
+REQUIRED JSON SCHEMA:
 {{
   "question_text": "string",
   "options": {{
@@ -3925,56 +3932,61 @@ CONSTRAINTS:
 - Class: {class_name}
 - Subject: {subject}
 - Difficulty: {difficulty}
-- Age appropriate
-- Curriculum aligned
 
-FINAL CHECK BEFORE RESPONDING:
-- Count items = {count}
-- Each object has ALL required keys
-- JSON parses with json.loads()
-
-If you cannot comply perfectly, RETURN AN EMPTY JSON ARRAY: []
+If you cannot comply perfectly, RETURN [] ONLY.
 
 OUTPUT:
 [{{...}}]
 """
 
+        success = False
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You generate exam questions."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7
-    )
+        for attempt in range(1, MAX_RETRIES + 1):
+            print(f"🤖 AI batch {batch_size} | attempt {attempt}")
 
-    raw = response.choices[0].message.content.strip()
-    print("🤖 Raw AI response:", raw)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You generate exam questions."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.4,   # 🔑 structure > creativity
+            )
 
-    try:
-        parsed = json.loads(raw)
-    except Exception as e:
-        print("❌ Failed to parse AI response as JSON:", e)
-        return []
+            raw = response.choices[0].message.content.strip()
+            print("🤖 Raw AI response:", raw)
 
-    ai_questions = []
+            try:
+                parsed = json.loads(raw)
 
-    for q in parsed:
-        ai_questions.append({
-            "section": difficulty,
-            "question_number": None,
-            "question_text": q["question_text"],
-            "options": q["options"],
-            "correct_answer": q["correct_answer"],
-            "question_type": "mcq",
-            "images": [],
-            "topic": q.get("topic", "AI Generated")
-        })
+                if not isinstance(parsed, list) or len(parsed) != batch_size:
+                    raise ValueError("Invalid question count")
 
-    print(f"🤖 Successfully generated {len(ai_questions)} AI questions")
-    return ai_questions
+                for q in parsed:
+                    all_questions.append({
+                        "section": difficulty,
+                        "question_number": None,
+                        "question_text": q["question_text"],
+                        "options": q["options"],
+                        "correct_answer": q["correct_answer"],
+                        "question_type": "mcq",
+                        "images": [],
+                        "topic": q.get("topic", "AI Generated"),
+                    })
 
+                remaining -= batch_size
+                success = True
+                break
+
+            except Exception as e:
+                print("❌ AI JSON parse failed:", e)
+
+        if not success:
+            print("❌ AI failed after retries. Stopping generation.")
+            break
+
+    print(f"🤖 Successfully generated {len(all_questions)} AI questions")
+    return all_questions
 
 @app.post("/api/exams/generate-foundational")
 def generate_exam_foundational(
