@@ -758,17 +758,15 @@ class ReadingExamConfigCreate(BaseModel):
 class Student(Base):
     __tablename__ = "students"
 
-    id = Column(String, primary_key=True, index=True)  # <-- VARCHAR PK
+    id = Column(String, primary_key=True, index=True)   # internal PK
     student_id = Column(String, unique=True, nullable=False)  # e.g. "Gem002"
+
     password = Column(String, nullable=False)
     name = Column(String, nullable=False)
     parent_email = Column(String, nullable=False)
+
     class_name = Column(String, nullable=False)
     class_day = Column(String, nullable=True)
-
-    student_exams = relationship("StudentExam", back_populates="student")
-  
-
 class TopicInput(BaseModel):
     name: str
     ai: int
