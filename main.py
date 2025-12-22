@@ -1876,6 +1876,92 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.post("/api/exams/generate")
+def generate_exam(db: Session = Depends(get_db)):
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch latest Mathematical Reasoning quiz
+    # --------------------------------------------------
+    quiz = (
+        db.query(Quiz)
+        .filter(Quiz.subject == "mathematical_reasoning")
+        .order_by(Quiz.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No Mathematical Reasoning quiz configuration found"
+        )
+
+    # --------------------------------------------------
+    # 2️⃣ Clear previous Mathematical Reasoning exams
+    # --------------------------------------------------
+    exam_ids_subq = (
+        db.query(Exam.id)
+        .filter(Exam.subject == "mathematical_reasoning")
+        .subquery()
+    )
+
+    # Delete dependent student exams first
+    db.query(StudentExam).filter(
+        StudentExam.exam_id.in_(exam_ids_subq)
+    ).delete(synchronize_session=False)
+
+    # Delete exams
+    db.query(Exam).filter(
+        Exam.subject == "mathematical_reasoning"
+    ).delete(synchronize_session=False)
+
+    db.commit()
+
+    # --------------------------------------------------
+    # 3️⃣ Generate exam questions
+    # --------------------------------------------------
+    try:
+        questions = generate_exam_questions(quiz, db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate exam: {str(e)}"
+        )
+
+    if not questions:
+        raise HTTPException(
+            status_code=500,
+            detail="No questions generated"
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ Save generated exam
+    # --------------------------------------------------
+    new_exam = Exam(
+        quiz_id=quiz.id,
+        class_name=quiz.class_name,
+        subject=quiz.subject,
+        difficulty=quiz.difficulty,
+        questions=questions,
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    # --------------------------------------------------
+    # 5️⃣ Return response (frontend-ready)
+    # --------------------------------------------------
+    return {
+        "message": "Exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": quiz.id,
+        "class_name": quiz.class_name,
+        "subject": quiz.subject,
+        "difficulty": quiz.difficulty,
+        "total_questions": len(questions),
+        "questions": questions,
+    }
+
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
     id: str,   # 🔴 CHANGE HERE (int → str)
@@ -6353,91 +6439,6 @@ def submit_answer(
         "correct": student_answer == correct_answer
     }
 
-@app.post("/api/exams/generate")
-def generate_exam(db: Session = Depends(get_db)):
-
-    # --------------------------------------------------
-    # 1️⃣ Fetch latest Mathematical Reasoning quiz
-    # --------------------------------------------------
-    quiz = (
-        db.query(Quiz)
-        .filter(Quiz.subject == "mathematical_reasoning")
-        .order_by(Quiz.id.desc())
-        .first()
-    )
-
-    if not quiz:
-        raise HTTPException(
-            status_code=404,
-            detail="No Mathematical Reasoning quiz configuration found"
-        )
-
-    # --------------------------------------------------
-    # 2️⃣ Clear previous Mathematical Reasoning exams
-    # --------------------------------------------------
-    exam_ids_subq = (
-        db.query(Exam.id)
-        .filter(Exam.subject == "mathematical_reasoning")
-        .subquery()
-    )
-
-    # Delete dependent student exams first
-    db.query(StudentExam).filter(
-        StudentExam.exam_id.in_(exam_ids_subq)
-    ).delete(synchronize_session=False)
-
-    # Delete exams
-    db.query(Exam).filter(
-        Exam.subject == "mathematical_reasoning"
-    ).delete(synchronize_session=False)
-
-    db.commit()
-
-    # --------------------------------------------------
-    # 3️⃣ Generate exam questions
-    # --------------------------------------------------
-    try:
-        questions = generate_exam_questions(quiz, db)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate exam: {str(e)}"
-        )
-
-    if not questions:
-        raise HTTPException(
-            status_code=500,
-            detail="No questions generated"
-        )
-
-    # --------------------------------------------------
-    # 4️⃣ Save generated exam
-    # --------------------------------------------------
-    new_exam = Exam(
-        quiz_id=quiz.id,
-        class_name=quiz.class_name,
-        subject=quiz.subject,
-        difficulty=quiz.difficulty,
-        questions=questions,
-    )
-
-    db.add(new_exam)
-    db.commit()
-    db.refresh(new_exam)
-
-    # --------------------------------------------------
-    # 5️⃣ Return response (frontend-ready)
-    # --------------------------------------------------
-    return {
-        "message": "Exam generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": quiz.id,
-        "class_name": quiz.class_name,
-        "subject": quiz.subject,
-        "difficulty": quiz.difficulty,
-        "total_questions": len(questions),
-        "questions": questions,
-    }
 
 
 
