@@ -2042,7 +2042,7 @@ def generate_thinking_skills_exam(
         .filter(Quiz.subject == "thinking_skills")
         .order_by(Quiz.id.desc())
         .first()
-    )
+    ) 
 
     if not quiz:
         raise HTTPException(
