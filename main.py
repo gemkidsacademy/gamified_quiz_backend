@@ -1906,43 +1906,94 @@ def delete_student_exam_module(
     }
 
 
-@app.delete("/delete_student_exam_module/{id}")
-def delete_student_exam_module(
-    id: int,
+
+@app.post("/api/quizzes/generate")
+def generate_exam(
+    payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n================ DELETE STUDENT (EXAM MODULE) ================")
-    print("➡ student_id (internal):", id)
+    difficulty = payload.get("difficulty")
 
-    # ------------------------------------------------------------
-    # 1️⃣ Find student by internal ID
-    # ------------------------------------------------------------
-    student = (
-        db.query(Student)
-        .filter(Student.id == id)
+    if not difficulty:
+        raise HTTPException(
+            status_code=400,
+            detail="Difficulty is required"
+        )
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch latest quiz by subject + difficulty
+    # --------------------------------------------------
+    quiz = (
+        db.query(Quiz)
+        .filter(
+            Quiz.subject == "mathematical_reasoning",
+            Quiz.difficulty == difficulty
+        )
+        .order_by(Quiz.id.desc())
         .first()
     )
 
-    if not student:
-        print("❌ Student not found")
+    if not quiz:
         raise HTTPException(
             status_code=404,
-            detail="Student not found"
+            detail="No quiz found for the given difficulty"
         )
 
-    # ------------------------------------------------------------
-    # 2️⃣ Delete student
-    # ------------------------------------------------------------
-    db.delete(student)
+    # --------------------------------------------------
+    # 2️⃣ Clear previous exams
+    # --------------------------------------------------
+    exam_ids_subq = (
+        db.query(Exam.id)
+        .filter(Exam.subject == quiz.subject)
+        .subquery()
+    )
+
+    db.query(StudentExam).filter(
+        StudentExam.exam_id.in_(exam_ids_subq)
+    ).delete(synchronize_session=False)
+
+    db.query(Exam).filter(
+        Exam.subject == quiz.subject
+    ).delete(synchronize_session=False)
+
     db.commit()
 
-    print("✅ Student deleted successfully")
+    # --------------------------------------------------
+    # 3️⃣ Generate questions
+    # --------------------------------------------------
+    questions = generate_exam_questions(quiz, db)
 
+    if not questions:
+        raise HTTPException(500, "No questions generated")
+
+    # --------------------------------------------------
+    # 4️⃣ Save exam
+    # --------------------------------------------------
+    new_exam = Exam(
+        quiz_id=quiz.id,
+        class_name=quiz.class_name,
+        subject=quiz.subject,
+        difficulty=quiz.difficulty,
+        questions=questions,
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    # --------------------------------------------------
+    # 5️⃣ Response
+    # --------------------------------------------------
     return {
-        "message": "Student deleted successfully",
-        "deleted_id": id
+        "message": "Exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": quiz.id,
+        "class_name": quiz.class_name,
+        "subject": quiz.subject,
+        "difficulty": quiz.difficulty,
+        "total_questions": len(questions),
+        "questions": questions,
     }
-
 
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
