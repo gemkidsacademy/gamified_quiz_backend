@@ -6376,6 +6376,26 @@ def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
     )
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
+        # --------------------------------------------------
+    # 0️⃣ Clear previous Mathematical Reasoning exams
+    # --------------------------------------------------
+    
+    # Get exam IDs for mathematical reasoning
+    exam_ids_subq = db.query(Exam.id).filter(
+        Exam.subject == "mathematical_reasoning"
+    ).subquery()
+    
+    # 1️⃣ Delete dependent student exams
+    db.query(StudentExam).filter(
+        StudentExam.exam_id.in_(exam_ids_subq)
+    ).delete(synchronize_session=False)
+    
+    # 2️⃣ Delete exams
+    db.query(Exam).filter(
+        Exam.subject == "mathematical_reasoning"
+    ).delete(synchronize_session=False)
+    
+    db.commit()
 
     # 2. Generate exam questions
     try:
