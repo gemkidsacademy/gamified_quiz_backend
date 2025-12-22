@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body
+from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body 
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
