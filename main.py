@@ -3879,7 +3879,8 @@ def generate_ai_questions_foundational(
 ):
     """
     Generate AI questions for a Foundational exam section.
-    Questions are generated in SMALL CHUNKS to guarantee valid JSON.
+    Uses chunking + retries to reduce JSON corruption.
+    Compatible with current OpenAI Python SDK.
     """
 
     print("\n🤖 Calling AI to generate questions")
@@ -3888,8 +3889,9 @@ def generate_ai_questions_foundational(
     if count <= 0:
         return []
 
-    CHUNK_SIZE = 5              # 🔑 critical fix
+    CHUNK_SIZE = 5
     MAX_RETRIES = 2
+
     remaining = count
     all_questions = []
 
@@ -3902,31 +3904,28 @@ You are a STRICT JSON generator for an automated exam system.
 TASK:
 Generate EXACTLY {batch_size} multiple-choice questions.
 
-ABSOLUTE RULES (DO NOT BREAK):
-- Output MUST be VALID JSON
+ABSOLUTE RULES:
+- Output MUST be valid JSON
 - Output MUST be a JSON ARRAY
-- Each array item MUST be a JSON OBJECT
-- NO trailing commas
-- NO duplicate keys
-- NO missing fields
-- NO extra fields
 - NO explanations
 - NO comments
 - NO markdown
 - NO text outside JSON
 
-REQUIRED JSON SCHEMA:
-{{
-  "question_text": "string",
-  "options": {{
-    "A": "string",
-    "B": "string",
-    "C": "string",
-    "D": "string"
-  }},
-  "correct_answer": "A|B|C|D",
-  "topic": "string"
-}}
+REQUIRED FORMAT:
+[
+  {{
+    "question_text": "string",
+    "options": {{
+      "A": "string",
+      "B": "string",
+      "C": "string",
+      "D": "string"
+    }},
+    "correct_answer": "A|B|C|D",
+    "topic": "string"
+  }}
+]
 
 CONSTRAINTS:
 - Class: {class_name}
@@ -3934,9 +3933,6 @@ CONSTRAINTS:
 - Difficulty: {difficulty}
 
 If you cannot comply perfectly, RETURN [] ONLY.
-
-OUTPUT:
-[{{...}}]
 """
 
         success = False
@@ -3944,71 +3940,44 @@ OUTPUT:
         for attempt in range(1, MAX_RETRIES + 1):
             print(f"🤖 AI batch {batch_size} | attempt {attempt}")
 
-            response = client.responses.create(
-            model="gpt-4o-mini",
-            input=prompt,
-            temperature=0.4,
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["question_text", "options", "correct_answer", "topic"],
-                        "properties": {
-                            "question_text": {
-                                "type": "string"
-                            },
-                            "options": {
-                                "type": "object",
-                                "required": ["A", "B", "C", "D"],
-                                "properties": {
-                                    "A": {"type": "string"},
-                                    "B": {"type": "string"},
-                                    "C": {"type": "string"},
-                                    "D": {"type": "string"}
-                                },
-                                "additionalProperties": False
-                            },
-                            "correct_answer": {
-                                "type": "string",
-                                "enum": ["A", "B", "C", "D"]
-                            },
-                            "topic": {
-                                "type": "string"
-                            }
-                        },
-                        "additionalProperties": False
-                    }
-                }
-            }
-        )
-
-            parsed = response.output_parsed
-            print("🤖 Parsed AI response:", parsed)
-            
-            if not isinstance(parsed, list) or len(parsed) != batch_size:
-                raise ValueError(
-                    f"Invalid AI output: expected {batch_size}, got "
-                    f"{len(parsed) if isinstance(parsed, list) else 'non-list'}"
+            try:
+                response = client.responses.create(
+                    model="gpt-4o-mini",
+                    input=prompt,
+                    temperature=0.4
                 )
-            
-            for q in parsed:
-                all_questions.append({
-                    "section": difficulty,
-                    "question_number": None,
-                    "question_text": q["question_text"],
-                    "options": q["options"],
-                    "correct_answer": q["correct_answer"],
-                    "question_type": "mcq",
-                    "images": [],
-                    "topic": q.get("topic", "AI Generated"),
-                })
-            
-            remaining -= batch_size
-            success = True
-            break
 
+                raw = response.output_text
+                print("🤖 Raw AI response:", raw)
+
+                parsed = json.loads(raw)
+
+                if not isinstance(parsed, list):
+                    raise ValueError("AI output is not a list")
+
+                if len(parsed) != batch_size:
+                    raise ValueError(
+                        f"Expected {batch_size} questions, got {len(parsed)}"
+                    )
+
+                for q in parsed:
+                    all_questions.append({
+                        "section": difficulty,
+                        "question_number": None,
+                        "question_text": q["question_text"],
+                        "options": q["options"],
+                        "correct_answer": q["correct_answer"],
+                        "question_type": "mcq",
+                        "images": [],
+                        "topic": q.get("topic", "AI Generated"),
+                    })
+
+                remaining -= batch_size
+                success = True
+                break
+
+            except Exception as e:
+                print(f"❌ AI batch failed (attempt {attempt}): {e}")
 
         if not success:
             print("❌ AI failed after retries. Stopping generation.")
@@ -4016,6 +3985,7 @@ OUTPUT:
 
     print(f"🤖 Successfully generated {len(all_questions)} AI questions")
     return all_questions
+
 
 @app.post("/api/exams/generate-foundational")
 def generate_exam_foundational(
