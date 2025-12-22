@@ -4146,7 +4146,7 @@ def generate_exam_foundational(
 
     
 
-    final_questions = unique_questions
+    
 
     # ------------------------------------------------------------
     # 5️⃣ Number questions (stable IDs)
