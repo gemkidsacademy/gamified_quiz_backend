@@ -133,30 +133,7 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
-class GeneratedExamsReading(Base):
-    __tablename__ = "generated_exams_reading"
 
-    id = Column(Integer, primary_key=True, index=True)
-
-    # FK → reading_exam_config.id
-    config_id = Column(
-        Integer,
-        ForeignKey("reading_exam_config.id", ondelete="RESTRICT"),
-        nullable=False
-    )
-
-    class_name = Column(String, nullable=False)
-    subject = Column(String, nullable=False)
-    difficulty = Column(String, nullable=False)
-
-    total_questions = Column(Integer, nullable=False)
-
-    exam_json = Column(JSONB, nullable=False)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Optional relationship (not required for deletes)
-    reading_config = relationship("ReadingExamConfig")
 class StudentExamResultsMathematicalReasoning(Base):
     __tablename__ = "student_exam_results_mathematical_reasoning"
 
@@ -5138,7 +5115,7 @@ def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depend
     ]
     print("\n--- Deleting dependent Reading generated exams ---")
 
-    db.query(GeneratedExamsReading).delete(synchronize_session=False)
+    db.query(GeneratedExamReading).delete(synchronize_session=False)
     print("\n--- Deleting previous Reading exam configs ---")
 
     db.query(ReadingExamConfig).delete(synchronize_session=False)
