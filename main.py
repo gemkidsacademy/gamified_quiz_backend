@@ -3267,12 +3267,19 @@ async def upload_word_writing(
  
 @app.post("/api/quizzes-writing")
 def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db)):
+    print("\n--- Deleting previous Writing quiz setups ---")
+
+    db.query(QuizSetupWriting).delete(synchronize_session=False)
+    db.commit()
+
+    print("🗑️ Previous writing quiz setups deleted")
+    print("\n--- Creating new Writing quiz setup ---")
     quiz = QuizSetupWriting(
         class_name=payload.class_name,
         subject=payload.subject,
         topic=payload.topic,
         difficulty=payload.difficulty
-    )
+    ) 
 
     db.add(quiz)
     db.commit()
@@ -5105,6 +5112,14 @@ def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depend
         }
         for t in payload.topics
     ]
+    print("\n--- Deleting previous Reading exam configs ---")
+
+    db.query(ReadingExamConfig).delete(synchronize_session=False)
+    db.commit()
+
+    print("🗑️ Previous reading configs deleted")
+
+    print("\n--- Creating new Reading exam config ---")
 
     # Create DB record
     new_config = ReadingExamConfig(
