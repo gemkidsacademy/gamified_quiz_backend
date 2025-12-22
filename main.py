@@ -1048,7 +1048,9 @@ class Exam(Base):
     __tablename__ = "exams"
 
     id = Column(Integer, primary_key=True, index=True)
-    quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
+
+    # just a number, NO foreign key
+    quiz_id = Column(Integer, nullable=True)
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
@@ -1057,14 +1059,6 @@ class Exam(Base):
     questions = Column(JSON, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    quiz = relationship("Quiz", back_populates="exams")
-
-    student_exams = relationship(
-        "StudentExam",
-        back_populates="exam",
-        cascade="all, delete-orphan"
-    )
 
 
 
@@ -1460,7 +1454,7 @@ def generate_exam_questions(quiz, db):
         try:
             db_questions = (
                 db.query(Question)
-                  .filter(Question.topic == topic_name)
+                  .filter(func.lower(Question.topic) == topic_name.lower())
                   .order_by(func.random())
                   .limit(db_count)
                   .all()
