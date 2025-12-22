@@ -4084,6 +4084,10 @@ def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(
             status_code=400,
             detail="Total questions cannot exceed 50 with 3 sections",
         )
+      # ✅ SAFE: no dependent tables
+    db.query(QuizSetupFoundational).delete(synchronize_session=False)
+    db.commit()
+
 
     quiz = QuizSetupFoundational(
         class_name=payload.class_name,
@@ -4110,6 +4114,7 @@ def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(
         section3_time=section3.time if section3 else None,
         section3_intro=section3.intro if section3 else None,
     )
+    
 
     db.add(quiz)
     db.commit()
