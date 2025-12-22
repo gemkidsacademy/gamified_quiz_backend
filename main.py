@@ -1875,6 +1875,42 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.delete("/delete_student_exam_module/{id}")
+def delete_student_exam_module(
+    id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n================ DELETE STUDENT (EXAM MODULE) ================")
+    print("➡ student_id (internal):", id)
+
+    # ------------------------------------------------------------
+    # 1️⃣ Find student by internal ID
+    # ------------------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.id == id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    # ------------------------------------------------------------
+    # 2️⃣ Delete student
+    # ------------------------------------------------------------
+    db.delete(student)
+    db.commit()
+
+    print("✅ Student deleted successfully")
+
+    return {
+        "message": "Student deleted successfully",
+        "deleted_id": id
+    }
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
     payload: dict = Body(...),
