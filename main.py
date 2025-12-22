@@ -3944,42 +3944,71 @@ OUTPUT:
         for attempt in range(1, MAX_RETRIES + 1):
             print(f"🤖 AI batch {batch_size} | attempt {attempt}")
 
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You generate exam questions."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.4,   # 🔑 structure > creativity
-            )
+            response = client.responses.create(
+            model="gpt-4o-mini",
+            input=prompt,
+            temperature=0.4,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["question_text", "options", "correct_answer", "topic"],
+                        "properties": {
+                            "question_text": {
+                                "type": "string"
+                            },
+                            "options": {
+                                "type": "object",
+                                "required": ["A", "B", "C", "D"],
+                                "properties": {
+                                    "A": {"type": "string"},
+                                    "B": {"type": "string"},
+                                    "C": {"type": "string"},
+                                    "D": {"type": "string"}
+                                },
+                                "additionalProperties": False
+                            },
+                            "correct_answer": {
+                                "type": "string",
+                                "enum": ["A", "B", "C", "D"]
+                            },
+                            "topic": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": False
+                    }
+                }
+            }
+        )
 
-            raw = response.choices[0].message.content.strip()
-            print("🤖 Raw AI response:", raw)
+            parsed = response.output_parsed
+            print("🤖 Parsed AI response:", parsed)
+            
+            if not isinstance(parsed, list) or len(parsed) != batch_size:
+                raise ValueError(
+                    f"Invalid AI output: expected {batch_size}, got "
+                    f"{len(parsed) if isinstance(parsed, list) else 'non-list'}"
+                )
+            
+            for q in parsed:
+                all_questions.append({
+                    "section": difficulty,
+                    "question_number": None,
+                    "question_text": q["question_text"],
+                    "options": q["options"],
+                    "correct_answer": q["correct_answer"],
+                    "question_type": "mcq",
+                    "images": [],
+                    "topic": q.get("topic", "AI Generated"),
+                })
+            
+            remaining -= batch_size
+            success = True
+            break
 
-            try:
-                parsed = json.loads(raw)
-
-                if not isinstance(parsed, list) or len(parsed) != batch_size:
-                    raise ValueError("Invalid question count")
-
-                for q in parsed:
-                    all_questions.append({
-                        "section": difficulty,
-                        "question_number": None,
-                        "question_text": q["question_text"],
-                        "options": q["options"],
-                        "correct_answer": q["correct_answer"],
-                        "question_type": "mcq",
-                        "images": [],
-                        "topic": q.get("topic", "AI Generated"),
-                    })
-
-                remaining -= batch_size
-                success = True
-                break
-
-            except Exception as e:
-                print("❌ AI JSON parse failed:", e)
 
         if not success:
             print("❌ AI failed after retries. Stopping generation.")
