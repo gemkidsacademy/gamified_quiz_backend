@@ -1031,11 +1031,8 @@ class StudentExamAnswer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_exam_id = Column(
-        Integer,
-        ForeignKey("student_exams.id"),
-        nullable=False
-    )
+    # Reference to student_exams.id (NOT a foreign key)
+    student_exam_id = Column(Integer, nullable=False, index=True)
 
     question_id = Column(Integer, nullable=False)
     student_answer = Column(String, nullable=False)
@@ -1043,8 +1040,6 @@ class StudentExamAnswer(Base):
     is_correct = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    student_exam = relationship("StudentExam", back_populates="answers")
 
 
 
