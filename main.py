@@ -5112,6 +5112,9 @@ def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depend
         }
         for t in payload.topics
     ]
+    print("\n--- Deleting dependent Reading generated exams ---")
+
+    db.query(GeneratedExamsReading).delete(synchronize_session=False)
     print("\n--- Deleting previous Reading exam configs ---")
 
     db.query(ReadingExamConfig).delete(synchronize_session=False)
