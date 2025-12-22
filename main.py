@@ -1941,7 +1941,7 @@ def delete_student_exam_module(
         "message": "Student deleted successfully",
         "deleted_id": id
     }
-@app.post("/api/exams/generate-thinking-skills")
+@app.post("/api/exams/generate")
 def generate_thinking_skills_exam(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
@@ -1982,15 +1982,11 @@ def generate_thinking_skills_exam(
     # 1️⃣ Fetch latest Thinking Skills quiz for difficulty
     # --------------------------------------------------
     quiz = (
-        db.query(Quiz)
-        .filter(
-            Quiz.subject == "thinking_skills",
-            Quiz.difficulty == difficulty
-        )
-        .order_by(Quiz.created_at.desc())
+        db.query(QuizMathematicalReasoning)
+        .filter(QuizMathematicalReasoning.subject == "mathematical_reasoning")
+        .order_by(QuizMathematicalReasoning.id.desc())
         .first()
     )
-
     if not quiz:
         raise HTTPException(
             status_code=404,
