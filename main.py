@@ -657,55 +657,20 @@ class StartExamRequest(BaseModel):
 #when generate exam is pressed we create a row here
 class StudentExam(Base):
     __tablename__ = "student_exams"
-    
-    
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # Student ID is a string (e.g., "Gem002")
-    student_id = Column(
-        String,
-        ForeignKey("students.id"),
-        nullable=False,
-        index=True
-    )
+    # External student identifier (e.g. "Gem002")
+    student_id = Column(String, nullable=False, index=True)
 
-    exam_id = Column(
-        Integer,
-        ForeignKey("exams.id"),
-        nullable=False,
-        index=True
-    )
+    # Reference to exams.id (NOT a foreign key)
+    exam_id = Column(Integer, nullable=False, index=True)
 
     # Timezone-aware timestamps (UTC)
-    started_at = Column(
-        DateTime(timezone=True),
-        nullable=False
-    )
-
-    completed_at = Column(
-        DateTime(timezone=True),
-        nullable=True
-    )
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
 
     duration_minutes = Column(Integer, default=40, nullable=False)
-
-    # Relationships
-    student = relationship(
-        "Student",
-        back_populates="student_exams"
-    )
-
-    exam = relationship(
-        "Exam",
-        back_populates="student_exams"
-    )
-
-    answers = relationship(
-        "StudentExamAnswer",
-        back_populates="student_exam",
-        cascade="all, delete-orphan"
-    )
 
 
 class Exam_reading(Base):
