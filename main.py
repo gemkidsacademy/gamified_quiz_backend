@@ -1981,12 +1981,12 @@ def generate_thinking_skills_exam(
     # --------------------------------------------------
     # 1️⃣ Fetch latest Thinking Skills quiz for difficulty
     # --------------------------------------------------
-   quiz = (
-       db.query(Quiz)
-       .filter(Quiz.subject == "thinking_skills")
-       .order_by(Quiz.id.desc())
-       .first()
-   )
+    quiz = (
+        db.query(Quiz)
+        .filter(Quiz.subject == "thinking_skills")
+        .order_by(Quiz.id.desc())
+        .first()
+    )
 
     if not quiz:
         raise HTTPException(
