@@ -1924,20 +1924,27 @@ def generate_exam(
     # 1️⃣ Fetch latest quiz by subject + difficulty
     # --------------------------------------------------
     quiz = (
-        db.query(Quiz)
+        db.query(QuizMathematicalReasoning)
         .filter(
-            Quiz.subject == "mathematical_reasoning",
-            Quiz.difficulty == difficulty
+            QuizMathematicalReasoning.subject == "mathematical_reasoning"
         )
-        .order_by(Quiz.id.desc())
+        .order_by(QuizMathematicalReasoning.id.desc())
         .first()
     )
-
+    
     if not quiz:
         raise HTTPException(
             status_code=404,
-            detail="No quiz found for the given difficulty"
+            detail="No Mathematical Reasoning quiz found"
         )
+
+    
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No Mathematical Reasoning quiz found"
+        )
+
 
     # --------------------------------------------------
     # 2️⃣ Clear previous exams
