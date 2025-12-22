@@ -2083,6 +2083,13 @@ def create_quiz_mathematical_reasoning(
         print(f"   └─ Topic {i}: {t}")
 
     try:
+        print("\n--- Deleting existing Mathematical Reasoning quizzes ---")
+
+        db.query(QuizMathematicalReasoning).delete()
+        db.commit()
+
+        print("🗑️ All previous quizzes deleted")
+     
         print("\n--- Creating SQLAlchemy object ---")
 
         new_quiz = QuizMathematicalReasoning(
@@ -6492,7 +6499,21 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         print(f"   └─ Topic {i}: {t}")
 
     try:
+        print("\n--- Deleting previous data (Exam → Quiz) ---")
+
+        # 1️⃣ Delete dependent exams (StudentExam deleted automatically via cascade)
+        db.query(Exam).delete(synchronize_session=False)
+
+        # 2️⃣ Delete quizzes
+        db.query(Quiz).delete(synchronize_session=False)
+
+        db.commit()
+        print("🗑️ All previous exams and quizzes deleted")
+
         print("\n--- Creating SQLAlchemy Quiz object ---")
+
+        print("\n--- Creating SQLAlchemy Quiz object ---")
+        
         new_quiz = Quiz(
             class_name = quiz.class_name,
             subject = quiz.subject,
