@@ -2043,8 +2043,13 @@ def generate_thinking_skills_exam(
         "questions": questions
     }
 
-@app.post("/api/quizzes/generate")
-def generate_exam(db: Session = Depends(get_db)):
+@app.post("/api/generate-exam-mathematical-reasoning")
+def generate_exam_mathematical_reasoning(
+    db: Session = Depends(get_db)
+):
+    """
+    Generate Mathematical Reasoning exam based on latest quiz configuration
+    """
 
     # --------------------------------------------------
     # 1️⃣ Fetch latest Mathematical Reasoning quiz
@@ -2071,12 +2076,12 @@ def generate_exam(db: Session = Depends(get_db)):
         .subquery()
     )
 
-    # Delete dependent student exams first
+    # Delete dependent student exam attempts first
     db.query(StudentExam).filter(
         StudentExam.exam_id.in_(exam_ids_subq)
     ).delete(synchronize_session=False)
 
-    # Delete exams
+    # Delete previous exams
     db.query(Exam).filter(
         Exam.subject == "mathematical_reasoning"
     ).delete(synchronize_session=False)
@@ -2089,9 +2094,10 @@ def generate_exam(db: Session = Depends(get_db)):
     try:
         questions = generate_exam_questions(quiz, db)
     except Exception as e:
+        print("❌ Question generation failed:", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate exam: {str(e)}"
+            detail="Failed to generate exam questions"
         )
 
     if not questions:
@@ -2108,7 +2114,7 @@ def generate_exam(db: Session = Depends(get_db)):
         class_name=quiz.class_name,
         subject=quiz.subject,
         difficulty=quiz.difficulty,
-        questions=questions,
+        questions=questions
     )
 
     db.add(new_exam)
@@ -2116,7 +2122,7 @@ def generate_exam(db: Session = Depends(get_db)):
     db.refresh(new_exam)
 
     # --------------------------------------------------
-    # 5️⃣ Return response (frontend-ready)
+    # 5️⃣ Frontend-ready response
     # --------------------------------------------------
     return {
         "message": "Exam generated successfully",
@@ -2126,7 +2132,7 @@ def generate_exam(db: Session = Depends(get_db)):
         "subject": quiz.subject,
         "difficulty": quiz.difficulty,
         "total_questions": len(questions),
-        "questions": questions,
+        "questions": questions
     }
 
 
