@@ -1941,7 +1941,7 @@ def delete_student_exam_module(
         "message": "Student deleted successfully",
         "deleted_id": id
     }
-@app.post("/api/exams/generate")
+@app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
@@ -1981,12 +1981,13 @@ def generate_thinking_skills_exam(
     # --------------------------------------------------
     # 1️⃣ Fetch latest Thinking Skills quiz for difficulty
     # --------------------------------------------------
-    quiz = (
-        db.query(QuizMathematicalReasoning)
-        .filter(QuizMathematicalReasoning.subject == "mathematical_reasoning")
-        .order_by(QuizMathematicalReasoning.id.desc())
-        .first()
-    )
+   quiz = (
+       db.query(Quiz)
+       .filter(Quiz.subject == "thinking_skills")
+       .order_by(Quiz.id.desc())
+       .first()
+   )
+
     if not quiz:
         raise HTTPException(
             status_code=404,
@@ -6352,24 +6353,16 @@ def submit_answer(
         "correct": student_answer == correct_answer
     }
 
-@app.post("/api/exams/generate/{quiz_id}")
-def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
-    """
-    Generate an exam based on a quiz and its topics.
+@app.post("/api/exams/generate")
+def generate_exam(db: Session = Depends(get_db)):
 
-    Workflow:
-    1. Fetch the quiz
-    2. Generate exam questions (AI + DB)
-    3. Store the exam record
-    4. Return the generated exam
-    """
-
-    # 1. Fetch quiz
-     # --------------------------------------------------
+    # --------------------------------------------------
+    # 1️⃣ Fetch latest Mathematical Reasoning quiz
+    # --------------------------------------------------
     quiz = (
-        db.query(QuizMathematicalReasoning)
-        .filter(QuizMathematicalReasoning.subject == "mathematical_reasoning")
-        .order_by(QuizMathematicalReasoning.id.desc())
+        db.query(Quiz)
+        .filter(Quiz.subject == "mathematical_reasoning")
+        .order_by(Quiz.id.desc())
         .first()
     )
 
@@ -6378,28 +6371,31 @@ def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
             status_code=404,
             detail="No Mathematical Reasoning quiz configuration found"
         )
-        # --------------------------------------------------
-    # 0️⃣ Clear previous Mathematical Reasoning exams
+
     # --------------------------------------------------
-    
-    # Get exam IDs for mathematical reasoning
-    exam_ids_subq = db.query(Exam.id).filter(
-        Exam.subject == "mathematical_reasoning"
-    ).subquery()
-    
-    # 1️⃣ Delete dependent student exams
+    # 2️⃣ Clear previous Mathematical Reasoning exams
+    # --------------------------------------------------
+    exam_ids_subq = (
+        db.query(Exam.id)
+        .filter(Exam.subject == "mathematical_reasoning")
+        .subquery()
+    )
+
+    # Delete dependent student exams first
     db.query(StudentExam).filter(
         StudentExam.exam_id.in_(exam_ids_subq)
     ).delete(synchronize_session=False)
-    
-    # 2️⃣ Delete exams
+
+    # Delete exams
     db.query(Exam).filter(
         Exam.subject == "mathematical_reasoning"
     ).delete(synchronize_session=False)
-    
+
     db.commit()
 
-    # 2. Generate exam questions
+    # --------------------------------------------------
+    # 3️⃣ Generate exam questions
+    # --------------------------------------------------
     try:
         questions = generate_exam_questions(quiz, db)
     except Exception as e:
@@ -6409,22 +6405,29 @@ def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
         )
 
     if not questions:
-        raise HTTPException(status_code=500, detail="No questions generated")
+        raise HTTPException(
+            status_code=500,
+            detail="No questions generated"
+        )
 
-    # 3. Save exam (now includes class_name)
+    # --------------------------------------------------
+    # 4️⃣ Save generated exam
+    # --------------------------------------------------
     new_exam = Exam(
         quiz_id=quiz.id,
-        class_name=quiz.class_name,      # <-- saved here
-        subject=quiz.subject,            # (optional but recommended)
-        difficulty=quiz.difficulty,      # (optional but recommended)
-        questions=questions
+        class_name=quiz.class_name,
+        subject=quiz.subject,
+        difficulty=quiz.difficulty,
+        questions=questions,
     )
 
     db.add(new_exam)
     db.commit()
     db.refresh(new_exam)
 
-    # 4. Return payload
+    # --------------------------------------------------
+    # 5️⃣ Return response (frontend-ready)
+    # --------------------------------------------------
     return {
         "message": "Exam generated successfully",
         "exam_id": new_exam.id,
@@ -6432,6 +6435,7 @@ def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
         "class_name": quiz.class_name,
         "subject": quiz.subject,
         "difficulty": quiz.difficulty,
+        "total_questions": len(questions),
         "questions": questions,
     }
 
