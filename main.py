@@ -537,24 +537,21 @@ class StudentsExamFoundational(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(String, nullable=False)
+    # External student identifier (e.g. "Gem002")
+    student_id = Column(String, nullable=False, index=True)
 
-    exam_id = Column(
-        Integer,
-        ForeignKey("generated_exam_foundational.id"),
-        nullable=False
-    )
+    # Reference to generated_exam_foundational.id (NOT a foreign key)
+    exam_id = Column(Integer, nullable=False, index=True)
 
     started_at = Column(DateTime(timezone=True), nullable=False)
-
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     current_section_index = Column(Integer, nullable=False, default=0)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
     answers_json = Column(JSONB, nullable=True)
-
     completion_reason = Column(String, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
  
 class EmptyRequest(BaseModel):
     pass
