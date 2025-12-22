@@ -3304,6 +3304,8 @@ def generate_exam_writing(
     # Normalize incoming values to lowercase
     class_name = payload.class_name.strip().lower()
     difficulty = payload.difficulty.strip().lower()
+    db.query(GeneratedExamWriting).delete(synchronize_session=False)
+    db.commit()
 
     # 1️⃣ Fetch ONE writing question with full case-insensitive matching
     question = (
