@@ -4144,20 +4144,7 @@ def generate_exam_foundational(
 
         final_questions.extend(section_questions)
 
-    # ------------------------------------------------------------
-    # 4️⃣ Deduplicate (by question_text)
-    # ------------------------------------------------------------
-    seen = set()
-    unique_questions = []
-
-    for q in final_questions:
-        key = q["question_text"].strip().lower()
-        if key not in seen:
-            seen.add(key)
-            unique_questions.append(q)
-
-    if not unique_questions:
-        raise HTTPException(400, "No questions generated after deduplication")
+    
 
     final_questions = unique_questions
 
