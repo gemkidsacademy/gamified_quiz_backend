@@ -4265,7 +4265,8 @@ def generate_exam_reading(
 
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
-
+    db.query(GeneratedExamReading).delete(synchronize_session=False)
+    db.commit()
     # --------------------------------------------------
     # 1️⃣ LOAD CONFIG
     # --------------------------------------------------
