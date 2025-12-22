@@ -1881,6 +1881,36 @@ def delete_student_exam_module(
     db: Session = Depends(get_db)
 ):
     print("\n================ DELETE STUDENT (EXAM MODULE) ================")
+    print("➡ student internal id:", id)
+
+    # 1️⃣ Find student
+    student = (
+        db.query(Student)
+        .filter(Student.id == id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    # 2️⃣ Delete student
+    db.delete(student)
+    db.commit()
+
+    return {
+        "message": "Student deleted successfully",
+        "deleted_id": id
+    }
+
+@app.delete("/delete_student_exam_module/{id}")
+def delete_student_exam_module(
+    id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n================ DELETE STUDENT (EXAM MODULE) ================")
     print("➡ student_id (internal):", id)
 
     # ------------------------------------------------------------
