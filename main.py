@@ -6369,13 +6369,19 @@ def generate_exam(quiz_id: int, db: Session = Depends(get_db)):
     """
 
     # 1. Fetch quiz
+     # --------------------------------------------------
     quiz = (
-        db.query(Quiz)
-        .filter(Quiz.id == quiz_id)
+        db.query(QuizMathematicalReasoning)
+        .filter(QuizMathematicalReasoning.subject == "mathematical_reasoning")
+        .order_by(QuizMathematicalReasoning.id.desc())
         .first()
     )
+
     if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
+        raise HTTPException(
+            status_code=404,
+            detail="No Mathematical Reasoning quiz configuration found"
+        )
         # --------------------------------------------------
     # 0️⃣ Clear previous Mathematical Reasoning exams
     # --------------------------------------------------
