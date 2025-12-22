@@ -1877,13 +1877,12 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 from sqlalchemy import func
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
-    id: int,
+    id: str,   # 🔴 CHANGE HERE (int → str)
     db: Session = Depends(get_db)
 ):
     print("\n================ DELETE STUDENT (EXAM MODULE) ================")
-    print("➡ student internal id:", id)
+    print("➡ student id:", id)
 
-    # 1️⃣ Find student
     student = (
         db.query(Student)
         .filter(Student.id == id)
@@ -1896,7 +1895,6 @@ def delete_student_exam_module(
             detail="Student not found"
         )
 
-    # 2️⃣ Delete student
     db.delete(student)
     db.commit()
 
@@ -1904,6 +1902,7 @@ def delete_student_exam_module(
         "message": "Student deleted successfully",
         "deleted_id": id
     }
+
 
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
