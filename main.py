@@ -133,6 +133,27 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class AdminExamRawScore(Base):
+    __tablename__ = "admin_exam_raw_scores"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # internal student identifier (NO foreign key)
+    student_id = Column(Integer, nullable=False)
+
+    # exam attempt identifier (one row per attempt)
+    exam_attempt_id = Column(Integer, nullable=False, unique=True)
+
+    subject = Column(String, nullable=False)
+
+    total_questions = Column(Integer, nullable=False)
+    correct_answers = Column(Integer, nullable=False)
+    wrong_answers = Column(Integer, nullable=False)
+
+    accuracy_percent = Column(Float, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class AdminExamReport(Base):
     __tablename__ = "admin_exam_reports"
@@ -6181,6 +6202,16 @@ def finish_exam(
     accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
 
     print("📊 Result computed → correct:", correct, "wrong:", wrong)
+    raw_score = AdminExamRawScore(
+        student_id=student.id,
+        exam_attempt_id=attempt.id,
+        subject="mathematical_reasoning",
+        total_questions=total_questions,
+        correct_answers=correct,
+        wrong_answers=wrong,
+        accuracy_percent=accuracy
+    )
+    db.add(raw_score)
 
     # --------------------------------------------------
     # 6️⃣ Save summary (NEW TABLE)
