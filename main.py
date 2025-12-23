@@ -2100,7 +2100,7 @@ def generate_exam_mathematical_reasoning(
     # 3️⃣ Generate exam questions
     # --------------------------------------------------
     try:
-        questions = generate_exam_questions(quiz, db)
+        questions = (quiz, db)
     except Exception as e:
         print("❌ Question generation failed:", e)
         raise HTTPException(
@@ -5950,25 +5950,15 @@ def finish_exam(
     question_map = {q["q_id"]: q for q in questions}
 
     # --------------------------------------------------
-    # 4️⃣ Idempotency guard (NEW TABLE)
+    # Clear previous reports for this student + subject
     # --------------------------------------------------
-    existing_result = (
-        db.query(StudentExamResultsMathematicalReasoning.id)
-        .filter(
-            StudentExamResultsMathematicalReasoning.exam_attempt_id == attempt.id
-        )
-        .first()
-    )
+    db.query(StudentExamResultsMathematicalReasoning).filter(
+        StudentExamResultsMathematicalReasoning.student_id == student.id
+    ).delete(synchronize_session=False)
+    
+    db.commit()
 
-    if existing_result:
-        print("⚠️ Result already exists → idempotent return")
-
-        if attempt.completed_at is None:
-            attempt.completed_at = datetime.now(timezone.utc)
-            db.commit()
-
-        return {"status": "completed"}
-
+    
     # --------------------------------------------------
     # 5️⃣ Update student responses (NO inserts)
     # --------------------------------------------------
