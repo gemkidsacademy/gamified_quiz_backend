@@ -3336,30 +3336,18 @@ def get_quizzes_writing(db: Session = Depends(get_db)):
 @app.post("/api/exams/writing/submit")
 def submit_writing_exam(
     payload: WritingSubmitSchema,
-    student_id: str,
+    student_id: str,  # kept for API compatibility
     db: Session = Depends(get_db)
 ):
     print("\n================ SUBMIT WRITING EXAM =================")
 
     # --------------------------------------------------
-    # 1️⃣ Resolve internal student
-    # --------------------------------------------------
-    student = (
-        db.query(Student)
-        .filter(Student.student_id == student_id)
-        .first()
-    )
-
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    # --------------------------------------------------
-    # 2️⃣ Load active writing attempt (✅ FIXED)
+    # 1️⃣ Load active writing attempt (same pattern as Reading)
     # --------------------------------------------------
     exam_state = (
         db.query(StudentExamWriting)
         .filter(
-            StudentExamWriting.student_id == student.id,   # ✅ INTERNAL ID
+            StudentExamWriting.student_id == student_id,
             StudentExamWriting.completed_at.is_(None)
         )
         .order_by(StudentExamWriting.started_at.desc())
@@ -3373,13 +3361,13 @@ def submit_writing_exam(
         )
 
     # --------------------------------------------------
-    # 3️⃣ Persist student answer (unchanged behavior)
+    # 2️⃣ Persist student answer (unchanged)
     # --------------------------------------------------
     exam_state.answer_text = payload.answer_text
     exam_state.completed_at = datetime.now(timezone.utc)
 
     # --------------------------------------------------
-    # 4️⃣ Evaluate essay using OpenAI (NEW)
+    # 3️⃣ Evaluate essay using OpenAI
     # --------------------------------------------------
     prompt = f"""
 You are an exam marker evaluating a student's writing for selective school readiness.
@@ -3405,13 +3393,10 @@ Essay:
         ai_result = response.choices[0].message.content
     except Exception as e:
         print("❌ OpenAI evaluation failed:", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="Writing evaluation failed"
-        )
+        raise HTTPException(status_code=500, detail="Writing evaluation failed")
 
     # --------------------------------------------------
-    # 5️⃣ Parse AI response
+    # 4️⃣ Parse AI response
     # --------------------------------------------------
     try:
         import json
@@ -3427,17 +3412,17 @@ Essay:
         )
 
     # --------------------------------------------------
-    # 6️⃣ Store AI evaluation on writing attempt
+    # 5️⃣ Store AI evaluation on writing attempt
     # --------------------------------------------------
     exam_state.ai_score = writing_score
     exam_state.ai_strengths = strengths
     exam_state.ai_improvements = improvements
 
     # --------------------------------------------------
-    # 7️⃣ Admin RAW SCORE snapshot (Writing)
+    # 6️⃣ Admin RAW SCORE snapshot (same as Reading)
     # --------------------------------------------------
     admin_raw_score = AdminExamRawScore(
-        student_id=student.id,           # ✅ internal integer
+        student_id=exam_state.student_id,   # 🔑 SAME AS READING
         exam_attempt_id=exam_state.id,
         subject="writing",
         total_questions=20,
@@ -3449,7 +3434,7 @@ Essay:
     db.add(admin_raw_score)
 
     # --------------------------------------------------
-    # 8️⃣ Commit atomically
+    # 7️⃣ Commit once (atomic)
     # --------------------------------------------------
     db.commit()
 
