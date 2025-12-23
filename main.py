@@ -2989,6 +2989,18 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
             "status": "ok",
             "message": "Exam already submitted"
         }
+    
+    # --------------------------------------------------
+    # Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == session.student_id)
+        .first()
+    )
+    
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
 
     # --------------------------------------------------
     # 2️⃣ Load exam
