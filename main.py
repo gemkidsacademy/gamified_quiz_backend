@@ -5957,9 +5957,10 @@ def finish_thinking_skills_exam(
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
     if not admin_report_exists(
-        student_id=student.id,
+        db=db,
         exam_attempt_id=attempt.id
     ):
+
         generate_admin_exam_report(
             db=db,
             student=student,
