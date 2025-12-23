@@ -3095,6 +3095,20 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         })
 
     overall_accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+    # --------------------------------------------------
+    # ADMIN RAW SCORE SNAPSHOT (Reading)
+    # --------------------------------------------------
+    admin_raw_score = AdminExamRawScore(
+        student_id=session.student_id,
+        exam_attempt_id=session.id,   # reading uses session_id as attempt id
+        subject="reading",
+        total_questions=total_questions,
+        correct_answers=correct,
+        wrong_answers=incorrect,
+        accuracy_percent=overall_accuracy
+    )
+    
+    db.add(admin_raw_score)
 
     report_json = {
         "overall": {
