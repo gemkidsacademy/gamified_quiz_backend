@@ -5790,6 +5790,80 @@ def admin_report_exists(db: Session, exam_attempt_id: int) -> bool:
         .first()
         is not None
     )
+ 
+def generate_admin_exam_report(
+    db: Session,
+    student: Student,
+    exam_attempt: StudentExamThinkingSkills,
+    subject: str,
+    accuracy: float,
+    correct: int,
+    wrong: int,
+    total_questions: int
+):
+    """
+    Generates an immutable admin report snapshot for a completed exam attempt.
+    This function MUST NOT commit. Caller controls the transaction.
+    """
+
+    # -------------------------------
+    # 1️⃣ Determine performance band
+    # -------------------------------
+    if accuracy >= 80:
+        performance_band = "A"
+        readiness_band = "Strong Selective Potential"
+        school_guidance = "Mid-tier Selective"
+    elif accuracy >= 60:
+        performance_band = "B"
+        readiness_band = "Borderline Selective"
+        school_guidance = "Selective Preparation Required"
+    else:
+        performance_band = "C"
+        readiness_band = "Not Yet Selective Ready"
+        school_guidance = "General Stream Recommended"
+
+    # -------------------------------
+    # 2️⃣ Create main admin report
+    # -------------------------------
+    admin_report = AdminExamReport(
+        student_id=student.id,
+        exam_attempt_id=exam_attempt.id,
+        exam_type="selective",
+        overall_score=accuracy,
+        readiness_band=readiness_band,
+        school_guidance_level=school_guidance,
+        summary_notes=f"Thinking Skills accuracy: {accuracy}%"
+    )
+
+    db.add(admin_report)
+    db.flush()  # get admin_report.id without commit
+
+    # -------------------------------
+    # 3️⃣ Create section result
+    # -------------------------------
+    section_result = AdminExamSectionResult(
+        admin_report_id=admin_report.id,
+        section_name="thinking",
+        raw_score=accuracy,
+        performance_band=performance_band,
+        strengths_summary="Logical reasoning applied correctly",
+        improvement_summary="Improve speed and multi-step reasoning"
+    )
+
+    db.add(section_result)
+
+    # -------------------------------
+    # 4️⃣ Store applied rule (audit safety)
+    # -------------------------------
+    rule_applied = AdminReadinessRuleApplied(
+        admin_report_id=admin_report.id,
+        rule_code="THINKING_SKILLS_ACCURACY",
+        rule_description="Thinking Skills accuracy used for readiness classification",
+        rule_result="passed" if accuracy >= 60 else "failed"
+    )
+
+    db.add(rule_applied)
+
 
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
