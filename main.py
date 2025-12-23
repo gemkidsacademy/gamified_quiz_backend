@@ -3386,18 +3386,28 @@ def submit_writing_exam(
     print("🤖 Preparing OpenAI prompt...")
 
     prompt = f"""
-You are an exam marker evaluating a student's writing for selective school readiness.
+You are an automated exam marking system.
 
-Return a JSON object with:
-- score (0–20)
-- strengths (short text)
-- improvements (short text)
+IMPORTANT RULES (MUST FOLLOW STRICTLY):
+- Respond with ONLY a valid JSON object
+- Do NOT include markdown
+- Do NOT include ```json or ``` blocks
+- Do NOT include explanations or extra text
+- Output must be directly parsable by json.loads()
+
+Required JSON schema:
+{{
+  "score": <integer between 0 and 20>,
+  "strengths": "<short sentence>",
+  "improvements": "<short sentence>"
+}}
+
+Evaluate the following student essay for selective school readiness writing quality.
 
 Essay:
-\"\"\"
 {payload.answer_text}
-\"\"\"
 """
+
 
     try:
         print("🚀 Calling OpenAI Responses API...")
