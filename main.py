@@ -3331,12 +3331,31 @@ def get_quizzes_writing(db: Session = Depends(get_db)):
         for row in rows
     ]
 
+
+
 @app.post("/api/exams/writing/submit")
 def submit_writing_exam(
     payload: WritingSubmitSchema,
     student_id: str,
     db: Session = Depends(get_db)
 ):
+    print("\n================ SUBMIT WRITING EXAM =================")
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve internal student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Load active writing attempt
+    # --------------------------------------------------
     exam_state = (
         db.query(StudentExamWriting)
         .filter(
@@ -3353,14 +3372,94 @@ def submit_writing_exam(
             detail="No active writing exam found"
         )
 
+    # --------------------------------------------------
+    # 3️⃣ Persist student answer (unchanged behavior)
+    # --------------------------------------------------
     exam_state.answer_text = payload.answer_text
-    exam_state.completed_at = func.now()
+    exam_state.completed_at = datetime.now(timezone.utc)
 
+    # --------------------------------------------------
+    # 4️⃣ Evaluate essay using OpenAI (NEW)
+    # --------------------------------------------------
+    prompt = f"""
+You are an exam marker evaluating a student's writing for selective school readiness.
+
+Return a JSON object with:
+- score (0–20)
+- strengths (short text)
+- improvements (short text)
+
+Essay:
+\"\"\"
+{payload.answer_text}
+\"\"\"
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+
+        ai_result = response.choices[0].message.content
+    except Exception as e:
+        print("❌ OpenAI evaluation failed:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Writing evaluation failed"
+        )
+
+    # --------------------------------------------------
+    # 5️⃣ Parse AI response (defensive)
+    # --------------------------------------------------
+    try:
+        import json
+        evaluation = json.loads(ai_result)
+
+        writing_score = int(evaluation.get("score", 0))
+        strengths = evaluation.get("strengths", "")
+        improvements = evaluation.get("improvements", "")
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid AI evaluation format"
+        )
+
+    # --------------------------------------------------
+    # 6️⃣ Store AI evaluation on writing attempt
+    # --------------------------------------------------
+    exam_state.ai_score = writing_score
+    exam_state.ai_strengths = strengths
+    exam_state.ai_improvements = improvements
+
+    # --------------------------------------------------
+    # 7️⃣ Admin RAW SCORE snapshot (Writing)
+    # --------------------------------------------------
+    admin_raw_score = AdminExamRawScore(
+        student_id=student.id,                 # internal ID
+        exam_attempt_id=exam_state.id,          # writing attempt ID
+        subject="writing",
+        total_questions=20,                     # fixed writing scale
+        correct_answers=writing_score,
+        wrong_answers=20 - writing_score,
+        accuracy_percent=round((writing_score / 20) * 100, 2)
+    )
+
+    db.add(admin_raw_score)
+
+    # --------------------------------------------------
+    # 8️⃣ Commit atomically
+    # --------------------------------------------------
     db.commit()
+
+    print("✅ Writing exam submitted and evaluated")
+    print("====================================================\n")
 
     return {
         "message": "Writing exam submitted successfully",
-        "exam_id": exam_state.exam_id
+        "exam_id": exam_state.exam_id,
+        "writing_score": writing_score
     }
 
 
