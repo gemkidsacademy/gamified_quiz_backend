@@ -5783,6 +5783,13 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
         "remaining_time": int(max(remaining, 0)),
         "completed": session.completed_at is not None
     }
+def admin_report_exists(db: Session, exam_attempt_id: int) -> bool:
+    return (
+        db.query(AdminExamReport.id)
+        .filter(AdminExamReport.exam_attempt_id == exam_attempt_id)
+        .first()
+        is not None
+    )
 
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
