@@ -3354,12 +3354,12 @@ def submit_writing_exam(
         raise HTTPException(status_code=404, detail="Student not found")
 
     # --------------------------------------------------
-    # 2️⃣ Load active writing attempt
+    # 2️⃣ Load active writing attempt (✅ FIXED)
     # --------------------------------------------------
     exam_state = (
         db.query(StudentExamWriting)
         .filter(
-            StudentExamWriting.student_id == student_id,
+            StudentExamWriting.student_id == student.id,   # ✅ INTERNAL ID
             StudentExamWriting.completed_at.is_(None)
         )
         .order_by(StudentExamWriting.started_at.desc())
@@ -3411,7 +3411,7 @@ Essay:
         )
 
     # --------------------------------------------------
-    # 5️⃣ Parse AI response (defensive)
+    # 5️⃣ Parse AI response
     # --------------------------------------------------
     try:
         import json
@@ -3437,10 +3437,10 @@ Essay:
     # 7️⃣ Admin RAW SCORE snapshot (Writing)
     # --------------------------------------------------
     admin_raw_score = AdminExamRawScore(
-        student_id=student.id,                 # internal ID
-        exam_attempt_id=exam_state.id,          # writing attempt ID
+        student_id=student.id,           # ✅ internal integer
+        exam_attempt_id=exam_state.id,
         subject="writing",
-        total_questions=20,                     # fixed writing scale
+        total_questions=20,
         correct_answers=writing_score,
         wrong_answers=20 - writing_score,
         accuracy_percent=round((writing_score / 20) * 100, 2)
