@@ -3340,10 +3340,14 @@ def submit_writing_exam(
     db: Session = Depends(get_db)
 ):
     print("\n================ SUBMIT WRITING EXAM =================")
+    print("➡️ Incoming student_id:", student_id)
+    print("➡️ Payload received:", payload.dict())
 
     # --------------------------------------------------
-    # 1️⃣ Load active writing attempt (same pattern as Reading)
+    # 1️⃣ Load active writing attempt
     # --------------------------------------------------
+    print("🔍 Looking for active writing attempt...")
+
     exam_state = (
         db.query(StudentExamWriting)
         .filter(
@@ -3355,20 +3359,32 @@ def submit_writing_exam(
     )
 
     if not exam_state:
+        print("❌ No active writing exam found for student_id:", student_id)
         raise HTTPException(
             status_code=404,
             detail="No active writing exam found"
         )
 
+    print("✅ Writing attempt found:", {
+        "attempt_id": exam_state.id,
+        "exam_id": exam_state.exam_id,
+        "started_at": exam_state.started_at
+    })
+
     # --------------------------------------------------
-    # 2️⃣ Persist student answer (unchanged)
+    # 2️⃣ Persist student answer
     # --------------------------------------------------
+    print("💾 Saving student answer...")
+    print("✏️ Essay length:", len(payload.answer_text or ""))
+
     exam_state.answer_text = payload.answer_text
     exam_state.completed_at = datetime.now(timezone.utc)
 
     # --------------------------------------------------
     # 3️⃣ Evaluate essay using OpenAI
     # --------------------------------------------------
+    print("🤖 Preparing OpenAI prompt...")
+
     prompt = f"""
 You are an exam marker evaluating a student's writing for selective school readiness.
 
@@ -3384,20 +3400,34 @@ Essay:
 """
 
     try:
-        response = client.chat.completions.create(
+        print("🚀 Calling OpenAI Responses API...")
+
+        response = client.responses.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2
+            input=prompt,
+            temperature=0.4
         )
 
-        ai_result = response.choices[0].message.content
+        print("🧠 Raw OpenAI response object:", response)
+
+        ai_result = response.output_text
+        print("🧠 OpenAI output_text:")
+        print(ai_result)
+
     except Exception as e:
-        print("❌ OpenAI evaluation failed:", str(e))
-        raise HTTPException(status_code=500, detail="Writing evaluation failed")
+        print("❌ OpenAI evaluation failed!")
+        print("❌ Exception type:", type(e))
+        print("❌ Exception details:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Writing evaluation failed"
+        )
 
     # --------------------------------------------------
     # 4️⃣ Parse AI response
     # --------------------------------------------------
+    print("🧪 Parsing AI response as JSON...")
+
     try:
         import json
         evaluation = json.loads(ai_result)
@@ -3405,7 +3435,18 @@ Essay:
         writing_score = int(evaluation.get("score", 0))
         strengths = evaluation.get("strengths", "")
         improvements = evaluation.get("improvements", "")
-    except Exception:
+
+        print("✅ Parsed AI evaluation:", {
+            "score": writing_score,
+            "strengths": strengths,
+            "improvements": improvements
+        })
+
+    except Exception as e:
+        print("❌ Failed to parse AI response as JSON")
+        print("❌ Raw AI text was:")
+        print(ai_result)
+        print("❌ Exception:", str(e))
         raise HTTPException(
             status_code=500,
             detail="Invalid AI evaluation format"
@@ -3414,15 +3455,19 @@ Essay:
     # --------------------------------------------------
     # 5️⃣ Store AI evaluation on writing attempt
     # --------------------------------------------------
+    print("💾 Storing AI evaluation on writing attempt...")
+
     exam_state.ai_score = writing_score
     exam_state.ai_strengths = strengths
     exam_state.ai_improvements = improvements
 
     # --------------------------------------------------
-    # 6️⃣ Admin RAW SCORE snapshot (same as Reading)
+    # 6️⃣ Admin RAW SCORE snapshot
     # --------------------------------------------------
+    print("📊 Creating AdminExamRawScore snapshot...")
+
     admin_raw_score = AdminExamRawScore(
-        student_id=exam_state.student_id,   # 🔑 SAME AS READING
+        student_id=exam_state.student_id,
         exam_attempt_id=exam_state.id,
         subject="writing",
         total_questions=20,
@@ -3432,13 +3477,27 @@ Essay:
     )
 
     db.add(admin_raw_score)
+    print("✅ Admin raw score prepared:", {
+        "student_id": admin_raw_score.student_id,
+        "attempt_id": admin_raw_score.exam_attempt_id,
+        "accuracy": admin_raw_score.accuracy_percent
+    })
 
     # --------------------------------------------------
-    # 7️⃣ Commit once (atomic)
+    # 7️⃣ Commit atomically
     # --------------------------------------------------
-    db.commit()
+    print("💾 Committing transaction to database...")
 
-    print("✅ Writing exam submitted and evaluated")
+    try:
+        db.commit()
+        print("✅ Database commit successful")
+    except Exception as e:
+        print("❌ Database commit failed!")
+        print("❌ Exception:", str(e))
+        db.rollback()
+        raise
+
+    print("🎉 Writing exam submitted and evaluated successfully")
     print("====================================================\n")
 
     return {
