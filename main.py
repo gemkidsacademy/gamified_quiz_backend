@@ -3099,8 +3099,8 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
     # ADMIN RAW SCORE SNAPSHOT (Reading)
     # --------------------------------------------------
     admin_raw_score = AdminExamRawScore(
-        student_id=session.student_id,
-        exam_attempt_id=session.id,   # reading uses session_id as attempt id
+        student_id=student.id,           # CORRECT (integer)
+        exam_attempt_id=session.id,
         subject="reading",
         total_questions=total_questions,
         correct_answers=correct,
