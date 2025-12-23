@@ -134,6 +134,87 @@ otp_store = {}
 # Models
 # ---------------------------
 
+class AdminExamReport(Base):
+    __tablename__ = "admin_exam_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # references Student.id (no FK to keep decoupled)
+    student_id = Column(Integer, nullable=False, index=True)
+
+    # references exam attempt table (thinking / reading / etc)
+    exam_attempt_id = Column(Integer, nullable=False, unique=True, index=True)
+
+    exam_type = Column(String, nullable=False)
+    # e.g. "selective"
+
+    overall_score = Column(Float, nullable=True)
+    # optional numeric summary
+
+    readiness_band = Column(String, nullable=False)
+    # e.g. "Strong Selective Potential"
+
+    school_guidance_level = Column(String, nullable=False)
+    # e.g. "Mid-tier Selective"
+
+    summary_notes = Column(String, nullable=True)
+    # short admin-facing explanation
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+class AdminExamSectionResult(Base):
+    __tablename__ = "admin_exam_section_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # references AdminExamReport.id
+    admin_report_id = Column(Integer, nullable=False, index=True)
+
+    section_name = Column(String, nullable=False)
+    # "reading", "maths", "thinking", "writing"
+
+    raw_score = Column(Float, nullable=True)
+    # percent or marks
+
+    performance_band = Column(String, nullable=False)
+    # A / B / C / etc
+
+    strengths_summary = Column(String, nullable=True)
+    improvement_summary = Column(String, nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+class AdminReadinessRuleApplied(Base):
+    __tablename__ = "admin_readiness_rules_applied"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # references AdminExamReport.id
+    admin_report_id = Column(Integer, nullable=False, index=True)
+
+    rule_code = Column(String, nullable=False)
+    # e.g. "WRITING_MINIMUM"
+
+    rule_description = Column(String, nullable=False)
+    # human-readable explanation
+
+    rule_result = Column(String, nullable=False)
+    # "passed" or "failed"
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+
 class StudentExamResultsMathematicalReasoning(Base):
     __tablename__ = "student_exam_results_mathematical_reasoning"
 
@@ -5868,7 +5949,24 @@ def finish_thinking_skills_exam(
     # 7️⃣ Mark attempt completed
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
+    if not admin_report_exists(
+        student_id=student.id,
+        exam_attempt_id=attempt.id
+    ):
+        generate_admin_exam_report(
+            db=db,
+            student=student,
+            exam_attempt=attempt,
+            subject="thinking_skills",
+            accuracy=accuracy,
+            correct=correct,
+            wrong=wrong,
+            total_questions=total_questions
+        )
+
     db.commit()
+    # 8️⃣ Generate Admin Report Snapshot (NEW)
+    
 
     print("================ FINISH THINKING SKILLS EXAM END =================\n")
 
