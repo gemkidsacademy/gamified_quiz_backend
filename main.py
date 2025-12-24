@@ -154,14 +154,13 @@ class AdminExamRawScore(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-
 class AdminExamReport(Base):
     __tablename__ = "admin_exam_reports"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # references Student.id (no FK to keep decoupled)
-    student_id = Column(Integer, nullable=False, index=True)
+    # external student identifier (e.g. "Gem002")
+    student_id = Column(String, nullable=False, index=True)
 
     # references exam attempt table (thinking / reading / etc)
     exam_attempt_id = Column(Integer, nullable=False, unique=True, index=True)
@@ -170,7 +169,6 @@ class AdminExamReport(Base):
     # e.g. "selective"
 
     overall_score = Column(Float, nullable=True)
-    # optional numeric summary
 
     readiness_band = Column(String, nullable=False)
     # e.g. "Strong Selective Potential"
@@ -179,13 +177,13 @@ class AdminExamReport(Base):
     # e.g. "Mid-tier Selective"
 
     summary_notes = Column(String, nullable=True)
-    # short admin-facing explanation
 
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
+
 
 class AdminExamSectionResult(Base):
     __tablename__ = "admin_exam_section_results"
