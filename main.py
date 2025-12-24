@@ -6359,7 +6359,7 @@ def finish_thinking_skills_exam(
 
 def aggregate_math_sections(db: Session, exam_attempt_id: int):
     """
-    Aggregates Mathematical Reasoning responses into section-level accuracy.
+    Aggregates Mathematical Reasoning responses into topic-based sections.
 
     Returns:
     {
@@ -6379,7 +6379,7 @@ def aggregate_math_sections(db: Session, exam_attempt_id: int):
     section_totals = {}
 
     for r in responses:
-        section = r.section_name  # MUST exist on the response model
+        section = r.topic  # ✅ USE topic as section
 
         if not section:
             section = "General"
