@@ -1930,18 +1930,18 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 from sqlalchemy import func
 @app.get("/api/admin/students")
 def get_admin_students(db: Session = Depends(get_db)):
-    rows = (
-        db.query(distinct(AdminExamRawScore.student_id))
-        .order_by(AdminExamRawScore.student_id)
+    students = (
+        db.query(Student.student_id, Student.name)
+        .order_by(Student.student_id)
         .all()
     )
 
     return [
         {
-            "student_id": student_id,  # ✅ MUST be this key
-            "name": student_id
+            "student_id": student_id,
+            "name": name
         }
-        for (student_id,) in rows
+        for student_id, name in students
     ]
 
 
