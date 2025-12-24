@@ -1945,7 +1945,7 @@ def get_admin_students(db: Session = Depends(get_db)):
     ]
 
 
- @app.get("/api/admin/students/{student_id}")
+@app.get("/api/admin/students/{student_id}")
 def get_student_details(student_id: str, db: Session = Depends(get_db)):
     student = (
         db.query(Student)
