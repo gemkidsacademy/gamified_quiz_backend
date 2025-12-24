@@ -1928,7 +1928,78 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
+@app.get("/students")
+def get_admin_students(db: Session = Depends(get_db)):
+    """
+    Return distinct students who have exam attempts.
+    Used by Admin UI student selector.
+    """
 
+    rows = (
+        db.query(distinct(AdminExamRawScore.student_id))
+        .order_by(AdminExamRawScore.student_id)
+        .all()
+    )
+
+    # rows = [('Gem001',), ('Gem002',)]
+
+    students = [
+        {
+            "id": student_id,
+            "name": student_id
+        }
+        for (student_id,) in rows
+    ]
+
+    return students
+@app.get("/students/{student_id}/selective-reports")
+def get_student_selective_reports(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return all selective readiness reports for a student.
+    Reports are immutable snapshots.
+    """
+
+    reports = (
+        db.query(AdminExamReport)
+        .filter(AdminExamReport.student_id == student_id)
+        .order_by(AdminExamReport.created_at.desc())
+        .all()
+    )
+
+    response = []
+
+    for report in reports:
+        sections = (
+            db.query(AdminExamSectionResult)
+            .filter(
+                AdminExamSectionResult.exam_attempt_id == report.exam_attempt_id
+            )
+            .order_by(AdminExamSectionResult.section_name)
+            .all()
+        )
+
+        response.append({
+            "id": report.id,
+            "exam_date": report.created_at.date().isoformat(),
+            "readiness_band": report.readiness_label,
+            "school_guidance_level": report.school_guidance_level,
+            "sections": [
+                {
+                    "section_name": s.section_name,
+                    "performance_band": s.performance_band,
+                    "strengths_summary": s.strengths_summary,
+                    "improvement_summary": s.improvement_summary,
+                }
+                for s in sections
+            ],
+            "disclaimer": report.disclaimer or
+                "This report is advisory only and does not guarantee placement."
+        })
+
+    return response
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
     id: str,   # 🔴 CHANGE HERE (int → str)
