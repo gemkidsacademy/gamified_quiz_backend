@@ -6359,6 +6359,93 @@ def finish_thinking_skills_exam(
         "accuracy": accuracy
     }
 
+def generate_admin_exam_report_math(
+    db: Session,
+    student: Student,
+    exam_attempt,
+    accuracy: float,
+    correct: int,
+    wrong: int,
+    total_questions: int
+):
+    """
+    Generates admin report + section results for Mathematical Reasoning.
+    MUST NOT commit.
+    """
+
+    # -------------------------------
+    # 1️⃣ Readiness & guidance rules
+    # -------------------------------
+    if accuracy >= 80:
+        readiness_band = "Strong Selective Potential"
+        school_guidance = "Mid-tier Selective"
+    elif accuracy >= 60:
+        readiness_band = "Borderline Selective"
+        school_guidance = "Selective Preparation Required"
+    else:
+        readiness_band = "Not Yet Selective Ready"
+        school_guidance = "General Stream Recommended"
+
+    # -------------------------------
+    # 2️⃣ Create admin report snapshot
+    # -------------------------------
+    admin_report = AdminExamReport(
+        student_id=student.student_id,  # external ID (IMPORTANT)
+        exam_attempt_id=exam_attempt.id,
+        exam_type="selective",
+        overall_score=accuracy,
+        readiness_band=readiness_band,
+        school_guidance_level=school_guidance,
+        summary_notes=f"Mathematical Reasoning accuracy: {accuracy}%"
+    )
+
+    db.add(admin_report)
+    db.flush()  # get admin_report.id
+
+    # -------------------------------
+    # 3️⃣ Aggregate maths sections
+    # -------------------------------
+    section_stats = aggregate_math_sections(
+        db=db,
+        exam_attempt_id=exam_attempt.id
+    )
+
+    # -------------------------------
+    # 4️⃣ Insert section rows
+    # -------------------------------
+    for section_name, stats in section_stats.items():
+        raw_score = stats["accuracy"]
+
+        if raw_score >= 80:
+            band = "A"
+        elif raw_score >= 60:
+            band = "B"
+        else:
+            band = "C"
+
+        db.add(
+            AdminExamSectionResult(
+                admin_report_id=admin_report.id,
+                section_name=section_name,
+                raw_score=raw_score,
+                performance_band=band,
+                strengths_summary=None,
+                improvement_summary=None
+            )
+        )
+
+    # -------------------------------
+    # 5️⃣ Store applied rule (audit)
+    # -------------------------------
+    db.add(
+        AdminReadinessRuleApplied(
+            admin_report_id=admin_report.id,
+            rule_code="MATHS_ACCURACY",
+            rule_description="Mathematical Reasoning accuracy used for readiness classification",
+            rule_result="passed" if accuracy >= 60 else "failed"
+        )
+    )
+
 
 @app.post("/api/student/finish-exam")
 def finish_exam(
@@ -6508,6 +6595,26 @@ def finish_exam(
     # 7️⃣ Mark attempt completed
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
+    # --------------------------------------------------
+# 8️⃣ Generate Admin Report Snapshot (ADMIN)
+# --------------------------------------------------
+    if not admin_report_exists(
+        db=db,
+        exam_attempt_id=attempt.id
+    ):
+        generate_admin_exam_report_math(
+            db=db,
+            student=student,
+            exam_attempt=attempt,
+            accuracy=accuracy,
+            correct=correct,
+            wrong=wrong,
+            total_questions=total_questions
+        )
+    
+    # --------------------------------------------------
+    # 9️⃣ Final commit (single transaction)
+    # --------------------------------------------------
     db.commit()
 
     print("================ FINISH MATHEMATICAL REASONING EXAM END =================\n")
