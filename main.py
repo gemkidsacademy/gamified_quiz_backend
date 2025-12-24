@@ -3604,12 +3604,13 @@ def generate_exam_writing(
     question = (
         db.query(WritingQuestionBank)
         .filter(
-            func.lower(WritingQuestionBank.class_name) == class_name,
-            func.lower(WritingQuestionBank.difficulty) == difficulty
+            func.trim(func.lower(WritingQuestionBank.class_name)) == class_name,
+            func.trim(func.lower(WritingQuestionBank.difficulty)) == difficulty
         )
         .order_by(func.random())
         .first()
     )
+
 
     if not question:
         raise HTTPException(
