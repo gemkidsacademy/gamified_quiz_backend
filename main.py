@@ -6124,7 +6124,7 @@ def generate_admin_exam_report(
     # 2️⃣ Create main admin report
     # -------------------------------
     admin_report = AdminExamReport(
-        student_id=student.id,
+        student_id=student.student_id,
         exam_attempt_id=exam_attempt.id,
         exam_type="selective",
         overall_score=accuracy,
