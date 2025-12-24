@@ -6357,6 +6357,55 @@ def finish_thinking_skills_exam(
         "accuracy": accuracy
     }
 
+def aggregate_math_sections(db: Session, exam_attempt_id: int):
+    """
+    Aggregates Mathematical Reasoning responses into section-level accuracy.
+
+    Returns:
+    {
+        "Arithmetic": { "accuracy": 75.0 },
+        "Word Problems": { "accuracy": 60.0 }
+    }
+    """
+
+    responses = (
+        db.query(StudentExamResponse)
+        .filter(
+            StudentExamResponse.exam_attempt_id == exam_attempt_id
+        )
+        .all()
+    )
+
+    section_totals = {}
+
+    for r in responses:
+        section = r.section_name  # MUST exist on the response model
+
+        if not section:
+            section = "General"
+
+        if section not in section_totals:
+            section_totals[section] = {"correct": 0, "total": 0}
+
+        section_totals[section]["total"] += 1
+        if r.is_correct:
+            section_totals[section]["correct"] += 1
+
+    section_results = {}
+
+    for section, stats in section_totals.items():
+        accuracy = (
+            round((stats["correct"] / stats["total"]) * 100, 1)
+            if stats["total"] else 0
+        )
+
+        section_results[section] = {
+            "accuracy": accuracy
+        }
+
+    return section_results
+
+
 def generate_admin_exam_report_math(
     db: Session,
     student: Student,
