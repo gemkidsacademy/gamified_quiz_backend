@@ -1928,7 +1928,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 from sqlalchemy import func
-@app.get("/students")
+@app.get("api/admin/students")
 def get_admin_students(db: Session = Depends(get_db)):
     """
     Return distinct students who have exam attempts.
