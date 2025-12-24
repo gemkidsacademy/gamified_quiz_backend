@@ -3108,19 +3108,34 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
     overall_accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
     # --------------------------------------------------
-    # ADMIN RAW SCORE SNAPSHOT (Reading)
+    # ADMIN RAW SCORE SNAPSHOT (Reading) — SAFE VERSION
     # --------------------------------------------------
-    admin_raw_score = AdminExamRawScore(
-        student_id=student.id,           # CORRECT (integer)
-        exam_attempt_id=session.id,
-        subject="reading",
-        total_questions=total_questions,
-        correct_answers=correct,
-        wrong_answers=incorrect,
-        accuracy_percent=overall_accuracy
+    existing_raw_score = (
+        db.query(AdminExamRawScore)
+        .filter(AdminExamRawScore.exam_attempt_id == session.id)
+        .first()
     )
     
-    db.add(admin_raw_score)
+    if existing_raw_score:
+        # Update existing snapshot (idempotent)
+        existing_raw_score.student_id = student.id
+        existing_raw_score.subject = "reading"
+        existing_raw_score.total_questions = total_questions
+        existing_raw_score.correct_answers = correct
+        existing_raw_score.wrong_answers = incorrect
+        existing_raw_score.accuracy_percent = overall_accuracy
+    else:
+        # Insert new snapshot
+        admin_raw_score = AdminExamRawScore(
+            student_id=student.id,
+            exam_attempt_id=session.id,
+            subject="reading",
+            total_questions=total_questions,
+            correct_answers=correct,
+            wrong_answers=incorrect,
+            accuracy_percent=overall_accuracy
+        )
+        db.add(admin_raw_score)
 
     report_json = {
         "overall": {
