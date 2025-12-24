@@ -1953,6 +1953,24 @@ def get_admin_students(db: Session = Depends(get_db)):
     ]
 
     return students
+ @app.get("/api/admin/students/{student_id}")
+def get_student_details(student_id: str, db: Session = Depends(get_db)):
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    return {
+        "student_id": student.student_id,
+        "name": student.name,
+        "class_name": student.class_name,
+        "class_day": student.class_day,
+        "parent_email": student.parent_email,
+    }
 @app.get("/students/{student_id}/selective-reports")
 def get_student_selective_reports(
     student_id: str,
