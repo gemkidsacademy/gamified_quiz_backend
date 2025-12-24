@@ -1929,31 +1929,23 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 from sqlalchemy import func
 @app.get("/api/admin/students")
-
 def get_admin_students(db: Session = Depends(get_db)):
-    """
-    Return distinct students who have exam attempts.
-    Used by Admin UI student selector.
-    """
-
     rows = (
         db.query(distinct(AdminExamRawScore.student_id))
         .order_by(AdminExamRawScore.student_id)
         .all()
     )
 
-    # rows = [('Gem001',), ('Gem002',)]
-
-    students = [
+    return [
         {
-            "id": student_id,
+            "student_id": student_id,  # ✅ MUST be this key
             "name": student_id
         }
         for (student_id,) in rows
     ]
 
-    return students
-@app.get("/api/admin/students/{student_id}")
+
+ @app.get("/api/admin/students/{student_id}")
 def get_student_details(student_id: str, db: Session = Depends(get_db)):
     student = (
         db.query(Student)
