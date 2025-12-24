@@ -3019,6 +3019,90 @@ def add_student_exam_module(
         "password": plain_password
     }
 
+def generate_admin_exam_report_reading(
+    db: Session,
+    student: Student,
+    exam_attempt: StudentExamReading,
+    overall_accuracy: float,
+    topic_stats: dict
+):
+    """
+    Generates an immutable admin report snapshot for a completed Reading exam.
+    MUST NOT commit. Caller controls the transaction.
+    """
+
+    # -------------------------------
+    # 1️⃣ Determine readiness & guidance
+    # -------------------------------
+    if overall_accuracy >= 80:
+        readiness_band = "Strong Selective Potential"
+        school_guidance = "Mid-tier Selective"
+    elif overall_accuracy >= 60:
+        readiness_band = "Borderline Selective"
+        school_guidance = "Selective Preparation Required"
+    else:
+        readiness_band = "Not Yet Selective Ready"
+        school_guidance = "General Stream Recommended"
+
+    # -------------------------------
+    # 2️⃣ Create admin report snapshot
+    # -------------------------------
+    admin_report = AdminExamReport(
+        student_id=student.student_id,  # external ID (STRING)
+        exam_attempt_id=exam_attempt.id,
+        exam_type="selective",
+        overall_score=overall_accuracy,
+        readiness_band=readiness_band,
+        school_guidance_level=school_guidance,
+        summary_notes=f"Reading accuracy: {overall_accuracy}%"
+    )
+
+    db.add(admin_report)
+    db.flush()  # obtain admin_report.id safely
+
+    # -------------------------------
+    # 3️⃣ Create section (topic) results
+    # -------------------------------
+    for topic, stats in topic_stats.items():
+        attempted = stats.get("attempted", 0)
+        correct = stats.get("correct", 0)
+
+        accuracy = (
+            round((correct / attempted) * 100, 2)
+            if attempted > 0 else 0.0
+        )
+
+        if accuracy >= 80:
+            band = "A"
+        elif accuracy >= 60:
+            band = "B"
+        else:
+            band = "C"
+
+        section_result = AdminExamSectionResult(
+            admin_report_id=admin_report.id,
+            section_name=topic,
+            raw_score=accuracy,
+            performance_band=band,
+            strengths_summary=None,
+            improvement_summary=None
+        )
+
+        db.add(section_result)
+
+    # -------------------------------
+    # 4️⃣ Store applied rule (audit safety)
+    # -------------------------------
+    rule_applied = AdminReadinessRuleApplied(
+        admin_report_id=admin_report.id,
+        rule_code="READING_ACCURACY",
+        rule_description="Reading accuracy used for readiness classification",
+        rule_result="passed" if overall_accuracy >= 60 else "failed"
+    )
+
+    db.add(rule_applied)
+
+
  
 @app.post("/api/exams/submit-reading")
 def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
@@ -3241,6 +3325,19 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
     session.finished = True
     session.completed_at = datetime.now(timezone.utc)
     session.report_json = report_json
+
+    if not admin_report_exists(
+        db=db,
+        exam_attempt_id=session.id
+    ):
+        generate_admin_exam_report_reading(
+            db=db,
+            student=student,
+            exam_attempt=session,
+            overall_accuracy=overall_accuracy,
+            topic_stats=topic_stats
+        )
+
 
     db.commit()
 
