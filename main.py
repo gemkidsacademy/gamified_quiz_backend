@@ -3806,11 +3806,12 @@ Essay:
         # E) Insert admin_readiness_rules_applied (audit trail)
         # --------------------------------------------------
         readiness_rule = AdminReadinessRuleApplied(
-            report_id=admin_report.id,
-            rule_name="writing_score_threshold",
-            rule_result=readiness_status,
-            explanation=f"Writing score {writing_score}/20 classified as {performance_band}"
+           admin_report_id=admin_report.id,
+           rule_code="writing_score_threshold",
+           rule_result=readiness_status,
+           rule_description=f"Writing score {writing_score}/20 classified as {performance_band}"
         )
+
     
         db.add(readiness_rule)
     
