@@ -3592,21 +3592,9 @@ def get_foundational_classes(db: Session = Depends(get_db)):
 @app.post("/api/student/start-writing-exam")
 def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
-    # 1️⃣ Check for existing active session
-    existing_session = (
-        db.query(StudentExamWriting)
-        .filter(
-            StudentExamWriting.student_id == student_id,
-            StudentExamWriting.completed_at == None
-        )
-        .order_by(StudentExamWriting.started_at.desc())
-        .first()
-    )
-
-    if existing_session:
-        return {"status": "already_started"}
-
-    # 2️⃣ Get current exam
+    # --------------------------------------------------
+    # 1️⃣ Get current writing exam
+    # --------------------------------------------------
     exam = (
         db.query(GeneratedExamWriting)
         .filter(GeneratedExamWriting.is_current == True)
@@ -3617,18 +3605,66 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     if not exam:
         raise HTTPException(404, "No active writing exam")
 
-    # 3️⃣ Create NEW session only if none exists
-    new_session = StudentExamWriting(
+    # --------------------------------------------------
+    # 2️⃣ Fetch latest attempt for THIS exam
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.student_id == student_id,
+            StudentExamWriting.exam_id == exam.id
+        )
+        .order_by(StudentExamWriting.started_at.desc())
+        .first()
+    )
+
+    # --------------------------------------------------
+    # 🟥 CASE A — Exam already completed
+    # --------------------------------------------------
+    if attempt and attempt.completed_at:
+        return {"completed": True}
+
+    # --------------------------------------------------
+    # 🟡 CASE B — Resume active attempt
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is None:
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+
+        if remaining == 0:
+            attempt.completed_at = now
+            db.commit()
+            return {"completed": True}
+
+        return {
+            "completed": False,
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 🔵 CASE C — Start new writing attempt
+    # --------------------------------------------------
+    new_attempt = StudentExamWriting(
         student_id=student_id,
         exam_id=exam.id,
         started_at=datetime.now(timezone.utc),
         duration_minutes=exam.duration_minutes
     )
 
-    db.add(new_session)
+    db.add(new_attempt)
     db.commit()
+    db.refresh(new_attempt)
 
-    return {"status": "started"}
+    return {
+        "completed": False,
+        "remaining_time": new_attempt.duration_minutes * 60
+    }
+
 
 
 @app.get("/api/get-quizzes-writing")
