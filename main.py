@@ -3769,10 +3769,13 @@ Essay:
         admin_report = AdminExamReport(
             exam_attempt_id=exam_state.id,
             student_id=exam_state.student_id,
+            exam_type="writing",
             overall_score=writing_score,
-            readiness_status=readiness_status,
-            guidance_text=guidance_text
+            readiness_band=readiness_status,
+            school_guidance_level=guidance_text,
+            summary_notes=f"Writing score: {writing_score}/20"
         )
+
 
     
         db.add(admin_report)
