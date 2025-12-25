@@ -1964,7 +1964,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
 
 
-@aap.get("/api/admin/students/{student_id}/selective-reports")
+@app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
     student_id: str,
     db: Session = Depends(get_db)
