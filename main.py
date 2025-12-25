@@ -3769,11 +3769,11 @@ Essay:
         admin_report = AdminExamReport(
             exam_attempt_id=exam_state.id,
             student_id=exam_state.student_id,
-            subject="writing",
             overall_score=writing_score,
             readiness_status=readiness_status,
             guidance_text=guidance_text
         )
+
     
         db.add(admin_report)
         db.flush()  # 🔑 Needed to get admin_report.id
