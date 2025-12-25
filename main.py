@@ -3181,7 +3181,7 @@ def generate_admin_exam_report_reading(
     admin_report = AdminExamReport(
         student_id=student.student_id,  # external ID (STRING)
         exam_attempt_id=exam_attempt.id,
-        exam_type="selective",
+        exam_type="reading",
         overall_score=overall_accuracy,
         readiness_band=readiness_band,
         school_guidance_level=school_guidance,
@@ -6491,7 +6491,7 @@ def generate_admin_exam_report(
     admin_report = AdminExamReport(
         student_id=student.student_id,
         exam_attempt_id=exam_attempt.id,
-        exam_type="selective",
+        exam_type="Thinking Skills",
         overall_score=accuracy,
         readiness_band=readiness_band,
         school_guidance_level=school_guidance,
@@ -6806,7 +6806,7 @@ def generate_admin_exam_report_math(
     admin_report = AdminExamReport(
         student_id=student.student_id,  # external ID (IMPORTANT)
         exam_attempt_id=exam_attempt.id,
-        exam_type="selective",
+        exam_type="Mathematical Reasoning",
         overall_score=accuracy,
         readiness_band=readiness_band,
         school_guidance_level=school_guidance,
