@@ -2033,28 +2033,24 @@ def get_student_selective_reports(
 
     for report in reports:
         response.append({
-        "id": report.id,                          # 🔑 REQUIRED
-        "exam_type": report.exam_type,
-        "exam_attempt_id": report.exam_attempt_id,
-        "overall_score": report.overall_score,
-        "readiness_band": report.readiness_band,
-        "school_guidance_level": report.school_guidance_level,
-        "summary_notes": report.summary_notes,
-        "exam_date": report.created_at.date().isoformat(),  # 🔑 REQUIRED
-        "disclaimer": (
-            "This report is advisory only and does not guarantee placement."
-        ),
-        "sections": [
-            {
-                "section_name": s.section_name,
-                "performance_band": s.performance_band,
-                "strengths_summary": s.strengths_summary,     # 🔑 REQUIRED
-                "improvement_summary": s.improvement_summary  # 🔑 REQUIRED
-            }
-            for s in sections_by_report.get(report.id, [])
-        ],
-        "readiness_rules": rules_by_report.get(report.id, [])
-    })
+            "id": report.id,                          # 🔑 REQUIRED
+            "exam_type": report.exam_type,
+            "exam_attempt_id": report.exam_attempt_id,
+            "overall_score": report.overall_score,
+            "readiness_band": report.readiness_band,
+            "school_guidance_level": report.school_guidance_level,
+            "summary_notes": report.summary_notes,
+            "exam_date": report.created_at.date().isoformat(),  # 🔑 REQUIRED
+            "disclaimer": (
+                "This report is advisory only and does not guarantee placement."
+            ),
+    
+            # ✅ sections are ALREADY dicts → just pass them through
+            "sections": sections_by_report.get(report.id, []),
+    
+            # ✅ readiness rules are ALREADY dicts
+            "readiness_rules": rules_by_report.get(report.id, [])
+        })
 
 
     return response
