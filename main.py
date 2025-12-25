@@ -3789,11 +3789,14 @@ Essay:
         # D) Insert admin_exam_section_results (single section)
         # --------------------------------------------------
         section_result = AdminExamSectionResult(
-            report_id=admin_report.id,
+            admin_report_id=admin_report.id,
             section_name="Writing",
-            score=writing_score,
-            performance_band=performance_band
+            raw_score=writing_score,
+            performance_band=performance_band,
+            strengths_summary=strengths,
+            improvement_summary=improvements
         )
+
     
         db.add(section_result)
     
