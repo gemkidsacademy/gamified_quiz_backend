@@ -3732,11 +3732,11 @@ Essay:
     existing_report = (
         db.query(AdminExamReport)
         .filter(
-            AdminExamReport.exam_attempt_id == exam_state.id,
-            AdminExamReport.subject == "writing"
+            AdminExamReport.exam_attempt_id == exam_state.id
         )
         .first()
     )
+
     
     if existing_report:
         print("⚠️ Writing admin report already exists. Skipping snapshot generation.")
