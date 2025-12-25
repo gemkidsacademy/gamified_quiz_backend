@@ -3975,15 +3975,13 @@ Essay:
 
 @app.get("/api/exams/writing/current")
 def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
+
     # ------------------------------------------------------------
-    # 1️⃣ Get the student's ACTIVE writing session (NOT the exam)
+    # 1️⃣ Get latest writing attempt (completed OR active)
     # ------------------------------------------------------------
     session = (
         db.query(StudentExamWriting)
-        .filter(
-            StudentExamWriting.student_id == student_id,
-            StudentExamWriting.completed_at == None
-        )
+        .filter(StudentExamWriting.student_id == student_id)
         .order_by(StudentExamWriting.started_at.desc())
         .first()
     )
@@ -3991,11 +3989,17 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
     if not session:
         raise HTTPException(
             status_code=404,
-            detail="No active writing exam session"
+            detail="No writing exam attempt found"
         )
 
     # ------------------------------------------------------------
-    # 2️⃣ Fetch the exam linked to this session
+    # 2️⃣ If already completed → redirect signal
+    # ------------------------------------------------------------
+    if session.completed_at:
+        return {"completed": True}
+
+    # ------------------------------------------------------------
+    # 3️⃣ Fetch linked exam
     # ------------------------------------------------------------
     exam = (
         db.query(GeneratedExamWriting)
@@ -4010,23 +4014,37 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
         )
 
     # ------------------------------------------------------------
-    # 3️⃣ Calculate remaining time FROM session.started_at
+    # 4️⃣ Calculate remaining time
     # ------------------------------------------------------------
-    elapsed_seconds = (
-        datetime.now(timezone.utc) - session.started_at
-    ).total_seconds()
+    started_at = session.started_at
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
 
-    total_seconds = session.duration_minutes * 60
-    remaining_seconds = max(0, int(total_seconds - elapsed_seconds))
+    now = datetime.now(timezone.utc)
+    elapsed = int((now - started_at).total_seconds())
+    total = session.duration_minutes * 60
+    remaining = max(0, total - elapsed)
 
+    # ------------------------------------------------------------
+    # 5️⃣ Auto-complete on timeout
+    # ------------------------------------------------------------
+    if remaining == 0:
+        session.completed_at = now
+        db.commit()
+        return {"completed": True}
+
+    # ------------------------------------------------------------
+    # 6️⃣ Active exam
+    # ------------------------------------------------------------
     return {
+        "completed": False,
+        "remaining_seconds": remaining,
         "exam": {
             "exam_id": exam.id,
             "difficulty": exam.difficulty,
             "question_text": exam.question_text,
             "duration_minutes": session.duration_minutes
-        },
-        "remaining_seconds": remaining_seconds
+        }
     }
 
 @app.post("/api/exams/generate-writing")
