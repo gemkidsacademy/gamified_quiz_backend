@@ -1962,7 +1962,90 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
 
-from sqlalchemy import func
+
+
+@aap.get("/api/admin/students/{student_id}/selective-reports")
+def get_student_selective_reports(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Fetch all selective exam reports for a given student.
+    Read-only aggregation over admin reporting tables.
+    """
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch admin exam reports for student
+    # --------------------------------------------------
+    reports = (
+        db.query(AdminExamReport)
+        .filter(AdminExamReport.student_id == student_id)
+        .order_by(AdminExamReport.created_at.desc())
+        .all()
+    )
+
+    if not reports:
+        return []
+
+    report_ids = [r.id for r in reports]
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch section results
+    # --------------------------------------------------
+    sections = (
+        db.query(AdminExamSectionResult)
+        .filter(AdminExamSectionResult.admin_report_id.in_(report_ids))
+        .all()
+    )
+
+    sections_by_report = defaultdict(list)
+    for s in sections:
+        sections_by_report[s.admin_report_id].append({
+            "section_name": s.section_name,
+            "raw_score": s.raw_score,
+            "performance_band": s.performance_band,
+            "strengths": s.strengths_summary,
+            "improvements": s.improvement_summary
+        })
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch readiness rules (audit trail)
+    # --------------------------------------------------
+    rules = (
+        db.query(AdminReadinessRuleApplied)
+        .filter(AdminReadinessRuleApplied.admin_report_id.in_(report_ids))
+        .all()
+    )
+
+    rules_by_report = defaultdict(list)
+    for r in rules:
+        rules_by_report[r.admin_report_id].append({
+            "rule_code": r.rule_code,
+            "result": r.rule_result,
+            "description": r.rule_description
+        })
+
+    # --------------------------------------------------
+    # 4️⃣ Shape final response
+    # --------------------------------------------------
+    response = []
+
+    for report in reports:
+        response.append({
+            "report_id": report.id,
+            "exam_type": report.exam_type,
+            "exam_attempt_id": report.exam_attempt_id,
+            "overall_score": report.overall_score,
+            "readiness_band": report.readiness_band,
+            "school_guidance_level": report.school_guidance_level,
+            "summary_notes": report.summary_notes,
+            "created_at": report.created_at,
+            "sections": sections_by_report.get(report.id, []),
+            "readiness_rules": rules_by_report.get(report.id, [])
+        })
+
+    return response
+
 @app.get("/api/admin/students")
 def get_admin_students(db: Session = Depends(get_db)):
     students = (
