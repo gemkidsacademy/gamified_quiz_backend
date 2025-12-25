@@ -2113,7 +2113,7 @@ def get_student_selective_reports(
         response.append({
             "id": report.id,
             "exam_date": report.created_at.date().isoformat(),
-            "readiness_band": report.readiness_label,
+            "readiness_band": report.readiness_band,
             "school_guidance_level": report.school_guidance_level,
             "sections": [
                 {
@@ -2122,13 +2122,15 @@ def get_student_selective_reports(
                     "strengths_summary": s.strengths_summary,
                     "improvement_summary": s.improvement_summary,
                 }
-                for s in sections
+                for s in sections_by_report.get(report.id, [])
             ],
-            "disclaimer": report.disclaimer or
+            "disclaimer": (
                 "This report is advisory only and does not guarantee placement."
+            )
         })
 
     return response
+ 
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
     id: str,   # 🔴 CHANGE HERE (int → str)
