@@ -3684,12 +3684,101 @@ Essay:
         "attempt_id": admin_raw_score.exam_attempt_id,
         "accuracy": admin_raw_score.accuracy_percent
     })
-
     # --------------------------------------------------
-    # 7️⃣ Commit atomically
+    # 6️⃣➕ Writing Admin Report Snapshot (FINAL STEP)
     # --------------------------------------------------
-    print("💾 Committing transaction to database...")
-
+    print("📄 Generating Writing admin report snapshot...")
+    
+    # --------------------------------------------------
+    # A) Idempotency guard (CRITICAL)
+    # --------------------------------------------------
+    existing_report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.exam_attempt_id == exam_state.id,
+            AdminExamReport.subject == "writing"
+        )
+        .first()
+    )
+    
+    if existing_report:
+        print("⚠️ Writing admin report already exists. Skipping snapshot generation.")
+    else:
+        # --------------------------------------------------
+        # B) Determine performance band & readiness
+        # --------------------------------------------------
+        if writing_score >= 15:
+            performance_band = "Strong"
+            readiness_status = "Ready"
+            guidance_text = "Student demonstrates strong writing skills suitable for selective readiness."
+        elif writing_score >= 10:
+            performance_band = "Developing"
+            readiness_status = "Borderline"
+            guidance_text = "Student shows developing writing skills and may benefit from targeted practice."
+        else:
+            performance_band = "Weak"
+            readiness_status = "Not Ready"
+            guidance_text = "Student requires significant improvement in writing fundamentals."
+    
+        print("🧠 Writing classification:", {
+            "score": writing_score,
+            "band": performance_band,
+            "readiness": readiness_status
+        })
+    
+        # --------------------------------------------------
+        # C) Insert admin_exam_reports
+        # --------------------------------------------------
+        admin_report = AdminExamReport(
+            exam_attempt_id=exam_state.id,
+            student_id=exam_state.student_id,
+            subject="writing",
+            overall_score=writing_score,
+            readiness_status=readiness_status,
+            guidance_text=guidance_text
+        )
+    
+        db.add(admin_report)
+        db.flush()  # 🔑 Needed to get admin_report.id
+    
+        print("✅ AdminExamReport created:", {
+            "report_id": admin_report.id
+        })
+    
+        # --------------------------------------------------
+        # D) Insert admin_exam_section_results (single section)
+        # --------------------------------------------------
+        section_result = AdminExamSectionResult(
+            report_id=admin_report.id,
+            section_name="Writing",
+            score=writing_score,
+            performance_band=performance_band
+        )
+    
+        db.add(section_result)
+    
+        print("✅ Writing section result stored")
+    
+        # --------------------------------------------------
+        # E) Insert admin_readiness_rules_applied (audit trail)
+        # --------------------------------------------------
+        readiness_rule = AdminReadinessRuleApplied(
+            report_id=admin_report.id,
+            rule_name="writing_score_threshold",
+            rule_result=readiness_status,
+            explanation=f"Writing score {writing_score}/20 classified as {performance_band}"
+        )
+    
+        db.add(readiness_rule)
+    
+        print("✅ Readiness rule audit stored")
+    
+    
+        # --------------------------------------------------
+        # 7️⃣ Commit atomically
+        # --------------------------------------------------
+        print("💾 Committing transaction to database...")
+    
     try:
         db.commit()
         print("✅ Database commit successful")
@@ -3698,7 +3787,7 @@ Essay:
         print("❌ Exception:", str(e))
         db.rollback()
         raise
-
+    
     print("🎉 Writing exam submitted and evaluated successfully")
     print("====================================================\n")
 
