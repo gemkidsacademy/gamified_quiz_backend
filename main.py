@@ -548,26 +548,63 @@ class StudentExamWriting(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # Change from Integer → Text to support IDs like "Gem002"
+    # External student identifier (e.g. "Gem002")
     student_id = Column(Text, nullable=False)
 
+    # Generated writing exam ID
     exam_id = Column(Integer, nullable=False)
 
+    # Exam lifecycle timestamps
     started_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
 
-    completed_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
 
-    duration_minutes = Column(Integer, default=40, nullable=False)
+    # Exam configuration
+    duration_minutes = Column(
+        Integer,
+        default=40,
+        nullable=False
+    )
 
-    answer_text = Column(Text, nullable=True)
+    # Student response
+    answer_text = Column(
+        Text,
+        nullable=True
+    )
 
+    # -----------------------------------------
+    # AI Writing Evaluation (Persisted)
+    # -----------------------------------------
+    ai_score = Column(
+        Integer,
+        nullable=True,
+        comment="AI-evaluated writing score (0–20)"
+    )
+
+    ai_strengths = Column(
+        Text,
+        nullable=True,
+        comment="AI-identified writing strengths"
+    )
+
+    ai_improvements = Column(
+        Text,
+        nullable=True,
+        comment="AI-identified areas for improvement"
+    )
+
+    # Record creation timestamp
     created_at = Column(
         DateTime(timezone=True),
-        server_default=func.now()
+        server_default=func.now(),
+        nullable=False
     )
 
 class WritingSubmitSchema(BaseModel):
