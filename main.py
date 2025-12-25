@@ -10,6 +10,7 @@ from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta,date, timezone
 from sqlalchemy.dialects.postgresql import JSONB
 import mammoth
+from collections import defaultdict
 
  
 import pandas as pd
