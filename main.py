@@ -3976,9 +3976,7 @@ Essay:
 @app.get("/api/exams/writing/current")
 def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
-    # ------------------------------------------------------------
     # 1️⃣ Get latest writing attempt (completed OR active)
-    # ------------------------------------------------------------
     session = (
         db.query(StudentExamWriting)
         .filter(StudentExamWriting.student_id == student_id)
@@ -3992,15 +3990,11 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
             detail="No writing exam attempt found"
         )
 
-    # ------------------------------------------------------------
-    # 2️⃣ If already completed → redirect signal
-    # ------------------------------------------------------------
+    # 2️⃣ Completed → redirect
     if session.completed_at:
         return {"completed": True}
 
-    # ------------------------------------------------------------
-    # 3️⃣ Fetch linked exam
-    # ------------------------------------------------------------
+    # 3️⃣ Load exam
     exam = (
         db.query(GeneratedExamWriting)
         .filter(GeneratedExamWriting.id == session.exam_id)
@@ -4013,9 +4007,7 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
             detail="Writing exam not found"
         )
 
-    # ------------------------------------------------------------
     # 4️⃣ Calculate remaining time
-    # ------------------------------------------------------------
     started_at = session.started_at
     if started_at.tzinfo is None:
         started_at = started_at.replace(tzinfo=timezone.utc)
@@ -4025,17 +4017,13 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
     total = session.duration_minutes * 60
     remaining = max(0, total - elapsed)
 
-    # ------------------------------------------------------------
-    # 5️⃣ Auto-complete on timeout
-    # ------------------------------------------------------------
+    # 5️⃣ Timeout → auto-complete
     if remaining == 0:
         session.completed_at = now
         db.commit()
         return {"completed": True}
 
-    # ------------------------------------------------------------
-    # 6️⃣ Active exam
-    # ------------------------------------------------------------
+    # 6️⃣ Active attempt
     return {
         "completed": False,
         "remaining_seconds": remaining,
@@ -4046,6 +4034,7 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
             "duration_minutes": session.duration_minutes
         }
     }
+
 
 @app.post("/api/exams/generate-writing")
 def generate_exam_writing(
