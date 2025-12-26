@@ -7936,22 +7936,25 @@ def retrieve_term_start_date(db: Session = Depends(get_db)):
 @app.get("/get_next_user_id_exam_module")
 def get_next_user_id_exam_module(db: Session = Depends(get_db)):
     """
-    Returns the next student ID as a simple number (1, 2, 3, ...)
+    Returns the next student exam-module ID as a string number ("1", "2", "3", ...)
+    Uses MAX() instead of relying on row ordering.
     """
+
     try:
-        # Get last student ordered by numeric ID
-        last_student = db.query(Student).order_by(Student.id.desc()).first()
+        max_id = (
+            db.query(func.max(cast(Student.student_id, Integer)))
+            .scalar()
+        )
 
-        if last_student:
-            next_num = int(last_student.id) + 1
-        else:
-            next_num = 1
-
+        next_num = (max_id or 0) + 1
         return str(next_num)
 
     except Exception as e:
-        print("[ERROR] Failed to generate next ID:", e)
-        raise HTTPException(status_code=500, detail="Could not generate next user ID")
+        print("[ERROR] Failed to generate next exam-module student ID:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not generate next user ID"
+        )
 
 @app.post("/set-term-start-date")
 def set_term_start_date(term_data: AdminDateSchema, db: Session = Depends(get_db)):
