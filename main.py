@@ -7169,16 +7169,27 @@ def finish_exam(
     accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
 
     print("📊 Result computed → correct:", correct, "wrong:", wrong)
-    raw_score = AdminExamRawScore(
-        student_id=student.id,
-        exam_attempt_id=attempt.id,
-        subject="mathematical_reasoning",
-        total_questions=total_questions,
-        correct_answers=correct,
-        wrong_answers=wrong,
-        accuracy_percent=accuracy
+    existing_raw = (
+        db.query(AdminExamRawScore)
+        .filter(
+            AdminExamRawScore.exam_attempt_id == attempt.id,
+            AdminExamRawScore.subject == "mathematical_reasoning"
+        )
+        .first()
     )
-    db.add(raw_score)
+    
+    if not existing_raw:
+        raw_score = AdminExamRawScore(
+            student_id=student.id,
+            exam_attempt_id=attempt.id,
+            subject="mathematical_reasoning",
+            total_questions=total_questions,
+            correct_answers=correct,
+            wrong_answers=wrong,
+            accuracy_percent=accuracy
+        )
+        db.add(raw_score)
+
 
     # --------------------------------------------------
     # 6️⃣ Save summary (NEW TABLE)
