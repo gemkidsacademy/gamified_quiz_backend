@@ -7075,13 +7075,16 @@ def finish_exam(
     # --------------------------------------------------
     attempt = (
         db.query(StudentExam)
+        .join(Exam, StudentExam.exam_id == Exam.id)
         .filter(
             StudentExam.student_id == student.id,
-            StudentExam.completed_at.is_(None)
+            StudentExam.completed_at.is_(None),
+            Exam.subject == "mathematical_reasoning"
         )
         .order_by(StudentExam.started_at.desc())
         .first()
     )
+
 
     if not attempt:
         print("⚠️ No active attempt found")
