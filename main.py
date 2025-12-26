@@ -2026,8 +2026,17 @@ def generate_overall_selective_report(
             detail="Overall readiness can be generated only after all four exams are completed."
         )
 
+    # --------------------------------------------------
+    # 3️⃣ Normalize exam types (🔥 FIX)
+    # --------------------------------------------------
+    def normalize_exam_type(raw: str) -> str:
+        raw = raw.lower().strip()
+        if raw == "thinking skills":
+            return "thinking_skills"
+        return raw
+
     reports_by_subject = {
-        r.exam_type.lower(): r for r in reports
+        normalize_exam_type(r.exam_type): r for r in reports
     }
 
     required_subjects = {
@@ -2037,14 +2046,15 @@ def generate_overall_selective_report(
         "writing"
     }
 
-    if not required_subjects.issubset(reports_by_subject.keys()):
+    missing = required_subjects - reports_by_subject.keys()
+    if missing:
         raise HTTPException(
             status_code=400,
-            detail="Missing one or more required exam reports."
+            detail=f"Missing required exam reports: {', '.join(missing)}"
         )
 
     # --------------------------------------------------
-    # 3️⃣ Compute weighted overall score
+    # 4️⃣ Compute weighted overall score
     # --------------------------------------------------
     components = {
         "reading": reports_by_subject["reading"].overall_score,
@@ -2056,7 +2066,7 @@ def generate_overall_selective_report(
     overall_percent = round(sum(components.values()) / 4, 2)
 
     # --------------------------------------------------
-    # 4️⃣ Map to readiness band
+    # 5️⃣ Map to readiness band
     # --------------------------------------------------
     if overall_percent >= 80:
         band = "Band 1 – Fully Selective Ready"
@@ -2068,7 +2078,7 @@ def generate_overall_selective_report(
         band = "Band 4 – Not Selective Ready Yet"
 
     # --------------------------------------------------
-    # 5️⃣ School recommendation matrix
+    # 6️⃣ School recommendation matrix
     # --------------------------------------------------
     school_map = {
         "Band 1 – Fully Selective Ready": [
@@ -2099,12 +2109,11 @@ def generate_overall_selective_report(
     school_recommendation = school_map[band]
 
     # --------------------------------------------------
-    # 6️⃣ Override rules (VERY IMPORTANT)
+    # 7️⃣ Override rules (CRITICAL SAFETY)
     # --------------------------------------------------
     override_flag = False
     override_message = None
 
-    # Writing < 60%
     if components["writing"] < 60:
         override_flag = True
         override_message = (
@@ -2112,7 +2121,6 @@ def generate_overall_selective_report(
             "is required for higher-tier selective schools."
         )
 
-    # Any section < 55%
     for subject, score in components.items():
         if score < 55:
             override_flag = True
@@ -2123,7 +2131,7 @@ def generate_overall_selective_report(
             break
 
     # --------------------------------------------------
-    # 7️⃣ Store snapshot (IMMUTABLE)
+    # 8️⃣ Store snapshot (IMMUTABLE)
     # --------------------------------------------------
     overall_report = AdminOverallSelectiveReport(
         student_id=student_id,
