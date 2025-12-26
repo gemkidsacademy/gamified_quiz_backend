@@ -7936,25 +7936,17 @@ def retrieve_term_start_date(db: Session = Depends(get_db)):
 @app.get("/get_next_user_id_exam_module")
 def get_next_user_id_exam_module(db: Session = Depends(get_db)):
     """
-    Returns the next numeric exam-module student ID.
-    Safely ignores non-numeric student_id values like 'Gem002'.
+    Returns the next students.id value (MAX(id) + 1).
+    This is for display / prefill purposes only.
     """
 
     try:
-        # This works for PostgreSQL
-        result = db.execute(
-            text("""
-                SELECT MAX(CAST(student_id AS INTEGER))
-                FROM students
-                WHERE student_id ~ '^[0-9]+$'
-            """)
-        ).scalar()
-
-        next_num = (result or 0) + 1
-        return str(next_num)
+        max_id = db.query(func.max(Student.id)).scalar()
+        next_id = (max_id or 0) + 1
+        return str(next_id)
 
     except Exception as e:
-        print("[ERROR] Failed to generate next exam-module student ID:", e)
+        print("[ERROR] Failed to get next student id:", e)
         raise HTTPException(
             status_code=500,
             detail="Could not generate next user ID"
