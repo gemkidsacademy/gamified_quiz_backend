@@ -134,6 +134,24 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class AdminOverallSelectiveReport(Base):
+    __tablename__ = "admin_overall_selective_reports"
+
+    id = Column(Integer, primary_key=True)
+    student_id = Column(String, index=True)
+    exam_date = Column(Date, index=True)
+
+    overall_percent = Column(Float)
+    readiness_band = Column(String)
+    school_recommendation = Column(JSON)
+
+    override_flag = Column(Boolean, default=False)
+    override_message = Column(Text, nullable=True)
+
+    components = Column(JSON)  # {reading: 78, maths: 65, ...}
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class AdminExamRawScore(Base):
     __tablename__ = "admin_exam_raw_scores"
 
@@ -1963,6 +1981,166 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
 
+#api end points
+@app.post("/api/admin/students/{student_id}/overall-selective-report")
+def generate_overall_selective_report(
+    student_id: str,
+    exam_date: date,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate (once) or fetch Overall Selective Readiness Report
+    for a student on a given exam date.
+    """
+
+    # --------------------------------------------------
+    # 1️⃣ Guard: already exists?
+    # --------------------------------------------------
+    existing = (
+        db.query(AdminOverallSelectiveReport)
+        .filter(
+            AdminOverallSelectiveReport.student_id == student_id,
+            AdminOverallSelectiveReport.exam_date == exam_date
+        )
+        .first()
+    )
+
+    if existing:
+        return existing
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch per-exam admin reports for that date
+    # --------------------------------------------------
+    reports = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student_id,
+            func.date(AdminExamReport.created_at) == exam_date
+        )
+        .all()
+    )
+
+    if len(reports) < 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Overall readiness can be generated only after all four exams are completed."
+        )
+
+    reports_by_subject = {
+        r.exam_type.lower(): r for r in reports
+    }
+
+    required_subjects = {
+        "reading",
+        "mathematical_reasoning",
+        "thinking_skills",
+        "writing"
+    }
+
+    if not required_subjects.issubset(reports_by_subject.keys()):
+        raise HTTPException(
+            status_code=400,
+            detail="Missing one or more required exam reports."
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Compute weighted overall score
+    # --------------------------------------------------
+    components = {
+        "reading": reports_by_subject["reading"].overall_score,
+        "mathematical_reasoning": reports_by_subject["mathematical_reasoning"].overall_score,
+        "thinking_skills": reports_by_subject["thinking_skills"].overall_score,
+        "writing": reports_by_subject["writing"].overall_score,
+    }
+
+    overall_percent = round(sum(components.values()) / 4, 2)
+
+    # --------------------------------------------------
+    # 4️⃣ Map to readiness band
+    # --------------------------------------------------
+    if overall_percent >= 80:
+        band = "Band 1 – Fully Selective Ready"
+    elif overall_percent >= 70:
+        band = "Band 2 – Strong Selective Potential"
+    elif overall_percent >= 60:
+        band = "Band 3 – Borderline Selective"
+    else:
+        band = "Band 4 – Not Selective Ready Yet"
+
+    # --------------------------------------------------
+    # 5️⃣ School recommendation matrix
+    # --------------------------------------------------
+    school_map = {
+        "Band 1 – Fully Selective Ready": [
+            "James Ruse",
+            "Baulkham Hills",
+            "North Sydney Boys/Girls",
+            "Sydney Grammar (Academic profile)"
+        ],
+        "Band 2 – Strong Selective Potential": [
+            "Hornsby Girls",
+            "Chatswood",
+            "Ryde",
+            "Sydney Technical",
+            "Parramatta",
+            "Penrith Selective"
+        ],
+        "Band 3 – Borderline Selective": [
+            "Local / partially selective schools",
+            "Lower competition selective schools"
+        ],
+        "Band 4 – Not Selective Ready Yet": [
+            "Focus on foundations",
+            "Reassess selective pathway",
+            "Consider enrichment before exam prep"
+        ]
+    }
+
+    school_recommendation = school_map[band]
+
+    # --------------------------------------------------
+    # 6️⃣ Override rules (VERY IMPORTANT)
+    # --------------------------------------------------
+    override_flag = False
+    override_message = None
+
+    # Writing < 60%
+    if components["writing"] < 60:
+        override_flag = True
+        override_message = (
+            "While the overall score is competitive, improvement in Writing "
+            "is required for higher-tier selective schools."
+        )
+
+    # Any section < 55%
+    for subject, score in components.items():
+        if score < 55:
+            override_flag = True
+            override_message = (
+                f"While the overall score is competitive, improvement in "
+                f"{subject.replace('_', ' ').title()} is required for higher-tier selective schools."
+            )
+            break
+
+    # --------------------------------------------------
+    # 7️⃣ Store snapshot (IMMUTABLE)
+    # --------------------------------------------------
+    overall_report = AdminOverallSelectiveReport(
+        student_id=student_id,
+        exam_date=exam_date,
+        overall_percent=overall_percent,
+        readiness_band=band,
+        school_recommendation=school_recommendation,
+        override_flag=override_flag,
+        override_message=override_message,
+        components=components
+    )
+
+    db.add(overall_report)
+    db.commit()
+    db.refresh(overall_report)
+
+    return overall_report
 
 
 @app.get("/api/admin/students/{student_id}/selective-reports")
