@@ -6806,7 +6806,7 @@ def generate_admin_exam_report_math(
     admin_report = AdminExamReport(
         student_id=student.student_id,  # external ID (IMPORTANT)
         exam_attempt_id=exam_attempt.id,
-        exam_type="Mathematical Reasoning",
+        exam_type="mathematical_reasoning",
         overall_score=accuracy,
         readiness_band=readiness_band,
         school_guidance_level=school_guidance,
