@@ -6491,7 +6491,7 @@ def generate_admin_exam_report(
     admin_report = AdminExamReport(
         student_id=student.student_id,
         exam_attempt_id=exam_attempt.id,
-        exam_type="Thinking Skills",
+        exam_type="thinking_skills",
         overall_score=accuracy,
         readiness_band=readiness_band,
         school_guidance_level=school_guidance,
