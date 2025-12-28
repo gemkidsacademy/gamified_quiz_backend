@@ -7138,15 +7138,26 @@ def finish_exam(
             q_id = int(q_id_str)
         except ValueError:
             continue
-
+    
         q = question_map.get(q_id)
         if not q:
             continue
-
-        is_correct = selected == q.get("correct")
+    
+        correct_answer = q.get("correct")
+    
+        # 🔍 DEBUG LOGS (THIS IS THE KEY)
+        print("🧪 EVALUATING QUESTION")
+        print("Question ID:", q_id)
+        print("Student Answer:", selected)
+        print("Correct Answer (DB):", correct_answer)
+    
+        is_correct = selected == correct_answer
+    
+        print("➡️ MATCH RESULT:", is_correct)
+        print("------------------------------------")
+    
         if is_correct:
             correct += 1
-
         response = (
             db.query(StudentExamResponse)
             .filter(
@@ -7232,6 +7243,7 @@ def finish_exam(
     db.commit()
 
     print("================ FINISH MATHEMATICAL REASONING EXAM END =================\n")
+    
 
     return {
         "status": "completed",
