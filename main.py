@@ -1987,21 +1987,47 @@ def get_distinct_topics_exam_setup(
     class_name: str = Query(...),
     subject: str = Query(...),
     db: Session = Depends(get_db)
-): 
-    topics = (
+):
+    print("\n================ TOPICS EXAM SETUP =================")
+    print("➡️  Raw query params:")
+    print("   class_name:", class_name)
+    print("   subject:", subject)
+
+    normalized_class = class_name.lower().strip()
+    normalized_subject = subject.lower().strip()
+
+    print("\n🔎 Normalized params:")
+    print("   class_name:", normalized_class)
+    print("   subject:", normalized_subject)
+
+    print("\n🧠 Building DB query...")
+
+    query = (
         db.query(distinct(Question.topic))
         .filter(
-            Question.class_name == class_name,
-            Question.subject == subject,
+            func.lower(Question.class_name) == normalized_class,
+            func.lower(Question.subject) == normalized_subject,
             Question.topic.isnot(None),
             Question.topic != ""
         )
         .order_by(Question.topic)
-        .all()
     )
 
-    # SQLAlchemy returns list of tuples → flatten
-    return [t[0] for t in topics]
+    print("🧠 Query built successfully")
+
+    topics = query.all()
+
+    print("\n📊 Raw DB results:")
+    print("   row count:", len(topics))
+    print("   raw rows:", topics)
+
+    flattened_topics = [t[0] for t in topics]
+
+    print("\n✅ Final topic list returned:")
+    print("   topics:", flattened_topics)
+    print("====================================================\n")
+
+    return flattened_topics
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
