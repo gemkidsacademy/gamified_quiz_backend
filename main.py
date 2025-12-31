@@ -1986,48 +1986,31 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 def get_distinct_topics_exam_setup(
     class_name: str = Query(...),
     subject: str = Query(...),
+    difficulty: str = Query(...),
     db: Session = Depends(get_db)
 ):
     print("\n================ TOPICS EXAM SETUP =================")
-    print("➡️  Raw query params:")
-    print("   class_name:", class_name)
-    print("   subject:", subject)
+    print("class_name:", class_name)
+    print("subject:", subject)
+    print("difficulty:", difficulty)
 
-    normalized_class = class_name.lower().strip()
-    normalized_subject = subject.lower().strip()
-
-    print("\n🔎 Normalized params:")
-    print("   class_name:", normalized_class)
-    print("   subject:", normalized_subject)
-
-    print("\n🧠 Building DB query...")
-
-    query = (
+    topics = (
         db.query(distinct(Question.topic))
         .filter(
-            func.lower(Question.class_name) == normalized_class,
-            func.lower(Question.subject) == normalized_subject,
+            func.lower(Question.class_name) == class_name.lower(),
+            func.lower(Question.subject) == subject.lower(),
+            func.lower(Question.difficulty) == difficulty.lower(),
             Question.topic.isnot(None),
             Question.topic != ""
         )
         .order_by(Question.topic)
+        .all()
     )
 
-    print("🧠 Query built successfully")
+    return [t[0] for t in topics]
 
-    topics = query.all()
 
-    print("\n📊 Raw DB results:")
-    print("   row count:", len(topics))
-    print("   raw rows:", topics)
 
-    flattened_topics = [t[0] for t in topics]
-
-    print("\n✅ Final topic list returned:")
-    print("   topics:", flattened_topics)
-    print("====================================================\n")
-
-    return flattened_topics
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
