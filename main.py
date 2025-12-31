@@ -1982,6 +1982,26 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@app.get("/api/topics-exam-setup", response_model=List[str])
+def get_distinct_topics_exam_setup(
+    class_name: str = Query(...),
+    subject: str = Query(...),
+    db: Session = Depends(get_db)
+): 
+    topics = (
+        db.query(distinct(Question.topic))
+        .filter(
+            Question.class_name == class_name,
+            Question.subject == subject,
+            Question.topic.isnot(None),
+            Question.topic != ""
+        )
+        .order_by(Question.topic)
+        .all()
+    )
+
+    # SQLAlchemy returns list of tuples → flatten
+    return [t[0] for t in topics]
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
