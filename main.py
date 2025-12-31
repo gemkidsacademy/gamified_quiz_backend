@@ -730,11 +730,12 @@ class QuizSetupFoundational(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    class_name = Column(String, nullable=False)
-    subject = Column(String, nullable=False)
+    class_name = Column(String(50), nullable=False)
+    subject = Column(String(50), nullable=False)
 
     # -------- Section 1 --------
-    section1_name = Column(String, nullable=False)
+    section1_name = Column(String(20), nullable=False)
+    section1_topic = Column(String(100), nullable=False)   # ✅ ADDED
     section1_ai = Column(Integer, default=0)
     section1_db = Column(Integer, default=0)
     section1_total = Column(Integer, default=0)
@@ -742,7 +743,8 @@ class QuizSetupFoundational(Base):
     section1_intro = Column(Text, default="")
 
     # -------- Section 2 --------
-    section2_name = Column(String, nullable=False)
+    section2_name = Column(String(20), nullable=False)
+    section2_topic = Column(String(100), nullable=False)   # ✅ ADDED
     section2_ai = Column(Integer, default=0)
     section2_db = Column(Integer, default=0)
     section2_total = Column(Integer, default=0)
@@ -750,12 +752,13 @@ class QuizSetupFoundational(Base):
     section2_intro = Column(Text, default="")
 
     # -------- Section 3 (optional) --------
-    section3_name = Column(String, nullable=True)
+    section3_name = Column(String(20), nullable=True)
+    section3_topic = Column(String(100), nullable=True)    # ✅ ADDED
     section3_ai = Column(Integer, nullable=True)
     section3_db = Column(Integer, nullable=True)
     section3_total = Column(Integer, nullable=True)
     section3_time = Column(Integer, nullable=True)
-    section3_intro = Column(Text, nullable=True) 
+    section3_intro = Column(Text, nullable=True)
 
 class SectionSchema(BaseModel):
     name: str                # Easy / Medium / Hard
