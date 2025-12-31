@@ -758,13 +758,13 @@ class QuizSetupFoundational(Base):
     section3_intro = Column(Text, nullable=True) 
 
 class SectionSchema(BaseModel):
-    name: str
+    name: str                # Easy / Medium / Hard
+    topic: str               # NEW: selected topic for this section
     ai: int
     db: int
     total: int
     time: int
     intro: str
-
 
 class QuizSetupFoundationalSchema(BaseModel):
     class_name: str
@@ -5160,14 +5160,57 @@ def generate_exam_foundational(
 
 
 @app.post("/api/quizzes-foundational")
-def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(get_db)):
+def save_quiz_setup(
+    payload: QuizSetupFoundationalSchema,
+    db: Session = Depends(get_db)
+):
+    print("\n================ SAVE QUIZ SETUP =================")
+    print("📥 Raw payload received:")
+    print(payload)
+
+    print("\n➡️ Basic metadata:")
+    print("class_name:", payload.class_name)
+    print("subject:", payload.subject)
+    print("number of sections:", len(payload.sections))
 
     if len(payload.sections) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 sections required")
+        print("❌ ERROR: Less than 2 sections provided")
+        raise HTTPException(
+            status_code=400,
+            detail="At least 2 sections required"
+        )
 
     section1 = payload.sections[0]
     section2 = payload.sections[1]
     section3 = payload.sections[2] if len(payload.sections) == 3 else None
+
+    print("\n➡️ Section breakdown:")
+    print("SECTION 1:")
+    print("  name:", section1.name)
+    print("  topic:", section1.topic)
+    print("  ai:", section1.ai)
+    print("  db:", section1.db)
+    print("  total:", section1.total)
+    print("  time:", section1.time)
+
+    print("\nSECTION 2:")
+    print("  name:", section2.name)
+    print("  topic:", section2.topic)
+    print("  ai:", section2.ai)
+    print("  db:", section2.db)
+    print("  total:", section2.total)
+    print("  time:", section2.time)
+
+    if section3:
+        print("\nSECTION 3:")
+        print("  name:", section3.name)
+        print("  topic:", section3.topic)
+        print("  ai:", section3.ai)
+        print("  db:", section3.db)
+        print("  total:", section3.total)
+        print("  time:", section3.time)
+    else:
+        print("\nSECTION 3: Not provided")
 
     total_questions = (
         section1.total +
@@ -5175,27 +5218,35 @@ def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(
         (section3.total if section3 else 0)
     )
 
+    print("\n➡️ Total questions calculated:", total_questions)
+
     if section3 is None and total_questions > 40:
+        print("❌ ERROR: Total questions exceed 40 with 2 sections")
         raise HTTPException(
             status_code=400,
-            detail="Total questions cannot exceed 40 with 2 sections",
+            detail="Total questions cannot exceed 40 with 2 sections"
         )
 
     if section3 and total_questions > 50:
+        print("❌ ERROR: Total questions exceed 50 with 3 sections")
         raise HTTPException(
             status_code=400,
-            detail="Total questions cannot exceed 50 with 3 sections",
+            detail="Total questions cannot exceed 50 with 3 sections"
         )
-      # ✅ SAFE: no dependent tables
+
+    print("\n🧹 Clearing existing quiz setup records...")
     db.query(QuizSetupFoundational).delete(synchronize_session=False)
     db.commit()
+    print("✅ Existing records cleared")
 
+    print("\n🛠 Creating QuizSetupFoundational object...")
 
     quiz = QuizSetupFoundational(
         class_name=payload.class_name,
         subject=payload.subject,
 
         section1_name=section1.name,
+        section1_topic=section1.topic,
         section1_ai=section1.ai,
         section1_db=section1.db,
         section1_total=section1.total,
@@ -5203,6 +5254,7 @@ def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(
         section1_intro=section1.intro,
 
         section2_name=section2.name,
+        section2_topic=section2.topic,
         section2_ai=section2.ai,
         section2_db=section2.db,
         section2_total=section2.total,
@@ -5210,17 +5262,26 @@ def save_quiz_setup(payload: QuizSetupFoundationalSchema, db: Session = Depends(
         section2_intro=section2.intro,
 
         section3_name=section3.name if section3 else None,
+        section3_topic=section3.topic if section3 else None,
         section3_ai=section3.ai if section3 else None,
         section3_db=section3.db if section3 else None,
         section3_total=section3.total if section3 else None,
         section3_time=section3.time if section3 else None,
         section3_intro=section3.intro if section3 else None,
     )
-    
+
+    print("\n🧾 Final object values before DB insert:")
+    print("section1_topic:", quiz.section1_topic)
+    print("section2_topic:", quiz.section2_topic)
+    print("section3_topic:", quiz.section3_topic)
 
     db.add(quiz)
     db.commit()
     db.refresh(quiz)
+
+    print("\n✅ Quiz setup saved successfully")
+    print("🆔 quiz_id:", quiz.id)
+    print("==================================================\n")
 
     return {
         "message": "Quiz setup saved successfully",
