@@ -5302,8 +5302,8 @@ def generate_exam_foundational(
                 difficulty=difficulty,
                 topic=topic,
                 required_count=ai_required,
-                db=db,  # optional if you later persist AI questions
             )
+
         
             print(f"🤖 AI questions accepted: {len(ai_questions)}")
         
