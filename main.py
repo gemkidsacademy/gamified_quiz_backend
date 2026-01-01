@@ -4977,21 +4977,25 @@ def generate_ai_questions_foundational(
     while remaining > 0:
         batch_size = min(CHUNK_SIZE, remaining)
 
-        prompt = f"""
-You are a STRICT JSON generator for an automated exam system.
+prompt = f"""
+You are a JSON serialization engine.
 
-TASK:
-Generate EXACTLY {batch_size} multiple-choice questions.
+You MUST output VALID JSON.
+You MUST output a JSON ARRAY.
+You MUST output EXACTLY {batch_size} objects.
 
-ABSOLUTE RULES:
-- Output MUST be valid JSON
-- Output MUST be a JSON ARRAY
-- NO explanations
-- NO comments
-- NO markdown
-- NO text outside JSON
+DO NOT explain.
+DO NOT add text.
+DO NOT add comments.
+DO NOT add markdown.
+DO NOT add examples.
+DO NOT add extra keys.
+DO NOT change structure.
 
-REQUIRED FORMAT:
+FAILURE CONDITIONS:
+- If you cannot comply perfectly, output ONLY: []
+
+JSON SCHEMA (STRICT):
 [
   {{
     "question_text": "string",
@@ -5001,7 +5005,8 @@ REQUIRED FORMAT:
       "C": "string",
       "D": "string"
     }},
-    "correct_answer": "A|B|C|D"
+    "correct_answer": "A" | "B" | "C" | "D",
+    "topic": "string"
   }}
 ]
 
@@ -5009,10 +5014,16 @@ CONSTRAINTS:
 - Class: {class_name}
 - Subject: {subject}
 - Difficulty: {difficulty}
-- Topic focus: {topic}
+- Topic: {topic}
 
-ALL questions MUST strictly belong to the topic above.
-If you cannot comply perfectly, RETURN [] ONLY.
+RULES:
+- Each object MUST follow the schema exactly.
+- Keys MUST appear in the same order as shown.
+- Each question MUST be unique.
+- Language must match class level.
+- Options MUST be short, clear, and distinct.
+
+RETURN ONLY JSON.
 """
 
         success = False
