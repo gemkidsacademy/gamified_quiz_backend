@@ -4834,6 +4834,7 @@ def generate_ai_questions_foundational(
     class_name: str,
     subject: str,
     difficulty: str,
+    topic: str,
     count: int
 ):
     """
