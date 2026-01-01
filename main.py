@@ -4410,17 +4410,26 @@ def build_sections_with_questions(exam_json):
 
 
 
- 
 @app.post("/api/student/start-exam/foundational-skills")
 def start_or_resume_foundational_exam(
     payload: StartExamRequestFoundational,
     db: Session = Depends(get_db)
 ):
-    print("\n================ START-EXAM (FOUNDATIONAL) ================")
+    print("\n" + "=" * 70)
+    print("🚀 START-EXAM (FOUNDATIONAL) REQUEST RECEIVED")
+    print("=" * 70)
+
+    # ------------------------------------------------------------
+    # 0️⃣ Payload
+    # ------------------------------------------------------------
+    print("🧾 Raw payload:", payload)
     student_id = payload.student_id
     print("👤 student_id:", student_id)
 
-    # 1️⃣ Get latest attempt
+    # ------------------------------------------------------------
+    # 1️⃣ Fetch latest attempt
+    # ------------------------------------------------------------
+    print("\n🔍 Fetching latest exam attempt...")
     attempt = (
         db.query(StudentsExamFoundational)
         .filter(StudentsExamFoundational.student_id == student_id)
@@ -4428,11 +4437,20 @@ def start_or_resume_foundational_exam(
         .first()
     )
 
+    print("📌 Attempt found:", bool(attempt))
+    if attempt:
+        print("   • attempt.id:", attempt.id)
+        print("   • completed_at:", attempt.completed_at)
+        print("   • current_section_index:", attempt.current_section_index)
+
     if attempt and attempt.completed_at:
-        print("✅ Attempt already completed")
+        print("✅ Attempt already completed — returning early")
         return {"completed": True}
 
+    # ------------------------------------------------------------
     # 2️⃣ Load current exam
+    # ------------------------------------------------------------
+    print("\n📘 Fetching current GeneratedExamFoundational...")
     exam = (
         db.query(GeneratedExamFoundational)
         .filter(GeneratedExamFoundational.is_current == True)
@@ -4441,16 +4459,35 @@ def start_or_resume_foundational_exam(
     )
 
     if not exam:
+        print("❌ ERROR: No active exam found")
         raise HTTPException(404, "No active exam")
 
+    print("✅ Exam loaded")
+    print("   • exam.id:", exam.id)
+    print("   • class_name:", exam.class_name)
+    print("   • subject:", exam.subject)
+    print("   • duration_minutes:", exam.duration_minutes)
+    print("   • exam_json keys:", exam.exam_json.keys())
+
+    # ------------------------------------------------------------
     # 3️⃣ Normalize sections + questions
+    # ------------------------------------------------------------
+    print("\n🧠 Normalizing sections from exam_json...")
     sections = build_sections_with_questions(exam.exam_json)
 
+    print("📦 Sections normalized:", len(sections))
+    for i, sec in enumerate(sections):
+        print(f"   Section {i} keys:", sec.keys())
+
     if not sections:
+        print("❌ ERROR: Sections list is empty after normalization")
         raise HTTPException(500, "No sections after normalization")
 
+    # ------------------------------------------------------------
     # 4️⃣ Create attempt if needed
+    # ------------------------------------------------------------
     if not attempt:
+        print("\n🆕 Creating new exam attempt...")
         attempt = StudentsExamFoundational(
             student_id=student_id,
             exam_id=exam.id,
@@ -4461,32 +4498,76 @@ def start_or_resume_foundational_exam(
         db.commit()
         db.refresh(attempt)
 
+        print("✅ Attempt created")
+        print("   • attempt.id:", attempt.id)
+
+    # ------------------------------------------------------------
     # 5️⃣ Validate section index
+    # ------------------------------------------------------------
+    print("\n🧪 Validating section index...")
+    print("   • current_section_index:", attempt.current_section_index)
+    print("   • total sections:", len(sections))
+
     if attempt.current_section_index >= len(sections):
+        print("❌ ERROR: current_section_index out of bounds")
         raise HTTPException(500, "Invalid section index")
 
-    # 6️⃣ Timer
+    # ------------------------------------------------------------
+    # 6️⃣ Timer calculation
+    # ------------------------------------------------------------
+    print("\n⏱ Calculating remaining time...")
     elapsed = int((datetime.now(timezone.utc) - attempt.started_at).total_seconds())
-    remaining_time = max(exam.duration_minutes * 60 - elapsed, 0)
+    print("   • elapsed seconds:", elapsed)
 
-    # 7️⃣ Normalize questions for frontend (🔥 CRITICAL FIX)
+    if exam.duration_minutes is None:
+        print("❌ ERROR: exam.duration_minutes is None")
+        raise HTTPException(500, "Invalid exam duration")
+
+    remaining_time = max(exam.duration_minutes * 60 - elapsed, 0)
+    print("   • remaining_time (seconds):", remaining_time)
+
+    # ------------------------------------------------------------
+    # 7️⃣ Normalize questions for frontend
+    # ------------------------------------------------------------
+    print("\n🧩 Preparing current section for frontend...")
     current_section = sections[attempt.current_section_index]
 
+    print("📌 Current section object:", current_section)
+    print("📌 Current section keys:", current_section.keys())
+
+    questions = current_section.get("questions")
+    if questions is None:
+        print("❌ ERROR: current_section['questions'] is None")
+        raise HTTPException(500, "Section has no questions key")
+
+    print("📊 Question count in section:", len(questions))
+
     normalized_questions = []
-    for q in current_section["questions"]:
+    for idx, q in enumerate(questions):
+        print(f"   → Normalizing question {idx + 1}")
         fixed = dict(q)
 
         opts = fixed.get("options")
+        print("      options type:", type(opts))
+
         if isinstance(opts, dict):
             fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
         elif isinstance(opts, list):
             fixed["options"] = opts
         else:
+            print("      ⚠️ options malformed, defaulting to empty list")
             fixed["options"] = []
 
         normalized_questions.append(fixed)
 
-    # 8️⃣ Return section in frontend-safe format
+    # ------------------------------------------------------------
+    # 8️⃣ Final response
+    # ------------------------------------------------------------
+    print("\n✅ START-EXAM RESPONSE READY")
+    print("   • section name:", current_section.get("difficulty"))
+    print("   • questions returned:", len(normalized_questions))
+    print("=" * 70 + "\n")
+
     return {
         "completed": False,
         "current_section_index": attempt.current_section_index,
@@ -4496,6 +4577,7 @@ def start_or_resume_foundational_exam(
         },
         "remaining_time": remaining_time
     }
+
 
 
 @app.post("/api/exams/foundational/next-section")
