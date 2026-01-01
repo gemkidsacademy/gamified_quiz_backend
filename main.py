@@ -4382,34 +4382,26 @@ def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db))
 # 🔧 Helper: Build sections with questions (FOUNDATIONAL)
 # ------------------------------------------------------------
 def build_sections_with_questions(exam_json):
-    print("\n🧩 build_sections_with_questions() START")
-    print("📦 exam_json keys:", exam_json.keys())
+    print("\n🧠 Normalizing sections from exam_json...")
 
     sections_meta = exam_json.get("sections", [])
     questions = exam_json.get("questions", [])
 
-    print(f"📘 Sections meta count: {len(sections_meta)}")
-    print(f"❓ Total questions count: {len(questions)}")
+    print("   • sections_meta count:", len(sections_meta))
+    print("   • questions count:", len(questions))
 
     section_map = {}
 
-    # ------------------------------------------------------------
-    # 1️⃣ Initialize sections using *difficulty*
-    # ------------------------------------------------------------
-    for idx, s in enumerate(sections_meta):
+    # ✅ Initialize sections using DIFFICULTY (not name)
+    for s in sections_meta:
         difficulty = s.get("difficulty")
         topic = s.get("topic")
 
-        print(f"\n➡ Initializing section {idx + 1}")
-        print("   • Difficulty:", difficulty)
-        print("   • Topic:", topic)
-
         if not difficulty:
-            print("   ❌ Skipped (missing difficulty)")
+            print("⚠️ Skipping section with no difficulty:", s)
             continue
 
         section_map[difficulty] = {
-            "name": difficulty,
             "difficulty": difficulty,
             "topic": topic,
             "time": s.get("time", 0),
@@ -4417,35 +4409,26 @@ def build_sections_with_questions(exam_json):
             "questions": []
         }
 
-    # ------------------------------------------------------------
-    # 2️⃣ Attach questions to sections
-    # ------------------------------------------------------------
-    print("\n🔗 Assigning questions to sections...")
-
+    # ✅ Assign questions to sections
     for q in questions:
-        section_name = q.get("section")
+        section_key = q.get("section")
 
-        if section_name in section_map:
-            section_map[section_name]["questions"].append(q)
+        if section_key in section_map:
+            section_map[section_key]["questions"].append(q)
         else:
-            print(
-                "⚠️ Question skipped — no matching section:",
-                section_name
-            )
+            print("⚠️ Question with unknown section:", q.get("section"))
 
-    # ------------------------------------------------------------
-    # 3️⃣ Final sanity check
-    # ------------------------------------------------------------
-    final_sections = list(section_map.values())
+    sections = list(section_map.values())
+    print("📦 Sections normalized:", len(sections))
 
-    print("\n✅ Section build complete")
-    for s in final_sections:
+    for sec in sections:
         print(
-            f"   • {s['name']} ({s['topic']}): "
-            f"{len(s['questions'])} questions"
+            f"   • {sec['difficulty']} | topic={sec['topic']} | "
+            f"questions={len(sec['questions'])}"
         )
 
-    return final_sections
+    return sections
+
 
 
 @app.post("/api/student/start-exam/foundational-skills")
