@@ -5127,7 +5127,11 @@ def generate_exam_foundational(
     # 1️⃣ Clear previous generated exams
     # ------------------------------------------------------------
     print("🧹 Clearing previous GeneratedExamFoundational records...")
-    deleted = db.query(GeneratedExamFoundational).delete(synchronize_session=False)
+    deleted = (
+        db.query(GeneratedExamFoundational)
+        .filter(func.lower(GeneratedExamFoundational.class_name) == class_name.lower())
+        .delete(synchronize_session=False)
+    )
     db.commit()
     print(f"🧹 Deleted {deleted} rows")
 
@@ -5364,11 +5368,48 @@ def generate_exam_foundational(
 
     print("🎉 EXAM GENERATION SUCCESSFUL")
     print("=" * 70 + "\n")
-
-    return {
+    # ------------------------------------------------------------
+    # 6️⃣ Build exam JSON (for persistence)
+    # ------------------------------------------------------------
+    print("📦 Building exam_json payload...")
+    
+    exam_json = {
         "class_name": class_name,
         "subject": cfg.subject,
+        "sections": sections,
         "questions": final_questions,
+        "total_questions": len(final_questions),
+    }
+    
+    print("✅ exam_json built successfully")
+
+    # ------------------------------------------------------------
+    # 7️⃣ Persist generated exam
+    # ------------------------------------------------------------
+    print("💾 Saving generated exam to database...")
+    
+    saved_exam = GeneratedExamFoundational(
+        class_name=class_name,
+        subject=cfg.subject,
+        total_questions=len(final_questions),
+        duration_minutes=sum(s["time"] for s in sections),
+        exam_json=exam_json,
+        is_current=True,
+    )
+    
+    db.add(saved_exam)
+    db.commit()
+    db.refresh(saved_exam)
+    
+    print("✅ Exam saved successfully")
+    print("   ▸ Exam ID:", saved_exam.id)
+
+
+    return {
+        "generated_exam_id": saved_exam.id,
+        "class_name": class_name,
+        "subject": cfg.subject,
+        "total_questions": len(final_questions),
         "warnings": warnings,
     }
 
