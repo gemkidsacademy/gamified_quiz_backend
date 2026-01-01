@@ -4946,56 +4946,82 @@ def finish_foundational_exam(
 #     print(f"🤖 Successfully generated {len(all_questions)} AI questions")
 #     return all_questions
 
+def is_valid_ai_question(q: dict) -> bool:
+    try:
+        if not isinstance(q, dict):
+            return False
 
-def generate_ai_questions_foundational(
+        if not isinstance(q.get("question_text"), str):
+            return False
+
+        options = q.get("options")
+        if not isinstance(options, dict):
+            return False
+
+        if set(options.keys()) != {"A", "B", "C", "D"}:
+            return False
+
+        if not all(isinstance(v, str) for v in options.values()):
+            return False
+
+        if q.get("correct_answer") not in {"A", "B", "C", "D"}:
+            return False
+
+        return True
+
+    except Exception:
+        return False
+
+
+def generate_ai_questions_safely(
     class_name: str,
     subject: str,
     difficulty: str,
     topic: str,
-    count: int
+    required_count: int,
 ):
     """
-    Generate AI questions for a Foundational exam section.
-    Topic-aware and section-safe.
+    Safely generate AI questions with strict validation.
+    - Accepts partial success
+    - Skips invalid questions
+    - Bounded retries
+    - NEVER raises on AI failure
     """
 
-    print("\n🤖 Calling AI to generate questions")
-    print(
-        f"🤖 class={class_name}, subject={subject}, "
-        f"difficulty={difficulty}, topic={topic}, count={count}"
-    )
+    print("\n🤖 GENERATE AI QUESTIONS SAFELY")
+    print("--------------------------------------------------")
+    print(f"Class      : {class_name}")
+    print(f"Subject    : {subject}")
+    print(f"Difficulty : {difficulty}")
+    print(f"Topic      : {topic}")
+    print(f"Required   : {required_count}")
+    print("--------------------------------------------------")
 
-    if count <= 0:
+    if required_count <= 0:
         return []
 
     CHUNK_SIZE = 5
-    MAX_RETRIES = 2
+    MAX_ATTEMPTS = 5
 
-    remaining = count
-    all_questions = []
+    valid_questions = []
+    attempts = 0
 
-    while remaining > 0:
+    while len(valid_questions) < required_count and attempts < MAX_ATTEMPTS:
+        attempts += 1
+        remaining = required_count - len(valid_questions)
         batch_size = min(CHUNK_SIZE, remaining)
 
+        print(f"\n🤖 Attempt {attempts}")
+        print(f"➡ Requesting {batch_size} questions")
+
         prompt = f"""
-You are a JSON serialization engine.
+You are a STRICT JSON generator.
 
-You MUST output VALID JSON.
-You MUST output a JSON ARRAY.
-You MUST output EXACTLY {batch_size} objects.
+RETURN ONLY VALID JSON.
+RETURN ONLY A JSON ARRAY.
+RETURN EXACTLY {batch_size} OBJECTS.
 
-DO NOT explain.
-DO NOT add text.
-DO NOT add comments.
-DO NOT add markdown.
-DO NOT add examples.
-DO NOT add extra keys.
-DO NOT change structure.
-
-FAILURE CONDITIONS:
-- If you cannot comply perfectly, output ONLY: []
-
-JSON SCHEMA (STRICT):
+FORMAT (STRICT):
 [
   {{
     "question_text": "string",
@@ -5005,8 +5031,7 @@ JSON SCHEMA (STRICT):
       "C": "string",
       "D": "string"
     }},
-    "correct_answer": "A" | "B" | "C" | "D",
-    "topic": "string"
+    "correct_answer": "A|B|C|D"
   }}
 ]
 
@@ -5017,66 +5042,64 @@ CONSTRAINTS:
 - Topic: {topic}
 
 RULES:
-- Each object MUST follow the schema exactly.
-- Keys MUST appear in the same order as shown.
-- Each question MUST be unique.
-- Language must match class level.
-- Options MUST be short, clear, and distinct.
-
-RETURN ONLY JSON.
+- No extra keys
+- No markdown
+- No explanations
+- If unsure, return []
 """
 
-        success = False
+        try:
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                input=prompt,
+                temperature=0.3,
+            )
 
-        for attempt in range(1, MAX_RETRIES + 1):
-            print(f"🤖 AI batch {batch_size} | attempt {attempt}")
+            raw = response.output_text
+            print("📥 Raw AI response:", raw)
 
             try:
-                response = client.responses.create(
-                    model="gpt-4o-mini",
-                    input=prompt,
-                    temperature=0.3
-                )
-
-                raw = response.output_text
-                print("🤖 Raw AI response:", raw)
-
                 parsed = json.loads(raw)
+            except json.JSONDecodeError as e:
+                print("❌ JSON parse failed:", e)
+                continue
 
-                if not isinstance(parsed, list):
-                    raise ValueError("AI output is not a list")
+            if not isinstance(parsed, list):
+                print("❌ AI output is not a list")
+                continue
 
-                if len(parsed) != batch_size:
-                    raise ValueError(
-                        f"Expected {batch_size} questions, got {len(parsed)}"
-                    )
+            print(f"📦 Parsed {len(parsed)} candidate questions")
 
-                for q in parsed:
-                    all_questions.append({
+            for idx, q in enumerate(parsed, start=1):
+                if len(valid_questions) >= required_count:
+                    break
+
+                if is_valid_ai_question(q):
+                    valid_questions.append({
                         "section": difficulty,
-                        "question_number": None,
                         "question_text": q["question_text"],
                         "options": q["options"],
                         "correct_answer": q["correct_answer"],
                         "question_type": "text_mcq",
                         "images": [],
-                        "topic": topic,  # 🔒 FORCE SECTION TOPIC
+                        "topic": topic,        # 🔒 FORCE section topic
                         "source": "ai",
                     })
+                    print(f"✅ Accepted question {len(valid_questions)}")
+                else:
+                    print(f"⚠️  Rejected invalid question #{idx}")
 
-                remaining -= batch_size
-                success = True
-                break
+        except Exception as e:
+            print("❌ AI call failed:", e)
 
-            except Exception as e:
-                print(f"❌ AI batch failed (attempt {attempt}): {e}")
+    print("\n--------------------------------------------------")
+    print(f"🤖 AI generation finished")
+    print(f"✔ Valid questions collected: {len(valid_questions)}")
+    print(f"⚠ Attempts used: {attempts}/{MAX_ATTEMPTS}")
+    print("--------------------------------------------------\n")
 
-        if not success:
-            print("❌ AI failed after retries. Stopping generation.")
-            break
+    return valid_questions
 
-    print(f"🤖 Successfully generated {len(all_questions)} AI questions")
-    return all_questions
 
 
 @app.post("/api/exams/generate-foundational")
@@ -5266,43 +5289,48 @@ def generate_exam_foundational(
                 })
 
         # ---------------- AI QUESTIONS ----------------
+        # ---------------- AI QUESTIONS (SAFE) ----------------
         if ai_required > 0:
-            print("\n🤖 Generating AI questions...")
+            print("\n🤖 Generating AI questions (SAFE MODE)...")
             print("   • Difficulty:", difficulty)
             print("   • Topic:", topic)
-            print("   • Count:", ai_required)
-
-            ai_questions = generate_ai_questions_foundational(
+            print("   • Required count:", ai_required)
+        
+            ai_questions = generate_ai_questions_safely(
                 class_name=class_name,
                 subject=cfg.subject,
                 difficulty=difficulty,
                 topic=topic,
-                count=ai_required,
+                required_count=ai_required,
+                db=db,  # optional if you later persist AI questions
             )
-
-            print(f"🤖 AI questions generated: {len(ai_questions)}")
-
+        
+            print(f"🤖 AI questions accepted: {len(ai_questions)}")
+        
             for q in ai_questions:
                 q["section"] = difficulty
                 q["topic"] = topic
                 q["source"] = "ai"
-
+        
             section_questions.extend(ai_questions)
-
+        
         # ---------------- HARD VALIDATION ----------------
         print("\n🧪 Validating section output...")
-
+        
         if not section_questions:
             print(
                 f"❌ ERROR: Section '{difficulty}' ({topic}) produced ZERO questions"
             )
             raise HTTPException(
-                400,
-                f"Section '{difficulty}' ({topic}) produced zero questions. Exam rejected."
+                status_code=400,
+                detail=(
+                    f"Section '{difficulty}' ({topic}) produced zero questions. "
+                    "Exam generation aborted."
+                ),
             )
-
+        
         print(f"✅ Section question count: {len(section_questions)}")
-
+        
         if total_required and len(section_questions) != total_required:
             warning = (
                 f"{difficulty} ({topic}): expected {total_required}, "
@@ -5310,8 +5338,9 @@ def generate_exam_foundational(
             )
             print("⚠️ WARNING:", warning)
             warnings.append(warning)
-
+        
         final_questions.extend(section_questions)
+
 
     # ------------------------------------------------------------
     # 5️⃣ Final validation
