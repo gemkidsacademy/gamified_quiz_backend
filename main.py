@@ -4644,16 +4644,18 @@ def advance_foundational_section(
     # Group questions by section name
     sections = []
     for sec in sections_meta:
-        sec_name = sec["name"]
+        sec_name = sec["difficulty"]  # ✅ FIX
+    
         sec_questions = [
             q for q in all_questions
             if q.get("section") == sec_name
         ]
-
+    
         sections.append({
             "name": sec_name,
             "questions": sec_questions
         })
+
 
     total_sections = len(sections)
     print("📂 Total sections:", total_sections)
