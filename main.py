@@ -4945,13 +4945,279 @@ If you cannot comply perfectly, RETURN [] ONLY.
     print(f"🤖 Successfully generated {len(all_questions)} AI questions")
     return all_questions
 
-
 @app.post("/api/exams/generate-foundational")
 def generate_exam_foundational(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
-    """
+    print("\n" + "=" * 70)
+    print("📥 GENERATE FOUNDATIONAL EXAM - REQUEST RECEIVED")
+    print("=" * 70)
+
+    # ------------------------------------------------------------
+    # 0️⃣ Payload validation
+    # ------------------------------------------------------------
+    print("🧾 Raw payload:", payload)
+
+    class_name = payload.get("class_name")
+    if not class_name:
+        print("❌ ERROR: class_name missing from payload")
+        raise HTTPException(400, "class_name is required")
+
+    print("✅ class_name:", class_name)
+
+    # ------------------------------------------------------------
+    # 1️⃣ Clear previous generated exams
+    # ------------------------------------------------------------
+    print("🧹 Clearing previous GeneratedExamFoundational records...")
+    deleted = db.query(GeneratedExamFoundational).delete(synchronize_session=False)
+    db.commit()
+    print(f"🧹 Deleted {deleted} rows")
+
+    # ------------------------------------------------------------
+    # 2️⃣ Load latest quiz setup
+    # ------------------------------------------------------------
+    print("🔍 Fetching latest QuizSetupFoundational...")
+
+    cfg = (
+        db.query(QuizSetupFoundational)
+        .filter(func.lower(QuizSetupFoundational.class_name) == class_name.lower())
+        .order_by(QuizSetupFoundational.id.desc())
+        .first()
+    )
+
+    if not cfg:
+        print(f"❌ ERROR: No quiz setup found for class '{class_name}'")
+        raise HTTPException(404, f"No quiz setup found for class '{class_name}'")
+
+    print("✅ Quiz setup found")
+    print("   ▸ Config ID:", cfg.id)
+    print("   ▸ Subject:", cfg.subject)
+
+    # ------------------------------------------------------------
+    # 3️⃣ Build section metadata
+    # ------------------------------------------------------------
+    print("\n📦 Building section definitions from config...")
+
+    sections = []
+
+    def add_section(label, name, topic, time, intro):
+        print(f"➡ Checking {label}...")
+        if name:
+            print(f"   ✔ Included")
+            print(f"   • Difficulty:", name)
+            print(f"   • Topic:", topic)
+            print(f"   • Time:", time)
+            sections.append({
+                "difficulty": name,
+                "topic": topic,
+                "time": time or 0,
+                "intro": intro or "",
+                "label": label,
+            })
+        else:
+            print(f"   ⏭ Skipped (no name)")
+
+    add_section(
+        "Section 1",
+        cfg.section1_name,
+        cfg.section1_topic,
+        cfg.section1_time,
+        cfg.section1_intro,
+    )
+
+    add_section(
+        "Section 2",
+        cfg.section2_name,
+        cfg.section2_topic,
+        cfg.section2_time,
+        cfg.section2_intro,
+    )
+
+    add_section(
+        "Section 3",
+        cfg.section3_name,
+        cfg.section3_topic,
+        cfg.section3_time,
+        cfg.section3_intro,
+    )
+
+    if not sections:
+        print("❌ ERROR: No sections created from config")
+        raise HTTPException(400, "No sections defined in quiz setup")
+
+    print(f"✅ Total sections to generate: {len(sections)}")
+
+    # ------------------------------------------------------------
+    # 4️⃣ Generate questions per section
+    # ------------------------------------------------------------
+    final_questions = []
+    warnings = []
+
+    for section in sections:
+        print("\n" + "-" * 60)
+        print(f"📘 GENERATING SECTION: {section['label']}")
+        print("-" * 60)
+
+        difficulty = section["difficulty"]
+        topic = section["topic"]
+
+        print("➡ Difficulty:", difficulty)
+        print("➡ Topic:", topic)
+
+        # Resolve counts
+        if difficulty == cfg.section1_name:
+            db_required = cfg.section1_db or 0
+            ai_required = cfg.section1_ai or 0
+            total_required = cfg.section1_total or 0
+        elif difficulty == cfg.section2_name:
+            db_required = cfg.section2_db or 0
+            ai_required = cfg.section2_ai or 0
+            total_required = cfg.section2_total or 0
+        elif difficulty == cfg.section3_name:
+            db_required = cfg.section3_db or 0
+            ai_required = cfg.section3_ai or 0
+            total_required = cfg.section3_total or 0
+        else:
+            print("⚠️ WARNING: Difficulty does not match any config section")
+            continue
+
+        print("📊 Required counts:")
+        print("   • DB:", db_required)
+        print("   • AI:", ai_required)
+        print("   • TOTAL:", total_required)
+
+        section_questions = []
+
+        # ---------------- DB QUESTIONS ----------------
+        if db_required > 0:
+            print("\n🗄 Fetching DB questions...")
+
+            pool = (
+                db.query(Question)
+                .filter(
+                    func.lower(Question.class_name) == class_name.lower(),
+                    func.lower(Question.subject) == cfg.subject.lower(),
+                    func.lower(Question.difficulty) == difficulty.lower(),
+                    func.lower(Question.topic) == topic.lower(),
+                )
+                .all()
+            )
+
+            print(f"📦 DB pool size: {len(pool)}")
+
+            random.shuffle(pool)
+            chosen = pool[:db_required]
+
+            print(f"🎯 Selected DB questions: {len(chosen)}")
+
+            if len(chosen) < db_required:
+                warning = (
+                    f"{difficulty} ({topic}): "
+                    f"only {len(chosen)} DB questions available"
+                )
+                print("⚠️ WARNING:", warning)
+                warnings.append(warning)
+
+            for q in chosen:
+                section_questions.append({
+                    "section": difficulty,
+                    "topic": q.topic,
+                    "question_text": q.question_text,
+                    "options": q.options,
+                    "correct_answer": q.correct_answer,
+                    "question_type": q.question_type,
+                    "images": q.images,
+                    "source": "db",
+                })
+
+        # ---------------- AI QUESTIONS ----------------
+        if ai_required > 0:
+            print("\n🤖 Generating AI questions...")
+            print("   • Difficulty:", difficulty)
+            print("   • Topic:", topic)
+            print("   • Count:", ai_required)
+
+            ai_questions = generate_ai_questions_foundational(
+                class_name=class_name,
+                subject=cfg.subject,
+                difficulty=difficulty,
+                topic=topic,
+                count=ai_required,
+            )
+
+            print(f"🤖 AI questions generated: {len(ai_questions)}")
+
+            for q in ai_questions:
+                q["section"] = difficulty
+                q["topic"] = topic
+                q["source"] = "ai"
+
+            section_questions.extend(ai_questions)
+
+        # ---------------- HARD VALIDATION ----------------
+        print("\n🧪 Validating section output...")
+
+        if not section_questions:
+            print(
+                f"❌ ERROR: Section '{difficulty}' ({topic}) produced ZERO questions"
+            )
+            raise HTTPException(
+                400,
+                f"Section '{difficulty}' ({topic}) produced zero questions. Exam rejected."
+            )
+
+        print(f"✅ Section question count: {len(section_questions)}")
+
+        if total_required and len(section_questions) != total_required:
+            warning = (
+                f"{difficulty} ({topic}): expected {total_required}, "
+                f"got {len(section_questions)}"
+            )
+            print("⚠️ WARNING:", warning)
+            warnings.append(warning)
+
+        final_questions.extend(section_questions)
+
+    # ------------------------------------------------------------
+    # 5️⃣ Final validation
+    # ------------------------------------------------------------
+    print("\n" + "=" * 70)
+    print("📦 FINAL EXAM SUMMARY")
+    print("=" * 70)
+
+    print("🧮 Total questions generated:", len(final_questions))
+
+    if warnings:
+        print("⚠️ WARNINGS:")
+        for w in warnings:
+            print("   -", w)
+    else:
+        print("✅ No warnings")
+
+    if not final_questions:
+        print("❌ ERROR: No questions generated at all")
+        raise HTTPException(400, "Exam generation failed")
+
+    print("🎉 EXAM GENERATION SUCCESSFUL")
+    print("=" * 70 + "\n")
+
+    return {
+        "class_name": class_name,
+        "subject": cfg.subject,
+        "questions": final_questions,
+        "warnings": warnings,
+    }
+
+
+"""
+Before topic names were added to quiz setup foundational
+@app.post("/api/exams/generate-foundational")
+def generate_exam_foundational(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    '''
     Generate a Foundational exam using the LATEST quiz_setup_foundational
     (highest id) for the given class_name.
     Guarantees:
@@ -4959,7 +5225,7 @@ def generate_exam_foundational(
       - no empty sections
       - section totals respected
       - runtime-safe exam_json
-    """
+    '''
 
     print("\n==============================")
     print("📥 Generate Foundational Exam")
@@ -4971,6 +5237,7 @@ def generate_exam_foundational(
     class_name = payload.get("class_name")
     if not class_name:
         raise HTTPException(400, "class_name is required")
+
     db.query(GeneratedExamFoundational).delete(synchronize_session=False)
     db.commit()
 
@@ -4990,7 +5257,7 @@ def generate_exam_foundational(
             f"No quiz setup found for class '{class_name}'"
         )
 
-    subject = cfg.subject  # ✅ CRITICAL FIX
+    subject = cfg.subject
     print(f"➡ Using config ID={cfg.id}, subject={subject}")
 
     # ------------------------------------------------------------
@@ -5018,12 +5285,11 @@ def generate_exam_foundational(
     warnings = []
 
     # ------------------------------------------------------------
-    # 3️⃣ Generate questions PER SECTION (strict)
+    # 3️⃣ Generate questions PER SECTION
     # ------------------------------------------------------------
     for section in sections:
         difficulty = section["name"]
 
-        # Resolve per-section requirements
         if difficulty == cfg.section1_name:
             db_required = cfg.section1_db or 0
             ai_required = cfg.section1_ai or 0
@@ -5043,7 +5309,6 @@ def generate_exam_foundational(
 
         section_questions = []
 
-        # ---------------- DB QUESTIONS ----------------
         if db_required > 0:
             pool = (
                 db.query(Question)
@@ -5074,7 +5339,6 @@ def generate_exam_foundational(
                     "topic": q.topic,
                 })
 
-        # ---------------- AI QUESTIONS ----------------
         if ai_required > 0:
             ai_questions = generate_ai_questions_foundational(
                 class_name=class_name,
@@ -5088,7 +5352,6 @@ def generate_exam_foundational(
 
             section_questions.extend(ai_questions)
 
-        # ---------------- HARD VALIDATION ----------------
         if not section_questions:
             raise HTTPException(
                 400,
@@ -5102,12 +5365,8 @@ def generate_exam_foundational(
 
         final_questions.extend(section_questions)
 
-    
-
-    
-
     # ------------------------------------------------------------
-    # 5️⃣ Number questions (stable IDs)
+    # 5️⃣ Number questions
     # ------------------------------------------------------------
     for i, q in enumerate(final_questions, start=1):
         q["q_id"] = i
@@ -5133,7 +5392,7 @@ def generate_exam_foundational(
     }
 
     # ------------------------------------------------------------
-    # 8️⃣ Persist exam (invalidate previous)
+    # 8️⃣ Persist exam
     # ------------------------------------------------------------
     db.query(GeneratedExamFoundational).update({"is_current": False})
 
@@ -5158,6 +5417,7 @@ def generate_exam_foundational(
         "duration_minutes": duration_minutes,
         "warnings": warnings
     }
+"""
 
 
 
