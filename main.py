@@ -4491,11 +4491,12 @@ def start_or_resume_foundational_exam(
         "completed": False,
         "current_section_index": attempt.current_section_index,
         "section": {
-            "name": current_section["name"],
+            "name": current_section["difficulty"],
             "questions": normalized_questions
         },
         "remaining_time": remaining_time
     }
+
 
 @app.post("/api/exams/foundational/next-section")
 def advance_foundational_section(
