@@ -4977,7 +4977,7 @@ def generate_ai_questions_foundational(
     while remaining > 0:
         batch_size = min(CHUNK_SIZE, remaining)
 
-prompt = f"""
+        prompt = f"""
 You are a JSON serialization engine.
 
 You MUST output VALID JSON.
