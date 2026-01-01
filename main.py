@@ -4830,6 +4830,123 @@ def finish_foundational_exam(
 #         "improvement_areas": improvement_areas
 #     }
  
+# def generate_ai_questions_foundational(
+#     class_name: str,
+#     subject: str,
+#     difficulty: str,
+#     topic: str,
+#     count: int
+# ):
+#     """
+#     Generate AI questions for a Foundational exam section.
+#     Uses chunking + retries to reduce JSON corruption.
+#     Compatible with current OpenAI Python SDK.
+#     """
+#
+#     print("\n🤖 Calling AI to generate questions")
+#     print(f"🤖 class={class_name}, subject={subject}, difficulty={difficulty}, count={count}")
+#
+#     if count <= 0:
+#         return []
+#
+#     CHUNK_SIZE = 5
+#     MAX_RETRIES = 2
+#
+#     remaining = count
+#     all_questions = []
+#
+#     while remaining > 0:
+#         batch_size = min(CHUNK_SIZE, remaining)
+#
+#         prompt = f"""
+# You are a STRICT JSON generator for an automated exam system.
+#
+# TASK:
+# Generate EXACTLY {batch_size} multiple-choice questions.
+#
+# ABSOLUTE RULES:
+# - Output MUST be valid JSON
+# - Output MUST be a JSON ARRAY
+# - NO explanations
+# - NO comments
+# - NO markdown
+# - NO text outside JSON
+#
+# REQUIRED FORMAT:
+# [
+#   {{
+#     "question_text": "string",
+#     "options": {{
+#       "A": "string",
+#       "B": "string",
+#       "C": "string",
+#       "D": "string"
+#     }},
+#     "correct_answer": "A|B|C|D",
+#     "topic": "string"
+#   }}
+# ]
+#
+# CONSTRAINTS:
+# - Class: {class_name}
+# - Subject: {subject}
+# - Difficulty: {difficulty}
+#
+# If you cannot comply perfectly, RETURN [] ONLY.
+# """
+#
+#         success = False
+#
+#         for attempt in range(1, MAX_RETRIES + 1):
+#             print(f"🤖 AI batch {batch_size} | attempt {attempt}")
+#
+#             try:
+#                 response = client.responses.create(
+#                     model="gpt-4o-mini",
+#                     input=prompt,
+#                     temperature=0.4
+#                 )
+#
+#                 raw = response.output_text
+#                 print("🤖 Raw AI response:", raw)
+#
+#                 parsed = json.loads(raw)
+#
+#                 if not isinstance(parsed, list):
+#                     raise ValueError("AI output is not a list")
+#
+#                 if len(parsed) != batch_size:
+#                     raise ValueError(
+#                         f"Expected {batch_size} questions, got {len(parsed)}"
+#                     )
+#
+#                 for q in parsed:
+#                     all_questions.append({
+#                         "section": difficulty,
+#                         "question_number": None,
+#                         "question_text": q["question_text"],
+#                         "options": q["options"],
+#                         "correct_answer": q["correct_answer"],
+#                         "question_type": "mcq",
+#                         "images": [],
+#                         "topic": q.get("topic", "AI Generated"),
+#                     })
+#
+#                 remaining -= batch_size
+#                 success = True
+#                 break
+#
+#             except Exception as e:
+#                 print(f"❌ AI batch failed (attempt {attempt}): {e}")
+#
+#         if not success:
+#             print("❌ AI failed after retries. Stopping generation.")
+#             break
+#
+#     print(f"🤖 Successfully generated {len(all_questions)} AI questions")
+#     return all_questions
+
+
 def generate_ai_questions_foundational(
     class_name: str,
     subject: str,
@@ -4839,12 +4956,14 @@ def generate_ai_questions_foundational(
 ):
     """
     Generate AI questions for a Foundational exam section.
-    Uses chunking + retries to reduce JSON corruption.
-    Compatible with current OpenAI Python SDK.
+    Topic-aware and section-safe.
     """
 
     print("\n🤖 Calling AI to generate questions")
-    print(f"🤖 class={class_name}, subject={subject}, difficulty={difficulty}, count={count}")
+    print(
+        f"🤖 class={class_name}, subject={subject}, "
+        f"difficulty={difficulty}, topic={topic}, count={count}"
+    )
 
     if count <= 0:
         return []
@@ -4882,8 +5001,7 @@ REQUIRED FORMAT:
       "C": "string",
       "D": "string"
     }},
-    "correct_answer": "A|B|C|D",
-    "topic": "string"
+    "correct_answer": "A|B|C|D"
   }}
 ]
 
@@ -4891,7 +5009,9 @@ CONSTRAINTS:
 - Class: {class_name}
 - Subject: {subject}
 - Difficulty: {difficulty}
+- Topic focus: {topic}
 
+ALL questions MUST strictly belong to the topic above.
 If you cannot comply perfectly, RETURN [] ONLY.
 """
 
@@ -4904,7 +5024,7 @@ If you cannot comply perfectly, RETURN [] ONLY.
                 response = client.responses.create(
                     model="gpt-4o-mini",
                     input=prompt,
-                    temperature=0.4
+                    temperature=0.3
                 )
 
                 raw = response.output_text
@@ -4927,9 +5047,10 @@ If you cannot comply perfectly, RETURN [] ONLY.
                         "question_text": q["question_text"],
                         "options": q["options"],
                         "correct_answer": q["correct_answer"],
-                        "question_type": "mcq",
+                        "question_type": "text_mcq",
                         "images": [],
-                        "topic": q.get("topic", "AI Generated"),
+                        "topic": topic,  # 🔒 FORCE SECTION TOPIC
+                        "source": "ai",
                     })
 
                 remaining -= batch_size
@@ -4945,6 +5066,7 @@ If you cannot comply perfectly, RETURN [] ONLY.
 
     print(f"🤖 Successfully generated {len(all_questions)} AI questions")
     return all_questions
+
 
 @app.post("/api/exams/generate-foundational")
 def generate_exam_foundational(
