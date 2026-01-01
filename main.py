@@ -4569,15 +4569,13 @@ def start_or_resume_foundational_exam(
         fixed = dict(q)
 
         opts = fixed.get("options")
-        print("      options type:", type(opts))
 
-        if isinstance(opts, dict):
-            fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
-        elif isinstance(opts, list):
-            fixed["options"] = opts
+        if isinstance(opts, dict) and opts:
+           fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
         else:
-            print("      ⚠️ options malformed, defaulting to empty list")
-            fixed["options"] = []
+           # 🔒 Guarantee at least 1 safe option to avoid frontend crash
+           fixed["options"] = ["A) Option unavailable"]
+
 
         normalized_questions.append(fixed)
 
