@@ -4763,8 +4763,9 @@ def finish_foundational_exam(
 
         question_lookup[qid] = {
             "section": q.get("section"),
-            "correct_answer": q.get("correct_answer")
+            "correct_answer": q.get("correct")
         }
+
 
     print("🧠 Question lookup keys:", list(question_lookup.keys()))
 
@@ -4793,7 +4794,8 @@ def finish_foundational_exam(
             continue
 
         correct_answer = meta["correct_answer"]
-        is_correct = selected_answer == correct_answer
+        is_correct = selected_answer.upper() == correct_answer.upper()
+
 
         print("   ✔ Meta found:", meta)
         print("   ✔ Correct answer:", correct_answer)
@@ -5474,6 +5476,11 @@ def generate_exam_foundational(
             warnings.append(warning)
         
         final_questions.extend(section_questions)
+        # AFTER final_questions is built
+ 
+    for idx, q in enumerate(final_questions, start=1):
+            q["q_id"] = idx
+    
 
 
     # ------------------------------------------------------------
@@ -5498,18 +5505,33 @@ def generate_exam_foundational(
 
     print("🎉 EXAM GENERATION SUCCESSFUL")
     print("=" * 70 + "\n")
+    
     # ------------------------------------------------------------
     # 6️⃣ Build exam JSON (for persistence)
     # ------------------------------------------------------------
     print("📦 Building exam_json payload...")
+    normalized_questions = []
+
+    for q in final_questions:
+        normalized_questions.append({
+            "q_id": q["q_id"],
+            "section": q.get("section"),
+            "difficulty": q.get("section"),  # same value in your system
+            "topic": q.get("topic"),
+            "question": q.get("question_text"),
+            "options": q.get("options"),
+            "correct": q.get("correct_answer"),
+            "images": q.get("images") or []
+        })
     
     exam_json = {
         "class_name": class_name,
         "subject": cfg.subject,
-        "sections": sections,
-        "questions": final_questions,
-        "total_questions": len(final_questions),
+        "sections": sections,  # keep full section meta here
+        "questions": normalized_questions,
+        "total_questions": len(normalized_questions)
     }
+
     
     print("✅ exam_json built successfully")
 
