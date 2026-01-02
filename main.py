@@ -420,6 +420,8 @@ class StudentExamResponseFoundational(Base):
      student_id = Column(String, index=True, nullable=False)
      exam_id = Column(Integer, index=True, nullable=False)
      attempt_id = Column(Integer, index=True, nullable=False)
+     topic = Column(String)
+
  
      section_name = Column(String, index=True, nullable=False)  # topic
      question_id = Column(String, index=True, nullable=False)
@@ -4763,6 +4765,7 @@ def finish_foundational_exam(
 
         question_lookup[qid] = {
             "section": q.get("section"),
+            "topic": q.get("topic"),          # ✅ NEW
             "correct_answer": q.get("correct")
         }
 
@@ -4806,11 +4809,13 @@ def finish_foundational_exam(
             exam_id=attempt.exam_id,
             attempt_id=attempt.id,
             section_name=meta["section"],
-            question_id=q_id,  # 🔴 THIS MUST MATCH DB COLUMN TYPE
+            topic=meta["topic"],              # ✅ NEW
+            question_id=q_id,
             selected_answer=selected_answer,
             correct_answer=correct_answer,
             is_correct=is_correct
         )
+
 
         print("💾 Adding response row:", response)
         db.add(response)
