@@ -4917,7 +4917,7 @@ def get_foundational_exam_report(
         }
 
     for r in responses:
-        topic = r.section_name
+        topic = r.topic
         stats = topic_stats.get(topic)
 
         if not stats:
