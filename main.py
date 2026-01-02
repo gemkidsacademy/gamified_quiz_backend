@@ -4695,6 +4695,9 @@ def finish_foundational_exam(
     payload: FinishExamRequestFoundational,
     db: Session = Depends(get_db)
 ):
+    print("\n================ FINISH EXAM (FOUNDATIONAL) ================")
+    print("📥 Payload received:", payload.dict())
+
     # ------------------------------------------------------------
     # 1️⃣ Get active attempt
     # ------------------------------------------------------------
@@ -4708,7 +4711,10 @@ def finish_foundational_exam(
         .first()
     )
 
+    print("🔍 Active attempt:", attempt)
+
     if not attempt:
+        print("⚠️ No active attempt found. Exiting early.")
         return {
             "success": True,
             "message": "Exam already completed or no active attempt"
@@ -4723,7 +4729,10 @@ def finish_foundational_exam(
         .first()
     )
 
+    print("🔁 Existing response check:", existing)
+
     if existing:
+        print("⚠️ Responses already exist for attempt_id:", attempt.id)
         return {
             "success": True,
             "message": "Responses already recorded"
@@ -4732,52 +4741,80 @@ def finish_foundational_exam(
     # ------------------------------------------------------------
     # 3️⃣ Load exam & build question lookup
     # ------------------------------------------------------------
+    exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
+    print("📘 Loaded exam:", exam)
+
+    if not exam:
+        print("❌ Exam not found for exam_id:", attempt.exam_id)
+        return {"success": False, "message": "Exam not found"}
+
+    questions = exam.exam_json.get("questions", [])
+    print(f"📄 Questions found in exam_json: {len(questions)}")
+
     question_lookup = {}
 
-    exam = db.query(GeneratedExamFoundational).get(attempt.exam_id)
-    questions = exam.exam_json.get("questions", [])
-
     for q in questions:
+        print("➡️ Raw question:", q)
+
         qid = q.get("q_id")
         if qid is None:
+            print("⚠️ Question missing q_id, skipping:", q)
             continue
-    
+
         question_lookup[qid] = {
             "section": q.get("section"),
             "correct_answer": q.get("correct_answer")
         }
 
+    print("🧠 Question lookup keys:", list(question_lookup.keys()))
+
     # ------------------------------------------------------------
     # 4️⃣ Persist per-question responses
     # ------------------------------------------------------------
     answers = payload.answers or {}
+    print("📝 Answers received:", answers)
+    print("📝 Answer keys:", list(answers.keys()))
+
+    inserted_count = 0
 
     for q_id_raw, selected_answer in answers.items():
+        print("\n➡️ Processing answer:")
+        print("   Raw q_id:", q_id_raw, "| selected_answer:", selected_answer)
+
         try:
-            q_id = int(q_id_raw)   # 🔑 CRITICAL FIX
+            q_id = int(q_id_raw)
         except (TypeError, ValueError):
+            print("❌ Cannot cast q_id to int:", q_id_raw)
             continue
-    
+
         meta = question_lookup.get(q_id)
         if not meta:
-            print("❌ No meta for q_id:", q_id)
+            print("❌ No meta found for q_id:", q_id)
             continue
-    
+
         correct_answer = meta["correct_answer"]
         is_correct = selected_answer == correct_answer
-    
+
+        print("   ✔ Meta found:", meta)
+        print("   ✔ Correct answer:", correct_answer)
+        print("   ✔ Is correct:", is_correct)
+
         response = StudentExamResponseFoundational(
             student_id=payload.student_id,
             exam_id=attempt.exam_id,
             attempt_id=attempt.id,
             section_name=meta["section"],
-            question_id=qid,   # ✅ matches model
+            question_id=q_id,  # 🔴 THIS MUST MATCH DB COLUMN TYPE
             selected_answer=selected_answer,
             correct_answer=correct_answer,
             is_correct=is_correct
         )
-    
+
+        print("💾 Adding response row:", response)
         db.add(response)
+        inserted_count += 1
+
+    print(f"📊 Total responses added to session: {inserted_count}")
 
     # ------------------------------------------------------------
     # 5️⃣ Finalize attempt
@@ -4786,8 +4823,22 @@ def finish_foundational_exam(
     attempt.completed_at = datetime.now(timezone.utc)
     attempt.completion_reason = payload.reason
 
-    db.commit()
+    print("🧾 Final attempt update:")
+    print("   completed_at:", attempt.completed_at)
+    print("   reason:", attempt.completion_reason)
+
+    try:
+        db.commit()
+        print("✅ DB commit successful")
+    except Exception as e:
+        print("🔥 DB COMMIT FAILED:", str(e))
+        db.rollback()
+        raise
+
     db.refresh(attempt)
+    print("🔄 Attempt refreshed:", attempt)
+
+    print("================ END FINISH EXAM =================\n")
 
     return {
         "success": True,
