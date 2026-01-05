@@ -2087,17 +2087,37 @@ def generate_overall_selective_report(
             detail=f"Missing required exam reports: {', '.join(missing)}"
         )
 
+    
     # --------------------------------------------------
-    # 4️⃣ Compute weighted overall score
+    # 4️⃣ Compute normalized overall score (FIXED)
     # --------------------------------------------------
-    components = {
-        "reading": reports_by_subject["reading"].overall_score,
-        "mathematical_reasoning": reports_by_subject["mathematical_reasoning"].overall_score,
-        "thinking_skills": reports_by_subject["thinking_skills"].overall_score,
-        "writing": reports_by_subject["writing"].overall_score,
+    MAX_SCORES = {
+        "reading": 100,
+        "mathematical_reasoning": 100,
+        "thinking_skills": 100,
+        "writing": 20,
     }
-
-    overall_percent = round(sum(components.values()) / 4, 2)
+    
+    # Raw scores (keep for overrides + storage)
+    components = {
+        subject: reports_by_subject[subject].overall_score
+        for subject in MAX_SCORES
+    }
+    
+    # Normalize all components to percentage
+    normalized_components = {
+        subject: round(
+            (components[subject] / MAX_SCORES[subject]) * 100,
+            2
+        )
+        for subject in components
+    }
+    
+    # Equal-weight average of normalized scores
+    overall_percent = round(
+        sum(normalized_components.values()) / len(normalized_components),
+        2
+    )
 
     # --------------------------------------------------
     # 5️⃣ Map to readiness band
