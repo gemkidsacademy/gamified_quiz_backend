@@ -2208,8 +2208,9 @@ def generate_overall_selective_report(
 @app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
     student_id: str,
+    exam_date: date,   # ✅ REQUIRED
     db: Session = Depends(get_db)
-):
+): 
     """
     Fetch all selective exam reports for a given student.
     Read-only aggregation over admin reporting tables.
@@ -2220,7 +2221,10 @@ def get_student_selective_reports(
     # --------------------------------------------------
     reports = (
         db.query(AdminExamReport)
-        .filter(AdminExamReport.student_id == student_id)
+        .filter(
+            AdminExamReport.student_id == student_id,
+            func.date(AdminExamReport.created_at) == exam_date
+        )
         .order_by(AdminExamReport.created_at.desc())
         .all()
     )
