@@ -2015,7 +2015,20 @@ def get_distinct_topics_exam_setup(
     return [t[0] for t in topics]
 
 
+@app.get("/api/admin/students/{student_id}/selective-report-dates")
+def get_selective_report_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    rows = (
+        db.query(func.date(AdminExamReport.created_at))
+        .filter(AdminExamReport.student_id == student_id)
+        .distinct()
+        .order_by(func.date(AdminExamReport.created_at).desc())
+        .all()
+    )
 
+    return [r[0].isoformat() for r in rows]
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
