@@ -2000,18 +2000,21 @@ def get_topics(
     print(f"   subject={subject}")
     print(f"   difficulty={difficulty}")
 
+    normalized_subject = subject.lower().replace("_", " ")
+
     topics = (
-        db.query(distinct(Question.topic))
+        db.query(func.distinct(Question.topic))
         .filter(
-            Question.class_name == class_name,
-            Question.subject == subject,
-            Question.difficulty == difficulty,
+            func.lower(func.trim(Question.class_name)) == class_name.lower(),
+            func.lower(func.trim(Question.subject)) == normalized_subject,
+            func.lower(func.trim(Question.difficulty)) == difficulty.lower(),
             Question.topic.isnot(None),
             Question.topic != "",
         )
         .order_by(Question.topic)
         .all()
     )
+
 
     topic_list = [{"name": t[0]} for t in topics]
 
