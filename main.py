@@ -1518,10 +1518,15 @@ async def parse_with_gpt(block_text: str):
             {
                 "role": "system",
                 "content": (
-                    "You are a document parser. Extract ALL quiz questions from the text. "
-                    "Return ONLY valid JSON following the provided schema. "
-                    "If a question seems cut off (e.g., ends mid-sentence), "
-                    "set partial=true in that question object."
+                    "You are a document parser that preserves data fidelity.\n\n"
+                    "For each quiz question:\n"
+                    "- The question_text MUST include ALL setup, scenario, and descriptive text\n"
+                    "- Followed by the actual interrogative sentence\n"
+                    "- Preserve original wording and order\n"
+                    "- The question_text may span multiple sentences or paragraphs\n"
+                    "- Do NOT summarize, shorten, or omit context\n\n"
+                    "Only mark partial=true if the text is genuinely incomplete or cut mid-sentence.\n"
+                    "Return ONLY valid JSON following the provided schema."
                 )
             },
             {
