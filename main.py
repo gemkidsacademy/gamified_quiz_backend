@@ -1987,6 +1987,160 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@app.post("/api/admin/bulk-users-exam-module")
+async def bulk_users_exam_module(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    print("📥 Bulk user upload request received")
+
+    print(f"📄 Uploaded filename: {file.filename}")
+
+    if not file.filename.endswith((".xlsx", ".csv")):
+        print("❌ Invalid file type")
+        raise HTTPException(
+            status_code=400,
+            detail="Only .xlsx or .csv files are supported",
+        )
+
+    try:
+        print("📊 Attempting to read file into DataFrame")
+
+        if file.filename.endswith(".csv"):
+            df = pd.read_csv(file.file)
+            print("✅ CSV file read successfully")
+        else:
+            df = pd.read_excel(file.file)
+            print("✅ Excel file read successfully")
+
+        print(f"📐 DataFrame shape: {df.shape}")
+        print(f"📌 DataFrame columns: {list(df.columns)}")
+
+    except Exception as e:
+        print("❌ Failed to read uploaded file")
+        print(f"🔥 Exception: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to read uploaded file",
+        )
+
+    required_columns = {
+        "student_id",
+        "password",
+        "name",
+        "parent_email",
+        "class_name",
+        "class_day",
+    }
+
+    print("🔍 Validating required columns")
+
+    if not required_columns.issubset(df.columns):
+        missing = required_columns - set(df.columns)
+        print(f"❌ Missing columns detected: {missing}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required columns: {', '.join(missing)}",
+        )
+
+    print("✅ Column validation passed")
+
+    success = 0
+    failed = 0
+    errors = []
+
+    print("🔄 Starting row-by-row processing")
+
+    for index, row in df.iterrows():
+        print(f"➡️ Processing row {index + 2}")
+
+        try:
+            student_id = str(row["student_id"]).strip()
+            print(f"   🆔 student_id: {student_id}")
+
+            if not student_id:
+                raise ValueError("student_id is required")
+
+            existing = (
+                db.query(Student)
+                .filter(Student.student_id == student_id)
+                .first()
+            )
+
+            if existing:
+                print("   ⚠️ Duplicate student_id found in database")
+                raise ValueError("student_id already exists")
+
+            password = str(row["password"]).strip()
+            name = str(row["name"]).strip()
+            parent_email = str(row["parent_email"]).strip()
+            class_name = str(row["class_name"]).strip()
+
+            class_day = (
+                str(row["class_day"]).strip()
+                if not pd.isna(row["class_day"])
+                else None
+            )
+
+            print("   🧾 Parsed fields:")
+            print(f"      name={name}")
+            print(f"      parent_email={parent_email}")
+            print(f"      class_name={class_name}")
+            print(f"      class_day={class_day}")
+
+            student = Student(
+                id=str(uuid.uuid4()),
+                student_id=student_id,
+                password=password,
+                name=name,
+                parent_email=parent_email,
+                class_name=class_name,
+                class_day=class_day,
+            )
+
+            db.add(student)
+            success += 1
+
+            print(f"   ✅ Row {index + 2} queued for insert")
+
+        except Exception as e:
+            failed += 1
+            error_message = str(e)
+
+            print(f"   ❌ Error in row {index + 2}")
+            print(f"      🔥 Exception: {error_message}")
+
+            errors.append(
+                {
+                    "row": index + 2,  # Excel row number
+                    "student_id": row.get("student_id"),
+                    "error": error_message,
+                }
+            )
+
+    print("💾 Committing transaction to database")
+
+    try:
+        db.commit()
+        print("✅ Database commit successful")
+    except Exception as e:
+        print("🔥 Database commit failed")
+        print(f"🔥 Exception: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Database commit failed",
+        )
+
+    print("📊 Bulk upload summary")
+    print(f"   ✅ Success: {success}")
+    print(f"   ❌ Failed: {failed}")
+
+    return {
+        "success": success,
+        "failed": failed,
+        "errors": errors,
+    }
+
 @app.get("/api/topics-exam-setup", response_model=List[str])
 def get_distinct_topics_exam_setup(
     class_name: str = Query(...),
