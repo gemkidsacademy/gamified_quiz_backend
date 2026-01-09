@@ -2077,6 +2077,7 @@ def get_topics(
 
     return topic_list
 
+
 @app.post("/api/admin/bulk-users-exam-module")
 async def bulk_users_exam_module(
     file: UploadFile = File(...),
@@ -2110,21 +2111,18 @@ async def bulk_users_exam_module(
             detail=f"Missing required columns: {', '.join(missing)}",
         )
 
-    # 🔑 Get current max ID (stored as STRING) and convert safely
-    last_id_raw = db.query(func.max(Student.id)).scalar()
-
-    try:
-        last_id_int = int(last_id_raw) if last_id_raw is not None else 0
-    except ValueError:
-        raise HTTPException(
-            status_code=500,
-            detail="Invalid student id format in database (expected numeric string)",
-        )
-     
+    # 🔑 Get max numeric ID (ignore non-numeric / legacy UUIDs)
+    last_id_int = (
+        db.query(func.max(cast(Student.id, Integer)))
+        .filter(Student.id.op("~")("^[0-9]+$"))
+        .scalar()
+    ) or 0
 
     next_id = last_id_int + 1
+
     print(f"🔢 Last ID in DB (numeric): {last_id_int}")
     print(f"🆕 Starting next_id: {next_id}")
+
     success = 0
     failed = 0
     errors = []
@@ -2134,9 +2132,10 @@ async def bulk_users_exam_module(
             f"➡️ Row {index + 2} | Assigning id={next_id}, "
             f"student_id={row['student_id']}"
         )
+
         try:
             student = Student(
-                id=str(next_id),  # ✅ store as STRING
+                id=str(next_id),  # STRING id, sequential
                 student_id=str(row["student_id"]).strip(),
                 password=str(row["password"]).strip(),
                 name=str(row["name"]).strip(),
@@ -2154,7 +2153,6 @@ async def bulk_users_exam_module(
             db.refresh(student)
 
             success += 1
-            next_id += 1  # increment for next row
 
         except IntegrityError:
             db.rollback()
@@ -2177,13 +2175,18 @@ async def bulk_users_exam_module(
                     "error": str(e),
                 }
             )
+
+        finally:
+            next_id += 1   # ✅ ALWAYS increment
+
     print("📊 Upload summary")
     print(f"   ✅ Success: {success}")
     print(f"   ❌ Failed: {failed}")
-    
+
     print("❌ BULK UPLOAD ERRORS:")
     for err in errors:
         print(err)
+
     return {
         "success": success,
         "failed": failed,
