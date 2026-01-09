@@ -1997,7 +1997,7 @@ def get_reading_topics(
     print(f"   difficulty={difficulty}")
 
     # DB VALUE (even if misspelled)
-    DB_SUBJECT = "Reading Comprehentsion"
+    DB_SUBJECT = "Reading Comprehension"
 
     topics = (
         db.query(func.distinct(QuestionReading.topic))
