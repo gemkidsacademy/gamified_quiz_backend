@@ -1988,6 +1988,37 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@app.get("/api/reading/topics")
+def get_reading_topics(
+    class_name: str = Query(...),
+    difficulty: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    print("📥 Fetching Reading topics")
+    print(f"   class_name={class_name}")
+    print(f"   difficulty={difficulty}")
+
+    SUBJECT_KEY = "reading_comprehension"
+
+    topics = (
+        db.query(func.distinct(QuestionReading.topic))
+        .filter(
+            func.lower(func.trim(QuestionReading.class_name)) == class_name.lower(),
+            func.lower(func.trim(QuestionReading.subject)) == SUBJECT_KEY,
+            func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
+        )
+        .order_by(QuestionReading.topic)
+        .all()
+    )
+
+    topic_list = [{"name": t[0]} for t in topics]
+
+    print(f"✅ Reading topics found: {len(topic_list)}")
+
+    return topic_list
+
+
+
 @app.get("/api/topics")
 def get_topics(
     class_name: str = Query(...),
