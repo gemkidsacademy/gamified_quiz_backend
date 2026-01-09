@@ -1988,6 +1988,37 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@app.get("/api/topics")
+def get_topics(
+    class_name: str = Query(...),
+    subject: str = Query(...),
+    difficulty: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    print("📥 Fetching topics with filters:")
+    print(f"   class_name={class_name}")
+    print(f"   subject={subject}")
+    print(f"   difficulty={difficulty}")
+
+    topics = (
+        db.query(distinct(Question.topic))
+        .filter(
+            Question.class_name == class_name,
+            Question.subject == subject,
+            Question.difficulty == difficulty,
+            Question.topic.isnot(None),
+            Question.topic != "",
+        )
+        .order_by(Question.topic)
+        .all()
+    )
+
+    topic_list = [{"name": t[0]} for t in topics]
+
+    print(f"✅ Topics found: {len(topic_list)}")
+
+    return topic_list
+
 @app.post("/api/admin/bulk-users-exam-module")
 async def bulk_users_exam_module(
     file: UploadFile = File(...),
