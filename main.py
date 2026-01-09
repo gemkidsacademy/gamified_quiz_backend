@@ -8870,19 +8870,25 @@ def retrieve_term_start_date(db: Session = Depends(get_db)):
 @app.get("/get_next_user_id_exam_module")
 def get_next_user_id_exam_module(db: Session = Depends(get_db)):
     """
-    Returns the next numeric student id based on students.id
+    Returns the next numeric student id (as string),
+    safely handling string-based IDs.
     """
 
     try:
-        max_id = db.query(func.max(Student.id)).scalar()
-        next_id = (max_id or 0) + 1
-        return next_id
+        last_id_int = (
+            db.query(func.max(cast(Student.id, Integer)))
+            .filter(Student.id.op("~")("^[0-9]+$"))  # only numeric strings
+            .scalar()
+        ) or 0
+
+        next_id = last_id_int + 1
+        return str(next_id)
 
     except Exception as e:
         print("[ERROR] Failed to get next student id:", e)
         raise HTTPException(
             status_code=500,
-            detail="Could not generate next user ID"
+            detail="Could not generate next user ID",
         )
      
 @app.post("/set-term-start-date")
