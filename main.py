@@ -2091,7 +2091,7 @@ async def bulk_users_exam_module(
     try:
         contents = await file.read()
         df = pd.read_csv(BytesIO(contents))
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=400, detail="Failed to read CSV file")
 
     required_columns = {
@@ -2110,9 +2110,18 @@ async def bulk_users_exam_module(
             detail=f"Missing required columns: {', '.join(missing)}",
         )
 
-    # 🔑 Get current max ID once
-    last_id = db.query(func.max(Student.id)).scalar() or 0
-    next_id = last_id + 1
+    # 🔑 Get current max ID (stored as STRING) and convert safely
+    last_id_raw = db.query(func.max(Student.id)).scalar()
+
+    try:
+        last_id_int = int(last_id_raw) if last_id_raw is not None else 0
+    except ValueError:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid student id format in database (expected numeric string)",
+        )
+
+    next_id = last_id_int + 1
 
     success = 0
     failed = 0
@@ -2121,7 +2130,7 @@ async def bulk_users_exam_module(
     for index, row in df.iterrows():
         try:
             student = Student(
-                id=next_id,   # 👈 explicit sequential assignment
+                id=str(next_id),  # ✅ store as STRING
                 student_id=str(row["student_id"]).strip(),
                 password=str(row["password"]).strip(),
                 name=str(row["name"]).strip(),
@@ -2139,16 +2148,16 @@ async def bulk_users_exam_module(
             db.refresh(student)
 
             success += 1
-            next_id += 1  # 👈 increment for next row
+            next_id += 1  # increment for next row
 
-        except IntegrityError as e:
+        except IntegrityError:
             db.rollback()
             failed += 1
             errors.append(
                 {
                     "row": index + 2,
                     "student_id": row["student_id"],
-                    "error": "Integrity error (likely duplicate student_id)",
+                    "error": "Integrity error (likely duplicate id or student_id)",
                 }
             )
 
