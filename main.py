@@ -1990,21 +1990,19 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 #api end points
 @app.get("/api/reading/topics")
 def get_reading_topics(
-    class_name: str = Query(...),
     difficulty: str = Query(...),
     db: Session = Depends(get_db),
 ):
     print("📥 Fetching Reading topics")
-    print(f"   class_name={class_name}")
     print(f"   difficulty={difficulty}")
 
-    SUBJECT_KEY = "reading_comprehension"
+    # DB VALUE (even if misspelled)
+    DB_SUBJECT = "Reading Comprehentsion"
 
     topics = (
         db.query(func.distinct(QuestionReading.topic))
         .filter(
-            func.lower(func.trim(QuestionReading.class_name)) == class_name.lower(),
-            func.lower(func.trim(QuestionReading.subject)) == SUBJECT_KEY,
+            func.lower(func.trim(QuestionReading.subject)) == DB_SUBJECT.lower(),
             func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
         )
         .order_by(QuestionReading.topic)
