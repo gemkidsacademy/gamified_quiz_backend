@@ -11,6 +11,7 @@ from datetime import datetime, timedelta,date, timezone
 from sqlalchemy.dialects.postgresql import JSONB
 import mammoth
 from collections import defaultdict
+from sqlalchemy.exc import IntegrityError
 
  
 import pandas as pd
@@ -2049,27 +2050,19 @@ async def bulk_users_exam_module(
     success = 0
     failed = 0
     errors = []
-
+    
+    print("🔄 Starting row-by-row processing with isolated commits")
+    
     for index, row in df.iterrows():
         print(f"➡️ Processing row {index + 2}")
-
+    
         try:
             student_id = str(row["student_id"]).strip()
             print(f"   🆔 student_id: {student_id}")
-
+    
             if not student_id:
                 raise ValueError("student_id is required")
-
-            existing = (
-                db.query(Student)
-                .filter(Student.student_id == student_id)
-                .first()
-            )
-
-            if existing:
-                print("   ⚠️ Duplicate student_id found")
-                raise ValueError("student_id already exists")
-
+    
             student = Student(
                 id=str(uuid.uuid4()),
                 student_id=student_id,
@@ -2081,37 +2074,45 @@ async def bulk_users_exam_module(
                 if not pd.isna(row["class_day"])
                 else None,
             )
-
+    
             db.add(student)
+            db.commit()        # ✅ commit per row
+            db.refresh(student)
+    
             success += 1
-            print(f"   ✅ Row {index + 2} queued for insert")
-
-        except Exception as e:
+            print(f"   ✅ Row {index + 2} committed successfully")
+    
+        except IntegrityError as e:
+            db.rollback()
             failed += 1
-            print(f"   ❌ Error in row {index + 2}")
-            print(f"      🔥 Exception: {str(e)}")
-
+    
+            print(f"   ❌ IntegrityError at row {index + 2}")
+            print(f"      🔥 Likely duplicate student_id")
+    
             errors.append(
                 {
                     "row": index + 2,
-                    "student_id": row.get("student_id"),
+                    "student_id": student_id,
+                    "error": "student_id already exists",
+                }
+            )
+    
+        except Exception as e:
+            db.rollback()
+            failed += 1
+    
+            print(f"   ❌ Error at row {index + 2}")
+            print(f"      🔥 Exception: {str(e)}")
+    
+            errors.append(
+                {
+                    "row": index + 2,
+                    "student_id": student_id,
                     "error": str(e),
                 }
             )
 
-    print("💾 Committing transaction")
-
-    try:
-        db.commit()
-        print("✅ Database commit successful")
-    except Exception as e:
-        print("🔥 Database commit failed")
-        print(f"🔥 Exception: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Database commit failed",
-        )
-
+    
     print("📊 Upload summary")
     print(f"   ✅ Success: {success}")
     print(f"   ❌ Failed: {failed}")
