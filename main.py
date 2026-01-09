@@ -1988,6 +1988,32 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@app.get("/api/writing/topics")
+def get_writing_topics(
+    difficulty: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    print("📥 Fetching Writing topics")
+    print(f"   difficulty={difficulty}")
+
+    DB_SUBJECT = "Writing"
+
+    topics = (
+        db.query(func.distinct(WritingQuestionBank.topic))
+        .filter(
+            func.lower(func.trim(WritingQuestionBank.subject)) == DB_SUBJECT.lower(),
+            func.lower(func.trim(WritingQuestionBank.difficulty)) == difficulty.lower(),
+        )
+        .order_by(WritingQuestionBank.topic)
+        .all()
+    )
+
+    topic_list = [{"name": t[0]} for t in topics]
+
+    print(f"✅ Writing topics found: {len(topic_list)}")
+
+    return topic_list
+
 @app.get("/api/reading/topics")
 def get_reading_topics(
     difficulty: str = Query(...),
