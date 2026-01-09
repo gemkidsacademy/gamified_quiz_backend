@@ -2120,14 +2120,20 @@ async def bulk_users_exam_module(
             status_code=500,
             detail="Invalid student id format in database (expected numeric string)",
         )
+     
 
     next_id = last_id_int + 1
-
+    print(f"🔢 Last ID in DB (numeric): {last_id_int}")
+    print(f"🆕 Starting next_id: {next_id}")
     success = 0
     failed = 0
     errors = []
 
     for index, row in df.iterrows():
+        print(
+            f"➡️ Row {index + 2} | Assigning id={next_id}, "
+            f"student_id={row['student_id']}"
+        )
         try:
             student = Student(
                 id=str(next_id),  # ✅ store as STRING
@@ -2171,7 +2177,13 @@ async def bulk_users_exam_module(
                     "error": str(e),
                 }
             )
-
+    print("📊 Upload summary")
+    print(f"   ✅ Success: {success}")
+    print(f"   ❌ Failed: {failed}")
+    
+    print("❌ BULK UPLOAD ERRORS:")
+    for err in errors:
+        print(err)
     return {
         "success": success,
         "failed": failed,
