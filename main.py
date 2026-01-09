@@ -1993,35 +1993,35 @@ async def bulk_users_exam_module(
     db: Session = Depends(get_db),
 ):
     print("📥 Bulk user upload request received")
-
     print(f"📄 Uploaded filename: {file.filename}")
 
-    if not file.filename.endswith((".xlsx", ".csv")):
-        print("❌ Invalid file type")
+    if not file.filename.lower().endswith(".csv"):
+        print("❌ Invalid file type (only CSV allowed)")
         raise HTTPException(
             status_code=400,
-            detail="Only .xlsx or .csv files are supported",
+            detail="Only .csv files are supported",
         )
 
     try:
-        print("📊 Attempting to read file into DataFrame")
+        print("📊 Reading CSV file into DataFrame")
 
-        if file.filename.endswith(".csv"):
-            df = pd.read_csv(file.file)
-            print("✅ CSV file read successfully")
-        else:
-            df = pd.read_excel(file.file)
-            print("✅ Excel file read successfully")
+        contents = await file.read()
+        print(f"📦 File size (bytes): {len(contents)}")
 
+        buffer = BytesIO(contents)
+
+        df = pd.read_csv(buffer)
+
+        print("✅ CSV file read successfully")
         print(f"📐 DataFrame shape: {df.shape}")
         print(f"📌 DataFrame columns: {list(df.columns)}")
 
     except Exception as e:
-        print("❌ Failed to read uploaded file")
+        print("❌ Failed to read CSV file")
         print(f"🔥 Exception: {str(e)}")
         raise HTTPException(
             status_code=400,
-            detail="Failed to read uploaded file",
+            detail="Failed to read CSV file",
         )
 
     required_columns = {
@@ -2044,12 +2044,11 @@ async def bulk_users_exam_module(
         )
 
     print("✅ Column validation passed")
+    print("🔄 Starting row-by-row processing")
 
     success = 0
     failed = 0
     errors = []
-
-    print("🔄 Starting row-by-row processing")
 
     for index, row in df.iterrows():
         print(f"➡️ Processing row {index + 2}")
@@ -2068,57 +2067,39 @@ async def bulk_users_exam_module(
             )
 
             if existing:
-                print("   ⚠️ Duplicate student_id found in database")
+                print("   ⚠️ Duplicate student_id found")
                 raise ValueError("student_id already exists")
-
-            password = str(row["password"]).strip()
-            name = str(row["name"]).strip()
-            parent_email = str(row["parent_email"]).strip()
-            class_name = str(row["class_name"]).strip()
-
-            class_day = (
-                str(row["class_day"]).strip()
-                if not pd.isna(row["class_day"])
-                else None
-            )
-
-            print("   🧾 Parsed fields:")
-            print(f"      name={name}")
-            print(f"      parent_email={parent_email}")
-            print(f"      class_name={class_name}")
-            print(f"      class_day={class_day}")
 
             student = Student(
                 id=str(uuid.uuid4()),
                 student_id=student_id,
-                password=password,
-                name=name,
-                parent_email=parent_email,
-                class_name=class_name,
-                class_day=class_day,
+                password=str(row["password"]).strip(),
+                name=str(row["name"]).strip(),
+                parent_email=str(row["parent_email"]).strip(),
+                class_name=str(row["class_name"]).strip(),
+                class_day=str(row["class_day"]).strip()
+                if not pd.isna(row["class_day"])
+                else None,
             )
 
             db.add(student)
             success += 1
-
             print(f"   ✅ Row {index + 2} queued for insert")
 
         except Exception as e:
             failed += 1
-            error_message = str(e)
-
             print(f"   ❌ Error in row {index + 2}")
-            print(f"      🔥 Exception: {error_message}")
+            print(f"      🔥 Exception: {str(e)}")
 
             errors.append(
                 {
-                    "row": index + 2,  # Excel row number
+                    "row": index + 2,
                     "student_id": row.get("student_id"),
-                    "error": error_message,
+                    "error": str(e),
                 }
             )
 
-    print("💾 Committing transaction to database")
+    print("💾 Committing transaction")
 
     try:
         db.commit()
@@ -2131,7 +2112,7 @@ async def bulk_users_exam_module(
             detail="Database commit failed",
         )
 
-    print("📊 Bulk upload summary")
+    print("📊 Upload summary")
     print(f"   ✅ Success: {success}")
     print(f"   ❌ Failed: {failed}")
 
