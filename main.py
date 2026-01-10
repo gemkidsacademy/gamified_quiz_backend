@@ -8302,8 +8302,6 @@ def get_quiz(student_id: str, subject: str, difficulty: str, db: Session = Depen
 
     return response
 
-
-
 @app.post("/upload-image-folder")
 async def upload_image_folder(
     images: List[UploadFile] = File(...),
@@ -8320,37 +8318,56 @@ async def upload_image_folder(
     for file in images:
         try:
             print("\n-----------------------------------------------------------")
-            print(f"[FILE] Original filename: {file.filename}")
+            print(f"[FILE] Incoming filename: {file.filename}")
             print(f"[FILE] Content type: {file.content_type}")
 
+            # ✅ Normalize + sanitize filename (CRITICAL)
+            original_name = sanitize_filename(file.filename)
+            print(f"[FILE] Sanitized original_name: {original_name}")
+
+            # 🔍 Check DB FIRST (idempotent)
+            existing = (
+                db.query(UploadedImage)
+                .filter(UploadedImage.original_name == original_name)
+                .first()
+            )
+
+            if existing:
+                print("[SKIP] Image already exists in DB")
+                print(f"   • original_name : {existing.original_name}")
+                print(f"   • gcs_url       : {existing.gcs_url}")
+
+                uploaded_urls.append({
+                    "original_name": existing.original_name,
+                    "url": existing.gcs_url,
+                    "status": "already_exists"
+                })
+                continue
+
+            # ⬆️ Only upload if NOT already present
             file_bytes = await file.read()
+            gcs_url = upload_to_gcs(file_bytes, original_name)
 
-            # Upload to GCS (returns FULL URL)
-            gcs_url = upload_to_gcs(file_bytes, file.filename)
-
-            # Normalize filename
-            original_name = file.filename.split("/")[-1].split("\\")[-1]
-
-            print(f"[UPLOAD SUCCESS]")
+            print("[UPLOAD SUCCESS]")
             print(f"   • original_name : {original_name}")
             print(f"   • gcs_url       : {gcs_url}")
 
-            # 🔒 Persist mapping DURABLY
+            # 💾 Persist mapping
             record = UploadedImage(
                 original_name=original_name,
                 gcs_url=gcs_url
             )
-
             db.add(record)
             db.commit()
 
             uploaded_urls.append({
                 "original_name": original_name,
-                "url": gcs_url
+                "url": gcs_url,
+                "status": "uploaded"
             })
 
         except Exception as e:
-            print(f"[ERROR] Failed to upload file '{file.filename}'")
+            print(f"[ERROR] Failed to process file '{file.filename}'")
             print(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -8358,9 +8375,10 @@ async def upload_image_folder(
 
     return {
         "status": "success",
-        "message": f"{len(uploaded_urls)} images uploaded successfully.",
+        "message": f"{len(uploaded_urls)} images processed.",
         "files": uploaded_urls
     }
+
 
 
 
