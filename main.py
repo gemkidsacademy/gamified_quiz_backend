@@ -2634,6 +2634,84 @@ def delete_student_exam_module(
         "deleted_id": id
     }
 
+def generate_ai_questions_strict_Mathematical_Reasoning(
+    *,
+    quiz,
+    topic_name,
+    ai_count,
+    db,
+    max_attempts=6,
+    batch_size=3
+):
+    collected = []
+    attempts = 0
+
+    location = db.query(FranchiseLocation).first()
+    if not location:
+        raise HTTPException(500, "No franchise location found")
+
+    while len(collected) < ai_count and attempts < max_attempts:
+        remaining = ai_count - len(collected)
+        request_count = min(batch_size, remaining)
+        attempts += 1
+
+        print(
+            f"[AI GEN] Attempt {attempts} | "
+            f"Requesting {request_count} | "
+            f"Collected so far: {len(collected)}"
+        )
+
+        system_prompt = (
+            "You are an expert exam generator.\n"
+            f"Create {request_count} MCQs.\n\n"
+            f"Class: {quiz.class_name}\n"
+            f"Subject: {quiz.subject}\n"
+            f"Topic: {topic_name}\n"
+            f"Country: {location.country}\n"
+            f"State: {location.state}\n\n"
+            "Rules:\n"
+            "- Exactly one correct option\n"
+            "- 4 options per question\n\n"
+            "Return STRICT JSON ONLY:\n"
+            "[{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct\":\"A\"}]"
+        )
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system_prompt}],
+            temperature=0.4
+        )
+
+        raw_output = response.choices[0].message.content.strip()
+
+        try:
+            batch = json.loads(raw_output)
+        except Exception as e:
+            print("[AI ERROR] JSON parse failed:", str(e))
+            continue
+
+        valid = [
+            q for q in batch
+            if isinstance(q.get("question"), str)
+            and isinstance(q.get("options"), list)
+            and len(q["options"]) >= 4
+            and q.get("correct") in ["A", "B", "C", "D"]
+        ]
+
+        print(f"[AI GEN] Valid questions received: {len(valid)}")
+        collected.extend(valid)
+
+    if len(collected) < ai_count:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"AI failed to generate required questions for topic "
+                f"'{topic_name}'. Expected {ai_count}, got {len(collected)}."
+            )
+        )
+
+    return collected[:ai_count]
+
 
 
 @app.post("/api/quizzes/generate")
@@ -2655,17 +2733,12 @@ def generate_exam(
     quiz = (
         db.query(QuizMathematicalReasoning)
         .filter(
-            QuizMathematicalReasoning.subject == "mathematical_reasoning"
+            QuizMathematicalReasoning.subject == "mathematical_reasoning",
+            QuizMathematicalReasoning.difficulty == difficulty
         )
         .order_by(QuizMathematicalReasoning.id.desc())
         .first()
     )
-    
-    if not quiz:
-        raise HTTPException(
-            status_code=404,
-            detail="No Mathematical Reasoning quiz found"
-        )
 
     
     if not quiz:
@@ -2674,6 +2747,8 @@ def generate_exam(
             detail="No Mathematical Reasoning quiz found"
         )
 
+    
+    
 
     # --------------------------------------------------
     # 2️⃣ Clear previous exams
@@ -2697,11 +2772,56 @@ def generate_exam(
     # --------------------------------------------------
     # 3️⃣ Generate questions
     # --------------------------------------------------
-    questions = generate_exam_questions(quiz, db)
+    questions = []
+
+    q_id = 1
+    for topic in quiz.topics:
+        topic_name = topic["name"]
+        ai_count = int(topic.get("ai", 0))
+        db_count = int(topic.get("db", 0))
+
+        # ---- DB questions (already validated elsewhere)
+        db_questions = (
+            db.query(Question)
+              .filter(func.lower(Question.topic) == topic_name.lower())
+              .order_by(func.random())
+              .limit(db_count)
+              .all()
+        )
+
+        for q in db_questions:
+            questions.append({
+                "q_id": q_id,
+                "topic": topic_name,
+                "question": q.question_text,
+                "options": q.options,
+                "correct": q.correct_answer,
+                "images": q.images or []
+            })
+            q_id += 1
+
+        # ---- AI questions (STRICT)
+        if ai_count > 0:
+            ai_questions = generate_ai_questions_strict_Mathematical_Reasoning(
+                quiz=quiz,
+                topic_name=topic_name,
+                ai_count=ai_count,
+                db=db
+            )
+
+            for item in ai_questions:
+                questions.append({
+                    "q_id": q_id,
+                    "topic": topic_name,
+                    "question": item["question"],
+                    "options": item["options"],
+                    "correct": item["correct"],
+                    "images": []
+                })
+                q_id += 1
 
     if not questions:
         raise HTTPException(500, "No questions generated")
-
     # --------------------------------------------------
     # 4️⃣ Save exam
     # --------------------------------------------------
