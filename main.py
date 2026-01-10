@@ -1551,151 +1551,128 @@ async def parse_with_gpt(block_text: str):
 # ai_engine.py (for example)
 def generate_exam_questions(quiz, db):
     print("\n===================== GENERATE EXAM START =====================\n")
-    print("QUIZ RECEIVED FROM DATABASE:")
-    print("---------------------------------------------------------------")
-    print(f"Quiz ID: {quiz.id}")
-    print(f"Class: {quiz.class_name}") 
-    print(f"Subject: {quiz.subject}")  
-    print(f"Difficulty: {quiz.difficulty}")
-    print(f"Topics: {quiz.topics}")
-    print("---------------------------------------------------------------\n")
+    print(f"Quiz ID       : {quiz.id}")
+    print(f"Class         : {quiz.class_name}")
+    print(f"Subject       : {quiz.subject}")
+    print(f"Difficulty    : {quiz.difficulty}")
+    print(f"Topics Config : {quiz.topics}")
+    print("===============================================================\n")
 
     all_questions = []
     q_id = 1
 
-    # Iterate over each quiz topic
     for topic in quiz.topics:
         print("\n===================== PROCESSING TOPIC =====================")
-        print(f"Topic Raw Data: {topic}")
 
         topic_name = topic.get("name")
         ai_count = int(topic.get("ai", 0))
         db_count = int(topic.get("db", 0))
 
-        print(f"Topic Name: {topic_name}")
-        print(f"AI Count: {ai_count}")
-        print(f"DB Count: {db_count}")
-        print("============================================================\n")
+        print(f"Topic         : {topic_name}")
+        print(f"Expected DB   : {db_count}")
+        print(f"Expected AI   : {ai_count}")
+        print("============================================================")
 
-        # ===============================================================
-        # 1. FETCH QUESTIONS FROM DATABASE
-        # ===============================================================
-        print(f"[DB FETCH] Fetching {db_count} questions for topic: '{topic_name}'")
+        # --------------------------------------------------
+        # 1️⃣ DB PRE-FLIGHT CHECK
+        # --------------------------------------------------
+        available_db = (
+            db.query(Question)
+              .filter(func.lower(Question.topic) == topic_name.lower())
+              .count()
+        )
 
-        try:
-            db_questions = (
-                db.query(Question)
-                  .filter(func.lower(Question.topic) == topic_name.lower())
-                  .order_by(func.random())
-                  .limit(db_count)
-                  .all()
+        print(f"[DB CHECK] Available questions: {available_db}")
+
+        if available_db < db_count:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Not enough DB questions for topic '{topic_name}'. "
+                    f"Required: {db_count}, Available: {available_db}"
+                )
             )
-        except Exception as e:
-            print("[DB ERROR] While fetching DB questions:", str(e))
-            raise
 
-        print(f"[DB FETCH] Retrieved {len(db_questions)} questions.")
-        for q in db_questions:
-            print(f"  → DB Question ID: {q.id}, Text: {q.question_text[:60]}...")
+        # --------------------------------------------------
+        # 2️⃣ FETCH DB QUESTIONS
+        # --------------------------------------------------
+        db_questions = (
+            db.query(Question)
+              .filter(func.lower(Question.topic) == topic_name.lower())
+              .order_by(func.random())
+              .limit(db_count)
+              .all()
+        )
 
-        # Append DB questions to final list
+        print(f"[DB FETCH] Retrieved {len(db_questions)} questions")
+
         for q in db_questions:
-            item = {
+            all_questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
                 "question": q.question_text,
                 "options": q.options,
                 "correct": q.correct_answer,
                 "images": q.images or []
-            }
-            print(f"[APPEND DB] Adding question #{q_id}: {item}")
-            all_questions.append(item)
+            })
             q_id += 1
 
-        # ===============================================================
-        # 2. GENERATE QUESTIONS USING OPENAI
-        # ===============================================================
+        # --------------------------------------------------
+        # 3️⃣ AI QUESTION GENERATION (STRICT)
+        # --------------------------------------------------
         if ai_count > 0:
+            print(f"\n[AI GEN] Requesting {ai_count} questions for '{topic_name}'")
 
-            print(f"\n[AI GEN] Generating {ai_count} AI questions for topic '{topic_name}'")
-            print("---------------------------------------------------------------")
-        
-            # -----------------------------
-            # Fetch the single franchise location (first row)
-            # -----------------------------
             location = db.query(FranchiseLocation).first()
-        
-            # Safety check (optional)
             if not location:
-                raise Exception("No franchise location found in the database.")
-        
-            country = location.country
-            state = location.state
-        
-            # -----------------------------
-            # Build system prompt
-            # -----------------------------
+                raise HTTPException(500, "No franchise location found")
+
             system_prompt = (
                 "You are an expert exam generator.\n"
-                f"Create {ai_count} MCQs.\n\n"
-                "Context for alignment:\n"
-                f"- Country: {country}\n"
-                f"- State/Region: {state}\n"
-                f"- Class: {quiz.class_name}\n"
-                f"- Subject: {quiz.subject}\n"
-                f"- Topic: {topic_name}\n\n"
-                "All questions MUST:\n"
-                "- Match the curriculum style and difficulty of the given country/state.\n"
-                "- Match the grade level of the class.\n"
-                "- Match the specific subject and topic.\n\n"
+                f"Create exactly {ai_count} MCQs.\n\n"
+                f"Class: {quiz.class_name}\n"
+                f"Subject: {quiz.subject}\n"
+                f"Topic: {topic_name}\n"
+                f"Country: {location.country}\n"
+                f"State: {location.state}\n\n"
                 "Return STRICT JSON ONLY:\n"
-                "[{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct\":\"A\"}]\n"
-                "NO explanations. NO commentary. NO extra text. ONLY valid JSON."
+                "[{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct\":\"A\"}]"
             )
 
-            print("[AI GEN] PROMPT:")
-            print(system_prompt)
-            print("---------------------------------------------------------------")
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": system_prompt}],
+                temperature=0.4
+            )
 
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "system", "content": system_prompt}],
-                    temperature=0.4
+            raw_output = response.choices[0].message.content.strip()
+            generated = json.loads(raw_output)
+
+            print(f"[AI CHECK] Generated {len(generated)} questions")
+
+            if len(generated) != ai_count:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"AI generation failed for topic '{topic_name}'. "
+                        f"Expected {ai_count}, got {len(generated)}."
+                    )
                 )
 
-                raw_output = response.choices[0].message.content.strip()
-
-                print("[AI RAW OUTPUT]")
-                print("---------------------------------------------------------------")
-                print(raw_output)
-                print("---------------------------------------------------------------\n")
-
-                generated = json.loads(raw_output)
-
-            except Exception as e:
-                print("[AI ERROR] AI failed for topic:", topic_name)
-                print("Error Details:", str(e))
-                raise
-
-            print(f"[AI GEN] Parsed {len(generated)} questions from OpenAI")
-
             for item in generated:
-                question_obj = {
+                all_questions.append({
                     "q_id": q_id,
                     "topic": topic_name,
-                    "question": item.get("question"),
-                    "options": item.get("options"),
-                    "correct": item.get("correct"),
+                    "question": item["question"],
+                    "options": item["options"],
+                    "correct": item["correct"],
                     "images": []
-                }
-                print(f"[APPEND AI] Adding AI question #{q_id}: {question_obj}")
-                all_questions.append(question_obj)
+                })
                 q_id += 1
 
-    print("\n==================== FINAL QUESTION COUNT ====================")
+    print("\n==================== FINAL EXAM SUMMARY ====================")
     print(f"TOTAL QUESTIONS GENERATED: {len(all_questions)}")
-    print("================================================================\n")
+    print("===========================================================\n")
 
     return all_questions
 
