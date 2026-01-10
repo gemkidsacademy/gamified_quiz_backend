@@ -1962,6 +1962,16 @@ def save_exam_to_db(db: Session, exam_data: ExamReadingCreate):
 
     return exam 
 
+def sanitize_filename(filename: str) -> str:
+    """
+    Convert filename to a URL-safe, GCS-safe format.
+    """
+    filename = filename.split("/")[-1].split("\\")[-1]  # strip folders
+    filename = filename.strip()
+    filename = filename.replace(" ", "_")
+    filename = re.sub(r"[^a-zA-Z0-9._-]", "", filename)
+    return filename
+ 
 def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
     """Upload a file to Google Cloud Storage and return the public URL."""
 
@@ -1974,20 +1984,23 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
 
     bucket = gcs_client.bucket(BUCKET_NAME)
 
-    # Strip folder names so only the actual image name remains
-    safe_filename = filename.split("/")[-1]
-    print(f"[GCS] Clean filename: {safe_filename}")
+    # ✅ SANITIZE filename
+    clean_filename = sanitize_filename(filename)
+    print(f"[GCS] Sanitized filename: {clean_filename}")
 
-    # Create a unique name
-    unique_name = f"{uuid.uuid4()}_{safe_filename}"
+    # ✅ Generate safe unique object name
+    unique_name = f"{uuid.uuid4()}_{clean_filename}"
     print(f"[GCS] Unique stored name: {unique_name}")
 
     blob = bucket.blob(unique_name)
 
     try:
-        blob.upload_from_string(file_bytes, content_type="image/png")
+        blob.upload_from_string(
+            file_bytes,
+            content_type="image/png"
+        )
 
-        # NO make_public() because Uniform Bucket Access is ON
+        # Uniform Bucket Access → direct public URL
         public_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{unique_name}"
 
         print(f"[GCS] Upload successful → {public_url}")
