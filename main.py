@@ -135,6 +135,14 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class UploadedImage(Base):
+    __tablename__ = "uploaded_images"
+
+    id = Column(Integer, primary_key=True)
+    original_name = Column(String, unique=True, nullable=False)
+    gcs_url = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class AdminOverallSelectiveReport(Base):
     __tablename__ = "admin_overall_selective_reports"
 
@@ -8284,8 +8292,11 @@ def get_quiz(student_id: str, subject: str, difficulty: str, db: Session = Depen
 
 
 @app.post("/upload-image-folder")
-async def upload_image_folder(images: List[UploadFile] = File(...)):
-    print("\n====================== FOLDER UPLOAD START ======================\n")
+async def upload_image_folder(
+    images: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
+):
+    print("\n====================== FOLDER UPLOAD START ======================")
     print(f"[INFO] Number of received files: {len(images)}")
 
     if not images:
@@ -8299,32 +8310,38 @@ async def upload_image_folder(images: List[UploadFile] = File(...)):
             print(f"[FILE] Original filename: {file.filename}")
             print(f"[FILE] Content type: {file.content_type}")
 
-            # Read file bytes
             file_bytes = await file.read()
 
-            # Upload to GCS
-            url = upload_to_gcs(file_bytes, file.filename)
+            # Upload to GCS (returns FULL URL)
+            gcs_url = upload_to_gcs(file_bytes, file.filename)
 
-            print(f"[UPLOAD SUCCESS] → {url}")
+            # Normalize filename
+            original_name = file.filename.split("/")[-1].split("\\")[-1]
 
-            # --- NEW: Extract clean filename ---
-            clean_name = file.filename.split("/")[-1].split("\\")[-1]
+            print(f"[UPLOAD SUCCESS]")
+            print(f"   • original_name : {original_name}")
+            print(f"   • gcs_url       : {gcs_url}")
 
-            # --- NEW: Save to global map ---
-            GLOBAL_IMAGE_MAP[clean_name] = url
-            print(f"[MAP] {clean_name} → {url}")
+            # 🔒 Persist mapping DURABLY
+            record = UploadedImage(
+                original_name=original_name,
+                gcs_url=gcs_url
+            )
+
+            db.add(record)
+            db.commit()
 
             uploaded_urls.append({
-                "original_name": clean_name,
-                "url": url
+                "original_name": original_name,
+                "url": gcs_url
             })
 
         except Exception as e:
             print(f"[ERROR] Failed to upload file '{file.filename}'")
             print(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
-    print("\n====================== FOLDER UPLOAD END ========================\n")
+    print("\n====================== FOLDER UPLOAD END ========================")
 
     return {
         "status": "success",
@@ -8400,18 +8417,22 @@ async def upload_word(
         # --- Image filename → URL mapping ---
         # --- Image filename → GCS object name mapping (STRICT) ---
         resolved_images = []
-        
+
         for img in q.get("images") or []:
-            object_name = GLOBAL_IMAGE_MAP.get(img)
+            record = (
+                db.query(UploadedImage)
+                .filter(UploadedImage.original_name == img)
+                .first()
+            )
         
-            if not object_name:
+            if not record:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Image '{img}' not found in upload map"
+                    detail=f"Image '{img}' not uploaded yet"
                 )
         
-            resolved_images.append(object_name)
-            print(f"🔗 Image resolved: {img} → {object_name}")
+            resolved_images.append(record.gcs_url)
+
 
 
                 
