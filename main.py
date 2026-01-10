@@ -2740,47 +2740,48 @@ def generate_exam(
         .first()
     )
 
-    
     if not quiz:
         raise HTTPException(
             status_code=404,
             detail="No Mathematical Reasoning quiz found"
         )
 
-    
-    
+    # --------------------------------------------------
+    # 2️⃣ PRE-FLIGHT DB VALIDATION (CRITICAL)
+    # --------------------------------------------------
+    for topic in quiz.topics:
+        topic_name = topic["name"]
+        db_required = int(topic.get("db", 0))
+
+        available = (
+            db.query(Question)
+              .filter(func.lower(Question.topic) == topic_name.lower())
+              .count()
+        )
+
+        if available < db_required:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot generate exam. "
+                    f"Topic '{topic_name}' requires {db_required} DB questions, "
+                    f"but only {available} exist. "
+                    f"Please add more questions to the database."
+                )
+            )
 
     # --------------------------------------------------
-    # 2️⃣ Clear previous exams
-    # --------------------------------------------------
-    exam_ids_subq = (
-        db.query(Exam.id)
-        .filter(Exam.subject == quiz.subject)
-        .subquery()
-    )
-
-    db.query(StudentExam).filter(
-        StudentExam.exam_id.in_(exam_ids_subq)
-    ).delete(synchronize_session=False)
-
-    db.query(Exam).filter(
-        Exam.subject == quiz.subject
-    ).delete(synchronize_session=False)
-
-    db.commit()
-
-    # --------------------------------------------------
-    # 3️⃣ Generate questions
+    # 3️⃣ Generate questions (DB + AI)
     # --------------------------------------------------
     questions = []
-
     q_id = 1
+
     for topic in quiz.topics:
         topic_name = topic["name"]
         ai_count = int(topic.get("ai", 0))
         db_count = int(topic.get("db", 0))
 
-        # ---- DB questions (already validated elsewhere)
+        # ---- DB questions
         db_questions = (
             db.query(Question)
               .filter(func.lower(Question.topic) == topic_name.lower())
@@ -2800,7 +2801,7 @@ def generate_exam(
             })
             q_id += 1
 
-        # ---- AI questions (STRICT)
+        # ---- AI questions (STRICT + RETRY SAFE)
         if ai_count > 0:
             ai_questions = generate_ai_questions_strict_Mathematical_Reasoning(
                 quiz=quiz,
@@ -2820,10 +2821,48 @@ def generate_exam(
                 })
                 q_id += 1
 
-    if not questions:
-        raise HTTPException(500, "No questions generated")
     # --------------------------------------------------
-    # 4️⃣ Save exam
+    # 4️⃣ FINAL TOTAL VALIDATION (NON-NEGOTIABLE)
+    # --------------------------------------------------
+    expected_total = sum(
+        int(t.get("db", 0)) + int(t.get("ai", 0))
+        for t in quiz.topics
+    )
+
+    actual_total = len(questions)
+
+    if actual_total != expected_total:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Exam generation failed. "
+                f"Expected {expected_total} questions, "
+                f"but generated {actual_total}. "
+                f"This indicates a generation inconsistency."
+            )
+        )
+
+    # --------------------------------------------------
+    # 5️⃣ Clear previous exams (SAFE NOW)
+    # --------------------------------------------------
+    exam_ids_subq = (
+        db.query(Exam.id)
+        .filter(Exam.subject == quiz.subject)
+        .subquery()
+    )
+
+    db.query(StudentExam).filter(
+        StudentExam.exam_id.in_(exam_ids_subq)
+    ).delete(synchronize_session=False)
+
+    db.query(Exam).filter(
+        Exam.subject == quiz.subject
+    ).delete(synchronize_session=False)
+
+    db.commit()
+
+    # --------------------------------------------------
+    # 6️⃣ Save exam
     # --------------------------------------------------
     new_exam = Exam(
         quiz_id=quiz.id,
@@ -2838,7 +2877,7 @@ def generate_exam(
     db.refresh(new_exam)
 
     # --------------------------------------------------
-    # 5️⃣ Response
+    # 7️⃣ Response
     # --------------------------------------------------
     return {
         "message": "Exam generated successfully",
