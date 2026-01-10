@@ -8398,14 +8398,22 @@ async def upload_word(
             continue
     
         # --- Image filename → URL mapping ---
+        # --- Image filename → GCS object name mapping (STRICT) ---
         resolved_images = []
+        
         for img in q.get("images") or []:
-            if img in GLOBAL_IMAGE_MAP:
-                resolved_images.append(GLOBAL_IMAGE_MAP[img])
-                print(f"🔗 Mapped {img} → {GLOBAL_IMAGE_MAP[img]}")
-            else:
-                print(f"⚠ Image not found in map: {img}")
-                resolved_images.append(img)  # fallback
+            object_name = GLOBAL_IMAGE_MAP.get(img)
+        
+            if not object_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image '{img}' not found in upload map"
+                )
+        
+            resolved_images.append(object_name)
+            print(f"🔗 Image resolved: {img} → {object_name}")
+
+
                 
         new_q = Question(
             class_name=q.get("class_name"),
