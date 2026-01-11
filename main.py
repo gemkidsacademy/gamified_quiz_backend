@@ -6747,6 +6747,15 @@ You are an exam content extraction engine.
 
 You MUST extract ONE COMPLETE GAPPED TEXT reading exam.
 
+The document contains a METADATA section with the following keys:
+- class_name
+- subject
+- topic
+- difficulty
+
+You MUST extract these fields exactly as written.
+If any of these metadata fields are missing or empty, RETURN {}.
+
 CRITICAL RULES (FAIL HARD):
 - DO NOT generate, infer, or rewrite content
 - Extract ONLY what exists in the document
