@@ -1523,25 +1523,53 @@ async def parse_with_gpt(block_text: str):
             }
         },
         messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a document parser that preserves data fidelity.\n\n"
-                    "For each quiz question:\n"
-                    "- The question_text MUST include ALL setup, scenario, and descriptive text\n"
-                    "- Followed by the actual interrogative sentence\n"
-                    "- Preserve original wording and order\n"
-                    "- The question_text may span multiple sentences or paragraphs\n"
-                    "- Do NOT summarize, shorten, or omit context\n\n"
-                    "Only mark partial=true if the text is genuinely incomplete or cut mid-sentence.\n"
-                    "Return ONLY valid JSON following the provided schema."
-                )
-            },
-            {
-                "role": "user",
-                "content": block_text
-            }
-        ]
+          {
+              "role": "system",
+              "content": (
+                  "You are a deterministic exam-question parser that preserves data fidelity.\n\n"
+      
+                  "CONTENT FIDELITY RULES:\n"
+                  "- The question_text MUST include ALL setup, scenario, and descriptive text\n"
+                  "- Followed by the actual interrogative sentence\n"
+                  "- Preserve original wording and order\n"
+                  "- The question_text may span multiple sentences or paragraphs\n"
+                  "- Do NOT summarize, shorten, or omit context\n\n"
+      
+                  "STRUCTURE RULES:\n"
+                  "- Questions follow this structure:\n"
+                  "  Question X:\n"
+                  "  CLASS\n"
+                  "  SUBJECT\n"
+                  "  TOPIC\n"
+                  "  DIFFICULTY\n"
+                  "  QUESTION_TEXT\n"
+                  "  (optional) IMAGES\n"
+                  "  OPTIONS\n"
+                  "  CORRECT_ANSWER\n\n"
+      
+                  "TERMINATION RULES:\n"
+                  "- A question is COMPLETE if:\n"
+                  "  a) All required fields are present, OR\n"
+                  "  b) It is immediately followed by the marker END_OF_QUESTIONS\n"
+                  "- The marker END_OF_QUESTIONS indicates the end of the document\n"
+                  "- Ignore all content after END_OF_QUESTIONS\n\n"
+      
+                  "PARTIAL RULES:\n"
+                  "- Mark partial=true ONLY if required fields are missing\n"
+                  "- Do NOT mark a question as partial due to document ending alone\n"
+                  "- Presence of IMAGES does NOT imply incompleteness\n\n"
+      
+                  "OUTPUT RULES:\n"
+                  "- Return ONLY valid JSON following the provided schema\n"
+                  "- Do NOT include commentary or explanations"
+              )
+          },
+          {
+              "role": "user",
+              "content": block_text
+          }
+      ]
+
     )
 
     raw = completion.choices[0].message.content
