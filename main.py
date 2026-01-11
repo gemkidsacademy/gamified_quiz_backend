@@ -8626,9 +8626,10 @@ async def upload_word(
         for img in q.get("images") or []:
             record = (
                 db.query(UploadedImage)
-                .filter(UploadedImage.original_name == img)
+                .filter(func.lower(UploadedImage.original_name) == img.lower())
                 .first()
             )
+
         
             if not record:
                 raise HTTPException(
