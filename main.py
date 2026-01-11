@@ -8658,18 +8658,20 @@ async def upload_word(
         db.refresh(new_q)
     
         saved_ids.append(new_q.id)
-
-    if not saved_ids:
-        raise HTTPException(status_code=400, detail="No valid questions parsed.")
+    #here
+    partial_count = len([q for q in all_questions if q.get("partial")])
 
     print("\n🎉 GPT Upload complete. Questions saved:", saved_ids)
+    print(f"⚠ Skipped partial questions: {partial_count}")
     print("========== GPT-UPLOAD-WORD END ==========\n")
-
+    
     return {
         "status": "success",
         "saved_questions": saved_ids,
-        "count": len(saved_ids)
+        "count": len(saved_ids),
+        "skipped_partial": partial_count
     }
+
 
 
 
