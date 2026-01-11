@@ -7295,31 +7295,47 @@ You are an exam content extraction engine.
 
 You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
 
-The document contains two to four reading extracts.
-You MUST return them in the EXACT JSON structure shown below.
+The document contains a METADATA section with the following fields:
+- class_name
+- subject
+- topic
+- difficulty
 
-CRITICAL SCHEMA REQUIREMENT (FAIL HARD):
-The reading material MUST be returned exactly as:
+You MUST extract these fields EXACTLY as written and include them
+as top-level keys in the JSON output.
 
-"reading_material": {
-  "extracts": {
-    "A": string,
-    "B": string,
-    "C": string,
-    "D": string
-  }
+CRITICAL SCHEMA REQUIREMENTS (FAIL HARD):
+
+The JSON output MUST contain:
+{
+  "class_name": string,
+  "subject": string,
+  "topic": string,
+  "difficulty": string,
+  "reading_material": {
+    "extracts": {
+      "A": string,
+      "B": string,
+      "C": string,
+      "D": string
+    }
+  },
+  "questions": [
+    {
+      "question_text": string,
+      "correct_answer": "A|B|C|D"
+    }
+  ]
 }
 
-If the source document labels extracts as "Text A", "Extract A", or similar,
-you MUST normalize them to keys "A", "B", "C", "D" inside reading_material.extracts.
+If ANY required field is missing or empty, RETURN {}.
 
-CRITICAL RULES (FAIL HARD):
-- DO NOT generate, infer, summarize, or rewrite content
+CRITICAL RULES:
+- DO NOT generate, infer, or rewrite content
 - Extract ONLY what exists in the document
 - Preserve wording exactly
 - questions MUST match Total_Questions exactly
 - correct_answer MUST be one of: A, B, C, D
-- If ANY required field is missing or empty, RETURN {}
 
 OUTPUT RULES:
 - VALID JSON ONLY
