@@ -8592,11 +8592,21 @@ async def upload_word(
     # -----------------------------
     for idx, block in enumerate(page_groups, start=1):
         print(f"\n--- GPT Parsing Block {idx}/{len(page_groups)} ---")
-
+    
         result = await parse_with_gpt(block)
         questions = result.get("questions", [])
-
+    
         print(f"🧩 GPT found {len(questions)} questions in block {idx}")
+    
+        # 🔍 NEW: print per-question partial flags
+        for qi, q in enumerate(questions, start=1):
+            print(
+                f"   → Block {idx}, Q{qi}: "
+                f"partial={q.get('partial')} | "
+                f"class={q.get('class_name')} | "
+                f"topic={q.get('topic')}"
+            )
+    
         all_questions.extend(questions)
 
     # -----------------------------
