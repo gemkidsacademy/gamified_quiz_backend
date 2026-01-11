@@ -7295,20 +7295,38 @@ You are an exam content extraction engine.
 
 You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
 
+The document contains two to four reading extracts.
+You MUST return them in the EXACT JSON structure shown below.
+
+CRITICAL SCHEMA REQUIREMENT (FAIL HARD):
+The reading material MUST be returned exactly as:
+
+"reading_material": {
+  "extracts": {
+    "A": string,
+    "B": string,
+    "C": string,
+    "D": string
+  }
+}
+
+If the source document labels extracts as "Text A", "Extract A", or similar,
+you MUST normalize them to keys "A", "B", "C", "D" inside reading_material.extracts.
+
 CRITICAL RULES (FAIL HARD):
-- DO NOT generate, infer, or rewrite any content
+- DO NOT generate, infer, summarize, or rewrite content
 - Extract ONLY what exists in the document
 - Preserve wording exactly
-- reading_material MUST include ALL extracts with labels A–D
 - questions MUST match Total_Questions exactly
 - correct_answer MUST be one of: A, B, C, D
 - If ANY required field is missing or empty, RETURN {}
 
-OUTPUT:
+OUTPUT RULES:
 - VALID JSON ONLY
 - No markdown
 - No explanations
 """
+
 
     # --------------------------------------------------
     # 5️⃣ Process each exam block
