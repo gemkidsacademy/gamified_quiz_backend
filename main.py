@@ -8544,16 +8544,16 @@ async def upload_image_folder(
     }
 
 
-
-
 @app.post("/upload-word")
 async def upload_word(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
+    request_id = str(uuid.uuid4())[:8]
 
-    print("\n========== GPT-UPLOAD-WORD START ==========")
-    print(f"📄 Incoming file: {file.filename} (type={file.content_type})")
+    print(f"\n========== GPT-UPLOAD-WORD START [{request_id}] ==========")
+    print(f"[{request_id}] 📄 Incoming file: {file.filename}")
+    print(f"[{request_id}] 📄 Content-Type: {file.content_type}")
 
     # -----------------------------
     # Validate file type
@@ -8562,7 +8562,9 @@ async def upload_word(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "text/plain"
     }
+
     if file.content_type not in allowed:
+        print(f"[{request_id}] ❌ Invalid file type")
         raise HTTPException(status_code=400, detail="Invalid file type.")
 
     # -----------------------------
@@ -8572,76 +8574,98 @@ async def upload_word(
         content = await file.read()
         doc = docx.Document(BytesIO(content))
         paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        print(f"[{request_id}] 📄 Extracted paragraphs: {len(paragraphs)}")
     except Exception as e:
-        print("❌ Error reading DOCX:", e)
+        print(f"[{request_id}] ❌ DOCX read error: {e}")
         raise HTTPException(status_code=400, detail="Failed to read file.")
 
     # -----------------------------
-    # Convert to 5-page chunks
+    # Convert to chunks
     # -----------------------------
     pages = chunk_into_pages(paragraphs, per_page=30)
     page_groups = group_pages(pages, size=5)
 
-    print(f"📄 Total pages: {len(pages)}")
-    print(f"📦 Blocks to process (chunks of 5 pages): {len(page_groups)}")
+    print(f"[{request_id}] 📄 Total pages: {len(pages)}")
+    print(f"[{request_id}] 📦 Total blocks: {len(page_groups)}")
 
     all_questions = []
 
     # -----------------------------
-    # Process each chunk via GPT
+    # GPT parsing
     # -----------------------------
-    for idx, block in enumerate(page_groups, start=1):
-        print(f"\n--- GPT Parsing Block {idx}/{len(page_groups)} ---")
-    
+    for block_idx, block in enumerate(page_groups, start=1):
+        print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}/{len(page_groups)} | chars={len(block)}")
+
         result = await parse_with_gpt(block)
         questions = result.get("questions", [])
-    
-        print(f"🧩 GPT found {len(questions)} questions in block {idx}")
-    
-        # 🔍 NEW: print per-question partial flags
+
+        print(f"[{request_id}] 🧩 GPT returned {len(questions)} questions")
+
         for qi, q in enumerate(questions, start=1):
             print(
-                f"   → Block {idx}, Q{qi}: "
+                f"[{request_id}] 🔎 B{block_idx}-Q{qi} | "
                 f"partial={q.get('partial')} | "
                 f"class={q.get('class_name')} | "
-                f"topic={q.get('topic')}"
+                f"topic={q.get('topic')} | "
+                f"images={q.get('images')}"
             )
-    
+
         all_questions.extend(questions)
 
+    print(f"\n[{request_id}] 📊 Total questions detected: {len(all_questions)}")
+
     # -----------------------------
-    # Save valid (non-partial) questions
+    # Save valid questions
     # -----------------------------
     saved_ids = []
+    skipped_partial = 0
 
-    for q in all_questions:
-        if q.get("partial"):
-            print("⚠ Skipping partial question")
+    for idx, q in enumerate(all_questions, start=1):
+        qid = f"Q{idx}"
+
+        if q.get("partial") is not False:
+            skipped_partial += 1
+            print(
+                f"[{request_id}] ⚠ SKIP {qid} | "
+                f"reason=incomplete (partial={q.get('partial')})"
+            )
             continue
-    
-        # --- Image filename → URL mapping ---
-        # --- Image filename → GCS object name mapping (STRICT) ---
+
+
         resolved_images = []
 
         for img in q.get("images") or []:
+            img_raw = img
+            img_norm = img.strip().lower()
+
+            print(
+                f"[{request_id}] 🖼️ RESOLVE {qid} | "
+                f"img_raw='{img_raw}' | img_norm='{img_norm}'"
+            )
+
             record = (
                 db.query(UploadedImage)
-                .filter(func.lower(UploadedImage.original_name) == img.lower())
+                .filter(func.lower(func.trim(UploadedImage.original_name)) == img_norm)
                 .first()
             )
 
-        
             if not record:
+                print(
+                    f"[{request_id}] ❌ IMAGE NOT FOUND {qid} | "
+                    f"img='{img_raw}'"
+                )
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Image '{img}' not uploaded yet"
+                    detail=f"Image '{img_raw}' not uploaded yet"
                 )
-        
+
+            print(
+                f"[{request_id}] ✅ IMAGE OK {qid} | "
+                f"gcs_url='{record.gcs_url}'"
+            )
+
             resolved_images.append(record.gcs_url)
 
-
-
-                
         new_q = Question(
             class_name=q.get("class_name"),
             subject=q.get("subject"),
@@ -8653,26 +8677,31 @@ async def upload_word(
             options=q.get("options"),
             correct_answer=q.get("correct_answer")
         )
-    
+
         db.add(new_q)
         db.commit()
         db.refresh(new_q)
-    
-        saved_ids.append(new_q.id)
-    #here
-    partial_count = len([q for q in all_questions if q.get("partial")])
 
-    print("\n🎉 GPT Upload complete. Questions saved:", saved_ids)
-    print(f"⚠ Skipped partial questions: {partial_count}")
-    print("========== GPT-UPLOAD-WORD END ==========\n")
-    
+        saved_ids.append(new_q.id)
+        print(f"[{request_id}] 💾 SAVED {qid} | db_id={new_q.id}")
+
+    # -----------------------------
+    # Final summary
+    # -----------------------------
+    print(
+        f"\n[{request_id}] 🏁 UPLOAD COMPLETE | "
+        f"saved={len(saved_ids)} | "
+        f"partial_skipped={skipped_partial} | "
+        f"total_detected={len(all_questions)}"
+    )
+    print(f"========== GPT-UPLOAD-WORD END [{request_id}] ==========\n")
+
     return {
         "status": "success",
         "saved_questions": saved_ids,
         "count": len(saved_ids),
-        "skipped_partial": partial_count
+        "skipped_partial": skipped_partial
     }
-
 
 
 
