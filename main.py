@@ -6653,53 +6653,95 @@ async def upload_word_reading_gapped_multi_ai(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    print("\n===================================================")
-    print("📄 START: MULTI GAPPED TEXT WORD UPLOAD (AI - STRICT)")
-    print("===================================================")
+    print("\n" + "=" * 70)
+    print("📄 START: MULTI GAPPED TEXT WORD UPLOAD (AI - STRICT MODE)")
+    print("=" * 70)
 
     # --------------------------------------------------
-    # 1️⃣ Validate & extract text
+    # 1️⃣ File validation
     # --------------------------------------------------
+    print("📥 STEP 1: File validation")
+    print("   → Filename:", file.filename)
+    print("   → Content-Type:", file.content_type)
+
     if file.content_type != (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ):
+        print("❌ INVALID FILE TYPE")
         raise HTTPException(status_code=400, detail="File must be .docx")
 
     raw = await file.read()
-    full_text = extract_text_from_docx(raw)
-
-    if not full_text or len(full_text.strip()) < 300:
-        raise HTTPException(status_code=400, detail="Invalid document")
-
-    print("✅ Document extracted | chars:", len(full_text))
+    print("✅ File read into memory | bytes:", len(raw))
 
     # --------------------------------------------------
-    # 2️⃣ Split using EXAM START / EXAM END (FIX)
+    # 2️⃣ Text extraction
     # --------------------------------------------------
+    print("\n📄 STEP 2: Extracting text from DOCX")
+
+    try:
+        full_text = extract_text_from_docx(raw)
+    except Exception as e:
+        print("❌ DOCX TEXT EXTRACTION FAILED")
+        print("   → Exception:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to extract document text")
+
+    if not full_text:
+        print("❌ Extracted text is EMPTY")
+        raise HTTPException(status_code=400, detail="Empty document")
+
+    print("✅ Text extracted successfully")
+    print("   → Character count:", len(full_text))
+
+    if len(full_text.strip()) < 300:
+        print("❌ Document too short after extraction")
+        raise HTTPException(status_code=400, detail="Invalid document content")
+
+    # --------------------------------------------------
+    # 3️⃣ Exam block detection
+    # --------------------------------------------------
+    print("\n🧩 STEP 3: Locating EXAM blocks")
+
     start_token = "=== EXAM START ==="
     end_token = "=== EXAM END ==="
 
-    blocks = []
     parts = full_text.split(start_token)
+    print("   → Total START tokens found:", len(parts) - 1)
 
-    for part in parts[1:]:  # ignore anything before first EXAM START
-        if end_token in part:
-            block = part.split(end_token)[0].strip()
-            if len(block) > 500:  # safety guard
-                blocks.append(block)
+    blocks = []
+
+    for idx, part in enumerate(parts[1:], start=1):
+        print(f"   → Processing potential block {idx}")
+
+        if end_token not in part:
+            print("     ⚠️ END token missing, skipping block")
+            continue
+
+        block = part.split(end_token)[0].strip()
+        print("     → Block length:", len(block))
+
+        if len(block) < 500:
+            print("     ⚠️ Block too short, skipped")
+            continue
+
+        blocks.append(block)
+        print("     ✅ Block accepted")
 
     if not blocks:
+        print("❌ NO VALID EXAM BLOCKS FOUND")
         raise HTTPException(
             status_code=400,
             detail="No exam blocks found. Missing EXAM START / EXAM END markers."
         )
 
-    print(f"🧩 Found {len(blocks)} exam block(s)")
+    print(f"✅ Total valid exam blocks detected: {len(blocks)}")
+
     saved_ids = []
 
     # --------------------------------------------------
-    # 3️⃣ STRICT extraction prompt (gapped text only)
+    # 4️⃣ AI extraction prompt
     # --------------------------------------------------
+    print("\n🤖 STEP 4: Preparing AI extraction")
+
     system_prompt = """
 You are an exam content extraction engine.
 
@@ -6718,40 +6760,15 @@ OUTPUT:
 - VALID JSON ONLY
 - No markdown
 - No explanations
-
-SCHEMA:
-{
-  "class_name": string,
-  "subject": string,
-  "topic": string,
-  "difficulty": string,
-  "reading_material": {
-    "title": string,
-    "content": string
-  },
-  "answer_options": {
-    "A": string,
-    "B": string,
-    "C": string,
-    "D": string,
-    "E": string,
-    "F": string,
-    "G": string
-  },
-  "questions": [
-    {
-      "question_text": string,
-      "correct_answer": "A|B|C|D|E|F|G"
-    }
-  ]
-}
 """
 
     # --------------------------------------------------
-    # 4️⃣ Process EACH exam block independently
+    # 5️⃣ Process each exam block
     # --------------------------------------------------
     for block_idx, block_text in enumerate(blocks, start=1):
-        print(f"\n🔍 Processing block {block_idx}/{len(blocks)}")
+        print("\n" + "-" * 70)
+        print(f"🔍 STEP 5: Processing block {block_idx}/{len(blocks)}")
+        print("   → Block text length:", len(block_text))
 
         try:
             response = client.chat.completions.create(
@@ -6766,46 +6783,63 @@ SCHEMA:
                 ]
             )
         except Exception as e:
-            print(f"❌ OpenAI call failed | block {block_idx}")
-            print(str(e))
+            print("❌ OpenAI API CALL FAILED")
+            print("   → Exception:", str(e))
             continue
 
         raw_output = response.choices[0].message.content.strip()
+        print("🧠 AI raw response length:", len(raw_output))
+
         if not raw_output.startswith("{"):
-            print(f"❌ Non-JSON output | block {block_idx}")
+            print("❌ AI OUTPUT IS NOT JSON")
+            print("   → Preview:", raw_output[:200])
             continue
 
         try:
             parsed = json.loads(raw_output)
-        except Exception:
-            print(f"❌ JSON parse failed | block {block_idx}")
+            print("✅ JSON parsed successfully")
+        except Exception as e:
+            print("❌ JSON PARSING FAILED")
+            print("   → Exception:", str(e))
             continue
 
         if not parsed:
-            print(f"⚠️ Empty extraction | block {block_idx}")
+            print("⚠️ AI returned EMPTY JSON")
             continue
 
         # --------------------------------------------------
-        # 5️⃣ HARD validation
+        # 6️⃣ Hard validation
         # --------------------------------------------------
+        print("\n🧪 STEP 6: Validating extracted content")
+
         rm = parsed.get("reading_material", {})
-        if not rm.get("content") or len(rm["content"].strip()) < 300:
-            print(f"❌ Invalid reading material | block {block_idx}")
+        if not rm.get("content"):
+            print("❌ Missing reading material content")
+            continue
+
+        if len(rm["content"].strip()) < 300:
+            print("❌ Reading material too short")
             continue
 
         opts = parsed.get("answer_options", {})
         required_opts = ["A", "B", "C", "D", "E", "F", "G"]
-        if not all(k in opts and opts[k].strip() for k in required_opts):
-            print(f"❌ Missing answer options | block {block_idx}")
+
+        missing_opts = [k for k in required_opts if not opts.get(k)]
+        if missing_opts:
+            print("❌ Missing answer options:", missing_opts)
             continue
 
         questions = parsed.get("questions", [])
+        print("   → Questions extracted:", len(questions))
+
         if len(questions) != 6:
-            print(f"❌ Invalid question count | block {block_idx}")
+            print("❌ Invalid question count")
             continue
 
+        print("✅ Validation passed")
+
         # --------------------------------------------------
-        # 6️⃣ Enrich questions (IDs + gap numbers)
+        # 7️⃣ Enrich questions
         # --------------------------------------------------
         enriched_questions = []
         for i, q in enumerate(questions, start=1):
@@ -6817,8 +6851,10 @@ SCHEMA:
             })
 
         # --------------------------------------------------
-        # 7️⃣ Final bundle (QUIZ-READY)
+        # 8️⃣ Save to DB
         # --------------------------------------------------
+        print("\n💾 STEP 7: Saving to database")
+
         bundle = {
             "question_type": "gapped_text",
             "topic": parsed["topic"],
@@ -6827,39 +6863,43 @@ SCHEMA:
             "questions": enriched_questions
         }
 
-        # --------------------------------------------------
-        # 8️⃣ Save ONE row per exam
-        # --------------------------------------------------
-        obj = QuestionReading(
-            class_name=parsed["class_name"].lower(),
-            subject=parsed["subject"],
-            difficulty=parsed["difficulty"].lower(),
-            topic=parsed["topic"],
-            total_questions=len(enriched_questions),
-            exam_bundle=bundle
-        )
+        try:
+            obj = QuestionReading(
+                class_name=parsed["class_name"].lower(),
+                subject=parsed["subject"],
+                difficulty=parsed["difficulty"].lower(),
+                topic=parsed["topic"],
+                total_questions=len(enriched_questions),
+                exam_bundle=bundle
+            )
 
-        db.add(obj)
-        db.commit()
-        db.refresh(obj)
+            db.add(obj)
+            db.commit()
+            db.refresh(obj)
 
-        saved_ids.append(obj.id)
-        print(f"✅ Saved block {block_idx} | ID {obj.id}")
+            saved_ids.append(obj.id)
+            print(f"✅ Block {block_idx} saved successfully | ID={obj.id}")
+
+        except Exception as e:
+            db.rollback()
+            print("❌ DATABASE SAVE FAILED")
+            print("   → Exception:", str(e))
+            continue
 
     # --------------------------------------------------
     # 9️⃣ Final response
     # --------------------------------------------------
-    print("\n===================================================")
+    print("\n" + "=" * 70)
     print("🎉 UPLOAD COMPLETE")
-    print("   → Saved:", len(saved_ids))
-    print("===================================================")
+    print("   → Total saved exams:", len(saved_ids))
+    print("   → IDs:", saved_ids)
+    print("=" * 70)
 
     return {
         "message": "Gapped Text documents processed",
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
-
 
 
 @app.post("/upload-word-reading-main-idea-ai")
