@@ -1558,7 +1558,15 @@ async def parse_with_gpt(block_text: str):
                   "- Mark partial=true ONLY if required fields are missing\n"
                   "- Do NOT mark a question as partial due to document ending alone\n"
                   "- Presence of IMAGES does NOT imply incompleteness\n\n"
-      
+
+                  "FAILURE HANDLING RULES:\n"
+                  "- If a question cannot be parsed into the required structure, OMIT it entirely\n"
+                  "- Do NOT emit placeholder text\n"
+                  "- Do NOT emit error messages\n"
+                  "- Do NOT emit strings inside the questions array\n"
+                  "- An empty questions array is valid\n\n"
+
+
                   "OUTPUT RULES:\n"
                   "- Return ONLY valid JSON following the provided schema\n"
                   "- Do NOT include commentary or explanations"
