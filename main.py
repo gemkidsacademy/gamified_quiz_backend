@@ -1494,11 +1494,11 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
- def chunk_into_pages(paragraphs, per_page=30):
-     pages = []
-     for i in range(0, len(paragraphs), per_page):
-         pages.append("\n\n".join(paragraphs[i:i+per_page]))
-     return pages
+def chunk_into_pages(paragraphs, per_page=30):
+    pages = []
+    for i in range(0, len(paragraphs), per_page):
+        pages.append("\n\n".join(paragraphs[i:i+per_page]))
+    return pages
 
 def group_pages(pages, size=5):
     return [ "\n".join(pages[i:i+size]) for i in range(0, len(pages), size) ]
