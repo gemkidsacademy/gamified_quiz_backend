@@ -1677,8 +1677,12 @@ def generate_exam_questions(quiz, db):
                 f"Topic: {topic_name}\n"
                 f"Country: {location.country}\n"
                 f"State: {location.state}\n\n"
-                "Return STRICT JSON ONLY:\n"
+                "Return ONLY a valid JSON array.\n"
+                "Do NOT include explanations, markdown, or extra text.\n"
+                "Do NOT wrap in ```.\n"
+                "JSON format:\n"
                 "[{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct\":\"A\"}]"
+
             )
 
             response = client.chat.completions.create(
@@ -1688,7 +1692,19 @@ def generate_exam_questions(quiz, db):
             )
 
             raw_output = response.choices[0].message.content.strip()
-            generated = json.loads(raw_output)
+            # --- DEBUG: inspect AI output ---
+            print("\n[AI RAW OUTPUT]")
+            print(raw_output)
+            print("[END AI RAW OUTPUT]\n")
+         
+            try:
+                generated = json.loads(raw_output)
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=500,
+                    detail="AI returned invalid JSON"
+                )
+
 
             print(f"[AI CHECK] Generated {len(generated)} questions")
 
