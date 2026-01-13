@@ -8836,16 +8836,16 @@ def chunk_by_question(paragraphs):
     current = []
 
     for p in paragraphs:
-        if p.strip().startswith("METADATA:") and current:
-            blocks.append("\n\n".join(current))
-            current = []
+        if p.strip() == "METADATA:":
+            if current:
+                blocks.append("\n\n".join(current))
+                current = []
         current.append(p)
 
     if current:
         blocks.append("\n\n".join(current))
 
     return blocks
-
 
 @app.post("/upload-word")
 async def upload_word(
