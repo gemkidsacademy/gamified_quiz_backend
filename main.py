@@ -1704,12 +1704,19 @@ def generate_exam_questions(quiz, db):
             all_questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
-                "question": q.question_text,
+        
+                # ✅ USE BLOCKS — this preserves order
+                "blocks": q.question_blocks
+                    if q.question_blocks
+                    else [
+                        {"type": "text", "content": q.question_text}
+                    ],
+        
                 "options": q.options,
-                "correct": q.correct_answer,
-                "images": q.images or []
+                "correct": q.correct_answer
             })
             q_id += 1
+
 
         # --------------------------------------------------
         # 3️⃣ AI QUESTION GENERATION (STRICT)
@@ -1773,10 +1780,14 @@ def generate_exam_questions(quiz, db):
                 all_questions.append({
                     "q_id": q_id,
                     "topic": topic_name,
-                    "question": item["question"],
+            
+                    # ✅ normalize AI questions to blocks
+                    "blocks": [
+                        {"type": "text", "content": item["question"]}
+                    ],
+            
                     "options": item["options"],
-                    "correct": item["correct"],
-                    "images": []
+                    "correct": item["correct"]
                 })
                 q_id += 1
 
