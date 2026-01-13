@@ -1016,6 +1016,8 @@ class Question(Base):
     # e.g. "domino_multi_image", "chart_mcq", "text_mcq", "two_diagram_mcq"
 
     question_text = Column(Text, nullable=True)
+    # ✅ NEW — ordered visual blocks (text + images)
+    question_blocks = Column(JSON, nullable=True)
 
     # Structured images (list of dicts)
     images = Column(JSON, nullable=True)
