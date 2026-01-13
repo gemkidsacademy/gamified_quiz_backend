@@ -1533,7 +1533,7 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
-def chunk_into_pages(paragraphs, per_page=30):
+def chunk_into_pages(paragraphs, per_page=18):
     pages = []
     for i in range(0, len(paragraphs), per_page):
         pages.append("\n\n".join(paragraphs[i:i+per_page]))
@@ -8875,25 +8875,28 @@ async def upload_word(
     # -----------------------------
     # Convert to chunks
     # -----------------------------
-    pages = chunk_into_pages(paragraphs, per_page=30)
-    page_groups = group_pages(pages, size=5)
+    blocks = chunk_into_pages(paragraphs, per_page=18)
 
-    print(f"[{request_id}] 📄 Total pages: {len(pages)}")
-    print(f"[{request_id}] 📦 Total blocks: {len(page_groups)}")
+    
+
+    print(f"[{request_id}] 📦 Total blocks: {len(blocks)}")
 
     all_questions = []
 
     # -----------------------------
     # GPT parsing
     # -----------------------------
-    for block_idx, block in enumerate(page_groups, start=1):
-        print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}/{len(page_groups)} | chars={len(block)}")
-
+    for block_idx, block in enumerate(blocks, start=1):
+        print(
+            f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}/{len(blocks)} "
+            f"| chars={len(block)}"
+        )
+    
         result = await parse_with_gpt(block)
         questions = result.get("questions", [])
-
+    
         print(f"[{request_id}] 🧩 GPT returned {len(questions)} questions")
-
+    
         for qi, q in enumerate(questions, start=1):
             print(
                 f"[{request_id}] 🔎 B{block_idx}-Q{qi} | "
@@ -8902,7 +8905,7 @@ async def upload_word(
                 f"topic={q.get('topic')} | "
                 f"images={q.get('images')}"
             )
-
+    
         all_questions.extend(questions)
 
     print(f"\n[{request_id}] 📊 Total questions detected: {len(all_questions)}")
