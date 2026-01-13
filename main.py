@@ -8934,69 +8934,72 @@ async def upload_word(
 
     for idx, q in enumerate(all_questions, start=1):
         qid = f"Q{idx}"
+    
+        # ✅ HARD VALIDATION — do not trust `partial` alone
+        required_fields = ["question_text", "correct_answer"]
 
-        if q.get("partial") is True:
+        if q.get("options") is not None:
+            required_fields.append("options")
+
+        missing = [f for f in required_fields if not q.get(f)]
+    
+        if missing:
             skipped_partial += 1
             print(
                 f"[{request_id}] ⚠ SKIP {qid} | "
-                f"reason=incomplete (partial={q.get('partial')})"
+                f"missing_fields={missing} | "
+                f"partial={q.get('partial')}"
             )
             continue
-        
-
-        # --- Normalize question_text formatting (defensive) ---
-        qt = q.get("question_text")
-        if qt:
-            q["question_text"] = qt.replace("\n\n\n", "\n\n").strip()
+    
+        # Optional but HIGHLY recommended observability
+        print(
+            f"[{request_id}] ✅ READY {qid} | "
+            f"options={list(q['options'].keys())} | "
+            f"correct={q['correct_answer']}"
+        )
         resolved_images = []
 
         for img in q.get("images") or []:
             img_raw = img
             img_norm = img.strip().lower()
-
-            print(
-                f"[{request_id}] 🖼️ RESOLVE {qid} | "
-                f"img_raw='{img_raw}' | img_norm='{img_norm}'"
-            )
-
+        
             record = (
                 db.query(UploadedImage)
                 .filter(func.lower(func.trim(UploadedImage.original_name)) == img_norm)
                 .first()
             )
-
+        
             if not record:
-                print(
-                    f"[{request_id}] ❌ IMAGE NOT FOUND {qid} | "
-                    f"img='{img_raw}'"
-                )
                 raise HTTPException(
                     status_code=400,
                     detail=f"Image '{img_raw}' not uploaded yet"
                 )
-
-            print(
-                f"[{request_id}] ✅ IMAGE OK {qid} | "
-                f"gcs_url='{record.gcs_url}'"
-            )
-
+        
             resolved_images.append(record.gcs_url)
+        question_blocks = q.get("question_blocks")
+        if not question_blocks and q.get("question_text"):
+            question_blocks = [
+                {"type": "text", "content": q["question_text"]}
+            ]
+ 
 
+    
         new_q = Question(
             class_name=q.get("class_name"),
             subject=q.get("subject"),
             topic=q.get("topic"),
             difficulty=q.get("difficulty"),
             question_type="multi_image_diagram_mcq",
-        
+    
             question_text=q.get("question_text"),
-            question_blocks=q.get("question_blocks"),  # ✅ ADD THIS
-        
+            question_blocks=question_blocks,
+    
             images=resolved_images,
             options=q.get("options"),
             correct_answer=q.get("correct_answer")
         )
-
+    
         db.add(new_q)
         db.commit()
         db.refresh(new_q)
