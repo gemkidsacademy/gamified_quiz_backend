@@ -8935,7 +8935,7 @@ async def upload_word(
     for idx, q in enumerate(all_questions, start=1):
         qid = f"Q{idx}"
 
-        if q.get("partial") is not False:
+        if q.get("partial") is True:
             skipped_partial += 1
             print(
                 f"[{request_id}] ⚠ SKIP {qid} | "
