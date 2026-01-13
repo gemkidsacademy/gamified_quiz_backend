@@ -8836,7 +8836,7 @@ def chunk_by_question(paragraphs):
     current = []
 
     for p in paragraphs:
-        if p.strip() == "METADATA:" and current:
+        if p.strip().startswith("METADATA:") and current:
             blocks.append("\n\n".join(current))
             current = []
         current.append(p)
