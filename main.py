@@ -7731,20 +7731,60 @@ def start_exam(
     # --------------------------------------------------
     def normalize_questions(raw_questions):
         normalized = []
-
+    
         for q in raw_questions or []:
             fixed = dict(q)
+    
+            # -----------------------------
+            # Normalize options
+            # -----------------------------
             opts = fixed.get("options")
-
             if isinstance(opts, dict):
                 fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
             elif isinstance(opts, list):
                 fixed["options"] = opts
             else:
                 fixed["options"] = []
-
+    
+            # -----------------------------
+            # 🔥 Normalize image blocks
+            # -----------------------------
+            blocks = fixed.get("blocks") or []
+    
+            for block in blocks:
+                if block.get("type") != "image":
+                    continue
+    
+                src = block.get("src")
+                if not src:
+                    continue
+    
+                # Already a full URL → leave it
+                if src.startswith("http"):
+                    continue
+    
+                img_norm = src.strip().lower()
+    
+                record = (
+                    db.query(UploadedImage)
+                    .filter(
+                        func.lower(UploadedImage.original_name).like(f"%_{img_norm}")
+                    )
+                    .first()
+                )
+    
+                if not record:
+                    print(
+                        f"[WARN] Unresolved image for question {q.get('q_id')}: {src}"
+                    )
+                    continue
+    
+                # ✅ Rewrite src with full public URL
+                block["src"] = record.gcs_url
+    
+            fixed["blocks"] = blocks
             normalized.append(fixed)
-
+    
         return normalized
 
     # --------------------------------------------------
