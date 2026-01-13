@@ -7923,7 +7923,7 @@ def start_exam(
                 record = (
                     db.query(UploadedImage)
                     .filter(
-                        func.lower(UploadedImage.original_name).like(f"%_{img_norm}")
+                        func.lower(UploadedImage.original_name) == img_norm
                     )
                     .first()
                 )
