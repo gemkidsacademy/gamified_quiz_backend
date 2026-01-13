@@ -8830,6 +8830,21 @@ async def upload_image_folder(
         "message": f"{len(uploaded_urls)} images processed.",
         "files": uploaded_urls
     }
+ 
+def chunk_by_question(paragraphs):
+    blocks = []
+    current = []
+
+    for p in paragraphs:
+        if p.strip().startswith("CLASS:") and current:
+            blocks.append("\n\n".join(current))
+            current = []
+        current.append(p)
+
+    if current:
+        blocks.append("\n\n".join(current))
+
+    return blocks
 
 
 @app.post("/upload-word")
@@ -8875,7 +8890,8 @@ async def upload_word(
     # -----------------------------
     # Convert to chunks
     # -----------------------------
-    blocks = chunk_into_pages(paragraphs, per_page=18)
+    blocks = chunk_by_question(paragraphs)
+
 
     
 
