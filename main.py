@@ -1494,11 +1494,11 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
-def chunk_into_pages(paragraphs, per_page=30):
-    pages = []
-    for i in range(0, len(paragraphs), per_page):
-        pages.append("\n".join(paragraphs[i:i+per_page]))
-    return pages
+ def chunk_into_pages(paragraphs, per_page=30):
+     pages = []
+     for i in range(0, len(paragraphs), per_page):
+         pages.append("\n\n".join(paragraphs[i:i+per_page]))
+     return pages
 
 def group_pages(pages, size=5):
     return [ "\n".join(pages[i:i+size]) for i in range(0, len(pages), size) ]
@@ -1534,6 +1534,12 @@ async def parse_with_gpt(block_text: str):
                   "- Preserve original wording and order\n"
                   "- The question_text may span multiple sentences or paragraphs\n"
                   "- Do NOT summarize, shorten, or omit context\n\n"
+                  "FORMATTING RULES:\n"
+                  "- Preserve paragraph boundaries exactly as provided in the input\n"
+                  "- Use double newline characters (\\n\\n) to separate paragraphs in question_text\n"
+                  "- Do NOT collapse multiple paragraphs into a single line\n"
+                  "- Do NOT remove, trim, or normalize newline characters\n\n"
+
       
                   "STRUCTURE RULES:\n"
                   "- Questions follow this structure:\n"
@@ -8844,8 +8850,12 @@ async def upload_word(
                 f"reason=incomplete (partial={q.get('partial')})"
             )
             continue
+        
 
-
+        # --- Normalize question_text formatting (defensive) ---
+        qt = q.get("question_text")
+        if qt:
+            q["question_text"] = qt.replace("\n\n\n", "\n\n").strip()
         resolved_images = []
 
         for img in q.get("images") or []:
