@@ -1701,20 +1701,35 @@ def generate_exam_questions(quiz, db):
         print(f"[DB FETCH] Retrieved {len(db_questions)} questions")
 
         for q in db_questions:
+            # ---- Normalize blocks (FIX) ----
+            blocks = q.question_blocks or []
+            
+            # Ensure at least text exists
+            if not blocks and q.question_text:
+                blocks = [
+                    {"type": "text", "content": q.question_text}
+                ]
+            
+            # 🔑 Inject missing image blocks
+            existing_image_srcs = {
+                b.get("src") for b in blocks if b.get("type") == "image"
+            }
+            
+            for img in q.images or []:
+                if img not in existing_image_srcs:
+                    blocks.append({
+                        "type": "image",
+                        "src": img
+                    })
+            
             all_questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
-        
-                # ✅ USE BLOCKS — this preserves order
-                "blocks": q.question_blocks
-                    if q.question_blocks
-                    else [
-                        {"type": "text", "content": q.question_text}
-                    ],
-        
+                "blocks": blocks,
                 "options": q.options,
                 "correct": q.correct_answer
             })
+
             q_id += 1
 
 
