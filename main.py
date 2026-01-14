@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 import mammoth
 from collections import defaultdict
 from sqlalchemy.exc import IntegrityError
-
+from docx.oxml.ns import qn
  
 import pandas as pd
 import os
@@ -8927,29 +8927,7 @@ async def upload_image_folder(
         "files": uploaded_urls
     }
  
-def chunk_by_question(paragraphs):
-    blocks = []
-    current = []
 
-    for p in paragraphs:
-        if p.strip() == "METADATA:":
-            if current:
-                blocks.append("\n\n".join(current))
-                current = []
-        current.append(p)
-
-    if current:
-        blocks.append("\n\n".join(current))
-
-    return blocks
-
-def extract_images_from_text(block: str) -> list[str]:
-    images = []
-    for line in block.splitlines():
-        if line.strip().upper().startswith("IMAGES:"):
-            img_part = line.split(":", 1)[1]
-            images = [i.strip() for i in img_part.split(",") if i.strip()]
-    return images
 #old upload-word code
 # @app.post("/upload-word")
 # async def upload_word(
@@ -9110,6 +9088,90 @@ def extract_images_from_text(block: str) -> list[str]:
 #         )
 #     }
 
+def chunk_by_question(blocks):
+    """
+    Input:
+      blocks = [
+        {"type": "text", "content": "..."},
+        {"type": "image", "name": "..."},
+        ...
+      ]
+
+    Output:
+      [
+        [ block, block, block ],   # Question 1
+        [ block, block, block ],   # Question 2
+      ]
+    """
+
+    questions = []
+    current = []
+
+    for block in blocks:
+        # Detect question boundary
+        if (
+            block["type"] == "text"
+            and block["content"].strip() == "METADATA:"
+        ):
+            if current:
+                questions.append(current)
+                current = []
+
+        current.append(block)
+
+    if current:
+        questions.append(current)
+
+    return questions
+
+def extract_images_from_text(block: str) -> list[str]:
+    images = []
+    for line in block.splitlines():
+        if line.strip().upper().startswith("IMAGES:"):
+            img_part = line.split(":", 1)[1]
+            images = [i.strip() for i in img_part.split(",") if i.strip()]
+    return images
+
+def parse_docx_to_ordered_blocks(doc):
+    """
+    Returns a linear list of blocks:
+    [{type: 'text', content: ...}, {type: 'image', name: ...}]
+    preserving DOCX order exactly.
+    """
+    blocks = []
+
+    for element in doc.element.body:
+        # Paragraph
+        if element.tag.endswith("}p"):
+            texts = []
+            image_names = []
+
+            for run in element.iter():
+                # Text
+                if run.tag.endswith("}t") and run.text:
+                    texts.append(run.text)
+
+                # Image
+                if run.tag.endswith("}blip"):
+                    r_id = run.attrib.get(qn("r:embed"))
+                    if r_id:
+                        image_part = doc.part.related_parts[r_id]
+                        image_name = image_part.partname.split("/")[-1]
+                        image_names.append(image_name)
+
+            if texts:
+                blocks.append({
+                    "type": "text",
+                    "content": "".join(texts).strip()
+                })
+
+            for img in image_names:
+                blocks.append({
+                    "type": "image",
+                    "name": img
+                })
+
+    return blocks
 
 #new upload-word code
 @app.post("/upload-word")
@@ -9135,57 +9197,53 @@ async def upload_word(
         raise HTTPException(status_code=400, detail="Invalid file type.")
 
     # -----------------------------
-    # Extract raw text
+    # Load DOCX
     # -----------------------------
     try:
         content = await file.read()
         doc = docx.Document(BytesIO(content))
 
-        paragraphs = [
-            p.text.rstrip()
-            for p in doc.paragraphs
-            if p.text and p.text.rstrip()
-        ]
+        ordered_blocks = parse_docx_to_ordered_blocks(doc)
 
-        print(f"[{request_id}] 📄 Extracted paragraphs: {len(paragraphs)}")
+        print(
+            f"[{request_id}] 📄 Extracted ordered blocks: {len(ordered_blocks)}"
+        )
 
     except Exception as e:
         print(f"[{request_id}] ❌ DOCX read error: {e}")
         raise HTTPException(status_code=400, detail="Failed to read file.")
 
     # -----------------------------
-    # Convert to chunks
+    # Chunk by question (BLOCK-BASED)
     # -----------------------------
-    blocks = chunk_by_question(paragraphs)
-    print(f"[{request_id}] 📦 Total blocks: {len(blocks)}")
+    question_chunks = chunk_by_question(ordered_blocks)
+    print(f"[{request_id}] 📦 Total question chunks: {len(question_chunks)}")
 
     all_questions = []
 
     # -----------------------------
-    # GPT parsing (attach document images here)
+    # GPT parsing (SEMANTICS ONLY)
     # -----------------------------
-    for block_idx, block in enumerate(blocks, start=1):
+    for block_idx, question_block in enumerate(question_chunks, start=1):
         print(
-            f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}/{len(blocks)} "
-            f"| chars={len(block)}"
+            f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}/{len(question_chunks)}"
         )
 
-        images_from_doc = extract_images_from_text(block)
+        result = await parse_with_gpt({
+            "blocks": question_block
+        })
 
-        result = await parse_with_gpt(block)
         questions = result.get("questions", [])
-
         print(f"[{request_id}] 🧩 GPT returned {len(questions)} questions")
 
         for qi, q in enumerate(questions, start=1):
-            q["_doc_images"] = images_from_doc
+            # Preserve block order from DOCX
+            q["question_blocks"] = question_block
 
             print(
                 f"[{request_id}] 🔎 B{block_idx}-Q{qi} | "
                 f"class={q.get('class_name')} | "
-                f"topic={q.get('topic')} | "
-                f"gpt_images={q.get('images')} | "
-                f"doc_images={images_from_doc}"
+                f"topic={q.get('topic')}"
             )
 
         all_questions.extend(questions)
@@ -9193,86 +9251,63 @@ async def upload_word(
     print(f"\n[{request_id}] 📊 Total questions detected: {len(all_questions)}")
 
     # -----------------------------
-    # Save valid questions
+    # Persist questions
     # -----------------------------
-    saved_ids = []
     saved_count = 0
     skipped_partial = 0
-
 
     for idx, q in enumerate(all_questions, start=1):
         qid = f"Q{idx}"
 
-        # ---- Hard validation ----
         missing = []
 
-        if not q.get("question_text"):
-            missing.append("question_text")
-        
+        if not q.get("question_blocks"):
+            missing.append("question_blocks")
+
+        if not q.get("options"):
+            missing.append("options")
+
         if not q.get("correct_answer"):
             missing.append("correct_answer")
-        
-        options = q.get("options")
-        images = q.get("images") or q.get("_doc_images")
-        
-        # Accept options if EITHER text options exist OR images exist
-        if not options and not images:
-            missing.append("options")
 
         if missing:
             skipped_partial += 1
             print(f"[{request_id}] ⚠ SKIP {qid} | missing={missing}")
             continue
 
-        # ---- Merge images (document is authoritative) ----
-        doc_images = q.get("_doc_images") or []
-        gpt_images = q.get("images") or []
-        merged_images = list(dict.fromkeys(doc_images + gpt_images))
+        # -----------------------------
+        # Resolve images IN PLACE
+        # -----------------------------
+        for block in q["question_blocks"]:
+            if block["type"] == "image":
+                img_name = block["name"].strip().lower()
 
-        print(
-            f"[{request_id}] ✅ READY {qid} | merged_images={merged_images}"
-        )
-
-        # ---- Resolve images ----
-        resolved_images = []
-
-        for img in merged_images:
-            img_norm = img.strip().lower()
-
-            record = (
-                db.query(UploadedImage)
-                .filter(func.lower(func.trim(UploadedImage.original_name)) == img_norm)
-                .first()
-            )
-
-            if not record:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Image '{img}' not uploaded yet"
+                record = (
+                    db.query(UploadedImage)
+                    .filter(
+                        func.lower(func.trim(
+                            UploadedImage.original_name
+                        )) == img_name
+                    )
+                    .first()
                 )
 
-            resolved_images.append(record.gcs_url)
+                if not record:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Image '{block['name']}' not uploaded yet"
+                    )
 
-        # ---- Build question blocks ----
-        question_blocks = q.get("question_blocks") or []
+                block.pop("name")
+                block["src"] = record.gcs_url
 
-        if not question_blocks and q.get("question_text"):
-            question_blocks = [
-                {"type": "text", "content": q["question_text"]}
-            ]
+        # Optional derived text (safe)
+        question_text = "\n\n".join(
+            b["content"]
+            for b in q["question_blocks"]
+            if b["type"] == "text"
+        )
 
-        existing_srcs = {
-            b.get("src") for b in question_blocks if b.get("type") == "image"
-        }
-
-        for img_url in resolved_images:
-            if img_url not in existing_srcs:
-                question_blocks.append({
-                    "type": "image",
-                    "src": img_url
-                })
-
-        # ---- Persist ----
         new_q = Question(
             class_name=q.get("class_name"),
             subject=q.get("subject"),
@@ -9280,10 +9315,9 @@ async def upload_word(
             difficulty=q.get("difficulty"),
             question_type="multi_image_diagram_mcq",
 
-            question_text=q.get("question_text"),
-            question_blocks=question_blocks,
+            question_text=question_text,
+            question_blocks=q["question_blocks"],
 
-            images=resolved_images,
             options=q.get("options"),
             correct_answer=q.get("correct_answer")
         )
@@ -9291,9 +9325,7 @@ async def upload_word(
         db.add(new_q)
         db.commit()
         db.refresh(new_q)
-        
 
-        saved_ids.append(new_q.id)
         saved_count += 1
         print(f"[{request_id}] 💾 SAVED {qid} | db_id={new_q.id}")
 
@@ -9303,8 +9335,7 @@ async def upload_word(
     print(
         f"\n[{request_id}] 🏁 UPLOAD COMPLETE | "
         f"saved={saved_count} | "
-        f"partial_skipped={skipped_partial} | "
-        f"total_detected={len(all_questions)}"
+        f"partial_skipped={skipped_partial}"
     )
     print(f"========== GPT-UPLOAD-WORD END [{request_id}] ==========\n")
 
@@ -9312,7 +9343,7 @@ async def upload_word(
         "status": "success",
         "count": saved_count,
         "skipped_partial": skipped_partial,
-        "message": f"{saved_count} questions added successfully ..."
+        "message": f"{saved_count} questions added successfully"
     }
 
 
