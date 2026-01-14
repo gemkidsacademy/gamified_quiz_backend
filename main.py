@@ -9244,6 +9244,41 @@ def filter_display_blocks(blocks: list[dict]) -> list[dict]:
 
 
 
+def resolve_option_value(value: str, db: Session) -> dict:
+    value = value.strip()
+
+    # Detect image option
+    if value.lower().endswith((".png", ".jpg", ".jpeg")):
+        img_name = value.lower()
+
+        record = (
+            db.query(UploadedImage)
+            .filter(
+                func.lower(func.trim(
+                    UploadedImage.original_name
+                )) == img_name
+            )
+            .first()
+        )
+
+        if not record:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Option image '{img_name}' not uploaded yet"
+            )
+
+        return {
+            "type": "image",
+            "src": record.gcs_url
+        }
+
+    # Fallback → text option
+    return {
+        "type": "text",
+        "content": value
+    }
+
+
 #new upload-word code
 @app.post("/upload-word")
 async def upload_word(
@@ -9392,6 +9427,14 @@ async def upload_word(
             for b in q["question_blocks"]
             if b["type"] == "text"
         )
+        # -----------------------------
+        # Resolve options (text OR image)
+        # -----------------------------
+        resolved_options = {}
+        
+        for key, value in q["options"].items():
+            resolved_options[key] = resolve_option_value(value, db)
+
 
         new_q = Question(
             class_name=q.get("class_name"),
@@ -9399,11 +9442,11 @@ async def upload_word(
             topic=q.get("topic"),
             difficulty=q.get("difficulty"),
             question_type="multi_image_diagram_mcq",
-
+        
             question_text=question_text,
-            question_blocks = filter_display_blocks(q["question_blocks"]),
-
-            options=q.get("options"),
+            question_blocks=filter_display_blocks(q["question_blocks"]),
+        
+            options=resolved_options,   # ✅ IMPORTANT CHANGE
             correct_answer=q.get("correct_answer")
         )
 
