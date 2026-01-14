@@ -9188,6 +9188,62 @@ def parse_docx_to_ordered_blocks(doc):
 
     return blocks
 
+
+def filter_display_blocks(blocks: list[dict]) -> list[dict]:
+    """
+    Removes authoring-only text from question blocks.
+    Keeps ONLY student-visible question stem + images.
+    """
+    filtered = []
+
+    DROP_PREFIXES = (
+        "METADATA:",
+        "CLASS:",
+        "SUBJECT:",
+        "TOPIC:",
+        "DIFFICULTY:",
+        "QUESTION_TEXT:",
+        "OPTIONS:",
+        "CORRECT_ANSWER:",
+        "CORRECT ANSWER:",
+    )
+
+    for block in blocks:
+        # Always keep images
+        if block["type"] == "image":
+            filtered.append(block)
+            continue
+
+        text = block.get("content", "").strip()
+
+        # Drop empty text
+        if not text:
+            continue
+
+        upper = text.upper()
+
+        # Drop metadata / labels
+        if any(upper.startswith(p) for p in DROP_PREFIXES):
+            continue
+
+        # Drop "Question X:" lines
+        if re.match(r"^QUESTION\s+\d+\s*:", upper):
+            continue
+
+        # Drop option lines accidentally leaking (A. / B) etc)
+        if re.match(r"^[A-D][\.\)]\s+", text):
+            continue
+
+        filtered.append({
+            "type": "text",
+            "content": text
+        })
+
+    return filtered
+
+
+
+
 #new upload-word code
 @app.post("/upload-word")
 async def upload_word(
@@ -9294,27 +9350,41 @@ async def upload_word(
         # Resolve images IN PLACE
         # -----------------------------
         for block in q["question_blocks"]:
-            if block["type"] == "image":
-                img_name = block["name"].strip().lower()
-
-                record = (
-                    db.query(UploadedImage)
-                    .filter(
-                        func.lower(func.trim(
-                            UploadedImage.original_name
-                        )) == img_name
-                    )
-                    .first()
+            if block["type"] != "image":
+                continue
+        
+            # Resolve image identifier safely
+            img_name = (
+                block.get("name")
+                or block.get("src")
+                or ""
+            ).strip().lower()
+        
+            if not img_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Image block missing name/src"
                 )
-
-                if not record:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Image '{block['name']}' not uploaded yet"
-                    )
-
-                block.pop("name")
-                block["src"] = record.gcs_url
+        
+            record = (
+                db.query(UploadedImage)
+                .filter(
+                    func.lower(func.trim(
+                        UploadedImage.original_name
+                    )) == img_name
+                )
+                .first()
+            )
+        
+            if not record:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image '{img_name}' not uploaded yet"
+                )
+        
+            # Normalize block to runtime format
+            block.pop("name", None)
+            block["src"] = record.gcs_url
 
         # Optional derived text (safe)
         question_text = "\n\n".join(
@@ -9331,7 +9401,7 @@ async def upload_word(
             question_type="multi_image_diagram_mcq",
 
             question_text=question_text,
-            question_blocks=q["question_blocks"],
+            question_blocks = filter_display_blocks(q["question_blocks"]),
 
             options=q.get("options"),
             correct_answer=q.get("correct_answer")
