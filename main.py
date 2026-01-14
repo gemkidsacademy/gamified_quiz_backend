@@ -9178,11 +9178,21 @@ async def upload_word(
         qid = f"Q{idx}"
 
         # ---- Hard validation ----
-        required_fields = ["question_text", "correct_answer"]
-        if q.get("options") is not None:
-            required_fields.append("options")
+        missing = []
 
-        missing = [f for f in required_fields if not q.get(f)]
+        if not q.get("question_text"):
+            missing.append("question_text")
+        
+        if not q.get("correct_answer"):
+            missing.append("correct_answer")
+        
+        options = q.get("options")
+        images = q.get("images") or q.get("_doc_images")
+        
+        # Accept options if EITHER text options exist OR images exist
+        if not options and not images:
+            missing.append("options")
+
         if missing:
             skipped_partial += 1
             print(f"[{request_id}] ⚠ SKIP {qid} | missing={missing}")
