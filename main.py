@@ -1542,104 +1542,114 @@ def chunk_into_pages(paragraphs, per_page=18):
 def group_pages(pages, size=5):
     return [ "\n".join(pages[i:i+size]) for i in range(0, len(pages), size) ]
  
-async def parse_with_gpt(block_text: str):
-    completion = await client_save_questions.chat.completions.create(
-        model="gpt-4o-mini",
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "QuestionList",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "questions": {
-                            "type": "array",
-                            "items": QuestionSchema
-                        }
-                    },
-                    "required": ["questions"]
+async def parse_with_gpt(block_text: str, retries: int = 2):
+    """
+    Deterministic GPT parser for exam questions.
+    Retries on empty results to reduce GPT omission variance.
+    """
+
+    for attempt in range(retries + 1):
+        completion = await client_save_questions.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            top_p=1,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "QuestionList",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "questions": {
+                                "type": "array",
+                                "items": QuestionSchema
+                            }
+                        },
+                        "required": ["questions"]
+                    }
                 }
-            }
-        },
-        messages=[
-          {
-              "role": "system",
-              "content": (
-                "You are a deterministic exam-question parser that preserves data fidelity and visual order.\n\n"
-            
-                "CONTENT FIDELITY RULES:\n"
-                "- The QUESTION_TEXT MUST include ALL setup, scenario, and descriptive text\n"
-                "- Followed by the actual interrogative sentence\n"
-                "- Preserve original wording and original order exactly\n"
-                "- QUESTION_TEXT may span multiple sentences or multiple paragraphs\n"
-                "- Do NOT summarize, shorten, paraphrase, or omit any content\n\n"
-            
-                "FORMATTING RULES:\n"
-                "- Preserve paragraph boundaries exactly as provided in the input\n"
-                "- Use double newline characters (\\n\\n) to separate paragraphs in QUESTION_TEXT\n"
-                "- Do NOT collapse multiple paragraphs into a single line\n"
-                "- Do NOT remove, trim, or normalize newline characters\n\n"
-            
-                "QUESTION_BLOCKS RULES:\n"
-                "- In addition to QUESTION_TEXT, you MUST return QUESTION_BLOCKS\n"
-                "- QUESTION_BLOCKS is an ordered list representing the visual flow of the question\n"
-                "- Each block MUST be one of:\n"
-                "  { \"type\": \"text\", \"content\": \"...\" }\n"
-                "  { \"type\": \"image\", \"src\": \"...\" }\n"
-                "- Preserve the exact order found in the source document\n"
-                "- Do NOT merge text across image boundaries\n"
-                "- All text appearing before an image MUST appear in a text block before that image\n"
-                "- All text appearing after an image MUST appear in a text block after that image\n"
-                "- QUESTION_TEXT MUST contain the full textual content only (text blocks concatenated with \\n\\n)\n\n"
-            
-                "STRUCTURE RULES:\n"
-                "- Questions follow this structure:\n"
-                "  Question X:\n"
-                "  CLASS\n"
-                "  SUBJECT\n"
-                "  TOPIC\n"
-                "  DIFFICULTY\n"
-                "  QUESTION_TEXT\n"
-                "  QUESTION_BLOCKS\n"
-                "  (optional) IMAGES\n"
-                "  OPTIONS\n"
-                "  CORRECT_ANSWER\n\n"
-            
-                "TERMINATION RULES:\n"
-                "- A question is COMPLETE if:\n"
-                "  a) All required fields are present, OR\n"
-                "  b) It is immediately followed by the marker END_OF_QUESTIONS\n"
-                "- The marker END_OF_QUESTIONS indicates the end of the document\n"
-                "- Ignore all content after END_OF_QUESTIONS\n\n"
-            
-                "PARTIAL RULES:\n"
-                "- Mark partial=true ONLY if required fields are missing\n"
-                "- Do NOT mark a question as partial due to document ending alone\n"
-                "- Presence of IMAGES or QUESTION_BLOCKS does NOT imply incompleteness\n\n"
-            
-                "FAILURE HANDLING RULES:\n"
-                "- If a question cannot be parsed into the required structure, OMIT it entirely\n"
-                "- Do NOT emit placeholder text\n"
-                "- Do NOT emit error messages\n"
-                "- Do NOT emit strings inside the questions array\n"
-                "- An empty questions array is valid\n\n"
-            
-                "OUTPUT RULES:\n"
-                "- Return ONLY valid JSON following the provided schema\n"
-                "- Do NOT include commentary, explanations, or markdown"
-            )
+            },
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a deterministic exam-question parser that preserves data fidelity and visual order.\n\n"
+                        "CONTENT FIDELITY RULES:\n"
+                        "- The QUESTION_TEXT MUST include ALL setup, scenario, and descriptive text\n"
+                        "- Followed by the actual interrogative sentence\n"
+                        "- Preserve original wording and original order exactly\n"
+                        "- QUESTION_TEXT may span multiple sentences or multiple paragraphs\n"
+                        "- Do NOT summarize, shorten, paraphrase, or omit any content\n\n"
 
-          },
-          {
-              "role": "user",
-              "content": block_text
-          }
-      ]
+                        "FORMATTING RULES:\n"
+                        "- Preserve paragraph boundaries exactly as provided in the input\n"
+                        "- Use double newline characters (\\n\\n) to separate paragraphs in QUESTION_TEXT\n"
+                        "- Do NOT collapse multiple paragraphs into a single line\n"
+                        "- Do NOT remove, trim, or normalize newline characters\n\n"
 
-    )
+                        "QUESTION_BLOCKS RULES:\n"
+                        "- In addition to QUESTION_TEXT, you MUST return QUESTION_BLOCKS\n"
+                        "- QUESTION_BLOCKS is an ordered list representing the visual flow of the question\n"
+                        "- Each block MUST be one of:\n"
+                        "  { \"type\": \"text\", \"content\": \"...\" }\n"
+                        "  { \"type\": \"image\", \"src\": \"...\" }\n"
+                        "- Preserve the exact order found in the source document\n"
+                        "- Do NOT merge text across image boundaries\n"
+                        "- All text appearing before an image MUST appear in a text block before that image\n"
+                        "- All text appearing after an image MUST appear in a text block after that image\n"
+                        "- QUESTION_TEXT MUST contain the full textual content only\n\n"
 
-    raw = completion.choices[0].message.content
-    return json.loads(raw)
+                        "STRUCTURE RULES:\n"
+                        "- Questions follow this structure:\n"
+                        "  Question X:\n"
+                        "  CLASS\n"
+                        "  SUBJECT\n"
+                        "  TOPIC\n"
+                        "  DIFFICULTY\n"
+                        "  QUESTION_TEXT\n"
+                        "  QUESTION_BLOCKS\n"
+                        "  (optional) IMAGES\n"
+                        "  OPTIONS\n"
+                        "  CORRECT_ANSWER\n\n"
+
+                        "PARTIAL RULES:\n"
+                        "- Mark partial=true ONLY if required fields are missing\n"
+                        "- Presence of IMAGES or QUESTION_BLOCKS does NOT imply incompleteness\n\n"
+
+                        "FAILURE HANDLING RULES:\n"
+                        "- If a question cannot be parsed into the required structure, OMIT it entirely\n"
+                        "- Do NOT emit placeholder text\n"
+                        "- Do NOT emit error messages\n"
+                        "- An empty questions array is valid\n\n"
+
+                        "OUTPUT RULES:\n"
+                        "- Return ONLY valid JSON following the provided schema\n"
+                        "- Do NOT include commentary, explanations, or markdown"
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": block_text
+                }
+            ]
+        )
+
+        raw = completion.choices[0].message.content
+        parsed = json.loads(raw)
+
+        questions = parsed.get("questions", [])
+
+        # ✅ Accept immediately if questions found
+        if questions:
+            return parsed
+
+        # 🔁 Retry on empty result (GPT omission guard)
+        if attempt < retries:
+            print(f"[GPT] Empty result, retry {attempt + 1}")
+            continue
+
+        # ❌ Empty after retries is final
+        return parsed
 
 
 # ai_engine.py (for example)
