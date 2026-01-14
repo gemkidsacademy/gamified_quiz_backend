@@ -7937,40 +7937,47 @@ def start_exam(
             # ==================================================
             # ✅ Normalize OPTIONS (text OR image)
             # ==================================================
+            # ==================================================
+            # ✅ Normalize OPTIONS (ALL supported formats)
+            # ==================================================
             opts = fixed.get("options")
             normalized_opts = {}
-    
+            
             if isinstance(opts, dict):
-                # ✅ New correct format
+                # ✅ Already structured (image/text MCQs)
                 normalized_opts = opts
-    
+            
             elif isinstance(opts, list):
-                # ⚠️ Legacy format:
-                # ["A) {'type': 'text', 'content': '...'}", ...]
-                for raw in opts:
-                    if not isinstance(raw, str):
-                        continue
-    
-                    if ")" not in raw:
-                        continue
-    
-                    key, payload = raw.split(")", 1)
-                    key = key.strip()
-    
-                    try:
-                        option_obj = ast.literal_eval(payload.strip())
-                        if isinstance(option_obj, dict):
-                            normalized_opts[key] = option_obj
-                    except Exception:
+                # Case 1: ["A) {...}", "B) {...}"]  (legacy GPT)
+                if opts and isinstance(opts[0], str) and ")" in opts[0]:
+                    for raw in opts:
+                        key, payload = raw.split(")", 1)
+                        key = key.strip()
+            
+                        try:
+                            option_obj = ast.literal_eval(payload.strip())
+                            if isinstance(option_obj, dict):
+                                normalized_opts[key] = option_obj
+                        except Exception:
+                            normalized_opts[key] = {
+                                "type": "text",
+                                "content": payload.strip()
+                            }
+            
+                # Case 2: ["Option text", "Option text", ...]  ✅ YOUR MISSING CASE
+                else:
+                    for idx, text in enumerate(opts):
+                        key = chr(ord("A") + idx)
                         normalized_opts[key] = {
                             "type": "text",
-                            "content": payload.strip()
+                            "content": text
                         }
-    
+            
             fixed["options"] = normalized_opts
-    
+            
             if not normalized_opts:
                 print(f"[WARN] No options parsed for question {qid}")
+
     
             # ==================================================
             # ✅ Normalize CORRECT ANSWER (single source of truth)
