@@ -28,7 +28,7 @@ from google.oauth2.service_account import Credentials
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
 from google.cloud import storage
-
+import ast
 
 
 
@@ -7932,22 +7932,60 @@ def start_exam(
         for q in raw_questions or []:
             fixed = dict(q)
     
-            # -----------------------------
-            # Normalize options
-            # -----------------------------
-            opts = fixed.get("options")
-            if isinstance(opts, dict):
-                fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
-            elif isinstance(opts, list):
-                fixed["options"] = opts
-            else:
-                fixed["options"] = []
+            qid = fixed.get("q_id")
     
-            # -----------------------------
-            # 🔥 Normalize blocks (CRITICAL)
-            # -----------------------------
-            # DB uses: question_blocks
-            # Frontend expects: blocks
+            # ==================================================
+            # ✅ Normalize OPTIONS (text OR image)
+            # ==================================================
+            opts = fixed.get("options")
+            normalized_opts = {}
+    
+            if isinstance(opts, dict):
+                # ✅ New correct format
+                normalized_opts = opts
+    
+            elif isinstance(opts, list):
+                # ⚠️ Legacy format:
+                # ["A) {'type': 'text', 'content': '...'}", ...]
+                for raw in opts:
+                    if not isinstance(raw, str):
+                        continue
+    
+                    if ")" not in raw:
+                        continue
+    
+                    key, payload = raw.split(")", 1)
+                    key = key.strip()
+    
+                    try:
+                        option_obj = ast.literal_eval(payload.strip())
+                        if isinstance(option_obj, dict):
+                            normalized_opts[key] = option_obj
+                    except Exception:
+                        normalized_opts[key] = {
+                            "type": "text",
+                            "content": payload.strip()
+                        }
+    
+            fixed["options"] = normalized_opts
+    
+            if not normalized_opts:
+                print(f"[WARN] No options parsed for question {qid}")
+    
+            # ==================================================
+            # ✅ Normalize CORRECT ANSWER (single source of truth)
+            # ==================================================
+            fixed["correct_answer"] = (
+                fixed.get("correct_answer")
+                or fixed.get("correct")
+            )
+    
+            if not fixed["correct_answer"]:
+                print(f"[WARN] No correct_answer for question {qid}")
+    
+            # ==================================================
+            # 🔥 Normalize BLOCKS (ordered text + images)
+            # ==================================================
             blocks = fixed.get("blocks") or fixed.get("question_blocks") or []
     
             for block in blocks:
@@ -7956,9 +7994,10 @@ def start_exam(
     
                 src = block.get("src")
                 if not src:
+                    print(f"[WARN] Image block missing src in question {qid}")
                     continue
     
-                # Already full URL → leave it
+                # Already full URL → OK
                 if src.startswith("http"):
                     continue
     
@@ -7973,15 +8012,13 @@ def start_exam(
                 )
     
                 if not record:
-                    print(
-                        f"[WARN] Unresolved image for question {q.get('q_id')}: {src}"
-                    )
+                    print(f"[WARN] Unresolved image '{src}' in question {qid}")
                     continue
     
-                # ✅ Rewrite image src to full GCS URL
+                # ✅ Rewrite to full GCS URL
                 block["src"] = record.gcs_url
     
-            # 🔑 Expose blocks under the key frontend uses
+            # Frontend contract
             fixed["blocks"] = blocks
     
             normalized.append(fixed)
@@ -8043,7 +8080,7 @@ def start_exam(
                 topic=q.get("topic"),
 
                 selected_option=None,
-                correct_option=q.get("correct"),
+                correct_option=q.get("correct_answer"),
                 is_correct=None
             )
         )
