@@ -1544,7 +1544,27 @@ def group_pages(pages, size=5):
  
 import json
 
-async def parse_with_gpt(block_text: str, retries: int = 2):
+def serialize_blocks_for_gpt(blocks: list[dict]) -> str:
+    """
+    Converts ordered blocks into a deterministic text format
+    that GPT can parse reliably.
+    """
+    lines = []
+
+    for block in blocks:
+        if block["type"] == "text":
+            lines.append(block["content"])
+
+        elif block["type"] == "image":
+            # IMPORTANT: GPT must see image placeholders
+            name = block.get("name") or block.get("src") or ""
+            lines.append(f"[IMAGE: {name}]")
+
+    return "\n\n".join(lines)
+
+
+async def parse_with_gpt(payload: dict, retries: int = 2):
+
     """
     Deterministic GPT parser.
     GPT is responsible ONLY for semantic extraction:
@@ -1593,6 +1613,7 @@ async def parse_with_gpt(block_text: str, retries: int = 2):
     )
 
     for attempt in range(retries + 1):
+        serialized = serialize_blocks_for_gpt(payload["blocks"])
         completion = await client_save_questions.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0,
@@ -1620,7 +1641,7 @@ async def parse_with_gpt(block_text: str, retries: int = 2):
                 },
                 {
                     "role": "user",
-                    "content": block_text  # MUST be a string
+                    "content": serialized  # MUST be a string
                 }
             ]
         )
