@@ -1551,6 +1551,61 @@ async def parse_with_gpt(block_text: str, retries: int = 2):
     - retry on empty results
     - retry on invalid JSON
     """
+    SYSTEM_PROMPT = (
+    "You are a deterministic exam-question parser that preserves data fidelity and visual order.\n\n"
+    "CONTENT FIDELITY RULES:\n"
+    "- The QUESTION_TEXT MUST include ALL setup, scenario, and descriptive text\n"
+    "- Followed by the actual interrogative sentence\n"
+    "- Preserve original wording and original order exactly\n"
+    "- QUESTION_TEXT may span multiple sentences or multiple paragraphs\n"
+    "- Do NOT summarize, shorten, paraphrase, or omit any content\n\n"
+
+    "FORMATTING RULES:\n"
+    "- Preserve paragraph boundaries exactly as provided in the input\n"
+    "- Use double newline characters (\\n\\n) to separate paragraphs in QUESTION_TEXT\n"
+    "- Do NOT collapse multiple paragraphs into a single line\n"
+    "- Do NOT remove, trim, or normalize newline characters\n\n"
+
+    "QUESTION_BLOCKS RULES:\n"
+    "- In addition to QUESTION_TEXT, you MUST return QUESTION_BLOCKS\n"
+    "- QUESTION_BLOCKS is an ordered list representing the visual flow of the question\n"
+    "- Each block MUST be one of:\n"
+    "  { \"type\": \"text\", \"content\": \"...\" }\n"
+    "  { \"type\": \"image\", \"src\": \"...\" }\n"
+    "- Preserve the exact order found in the source document\n"
+    "- Do NOT merge text across image boundaries\n"
+    "- All text appearing before an image MUST appear in a text block before that image\n"
+    "- All text appearing after an image MUST appear in a text block after that image\n"
+    "- QUESTION_TEXT MUST contain the full textual content only\n\n"
+
+    "STRUCTURE RULES:\n"
+    "- Questions follow this structure:\n"
+    "  Question X:\n"
+    "  CLASS\n"
+    "  SUBJECT\n"
+    "  TOPIC\n"
+    "  DIFFICULTY\n"
+    "  QUESTION_TEXT\n"
+    "  QUESTION_BLOCKS\n"
+    "  (optional) IMAGES\n"
+    "  OPTIONS\n"
+    "  CORRECT_ANSWER\n\n"
+
+    "PARTIAL RULES:\n"
+    "- Mark partial=true ONLY if required fields are missing\n"
+    "- Presence of IMAGES or QUESTION_BLOCKS does NOT imply incompleteness\n\n"
+
+    "FAILURE HANDLING RULES:\n"
+    "- If a question cannot be parsed into the required structure, OMIT it entirely\n"
+    "- Do NOT emit placeholder text\n"
+    "- Do NOT emit error messages\n"
+    "- An empty questions array is valid\n\n"
+
+    "OUTPUT RULES:\n"
+    "- Return ONLY valid JSON following the provided schema\n"
+    "- Do NOT include commentary, explanations, or markdown"
+)
+
 
     for attempt in range(retries + 1):
         completion = await client_save_questions.chat.completions.create(
