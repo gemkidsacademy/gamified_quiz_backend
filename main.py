@@ -7453,8 +7453,7 @@ The JSON output MUST contain:
     "extracts": {
       "A": string,
       "B": string,
-      "C": string,
-      "D": string
+      "...": string
     }
   },
   "questions": [
@@ -7465,20 +7464,32 @@ The JSON output MUST contain:
   ]
 }
 
-If ANY required field is missing or empty, RETURN {}.
+EXTRACT RULES (STRICT):
+- There MUST be AT LEAST 2 extracts
+- Extract labels MUST be consecutive capital letters starting from A
+  (A,B) or (A,B,C) or (A,B,C,D)
+- DO NOT invent, merge, split, or rename extracts
+- Extract text MUST be preserved exactly as written
+
+QUESTION RULES (STRICT):
+- questions MUST match Total_Questions exactly
+- correct_answer MUST match one of the extract labels present
+- DO NOT infer or correct answers
+
+If ANY required field is missing, empty, invalid, or violates these rules,
+RETURN {}.
 
 CRITICAL RULES:
-- DO NOT generate, infer, or rewrite content
+- DO NOT generate, infer, rewrite, summarize, or explain content
 - Extract ONLY what exists in the document
-- Preserve wording exactly
-- questions MUST match Total_Questions exactly
-- correct_answer MUST be one of: A, B, C, D
+- Preserve wording, punctuation, and ordering exactly
 
 OUTPUT RULES:
 - VALID JSON ONLY
 - No markdown
 - No explanations
 """
+
 
 
     # --------------------------------------------------
@@ -7533,37 +7544,56 @@ OUTPUT RULES:
 
         rm = parsed.get("reading_material", {})
         extracts = rm.get("extracts", {})
-
-        missing_extracts = [
-            k for k in ["A", "B", "C", "D"]
+        
+        # 🔹 Determine extract keys dynamically
+        extract_keys = sorted(extracts.keys())
+        
+        # 🔹 Minimum extract count check
+        if len(extract_keys) < 2:
+            print("❌ Less than 2 extracts found")
+            continue
+        
+        # 🔹 Enforce consecutive labels starting from A
+        expected_keys = [chr(ord("A") + i) for i in range(len(extract_keys))]
+        
+        if extract_keys != expected_keys:
+            print("❌ Extract labels are not consecutive:", extract_keys)
+            continue
+        
+        # 🔹 Ensure extract text is not empty
+        empty_extracts = [
+            k for k in extract_keys
             if not extracts.get(k) or not extracts[k].strip()
         ]
-
-        if missing_extracts:
-            print("❌ Missing extracts:", missing_extracts)
+        
+        if empty_extracts:
+            print("❌ Empty extracts found:", empty_extracts)
             continue
-
+        
+        # --------------------------------------------------
+        # 🔹 Question validation (UPDATED)
+        # --------------------------------------------------
         questions = parsed.get("questions", [])
         print("   → Questions found:", len(questions))
-
+        
         if not questions:
             print("❌ No questions extracted")
             continue
-
+        
         invalid_q = False
         for i, q in enumerate(questions, start=1):
             if (
                 "question_text" not in q
                 or "correct_answer" not in q
-                or q["correct_answer"] not in ["A", "B", "C", "D"]
+                or q["correct_answer"] not in extract_keys
             ):
                 print(f"❌ Invalid question format at index {i}")
                 invalid_q = True
                 break
-
+        
         if invalid_q:
             continue
-
+        
         print("✅ Validation passed")
 
         # --------------------------------------------------
@@ -7572,11 +7602,9 @@ OUTPUT RULES:
         print("\n🧩 STEP 7: Enriching bundle")
 
         answer_options = {
-            "A": "Extract A",
-            "B": "Extract B",
-            "C": "Extract C",
-            "D": "Extract D"
+            key: f"Extract {key}" for key in extract_keys
         }
+
 
         for i, q in enumerate(questions, start=1):
             q["question_id"] = f"CA_Q{i}"
