@@ -9137,11 +9137,11 @@ def parse_docx_to_ordered_blocks(doc):
     Returns a linear list of blocks:
     [{type: 'text', content: ...}, {type: 'image', name: ...}]
     preserving DOCX order exactly.
+    Supports BOTH embedded images and IMAGES: text declarations.
     """
     blocks = []
 
     for element in doc.element.body:
-        # Paragraph
         if element.tag.endswith("}p"):
             texts = []
             image_names = []
@@ -9151,7 +9151,7 @@ def parse_docx_to_ordered_blocks(doc):
                 if run.tag.endswith("}t") and run.text:
                     texts.append(run.text)
 
-                # Image
+                # Embedded image
                 if run.tag.endswith("}blip"):
                     r_id = run.attrib.get(qn("r:embed"))
                     if r_id:
@@ -9160,11 +9160,23 @@ def parse_docx_to_ordered_blocks(doc):
                         image_names.append(image_name)
 
             if texts:
-                blocks.append({
-                    "type": "text",
-                    "content": "".join(texts).strip()
-                })
+                text = "".join(texts).strip()
 
+                # 👇 NEW: Convert IMAGES: lines into image blocks
+                if text.upper().startswith("IMAGES:"):
+                    img_part = text.split(":", 1)[1]
+                    for img in img_part.split(","):
+                        blocks.append({
+                            "type": "image",
+                            "name": img.strip()
+                        })
+                else:
+                    blocks.append({
+                        "type": "text",
+                        "content": text
+                    })
+
+            # Embedded images (rare in your docs, but supported)
             for img in image_names:
                 blocks.append({
                     "type": "image",
