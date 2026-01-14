@@ -6505,7 +6505,7 @@ def generate_exam_reading(
             db.query(QuestionReading)
             .filter(
                 func.lower(QuestionReading.class_name) == class_name.lower(),
-                func.lower(QuestionReading.subject) == subject.lower(),
+                func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
                 func.lower(QuestionReading.difficulty) == difficulty.lower(),
                 func.lower(QuestionReading.topic) == topic_lower,
             )
