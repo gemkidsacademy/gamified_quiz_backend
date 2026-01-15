@@ -7513,10 +7513,15 @@ OUTPUT RULES:
         expected_q_count = int(match.group(1))
         
         # 🔒 Allow ONLY 8 or 10
-        if expected_q_count not in (8, 10):
-            print(f"❌ Invalid Total_Questions value: {expected_q_count}")
+        ALLOWED_QUESTION_COUNTS = {8, 10}
+
+        if expected_q_count not in ALLOWED_QUESTION_COUNTS:
+            print(
+                f"❌ Invalid Total_Questions value: {expected_q_count}. "
+                f"Allowed values: {sorted(ALLOWED_QUESTION_COUNTS)}"
+            )
             continue
-        
+         
         print(f"✅ Total_Questions detected: {expected_q_count}")
 
         print("\n" + "-" * 70)
@@ -7613,12 +7618,18 @@ OUTPUT RULES:
         
         invalid_q = False
         for i, q in enumerate(questions, start=1):
-            if (
-                "question_text" not in q
-                or "correct_answer" not in q
-                or q["correct_answer"] not in extract_keys
-            ):
-                print(f"❌ Invalid question format at index {i}")
+            missing_keys = {"question_text", "correct_answer"} - q.keys()
+        
+            if missing_keys:
+                print(f"❌ Question {i} missing keys: {missing_keys}")
+                invalid_q = True
+                break
+        
+            if q["correct_answer"] not in extract_keys:
+                print(
+                    f"❌ Question {i} has invalid correct_answer: "
+                    f"{q['correct_answer']} (allowed: {extract_keys})"
+                )
                 invalid_q = True
                 break
         
@@ -7686,10 +7697,15 @@ OUTPUT RULES:
     print("=" * 70)
 
     return {
-        "message": "Comparative Analysis document processed",
-        "saved_count": len(saved_ids),
-        "bundle_ids": saved_ids
+        "status": "success",
+        "message": "Upload complete",
+        "summary": {
+            "total_exam_blocks_detected": len(blocks),
+            "total_exams_saved": len(saved_ids)
+        },
+        "saved_exam_ids": saved_ids
     }
+
 
 
 @app.post("/api/admin/create-reading-config")
