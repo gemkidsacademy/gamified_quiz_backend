@@ -7522,11 +7522,29 @@ OUTPUT RULES:
             )
             continue
          
-        print(f"✅ Total_Questions detected: {expected_q_count}")
+        print(f"✅ Total_Questions detected: {expected_q_count}")        
 
         print("\n" + "-" * 70)
         print(f"🔍 STEP 5: Processing block {block_idx}/{len(blocks)}")
         print("   → Block length:", len(block_text))
+
+        # --------------------------------------------------
+        # 🔠 Detect extract labels from document (AUTHORITATIVE)
+        # --------------------------------------------------
+        doc_extract_matches = re.findall(
+            r"^\s*Extract\s+([A-Z])\s*$",
+            block_text,
+            re.MULTILINE
+        )
+        
+        doc_extract_keys = sorted(dict.fromkeys(doc_extract_matches))
+        
+        if len(doc_extract_keys) < 2:
+            print("❌ Less than 2 extracts declared in document")
+            continue
+        
+        print(f"✅ Extracts declared in document: {doc_extract_keys}")
+
 
         try:
             response = client.chat.completions.create(
@@ -7572,22 +7590,16 @@ OUTPUT RULES:
 
         rm = parsed.get("reading_material", {})
         extracts = rm.get("extracts", {})
-        
-        # 🔹 Determine extract keys dynamically
-        extract_keys = sorted(extracts.keys())
-        
-        # 🔹 Minimum extract count check
-        if len(extract_keys) < 2:
-            print("❌ Less than 2 extracts found")
+        gpt_extract_keys = sorted(extracts.keys())
+        # 🔒 GPT must extract ALL document-declared extracts
+        if gpt_extract_keys != doc_extract_keys:
+            print(
+                f"❌ Extract mismatch. "
+                f"Document: {doc_extract_keys}, "
+                f"GPT returned: {gpt_extract_keys}"
+            )
             continue
-        
-        # 🔹 Enforce consecutive labels starting from A
-        expected_keys = [chr(ord("A") + i) for i in range(len(extract_keys))]
-        
-        if extract_keys != expected_keys:
-            print("❌ Extract labels are not consecutive:", extract_keys)
-            continue
-        
+        extract_keys = doc_extract_keys  # authoritative source
         # 🔹 Ensure extract text is not empty
         empty_extracts = [
             k for k in extract_keys
@@ -7596,7 +7608,9 @@ OUTPUT RULES:
         
         if empty_extracts:
             print("❌ Empty extracts found:", empty_extracts)
-            continue
+            continue    
+        
+        
         
         # --------------------------------------------------
         # 🔹 Question validation (UPDATED)
