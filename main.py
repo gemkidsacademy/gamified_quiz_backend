@@ -9093,6 +9093,45 @@ def get_quiz(student_id: str, subject: str, difficulty: str, db: Session = Depen
 
     return response
 
+@app.get("/list-images")
+def list_images_from_bucket():
+    print("\n====================== LIST IMAGES START ======================")
+
+    try:
+        bucket_name = "exammoduleimages"
+     
+        client = get_gcs_client()
+        bucket = client.bucket(bucket_name)
+
+        blobs = bucket.list_blobs(prefix=prefix)
+
+        images = []
+
+        for blob in blobs:
+            if blob.name.endswith("/"):
+                continue
+
+            images.append({
+                "image_name": blob.name,
+                "url": blob.public_url
+            })
+
+        images.sort(key=lambda x: x["image_name"].lower())
+
+        print(f"[INFO] Total images found: {len(images)}")
+        print("====================== LIST IMAGES END ======================\n")
+
+        return {
+            "status": "success",
+            "total": len(images),
+            "images": images
+        }
+
+    except Exception as e:
+        print("[ERROR] Failed to fetch images from bucket")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Failed to fetch images")
+
 @app.post("/upload-image-folder")
 async def upload_image_folder(
     images: List[UploadFile] = File(...),
