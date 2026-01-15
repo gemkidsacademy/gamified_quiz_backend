@@ -2247,29 +2247,33 @@ def get_topics(
 
 @app.get("/api/admin/question-bank-thinking-skills")
 def get_question_bank_thinking_skills(
-    class_name: str,
-    subject: str,
-    difficulty: str,
     db: Session = Depends(get_db)
 ):
     results = (
         db.query(
+            Question.difficulty,
             Question.topic,
-            func.count(Question.id).label("count")
+            func.count(Question.id).label("total_questions")
         )
         .filter(
-            Question.class_name == class_name,
-            Question.subject == subject,
-            Question.difficulty == difficulty
+            Question.subject == "thinking_skills"
         )
-        .group_by(Question.topic)
+        .group_by(
+            Question.difficulty,
+            Question.topic
+        )
+        .order_by(
+            Question.difficulty,
+            Question.topic
+        )
         .all()
     )
 
     return [
         {
+            "difficulty": r.difficulty,
             "topic": r.topic,
-            "total_questions": r.count
+            "total_questions": r.total_questions
         }
         for r in results
     ]
