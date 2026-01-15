@@ -2156,6 +2156,38 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@app.get("/api/admin/question-bank-mathematical-reasoning")
+def get_question_bank_mathematical_reasoning(
+    db: Session = Depends(get_db)
+):
+    results = (
+        db.query(
+            Question.difficulty,
+            Question.topic,
+            func.count(Question.id).label("total_questions")
+        )
+        .filter(
+            Question.subject == "Mathematical Reasoning"
+        )
+        .group_by(
+            Question.difficulty,
+            Question.topic
+        )
+        .order_by(
+            Question.difficulty,
+            Question.topic
+        )
+        .all()
+    )
+
+    return [
+        {
+            "difficulty": r.difficulty,
+            "topic": r.topic,
+            "total_questions": r.total_questions
+        }
+        for r in results
+    ]
 @app.get("/api/writing/topics")
 def get_writing_topics(
     difficulty: str = Query(...),
