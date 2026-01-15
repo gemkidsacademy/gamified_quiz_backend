@@ -7496,6 +7496,29 @@ OUTPUT RULES:
     # 5️⃣ Process each exam block
     # --------------------------------------------------
     for block_idx, block_text in enumerate(blocks, start=1):
+         
+        # --------------------------------------------------
+        # 🔢 Extract Total_Questions from document (STRICT)
+        # --------------------------------------------------
+        match = re.search(
+            r"^\s*Total_Questions\s*:\s*(\d+)\s*$",
+            block_text,
+            re.MULTILINE
+        )
+        
+        if not match:
+            print("❌ Total_Questions missing in document")
+            continue
+        
+        expected_q_count = int(match.group(1))
+        
+        # 🔒 Allow ONLY 8 or 10
+        if expected_q_count not in (8, 10):
+            print(f"❌ Invalid Total_Questions value: {expected_q_count}")
+            continue
+        
+        print(f"✅ Total_Questions detected: {expected_q_count}")
+
         print("\n" + "-" * 70)
         print(f"🔍 STEP 5: Processing block {block_idx}/{len(blocks)}")
         print("   → Block length:", len(block_text))
@@ -7574,6 +7597,14 @@ OUTPUT RULES:
         # 🔹 Question validation (UPDATED)
         # --------------------------------------------------
         questions = parsed.get("questions", [])
+        # 🔒 Enforce question count matches metadata
+        if len(questions) != expected_q_count:
+            print(
+                f"❌ Question count mismatch: expected {expected_q_count}, got {len(questions)}"
+            )
+            continue
+
+        
         print("   → Questions found:", len(questions))
         
         if not questions:
