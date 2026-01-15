@@ -2245,6 +2245,35 @@ def get_topics(
 
     return topic_list
 
+@app.get("/api/admin/question-bank-thinking-skills")
+def get_question_bank_thinking_skills(
+    class_name: str,
+    subject: str,
+    difficulty: str,
+    db: Session = Depends(get_db)
+):
+    results = (
+        db.query(
+            Question.topic,
+            func.count(Question.id).label("count")
+        )
+        .filter(
+            Question.class_name == class_name,
+            Question.subject == subject,
+            Question.difficulty == difficulty
+        )
+        .group_by(Question.topic)
+        .all()
+    )
+
+    return [
+        {
+            "topic": r.topic,
+            "total_questions": r.count
+        }
+        for r in results
+    ]
+
 
 @app.post("/api/admin/bulk-users-exam-module")
 async def bulk_users_exam_module(
