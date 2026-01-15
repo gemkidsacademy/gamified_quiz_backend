@@ -2156,6 +2156,38 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@app.get("/api/admin/question-bank-reading")
+def get_question_bank_reading(
+    db: Session = Depends(get_db)
+):
+    results = (
+        db.query(
+            QuestionReading.difficulty,
+            QuestionReading.topic,
+            func.sum(QuestionReading.total_questions).label("total_questions")
+        )
+        .filter(
+            QuestionReading.subject == "Reading Comprehension"
+        )
+        .group_by(
+            QuestionReading.difficulty,
+            QuestionReading.topic
+        )
+        .order_by(
+            QuestionReading.difficulty,
+            QuestionReading.topic
+        )
+        .all()
+    )
+
+    return [
+        {
+            "difficulty": r.difficulty,
+            "topic": r.topic,
+            "total_questions": r.total_questions
+        }
+        for r in results
+    ]
 @app.get("/api/admin/question-bank-mathematical-reasoning")
 def get_question_bank_mathematical_reasoning(
     db: Session = Depends(get_db)
