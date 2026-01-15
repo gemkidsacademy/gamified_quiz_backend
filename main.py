@@ -9092,21 +9092,13 @@ def get_quiz(student_id: str, subject: str, difficulty: str, db: Session = Depen
     print("===========================\n")
 
     return response
-def get_gcs_client():
-    return storage.Client()
 
 @app.get("/list-images")
 def list_images_from_bucket():
     print("\n====================== LIST IMAGES START ======================")
 
     try:
-        bucket_name = "exammoduleimages"
-        prefix = ""  # ✅ FIX: define prefix
-
-        client = get_gcs_client()
-        bucket = client.bucket(bucket_name)
-
-        blobs = bucket.list_blobs(prefix=prefix)
+        blobs = gcs_bucket.list_blobs()
 
         images = []
 
@@ -9137,6 +9129,9 @@ def list_images_from_bucket():
             status_code=500,
             detail="Failed to fetch images"
         )
+
+
+
 @app.post("/upload-image-folder")
 async def upload_image_folder(
     images: List[UploadFile] = File(...),
