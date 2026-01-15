@@ -7709,16 +7709,26 @@ OUTPUT RULES:
     print("   → Total saved exams:", len(saved_ids))
     print("   → IDs:", saved_ids)
     print("=" * 70)
+    total_detected = len(blocks)
+    total_saved = len(saved_ids)
+    total_failed = total_detected - total_saved
+    
+    status = "success"
+    if total_saved == 0:
+        status = "failed"
+    elif total_failed > 0:
+        status = "partial_success"
 
     return {
-        "status": "success",
-        "message": "Upload complete",
-        "summary": {
-            "total_exam_blocks_detected": len(blocks),
-            "total_exams_saved": len(saved_ids)
-        },
-        "saved_exam_ids": saved_ids
-    }
+       "status": status,
+       "message": "Upload complete",
+       "summary": {
+           "total_exam_blocks_detected": total_detected,
+           "total_exams_saved": total_saved,
+           "total_exams_failed": total_failed
+       },
+       "saved_exam_ids": saved_ids
+   }
 
 
 
