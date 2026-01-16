@@ -2982,20 +2982,25 @@ def clean_question_text(raw: str) -> str:
 
     text = raw.strip()
 
-    # 1️⃣ Remove everything before QUESTION_TEXT (if present)
+    # Remove everything before QUESTION_TEXT
     if "QUESTION_TEXT:" in text:
         text = text.split("QUESTION_TEXT:", 1)[1]
 
-    # 2️⃣ Cut off OPTIONS and everything after
+    # 🔥 REMOVE IMAGES lines completely
+    text = re.sub(
+        r"\n\s*IMAGES\s*:\s*.*",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # Cut off OPTIONS
     text = re.split(r"\n\s*OPTIONS\s*:\s*\n", text, flags=re.IGNORECASE)[0]
 
-    # 3️⃣ Cut off CORRECT_ANSWER and everything after (defensive)
+    # Cut off CORRECT_ANSWER
     text = re.split(r"\n\s*CORRECT_ANSWER\s*:", text, flags=re.IGNORECASE)[0]
 
-    # 4️⃣ Remove trailing "Question X:" lines
-    text = re.sub(r"\n\s*Question\s*\d+\s*:?\s*$", "", text, flags=re.IGNORECASE)
-
-    return text.strip() 
+    return text.strip()
 
 def normalize_options(raw_options):
     """
@@ -3019,17 +3024,19 @@ def normalize_options(raw_options):
         return normalized
 
     return []
-def extract_images_from_blocks(question_blocks):
-    if not question_blocks:
+
+IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
+def extract_images_from_text(raw: str):
+    if not raw:
         return []
 
-    images = []
-    for block in question_blocks.values():
-        if block.get("type") == "image" and block.get("src"):
-            images.append(block["src"])
+    matches = re.findall(
+        r"IMAGES\s*:\s*([A-Za-z0-9_\-\.]+)",
+        raw,
+        flags=re.IGNORECASE
+    )
 
-    return images
- 
+    return [IMAGE_BASE + name.strip() for name in matches] 
 
 @app.post("/api/quizzes/generate")
 def generate_exam(
@@ -3109,7 +3116,7 @@ def generate_exam(
         
 
         for q in db_questions:
-            images = extract_images_from_blocks(q.question_blocks)
+            images = extract_images_from_text(q.question_text)
             questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
