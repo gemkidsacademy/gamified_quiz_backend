@@ -2996,6 +2996,30 @@ def clean_question_text(raw: str) -> str:
     text = re.sub(r"\n\s*Question\s*\d+\s*:?\s*$", "", text, flags=re.IGNORECASE)
 
     return text.strip() 
+
+def normalize_options(raw_options):
+    """
+    Convert rich option objects into frontend-safe strings.
+    """
+    if not raw_options:
+        return []
+
+    # Case 1: already a list of strings
+    if isinstance(raw_options, list):
+        return raw_options
+
+    # Case 2: dict like { "A": {type, content}, ... }
+    if isinstance(raw_options, dict):
+        normalized = []
+        for key, value in raw_options.items():
+            if isinstance(value, dict) and "content" in value:
+                normalized.append(f"{key}) {value['content']}")
+            else:
+                normalized.append(f"{key}) {value}")
+        return normalized
+
+    return []
+
 @app.post("/api/quizzes/generate")
 def generate_exam(
     payload: dict = Body(...),
@@ -3077,7 +3101,7 @@ def generate_exam(
                 "q_id": q_id,
                 "topic": topic_name,
                 "question": clean_question_text(q.question_text),
-                "options": q.options,
+                "options": normalize_options(q.options),
                 "correct": q.correct_answer,
                 "images": q.images or []
             })
@@ -3097,7 +3121,7 @@ def generate_exam(
                     "q_id": q_id,
                     "topic": topic_name,
                     "question": clean_question_text(item["question"]),
-                    "options": item["options"],
+                    "options": normalize_options(item["options"]),
                     "correct": item["correct"],
                     "images": []
                 })
