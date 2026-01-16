@@ -2993,28 +2993,98 @@ def clean_question_text(raw: str) -> str:
 
 def normalize_options(raw_options):
     """
-    Convert rich option objects into frontend-safe strings.
+    Convert options into frontend-safe format.
+    Keeps text options as strings.
+    Skips unsupported image-options for now (safe fallback).
     """
     if not raw_options:
         return []
 
-    # Case 1: already a list of strings
-    if isinstance(raw_options, list):
-        return raw_options
+    normalized = []
 
-    # Case 2: dict like { "A": {type, content}, ... }
+    if isinstance(raw_options, list):
+        for opt in raw_options:
+            # Skip legacy embedded image dict strings
+            if isinstance(opt, str) and "{'type': 'image'" in opt:
+                continue
+            normalized.append(opt)
+        return normalized
+
     if isinstance(raw_options, dict):
-        normalized = []
         for key, value in raw_options.items():
-            if isinstance(value, dict) and "content" in value:
-                normalized.append(f"{key}) {value['content']}")
+            if isinstance(value, dict):
+                if value.get("type") == "text":
+                    normalized.append(f"{key}) {value.get('content', '')}")
+                elif value.get("type") == "image":
+                    # 🔒 Do not leak broken image-options yet
+                    normalized.append(f"{key}) [Image option]")
             else:
                 normalized.append(f"{key}) {value}")
+
         return normalized
 
     return []
 
 
+IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
+
+def sanitize_question_blocks(blocks):
+    """
+    - Removes embedded answer hints like 'E. 12 kg'
+    - Converts legacy 'IMAGES : filename.png' text into image blocks
+    - Preserves order
+    """
+    if not isinstance(blocks, list):
+        return []
+
+    sanitized = []
+
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+
+        block_type = block.get("type")
+
+        # -------------------------
+        # TEXT BLOCK HANDLING
+        # -------------------------
+        if block_type == "text":
+            content = block.get("content", "").strip()
+
+            # 🔥 Remove leaked answers (A. ... / B) ... / E. ...)
+            if re.match(r"^[A-E][\.\)]\s+", content):
+                continue
+
+            # 🔥 Convert legacy IMAGES : filename.png
+            img_match = re.match(
+                r"IMAGES?\s*:\s*([A-Za-z0-9_\-\.]+)",
+                content,
+                flags=re.IGNORECASE
+            )
+            if img_match:
+                sanitized.append({
+                    "type": "image",
+                    "src": IMAGE_BASE + img_match.group(1)
+                })
+                continue
+
+            # Normal text
+            if content:
+                sanitized.append({
+                    "type": "text",
+                    "content": content
+                })
+
+        # -------------------------
+        # IMAGE BLOCK HANDLING
+        # -------------------------
+        elif block_type == "image" and block.get("src"):
+            sanitized.append({
+                "type": "image",
+                "src": block["src"]
+            })
+
+    return sanitized
 
 @app.post("/api/quizzes/generate")
 def generate_exam(
@@ -3100,14 +3170,23 @@ def generate_exam(
                     detail=f"Question {q.id} has no question_blocks"
                 )
 
+            sanitized_blocks = sanitize_question_blocks(q.question_blocks)
+
+            if not sanitized_blocks:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Question {q.id} has no valid question_blocks after sanitation"
+                )
+            
             questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
-                "question_blocks": q.question_blocks,
+                "question_blocks": sanitized_blocks,
                 "options": normalize_options(q.options),
                 "correct": q.correct_answer
             })
             q_id += 1
+            
 
 
 
