@@ -3052,15 +3052,17 @@ def sanitize_question_blocks(blocks):
             content = block.get("content", "").strip()
 
             # 🔥 Remove leaked answers (A. ... / B) ... / E. ...)
-            if re.match(r"^[A-E][\.\)]\s+", content):
-                continue
+            if re.match(r"^[A-E]\s+.+", content):
+               continue
+
 
             # 🔥 Convert legacy IMAGES : filename.png
             img_match = re.match(
-                r"IMAGES?\s*:\s*([A-Za-z0-9_\-\.]+)",
+                r"IMAGES?\s*\d*\s*:\s*([A-Za-z0-9_\-\.]+)",
                 content,
                 flags=re.IGNORECASE
             )
+
             if img_match:
                 sanitized.append({
                     "type": "image",
