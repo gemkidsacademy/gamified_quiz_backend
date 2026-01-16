@@ -3019,6 +3019,17 @@ def normalize_options(raw_options):
         return normalized
 
     return []
+def extract_images_from_blocks(question_blocks):
+    if not question_blocks:
+        return []
+
+    images = []
+    for block in question_blocks.values():
+        if block.get("type") == "image" and block.get("src"):
+            images.append(block["src"])
+
+    return images
+ 
 
 @app.post("/api/quizzes/generate")
 def generate_exam(
@@ -3095,15 +3106,17 @@ def generate_exam(
               .limit(db_count)
               .all()
         )
+        
 
         for q in db_questions:
+            images = extract_images_from_blocks(q.question_blocks)
             questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
                 "question": clean_question_text(q.question_text),
                 "options": normalize_options(q.options),
                 "correct": q.correct_answer,
-                "images": q.images or []
+                "images": images
             })
             q_id += 1
 
