@@ -9558,6 +9558,20 @@ def resolve_option_value(value: str, db: Session) -> dict:
     }
 
 
+def looks_like_question(blocks):
+    text = " ".join(
+        b["content"]
+        for b in blocks
+        if b.get("type") == "text" and b.get("content")
+    ).lower()
+
+    return (
+        "question" in text
+        and "options" in text
+        and "correct_answer" in text
+    )
+
+
 #new upload-word code
 @app.post("/upload-word")
 async def upload_word(
@@ -9565,6 +9579,7 @@ async def upload_word(
     db: Session = Depends(get_db)
 ):
     request_id = str(uuid.uuid4())[:8]
+    last_successful_qid = None
 
     print(f"\n========== GPT-UPLOAD-WORD START [{request_id}] ==========")
     print(f"[{request_id}] 📄 Incoming file: {file.filename}")
@@ -9579,6 +9594,7 @@ async def upload_word(
     }
 
     if file.content_type not in allowed:
+        print(f"[{request_id}] ❌ INVALID FILE TYPE")
         raise HTTPException(status_code=400, detail="Invalid file type.")
 
     # -----------------------------
@@ -9587,19 +9603,16 @@ async def upload_word(
     try:
         content = await file.read()
         doc = docx.Document(BytesIO(content))
-
         ordered_blocks = parse_docx_to_ordered_blocks(doc)
 
-        print(
-            f"[{request_id}] 📄 Extracted ordered blocks: {len(ordered_blocks)}"
-        )
+        print(f"[{request_id}] 📄 Extracted ordered blocks: {len(ordered_blocks)}")
 
     except Exception as e:
-        print(f"[{request_id}] ❌ DOCX read error: {e}")
+        print(f"[{request_id}] ❌ DOCX READ ERROR: {repr(e)}")
         raise HTTPException(status_code=400, detail="Failed to read file.")
 
     # -----------------------------
-    # Chunk by question (BLOCK-BASED)
+    # Chunk by question
     # -----------------------------
     question_chunks = chunk_by_question(ordered_blocks)
     print(f"[{request_id}] 📦 Total question chunks: {len(question_chunks)}")
@@ -9607,28 +9620,34 @@ async def upload_word(
     all_questions = []
 
     # -----------------------------
-    # GPT parsing (SEMANTICS ONLY)
+    # GPT parsing
     # -----------------------------
     for block_idx, question_block in enumerate(question_chunks, start=1):
-        print(
-            f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}/{len(question_chunks)}"
-        )
 
-        result = await parse_with_gpt({
-            "blocks": question_block
-        })
+        if not looks_like_question(question_block):
+            print(
+                f"[{request_id}] ⏭ SKIP BLOCK {block_idx}/{len(question_chunks)} "
+                "(not a question)"
+            )
+            continue
 
+        print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}/{len(question_chunks)}")
+
+        result = await parse_with_gpt({"blocks": question_block})
         questions = result.get("questions", [])
+
         print(f"[{request_id}] 🧩 GPT returned {len(questions)} questions")
 
-        for qi, q in enumerate(questions, start=1):
-            # Preserve block order from DOCX
-            q["question_blocks"] = question_block
+        if not questions:
+            print(f"[{request_id}] ⚠ GPT ZERO QUESTIONS — BLOCK CONTENT:")
+            for b in question_block:
+                print(f"    {repr(b)}")
 
+        for qi, q in enumerate(questions, start=1):
+            q["question_blocks"] = question_block
             print(
                 f"[{request_id}] 🔎 B{block_idx}-Q{qi} | "
-                f"class={q.get('class_name')} | "
-                f"topic={q.get('topic')}"
+                f"class={q.get('class_name')} | topic={q.get('topic')}"
             )
 
         all_questions.extend(questions)
@@ -9641,108 +9660,126 @@ async def upload_word(
     saved_count = 0
     skipped_partial = 0
 
-    for idx, q in enumerate(all_questions, start=1):
-        qid = f"Q{idx}"
+    try:
+        for idx, q in enumerate(all_questions, start=1):
+            qid = f"Q{idx}"
+            print(f"\n[{request_id}] 🧪 PROCESSING {qid}")
 
-        missing = []
+            missing = []
+            if not q.get("question_blocks"):
+                missing.append("question_blocks")
+            if not q.get("options"):
+                missing.append("options")
+            if not q.get("correct_answer"):
+                missing.append("correct_answer")
 
-        if not q.get("question_blocks"):
-            missing.append("question_blocks")
-
-        if not q.get("options"):
-            missing.append("options")
-
-        if not q.get("correct_answer"):
-            missing.append("correct_answer")
-
-        if missing:
-            skipped_partial += 1
-            print(f"[{request_id}] ⚠ SKIP {qid} | missing={missing}")
-            continue
-
-        # -----------------------------
-        # Resolve images IN PLACE
-        # -----------------------------
-        for block in q["question_blocks"]:
-            if block["type"] != "image":
+            if missing:
+                skipped_partial += 1
+                print(f"[{request_id}] ⚠ SKIP {qid} | missing={missing}")
                 continue
-        
-            # Resolve image identifier safely
-            img_name = (
-                block.get("name")
-                or block.get("src")
-                or ""
-            ).strip().lower()
-        
-            if not img_name:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Image block missing name/src"
+
+            # -----------------------------
+            # Resolve images
+            # -----------------------------
+            for bi, block in enumerate(q["question_blocks"], start=1):
+                if block["type"] != "image":
+                    continue
+
+                print(
+                    f"[{request_id}] 🖼️ {qid} | IMAGE BLOCK {bi} | RAW BLOCK = {block}"
                 )
-        
-            record = (
-                db.query(UploadedImage)
-                .filter(
-                    func.lower(func.trim(
-                        UploadedImage.original_name
-                    )) == img_name
+
+                raw_img_name = block.get("name") or block.get("src") or ""
+                print(
+                    f"[{request_id}] 🧪 {qid} | RAW IMG repr = {repr(raw_img_name)}"
                 )
-                .first()
+
+                img_name = raw_img_name.strip().lower()
+                print(
+                    f"[{request_id}] 🧪 {qid} | NORMALIZED IMG repr = {repr(img_name)}"
+                )
+
+                if not img_name:
+                    print(f"[{request_id}] ❌ {qid} | EMPTY IMAGE NAME")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{qid}: Image block missing name/src"
+                    )
+
+                record = (
+                    db.query(UploadedImage)
+                    .filter(
+                        func.lower(func.trim(UploadedImage.original_name)) == img_name
+                    )
+                    .first()
+                )
+
+                if not record:
+                    print(f"[{request_id}] ❌ {qid} | IMAGE NOT FOUND IN DB")
+
+                    available = db.query(UploadedImage.original_name).all()
+                    print(f"[{request_id}] 📂 DB IMAGES:")
+                    for name, in available:
+                        print(f"    {repr(name)}")
+
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{qid}: Image '{img_name}' not uploaded yet"
+                    )
+
+                print(
+                    f"[{request_id}] ✅ {qid} | IMAGE RESOLVED → {record.gcs_url}"
+                )
+
+                block.pop("name", None)
+                block["src"] = record.gcs_url
+
+            # -----------------------------
+            # Build question
+            # -----------------------------
+            question_text = "\n\n".join(
+                b["content"]
+                for b in q["question_blocks"]
+                if b["type"] == "text"
             )
-        
-            if not record:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Image '{img_name}' not uploaded yet"
-                )
-        
-            # Normalize block to runtime format
-            block.pop("name", None)
-            block["src"] = record.gcs_url
 
-        # Optional derived text (safe)
-        question_text = "\n\n".join(
-            b["content"]
-            for b in q["question_blocks"]
-            if b["type"] == "text"
-        )
-        # -----------------------------
-        # Resolve options (text OR image)
-        # -----------------------------
-        resolved_options = {}
-        
-        for key, value in q["options"].items():
-            resolved_options[key] = resolve_option_value(value, db)
+            resolved_options = {}
+            for key, value in q["options"].items():
+                resolved_options[key] = resolve_option_value(value, db)
 
+            new_q = Question(
+                class_name=q.get("class_name"),
+                subject=q.get("subject"),
+                topic=q.get("topic"),
+                difficulty=q.get("difficulty"),
+                question_type="multi_image_diagram_mcq",
+                question_text=question_text,
+                question_blocks=filter_display_blocks(q["question_blocks"]),
+                options=resolved_options,
+                correct_answer=q.get("correct_answer")
+            )
 
-        new_q = Question(
-            class_name=q.get("class_name"),
-            subject=q.get("subject"),
-            topic=q.get("topic"),
-            difficulty=q.get("difficulty"),
-            question_type="multi_image_diagram_mcq",
-        
-            question_text=question_text,
-            question_blocks=filter_display_blocks(q["question_blocks"]),
-        
-            options=resolved_options,   # ✅ IMPORTANT CHANGE
-            correct_answer=q.get("correct_answer")
-        )
+            db.add(new_q)
+            db.commit()
+            db.refresh(new_q)
 
-        db.add(new_q)
-        db.commit()
-        db.refresh(new_q)
+            last_successful_qid = qid
+            saved_count += 1
 
-        saved_count += 1
-        print(f"[{request_id}] 💾 SAVED {qid} | db_id={new_q.id}")
+            print(f"[{request_id}] 💾 SAVED {qid} | db_id={new_q.id}")
+
+    except HTTPException as e:
+        print(f"\n[{request_id}] 🚨 UPLOAD FAILED")
+        print(f"[{request_id}] 🚨 LAST SUCCESSFUL QUESTION: {last_successful_qid}")
+        print(f"[{request_id}] 🚨 ERROR DETAIL: {e.detail}")
+        raise
 
     # -----------------------------
     # Final summary
     # -----------------------------
     print(
         f"\n[{request_id}] 🏁 UPLOAD COMPLETE | "
-        f"saved={saved_count} | "
-        f"partial_skipped={skipped_partial}"
+        f"saved={saved_count} | skipped_partial={skipped_partial}"
     )
     print(f"========== GPT-UPLOAD-WORD END [{request_id}] ==========\n")
 
@@ -9752,6 +9789,7 @@ async def upload_word(
         "skipped_partial": skipped_partial,
         "message": f"{saved_count} questions added successfully"
     }
+
 
 
 
