@@ -2982,22 +2982,11 @@ def clean_question_text(raw: str) -> str:
 
     text = raw.strip()
 
-    # Remove everything before QUESTION_TEXT
     if "QUESTION_TEXT:" in text:
         text = text.split("QUESTION_TEXT:", 1)[1]
 
-    # 🔥 REMOVE IMAGES lines completely
-    text = re.sub(
-        r"\n\s*IMAGES\s*:\s*.*",
-        "",
-        text,
-        flags=re.IGNORECASE
-    )
-
-    # Cut off OPTIONS
+    # Remove OPTIONS and answers
     text = re.split(r"\n\s*OPTIONS\s*:\s*\n", text, flags=re.IGNORECASE)[0]
-
-    # Cut off CORRECT_ANSWER
     text = re.split(r"\n\s*CORRECT_ANSWER\s*:", text, flags=re.IGNORECASE)[0]
 
     return text.strip()
@@ -3025,18 +3014,28 @@ def normalize_options(raw_options):
 
     return []
 
-IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
-def extract_images_from_text(raw: str):
-    if not raw:
-        return []
+def extract_images_from_question(q: Question):
+    """
+    Extract images from structured DB fields.
+    Priority:
+    1. q.images
+    2. q.question_blocks
+    """
+    images = []
 
-    matches = re.findall(
-        r"IMAGES\s*:\s*([A-Za-z0-9_\-\.]+)",
-        raw,
-        flags=re.IGNORECASE
-    )
+    # 1️⃣ Direct images column
+    if isinstance(q.images, list):
+        images.extend(q.images)
 
-    return [IMAGE_BASE + name.strip() for name in matches] 
+    # 2️⃣ From question_blocks
+    if isinstance(q.question_blocks, dict):
+        for block in q.question_blocks.values():
+            if block.get("type") == "image" and block.get("src"):
+                images.append(block["src"])
+
+    return images
+
+
 
 @app.post("/api/quizzes/generate")
 def generate_exam(
@@ -3116,16 +3115,16 @@ def generate_exam(
         
 
         for q in db_questions:
-            images = extract_images_from_text(q.question_text)
             questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
                 "question": clean_question_text(q.question_text),
                 "options": normalize_options(q.options),
                 "correct": q.correct_answer,
-                "images": images
+                "images": extract_images_from_question(q)
             })
             q_id += 1
+
 
         # ---- AI questions (STRICT + RETRY SAFE)
         if ai_count > 0:
