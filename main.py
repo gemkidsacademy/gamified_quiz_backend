@@ -2976,6 +2976,17 @@ def generate_ai_questions_strict_Mathematical_Reasoning(
 
 
 
+def clean_question_text(raw: str) -> str:
+    if not raw:
+        return raw
+
+    # If AI/DB question contains QUESTION_TEXT label, strip everything before it
+    if "QUESTION_TEXT:" in raw:
+        return raw.split("QUESTION_TEXT:", 1)[1].strip()
+
+    # Otherwise return trimmed text
+    return raw.strip()
+ 
 @app.post("/api/quizzes/generate")
 def generate_exam(
     payload: dict = Body(...),
@@ -3056,7 +3067,7 @@ def generate_exam(
             questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
-                "question": q.question_text,
+                "question": clean_question_text(q.question_text),
                 "options": q.options,
                 "correct": q.correct_answer,
                 "images": q.images or []
@@ -3076,7 +3087,7 @@ def generate_exam(
                 questions.append({
                     "q_id": q_id,
                     "topic": topic_name,
-                    "question": item["question"],
+                    "question": clean_question_text(item["question"]),
                     "options": item["options"],
                     "correct": item["correct"],
                     "images": []
