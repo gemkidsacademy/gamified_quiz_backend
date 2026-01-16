@@ -2980,13 +2980,22 @@ def clean_question_text(raw: str) -> str:
     if not raw:
         return raw
 
-    # If AI/DB question contains QUESTION_TEXT label, strip everything before it
-    if "QUESTION_TEXT:" in raw:
-        return raw.split("QUESTION_TEXT:", 1)[1].strip()
+    text = raw.strip()
 
-    # Otherwise return trimmed text
-    return raw.strip()
- 
+    # 1️⃣ Remove everything before QUESTION_TEXT (if present)
+    if "QUESTION_TEXT:" in text:
+        text = text.split("QUESTION_TEXT:", 1)[1]
+
+    # 2️⃣ Cut off OPTIONS and everything after
+    text = re.split(r"\n\s*OPTIONS\s*:\s*\n", text, flags=re.IGNORECASE)[0]
+
+    # 3️⃣ Cut off CORRECT_ANSWER and everything after (defensive)
+    text = re.split(r"\n\s*CORRECT_ANSWER\s*:", text, flags=re.IGNORECASE)[0]
+
+    # 4️⃣ Remove trailing "Question X:" lines
+    text = re.sub(r"\n\s*Question\s*\d+\s*:?\s*$", "", text, flags=re.IGNORECASE)
+
+    return text.strip() 
 @app.post("/api/quizzes/generate")
 def generate_exam(
     payload: dict = Body(...),
