@@ -3103,27 +3103,20 @@ def generate_exam(
                 f"This indicates a generation inconsistency."
             )
         )
-
-    
     # --------------------------------------------------
     # 5️⃣ Clear previous exams (FULL WIPE - EXPLICIT)
     # --------------------------------------------------
     
+    # 🔹 Find all exams for this subject
     exam_ids_subq = (
         db.query(Exam.id)
         .filter(Exam.subject == quiz.subject)
         .subquery()
     )
     
-    student_exam_ids_subq = (
-        db.query(StudentExam.id)
-        .filter(StudentExam.exam_id.in_(exam_ids_subq))
-        .subquery()
-    )
-    
-    # 🔥 1. DELETE student responses FIRST
+    # 🔥 1. DELETE student exam responses FIRST
     db.query(StudentExamResponse).filter(
-        StudentExamResponse.student_exam_id.in_(student_exam_ids_subq)
+        StudentExamResponse.exam_id.in_(exam_ids_subq)
     ).delete(synchronize_session=False)
     
     # 🔥 2. DELETE student exams
