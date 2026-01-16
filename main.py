@@ -3107,21 +3107,20 @@ def generate_exam(
     # 5️⃣ Clear previous exams (FULL WIPE - EXPLICIT)
     # --------------------------------------------------
     
-    # 🔹 Find all exams for this subject
-    exam_ids_subq = (
-        db.query(Exam.id)
-        .filter(Exam.subject == quiz.subject)
-        .subquery()
+    # 🔹 Find all exam IDs for this subject (EXPLICIT SELECT)
+    exam_ids_select = (
+        select(Exam.id)
+        .where(Exam.subject == quiz.subject)
     )
     
     # 🔥 1. DELETE student exam responses FIRST
     db.query(StudentExamResponse).filter(
-        StudentExamResponse.exam_id.in_(exam_ids_subq)
+        StudentExamResponse.exam_id.in_(exam_ids_select)
     ).delete(synchronize_session=False)
     
     # 🔥 2. DELETE student exams
     db.query(StudentExam).filter(
-        StudentExam.exam_id.in_(exam_ids_subq)
+        StudentExam.exam_id.in_(exam_ids_select)
     ).delete(synchronize_session=False)
     
     # 🔥 3. DELETE exams
@@ -3130,7 +3129,6 @@ def generate_exam(
     ).delete(synchronize_session=False)
     
     db.commit()
-
     # --------------------------------------------------
     # 6️⃣ Save exam
     # --------------------------------------------------
