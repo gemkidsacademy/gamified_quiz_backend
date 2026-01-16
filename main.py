@@ -3014,27 +3014,6 @@ def normalize_options(raw_options):
 
     return []
 
-def extract_images_from_question(q: Question):
-    """
-    Extract images from structured DB fields.
-    Priority:
-    1. q.images
-    2. q.question_blocks
-    """
-    images = []
-
-    # 1️⃣ Direct images column
-    if isinstance(q.images, list):
-        images.extend(q.images)
-
-    # 2️⃣ From question_blocks
-    if isinstance(q.question_blocks, dict):
-        for block in q.question_blocks.values():
-            if block.get("type") == "image" and block.get("src"):
-                images.append(block["src"])
-
-    return images
-
 
 
 @app.post("/api/quizzes/generate")
@@ -3113,17 +3092,23 @@ def generate_exam(
               .all()
         )
         
-
+        
         for q in db_questions:
+            if not q.question_blocks:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Question {q.id} has no question_blocks"
+                )
+
             questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
-                "question": clean_question_text(q.question_text),
+                "question_blocks": q.question_blocks,
                 "options": normalize_options(q.options),
-                "correct": q.correct_answer,
-                "images": extract_images_from_question(q)
+                "correct": q.correct_answer
             })
             q_id += 1
+
 
 
         # ---- AI questions (STRICT + RETRY SAFE)
@@ -3139,12 +3124,17 @@ def generate_exam(
                 questions.append({
                     "q_id": q_id,
                     "topic": topic_name,
-                    "question": clean_question_text(item["question"]),
+                    "question_blocks": [
+                        {
+                            "type": "text",
+                            "content": clean_question_text(item["question"])
+                        }
+                    ],
                     "options": normalize_options(item["options"]),
-                    "correct": item["correct"],
-                    "images": []
+                    "correct": item["correct"]
                 })
                 q_id += 1
+
 
     # --------------------------------------------------
     # 4️⃣ FINAL TOTAL VALIDATION (NON-NEGOTIABLE)
