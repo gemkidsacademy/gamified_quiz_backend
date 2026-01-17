@@ -2110,6 +2110,13 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@app.get("/__diagnostic_ping")
+def diagnostic_ping():
+    print("🔥 DIAGNOSTIC PING HIT 🔥")
+    return {
+        "status": "ok",
+        "message": "diagnostic endpoint reached"
+    }
 @app.post("/api/quizzes/generate-new")
 def generate_exam(
     payload: dict = Body(...),
