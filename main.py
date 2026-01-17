@@ -1286,69 +1286,6 @@ otp_dict = {}
 # Quiz Generation
 # ---------------------------
  
-def parse_writing_with_openai(text: str) -> list[dict]:
-    WRITING_PARSE_PROMPT = f"""
-You are an exam content parser.
-
-Extract writing questions from the text below.
-
-STRICT RULES:
-- Return ONLY valid JSON
-- No markdown
-- No explanations
-- No comments
-- No trailing commas
-- Do not wrap in ``` blocks
-
-If multiple questions exist, return a JSON array.
-If one question exists, return a single JSON object.
-
-Each question MUST follow this schema exactly:
-
-{{
-  "class_name": string,
-  "subject": "Writing",
-  "topic": string,
-  "difficulty": string,
-  "question_text": string
-}}
-
-Text to parse:
-----------------
-{text}
-"""
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "You return strict JSON only."
-            },
-            {
-                "role": "user",
-                "content": WRITING_PARSE_PROMPT
-            }
-        ],
-        temperature=0
-    )
-
-    raw = response.choices[0].message.content.strip()
-
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"OpenAI returned invalid JSON.\nRaw response:\n{raw}"
-        ) from e
-
-    if isinstance(parsed, dict):
-        return [parsed]
-
-    if not isinstance(parsed, list):
-        raise ValueError("Unexpected JSON structure from OpenAI")
-
-    return parsed
 
  
 def generate_quizzes():
@@ -5160,6 +5097,94 @@ def generate_exam_writing(
         "duration_minutes": exam.duration_minutes
     }
 
+def normalize_question_text(text: str) -> str:
+    text = text.replace("\r\n", "\n")
+    text = text.replace("\r", "\n")
+    return text.strip()
+
+
+def parse_writing_with_openai(text: str) -> list[dict]:
+    WRITING_PARSE_PROMPT = f"""
+You are an exam content parser.
+
+Your task is to IDENTIFY each writing question and COPY ITS FULL TEXT EXACTLY as it appears.
+
+IMPORTANT:
+- The value of "question_text" MUST contain the COMPLETE writing prompt,
+  including title, task description, quoted statement, instructions, and bullet points.
+- Do NOT summarize
+- Do NOT shorten
+- Do NOT rewrite
+- Do NOT paraphrase
+- Preserve original wording and line breaks
+- Only remove leading/trailing whitespace
+
+STRICT RULES:
+- Return ONLY valid JSON
+- No markdown
+- No explanations
+- No comments
+- No trailing commas
+- Do not wrap in ``` blocks
+
+If multiple questions exist, return a JSON array.
+If one question exists, return a single JSON object.
+
+Each question MUST follow this schema exactly:
+
+{{
+  "class_name": string,
+  "subject": "Writing",
+  "topic": string,
+  "difficulty": string,
+  "question_text": string
+}}
+
+Text to parse:
+----------------
+{text}
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You return strict JSON only."},
+            {"role": "user", "content": WRITING_PARSE_PROMPT}
+        ],
+        temperature=0
+    )
+
+    raw = response.choices[0].message.content.strip()
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"OpenAI returned invalid JSON.\nRaw response:\n{raw}"
+        ) from e
+
+    # ✅ Normalize to list
+    if isinstance(parsed, dict):
+        parsed = [parsed]
+
+    if not isinstance(parsed, list):
+        raise ValueError("Unexpected JSON structure from OpenAI")
+
+    # ✅ ADD THE CHECK **HERE**
+    for q in parsed:
+        qt = q.get("question_text", "").strip()
+
+        if len(qt) < 200:
+            raise ValueError(
+                "Parsed question_text is suspiciously short. "
+                "Full prompt was likely truncated."
+            )
+
+        q["question_text"] = qt  # optional normalization
+
+    return parsed
+
+
 @app.post("/upload-word-writing")
 async def upload_word_writing(
     file: UploadFile = File(...),
@@ -5187,6 +5212,8 @@ async def upload_word_writing(
     saved_ids = []
 
     for q in questions:
+        q["question_text"] = normalize_question_text(q["question_text"])
+    
         obj = WritingQuestionBank(
             class_name=q["class_name"],
             subject=q["subject"],
@@ -5195,10 +5222,10 @@ async def upload_word_writing(
             question_text=q["question_text"],
             source_file=file.filename
         )
+    
         db.add(obj)
         db.flush()
         saved_ids.append(obj.id)
-
     db.commit()
 
     return {
