@@ -5174,8 +5174,15 @@ Input text:
             f"OpenAI returned invalid JSON.\nRaw response:\n{raw}"
         ) from e
 
+    # Accept single object OR array with one object
+    if isinstance(parsed, list):
+        if len(parsed) != 1:
+            raise ValueError("Expected exactly one writing question")
+        parsed = parsed[0]
+    
     if not isinstance(parsed, dict):
-        raise ValueError("Expected a single JSON object from OpenAI")
+        raise ValueError("Expected a JSON object from OpenAI")
+
 
     # ── Hard contract validation ────────────────────
     REQUIRED_FIELDS = [
