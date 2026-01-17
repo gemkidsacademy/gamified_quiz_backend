@@ -695,39 +695,24 @@ class GeneratedExamWriting(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-
-
 class WritingQuestionBank(Base):
     __tablename__ = "writing_question_bank"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # -----------------------------
-    # FILTER / METADATA FIELDS
-    # -----------------------------
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
 
-    # -----------------------------
-    # QUESTION CONTENT
-    # -----------------------------
-    title = Column(String, nullable=True)                 # e.g. "The Digital Teacher"
-    question_text = Column(Text, nullable=False)          # Main visible question
-    question_prompt = Column(Text, nullable=False)        # Detailed task prompt
-    statement = Column(Text, nullable=True)               # Opinion / stance text
-    opening_sentence = Column(Text, nullable=True)        # Starter sentence
+    title = Column(String, nullable=True)                # “The Digital Teacher”
+    task_text = Column(Text, nullable=False)             # Write a persuasive speech...
+    statement_text = Column(Text, nullable=False)        # “AI should replace...”
+    opening_sentence = Column(Text, nullable=True)       # Imagine a teacher...
+    instructions = Column(Text, nullable=True)           # Bullet points (markdown)
 
-    # -----------------------------
-    # SOURCE / AUDIT
-    # -----------------------------
-    source_file = Column(String, nullable=True)
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
-    )
+    source_file = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
  
 
 class WritingQuizSchema(BaseModel):
@@ -5492,13 +5477,16 @@ async def upload_word_writing(
             subject=parsed["subject"],
             topic=parsed["topic"],
             difficulty=parsed["difficulty"],
-            title=parsed["title"],
-            question_prompt=parsed["question_prompt"],
-            statement=parsed["statement"],
-            opening_sentence=parsed["opening_sentence"],
-            guidelines=parsed["guidelines"],
+        
+            title=parsed.get("title"),
+            question_text=parsed["question_text"],          # ✅ REQUIRED
+            question_prompt=parsed["question_prompt"],      # ✅ REQUIRED
+            statement=parsed.get("statement"),
+            opening_sentence=parsed.get("opening_sentence"),
+        
             source_file=file.filename
         )
+
 
         db.add(obj)
         db.flush()          # get ID before commit
