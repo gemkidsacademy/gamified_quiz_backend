@@ -2327,7 +2327,7 @@ def generate_exam(
         "questions": questions,
     }
 
-@app.get("/api/reading/question-bank/summary")
+@app.get("/api/reading/question-bank")
 def get_reading_question_bank_summary(
     subject: str = Query("reading_comprehension"),
     class_name: str = Query("selective"),
