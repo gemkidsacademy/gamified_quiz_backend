@@ -5103,7 +5103,7 @@ def generate_exam_writing(
 
 
 
-def parse_and_normalize_writing_with_openai(text: str) -> dict:
+def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
     """
     Uses OpenAI as a normalization and repair layer.
     Converts loosely formatted or tagged writing questions into
@@ -5114,7 +5114,7 @@ def parse_and_normalize_writing_with_openai(text: str) -> dict:
 You are a document normalizer for an exam system.
 
 Your task is to convert the input text into a STRICTLY STRUCTURED JSON
-object that follows the schema below.
+that follows the schema below.
 
 The input text may:
 - come from a Word document
@@ -5129,7 +5129,12 @@ You MUST:
 - Normalize formatting where needed
 - Fix minor tag or formatting issues if present
 
-Return JSON that matches THIS SCHEMA EXACTLY:
+Return JSON that matches THIS SCHEMA EXACTLY.
+
+If multiple questions exist, return a JSON ARRAY.
+If one question exists, return a JSON OBJECT.
+
+Schema:
 
 {{
   "class_name": string,
@@ -5144,15 +5149,14 @@ Return JSON that matches THIS SCHEMA EXACTLY:
 }}
 
 Rules:
-- guidelines must be a newline-separated list (no bullets)
+- guidelines must be newline-separated (no bullets)
 - opening_sentence must NOT include quotation marks
-- Remove surrounding quotes from text values if present
+- Remove surrounding quotes if present
 - Return ONLY valid JSON
 - No markdown
 - No explanations
 - No comments
 - No trailing commas
-- Do not wrap in ``` blocks
 
 Input text:
 ----------------
@@ -5170,7 +5174,6 @@ Input text:
 
     raw = response.choices[0].message.content.strip()
 
-    # ── Parse JSON strictly ─────────────────────────
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as e:
@@ -5178,17 +5181,13 @@ Input text:
             f"OpenAI returned invalid JSON.\nRaw response:\n{raw}"
         ) from e
 
-    # Accept single object OR array with one object
-    if isinstance(parsed, list):
-        if len(parsed) != 1:
-            raise ValueError("Expected exactly one writing question")
-        parsed = parsed[0]
-    
-    if not isinstance(parsed, dict):
-        raise ValueError("Expected a JSON object from OpenAI")
+    # ✅ Normalize shape: ALWAYS LIST
+    if isinstance(parsed, dict):
+        parsed = [parsed]
 
+    if not isinstance(parsed, list):
+        raise ValueError("Expected JSON object or array from OpenAI")
 
-    # ── Hard contract validation ────────────────────
     REQUIRED_FIELDS = [
         "class_name",
         "subject",
@@ -5201,23 +5200,29 @@ Input text:
         "guidelines",
     ]
 
-    for field in REQUIRED_FIELDS:
-        value = parsed.get(field)
+    normalized = []
 
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"Missing or invalid field: {field}")
+    for item in parsed:
+        if not isinstance(item, dict):
+            raise ValueError("Each question must be a JSON object")
 
-        # Normalize whitespace defensively
-        parsed[field] = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+        for field in REQUIRED_FIELDS:
+            value = item.get(field)
 
-    # Final sanity checks (cheap but effective)
-    if parsed["subject"] != "Writing":
-        raise ValueError("Invalid subject. Expected 'Writing'.")
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Missing or invalid field: {field}")
 
-    if len(parsed["guidelines"].splitlines()) < 2:
-        raise ValueError("Guidelines appear too short or malformed.")
+            item[field] = value.replace("\r\n", "\n").replace("\r", "\n").strip()
 
-    return parsed
+        if item["subject"] != "Writing":
+            raise ValueError("Invalid subject. Expected 'Writing'.")
+
+        if len(item["guidelines"].splitlines()) < 2:
+            raise ValueError("Guidelines appear too short or malformed.")
+
+        normalized.append(item)
+
+    return normalized
 
 @app.post("/upload-word-writing")
 async def upload_word_writing(
@@ -5235,32 +5240,42 @@ async def upload_word_writing(
     extracted_text = extract_text_from_docx(raw)
 
     try:
-        parsed = parse_and_normalize_writing_with_openai(extracted_text)
+        parsed_list = parse_and_normalize_writing_with_openai(extracted_text)
     except Exception as e:
         print("❌ Writing normalization error:", e)
         raise HTTPException(400, str(e))
 
-    obj = WritingQuestionBank(
-        class_name=parsed["class_name"],
-        subject=parsed["subject"],
-        topic=parsed["topic"],
-        difficulty=parsed["difficulty"],
-        title=parsed["title"],
-        question_prompt=parsed["question_prompt"],
-        statement=parsed["statement"],
-        opening_sentence=parsed["opening_sentence"],
-        guidelines=parsed["guidelines"],
-        source_file=file.filename
-    )
+    if not parsed_list:
+        raise HTTPException(400, "No writing questions detected")
 
-    db.add(obj)
+    saved_ids = []
+
+    for parsed in parsed_list:
+        obj = WritingQuestionBank(
+            class_name=parsed["class_name"],
+            subject=parsed["subject"],
+            topic=parsed["topic"],
+            difficulty=parsed["difficulty"],
+            title=parsed["title"],
+            question_prompt=parsed["question_prompt"],
+            statement=parsed["statement"],
+            opening_sentence=parsed["opening_sentence"],
+            guidelines=parsed["guidelines"],
+            source_file=file.filename
+        )
+
+        db.add(obj)
+        db.flush()          # get ID before commit
+        saved_ids.append(obj.id)
+
     db.commit()
-    db.refresh(obj)
 
     return {
-        "message": "Writing question uploaded successfully",
-        "question_id": obj.id
+        "message": "Writing questions uploaded successfully",
+        "count": len(saved_ids),
+        "question_ids": saved_ids
     }
+
 
  
 @app.post("/api/quizzes-writing")
