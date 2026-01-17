@@ -4768,27 +4768,51 @@ def submit_writing_exam(
     print("🤖 Preparing OpenAI prompt...")
 
     prompt = f"""
-You are an automated exam marking system.
+You are an expert NSW Selective School writing marker.
 
-IMPORTANT RULES (MUST FOLLOW STRICTLY):
+IMPORTANT OUTPUT RULES (MUST FOLLOW STRICTLY):
 - Respond with ONLY a valid JSON object
 - Do NOT include markdown
-- Do NOT include ```json or ``` blocks
 - Do NOT include explanations or extra text
+- Do NOT include ```json or ``` blocks
 - Output must be directly parsable by json.loads()
+
+You will assess a student's writing using official NSW Selective School standards.
+
+INPUTS YOU WILL RECEIVE:
+1. Writing prompt
+2. Student response
+
+ASSESSMENT INSTRUCTIONS:
+- Judge the response holistically.
+- Be strict but fair. Assume this is a competitive selective exam.
+- Prioritise clarity, task fulfilment, and accuracy over creativity.
+- Do NOT rewrite the response.
+
+SCORING CRITERIA (TOTAL 25 MARKS):
+
+1. Audience, Purpose & Form ( /5 )
+2. Ideas & Content ( /5 )
+3. Structure & Organisation ( /5 )
+4. Language & Vocabulary ( /5 )
+5. Grammar, Spelling & Punctuation ( /5 )
+
+After assessing all five criteria:
+- Calculate a total score out of 25
+- Then CONVERT the final score proportionally to a score out of 20
+- Round to the nearest whole number
 
 Required JSON schema:
 {{
   "score": <integer between 0 and 20>,
-  "strengths": "<short sentence>",
-  "improvements": "<short sentence>"
+  "strengths": "<one short sentence summarising strengths>",
+  "improvements": "<one short sentence summarising key improvement>"
 }}
 
-Evaluate the following student essay for selective school readiness writing quality.
-
-Essay:
+Student response:
 {payload.answer_text}
 """
+
 
 
     try:
