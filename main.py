@@ -1279,7 +1279,7 @@ except Exception as e:
 # FastAPI App
 # ---------------------------
 app = FastAPI(title="Gem Kids Gamified Quiz API")
-
+ 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
