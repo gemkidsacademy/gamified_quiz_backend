@@ -2110,13 +2110,175 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
-@app.get("/__diagnostic_ping")
-def diagnostic_ping():
-    print("🔥 DIAGNOSTIC PING HIT 🔥")
+@app.post("/__diagnostic_ping")
+def diagnostic_ping(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 0️⃣ Payload validation (same as generate-new)
+    # --------------------------------------------------
+    difficulty = payload.get("difficulty")
+
+    if not difficulty:
+        raise HTTPException(
+            status_code=400,
+            detail="Difficulty is required (diagnostic)"
+        )
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch latest quiz by subject + difficulty
+    # --------------------------------------------------
+    quiz = (
+        db.query(QuizMathematicalReasoning)
+        .filter(
+            QuizMathematicalReasoning.subject == "mathematical_reasoning",
+            QuizMathematicalReasoning.difficulty == difficulty
+        )
+        .order_by(QuizMathematicalReasoning.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No Mathematical Reasoning quiz found (diagnostic)"
+        )
+
+    # --------------------------------------------------
+    # 2️⃣ PRE-FLIGHT DB VALIDATION (IDENTICAL)
+    # --------------------------------------------------
+    for topic in quiz.topics:
+        topic_name = topic["name"]
+        db_required = int(topic.get("db", 0))
+
+        available = (
+            db.query(Question)
+              .filter(func.lower(Question.topic) == topic_name.lower())
+              .count()
+        )
+
+        if available < db_required:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"[Diagnostic] Topic '{topic_name}' requires {db_required} "
+                    f"DB questions, but only {available} exist."
+                )
+            )
+
+    # --------------------------------------------------
+    # 3️⃣ Generate questions (DB + AI) – FULL LOGIC
+    # --------------------------------------------------
+    questions = []
+    q_id = 1
+
+    for topic in quiz.topics:
+        topic_name = topic["name"]
+        ai_count = int(topic.get("ai", 0))
+        db_count = int(topic.get("db", 0))
+
+        # ---- DB questions
+        db_questions = (
+            db.query(Question)
+              .filter(func.lower(Question.topic) == topic_name.lower())
+              .order_by(func.random())
+              .limit(db_count)
+              .all()
+        )
+
+        for q in db_questions:
+            if not q.question_blocks:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"[Diagnostic] Question {q.id} has no question_blocks"
+                )
+
+            sanitized_blocks = sanitize_question_blocks(q.question_blocks)
+
+            if not sanitized_blocks:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"[Diagnostic] Question {q.id} invalid after sanitation"
+                )
+
+            questions.append({
+                "q_id": q_id,
+                "topic": topic_name,
+                "question_blocks": sanitized_blocks,
+                "options": normalize_options(q.options),
+                "correct": q.correct_answer
+            })
+            q_id += 1
+
+        # ---- AI questions (STRICT + RETRY SAFE)
+        if ai_count > 0:
+            ai_questions = generate_ai_questions_strict_Mathematical_Reasoning(
+                quiz=quiz,
+                topic_name=topic_name,
+                ai_count=ai_count,
+                db=db
+            )
+
+            for item in ai_questions:
+                questions.append({
+                    "q_id": q_id,
+                    "topic": topic_name,
+                    "question_blocks": [
+                        {
+                            "type": "text",
+                            "content": clean_question_text(item["question"])
+                        }
+                    ],
+                    "options": normalize_options(item["options"]),
+                    "correct": item["correct"]
+                })
+                q_id += 1
+
+    # --------------------------------------------------
+    # 4️⃣ FINAL TOTAL VALIDATION (IDENTICAL)
+    # --------------------------------------------------
+    expected_total = sum(
+        int(t.get("db", 0)) + int(t.get("ai", 0))
+        for t in quiz.topics
+    )
+
+    actual_total = len(questions)
+
+    if actual_total != expected_total:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"[Diagnostic] Expected {expected_total} questions, "
+                f"but generated {actual_total}"
+            )
+        )
+
+    # --------------------------------------------------
+    # 5️⃣ DB WRITE PHASE (SAFE DIAGNOSTIC MODE)
+    # --------------------------------------------------
+    # IMPORTANT:
+    # We intentionally DO NOT delete or persist real exams here.
+    # Instead, we simulate the write phase safely.
+
+    db.flush()  # proves session + transaction lifecycle works
+
+    # --------------------------------------------------
+    # 6️⃣ Diagnostic response (mirrors real response)
+    # --------------------------------------------------
     return {
-        "status": "ok",
-        "message": "diagnostic endpoint reached"
+        "message": "Diagnostic pipeline executed successfully",
+        "quiz_id": quiz.id,
+        "class_name": quiz.class_name,
+        "subject": quiz.subject,
+        "difficulty": quiz.difficulty,
+        "expected_questions": expected_total,
+        "generated_questions": actual_total,
+        "questions_sample": questions[:2],  # small sample only
+        "status": "ok"
     }
+
+
 @app.post("/api/quizzes/generate-new")
 def generate_exam(
     payload: dict = Body(...),
