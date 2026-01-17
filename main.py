@@ -705,7 +705,11 @@ class WritingQuestionBank(Base):
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
 
-    question_text = Column(Text, nullable=False)
+    title = Column(String, nullable=True)                # “The Digital Teacher”
+    task_text = Column(Text, nullable=False)             # Write a persuasive speech...
+    statement_text = Column(Text, nullable=False)        # “AI should replace...”
+    opening_sentence = Column(Text, nullable=True)       # Imagine a teacher...
+    instructions = Column(Text, nullable=True)           # Bullet points (markdown)
 
     source_file = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
