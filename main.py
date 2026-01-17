@@ -4994,6 +4994,32 @@ Essay:
         "writing_score": writing_score
     }
 
+@app.get("/api/exams/writing/result")
+def get_writing_result(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student_id,
+            AdminExamReport.exam_type == "writing"
+        )
+        .order_by(AdminExamReport.id.desc())
+        .first()
+    )
+
+    if not report:
+        raise HTTPException(status_code=404, detail="No writing result found")
+
+    return {
+        "exam_type": "Writing",
+        "status": report.readiness_band,
+        "score": report.overall_score,
+        "max_score": 20,
+        "percentage": round((report.overall_score / 20) * 100, 2),
+        "advisory": "This report is advisory only and does not guarantee placement."
+    }
 
 
 @app.get("/api/exams/writing/current")
