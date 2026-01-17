@@ -719,6 +719,8 @@ class WritingQuestionBank(Base):
     statement = Column(Text, nullable=True)
     opening_sentence = Column(Text, nullable=True)
 
+    guidelines = Column(Text, nullable=True)
+
     # -----------------------------
     # SOURCE / AUDIT
     # -----------------------------
@@ -5320,34 +5322,51 @@ Input text:
         "subject",
         "topic",
         "difficulty",
-        "title",
-        "question_text",      # 👈 ADD
+        "question_text",
         "question_prompt",
         "statement",
         "opening_sentence",
         "guidelines",
     ]
+    
 
     normalized = []
 
     for item in parsed:
         if not isinstance(item, dict):
             raise ValueError("Each question must be a JSON object")
+        if "title" in item and isinstance(item["title"], str):
+            item["title"] = item["title"].strip()
 
+    
         for field in REQUIRED_FIELDS:
             value = item.get(field)
-
+    
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"Missing or invalid field: {field}")
-
+    
             item[field] = value.replace("\r\n", "\n").replace("\r", "\n").strip()
-
+    
         if item["subject"] != "Writing":
             raise ValueError("Invalid subject. Expected 'Writing'.")
-
+    
+        # ----------------------------------
+        # Normalize guidelines: strip bullets
+        # ----------------------------------
+        guidelines_lines = []
+        for line in item["guidelines"].splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            line = line.lstrip("-•* ").strip()
+            guidelines_lines.append(line)
+    
+        item["guidelines"] = "\n".join(guidelines_lines)
+    
+        # Validate guidelines AFTER normalization
         if len(item["guidelines"].splitlines()) < 2:
             raise ValueError("Guidelines appear too short or malformed.")
-
+    
         normalized.append(item)
 
     return normalized
@@ -5384,15 +5403,18 @@ async def upload_word_writing(
             subject=parsed["subject"],
             topic=parsed["topic"],
             difficulty=parsed["difficulty"],
-        
+            
             title=parsed.get("title"),
-            question_text=parsed["question_text"],          # ✅ REQUIRED
-            question_prompt=parsed["question_prompt"],      # ✅ REQUIRED
+            question_text=parsed["question_text"],
+            question_prompt=parsed["question_prompt"],
             statement=parsed.get("statement"),
             opening_sentence=parsed.get("opening_sentence"),
         
+            guidelines=parsed["guidelines"],          # ✅ ADD THIS
+        
             source_file=file.filename
         )
+
 
 
         db.add(obj)
