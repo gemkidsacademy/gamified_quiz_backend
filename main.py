@@ -2528,11 +2528,14 @@ def generate_exam(
     
     # 🔥 1. DELETE ALL student exam responses
     db.query(StudentExamResponse).delete(synchronize_session=False)
-    
-    # 🔥 2. DELETE ALL student exams
+    # 🔥 2. DELETE ALL student_exam_results_mathematical_reasoning
+    db.query(StudentExamResultsMathematicalReasoning).delete(
+        synchronize_session=False
+    )    
+    # 🔥 3. DELETE ALL student exams
     db.query(StudentExam).delete(synchronize_session=False)
     
-    # 🔥 3. DELETE ALL exams
+    # 🔥 4. DELETE ALL exams
     db.query(Exam).filter(
         Exam.subject == "mathematical_reasoning"
     ).delete(synchronize_session=False)
