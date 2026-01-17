@@ -2110,7 +2110,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
-@app.post("/api/quizzes/generate")
+@app.post("/api/quizzes/generate-new")
 def generate_exam(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
