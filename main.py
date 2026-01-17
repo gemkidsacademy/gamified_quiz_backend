@@ -2135,25 +2135,21 @@ def get_reading_question_bank_summary(
     class_name: str = Query("selective"),
     db: Session = Depends(get_db),
 ):
-    """
-    Admin overview of reading question bank:
-    Difficulty | Topic | Total Questions
-    """
-
     rows = (
         db.query(
-            QuestionReading.difficulty,
+            func.lower(func.trim(QuestionReading.difficulty)).label("difficulty"),
             QuestionReading.topic,
             func.count(QuestionReading.id).label("total_questions"),
         )
         .filter(QuestionReading.subject == subject)
         .filter(QuestionReading.class_name == class_name)
+        .filter(QuestionReading.difficulty.isnot(None))
         .group_by(
-            QuestionReading.difficulty,
+            func.lower(func.trim(QuestionReading.difficulty)),
             QuestionReading.topic,
         )
         .order_by(
-            QuestionReading.difficulty,
+            func.lower(func.trim(QuestionReading.difficulty)),
             QuestionReading.topic,
         )
         .all()
