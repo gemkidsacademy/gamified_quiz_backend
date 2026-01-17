@@ -700,14 +700,29 @@ class WritingQuestionBank(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    # ── Exam metadata ───────────────────────────────
     class_name = Column(String, nullable=False)
-    subject = Column(String, nullable=False)
+    subject = Column(String, nullable=False)        # always "Writing"
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
 
-    question_text = Column(Text, nullable=False)
+    # ── Structured question content ─────────────────
+    title = Column(String, nullable=False)
 
-    source_file = Column(String)
+    question_prompt = Column(Text, nullable=False)  # "Write a persuasive speech..."
+    statement = Column(Text, nullable=False)        # Core statement / proposition
+
+    opening_sentence = Column(Text, nullable=True)  # Optional but common
+    guidelines = Column(Text, nullable=True)        # Stored as newline-separated bullets
+
+    correct_answer_type = Column(
+        String,
+        nullable=False,
+        default="FREE TEXT"
+    )
+
+    # ── Source & auditing ───────────────────────────
+    source_file = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
  
 
