@@ -2135,21 +2135,39 @@ def get_reading_question_bank_summary(
     class_name: str = Query("selective"),
     db: Session = Depends(get_db),
 ):
+    """
+    Admin overview of reading question bank.
+
+    Groups questions by:
+    - difficulty
+    - topic
+
+    Returns total question count per group.
+    """
+
+    subject_norm = func.lower(
+        func.replace(func.trim(QuestionReading.subject), " ", "_")
+    )
+
+    class_norm = func.lower(func.trim(QuestionReading.class_name))
+
+    difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
+
     rows = (
         db.query(
-            func.lower(func.trim(QuestionReading.difficulty)).label("difficulty"),
+            difficulty_norm.label("difficulty"),
             QuestionReading.topic,
             func.count(QuestionReading.id).label("total_questions"),
         )
-        .filter(QuestionReading.subject == subject)
-        .filter(QuestionReading.class_name == class_name)
+        .filter(subject_norm == subject.lower())
+        .filter(class_norm == class_name.lower())
         .filter(QuestionReading.difficulty.isnot(None))
         .group_by(
-            func.lower(func.trim(QuestionReading.difficulty)),
+            difficulty_norm,
             QuestionReading.topic,
         )
         .order_by(
-            func.lower(func.trim(QuestionReading.difficulty)),
+            difficulty_norm,
             QuestionReading.topic,
         )
         .all()
@@ -2165,7 +2183,6 @@ def get_reading_question_bank_summary(
             for r in rows
         ]
     }
-
 @app.get("/api/admin/question-bank-reading")
 def get_question_bank_reading(
     db: Session = Depends(get_db)
