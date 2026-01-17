@@ -5123,52 +5123,102 @@ def generate_exam_writing(
     payload: WritingGenerateSchema,
     db: Session = Depends(get_db)
 ):
-    # Normalize incoming values to lowercase
+    # ----------------------------------
+    # Normalize inputs
+    # ----------------------------------
     class_name = payload.class_name.strip().lower()
     difficulty = payload.difficulty.strip().lower()
+
+    # ----------------------------------
+    # Clear previous generated exam
+    # ----------------------------------
     db.query(GeneratedExamWriting).delete(synchronize_session=False)
     db.commit()
 
-    # 1️⃣ Fetch ONE writing question with full case-insensitive matching
+    # ----------------------------------
+    # Fetch ONE random writing question
+    # ----------------------------------
     question = (
         db.query(WritingQuestionBank)
         .filter(
             func.trim(func.lower(WritingQuestionBank.class_name)) == class_name,
-            func.trim(func.lower(WritingQuestionBank.difficulty)) == difficulty
+            func.trim(func.lower(WritingQuestionBank.difficulty)) == difficulty,
         )
         .order_by(func.random())
         .first()
     )
 
-
     if not question:
         raise HTTPException(
             status_code=404,
-            detail=f"No writing question found for class '{class_name}' with difficulty '{difficulty}'."
+            detail=f"No writing question found for class '{class_name}' and difficulty '{difficulty}'."
         )
 
-    # 2️⃣ Save generated exam (store normalized & pretty versions)
+    # ----------------------------------
+    # Compose FULL exam text (UI-ready)
+    # ----------------------------------
+    exam_text_parts = []
+
+    if question.title:
+        exam_text_parts.append(f"TITLE:\n{question.title}\n")
+
+    exam_text_parts.append(
+        f"TASK:\n{question.question_text}\n"
+    )
+
+    if question.statement:
+        exam_text_parts.append(
+            f"STATEMENT:\n{question.statement}\n"
+        )
+
+    exam_text_parts.append(
+        f"INSTRUCTIONS:\n{question.question_prompt}\n"
+    )
+
+    if question.opening_sentence:
+        exam_text_parts.append(
+            f"OPENING SENTENCE:\n{question.opening_sentence}\n"
+        )
+
+    # Guidelines stored as newline-separated text
+    if question.guidelines:
+        formatted_guidelines = "\n".join(
+            f"- {line.strip()}"
+            for line in question.guidelines.splitlines()
+            if line.strip()
+        )
+
+        exam_text_parts.append(
+            f"GUIDELINES:\n{formatted_guidelines}\n"
+        )
+
+    full_exam_text = "\n".join(exam_text_parts).strip()
+
+    # ----------------------------------
+    # Persist generated exam
+    # ----------------------------------
     exam = GeneratedExamWriting(
-        class_name=class_name.capitalize(),       # year5 → Year5 (optional)
+        class_name=class_name.capitalize(),
         subject="writing",
-        difficulty=difficulty.capitalize(),       # easy → Easy
-        question_text=question.question_text,
-        duration_minutes=40
+        difficulty=difficulty.capitalize(),
+        question_text=full_exam_text,
+        duration_minutes=40,
     )
 
     db.add(exam)
     db.commit()
     db.refresh(exam)
 
-    # 3️⃣ Return response
+    # ----------------------------------
+    # Return UI-friendly payload
+    # ----------------------------------
     return {
         "exam_id": exam.id,
         "class_name": exam.class_name,
         "difficulty": exam.difficulty,
-        "question_text": exam.question_text,
-        "duration_minutes": exam.duration_minutes
+        "duration_minutes": exam.duration_minutes,
+        "exam_text": full_exam_text,
     }
-
 
 
 def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
