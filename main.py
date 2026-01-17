@@ -700,25 +700,14 @@ class WritingQuestionBank(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # ── Exam metadata ───────────────────────────────
     class_name = Column(String, nullable=False)
-    subject = Column(String, nullable=False)        # always "Writing"
+    subject = Column(String, nullable=False)
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
 
-    # ── Structured question content ─────────────────
-    title = Column(String, nullable=False)
+    question_text = Column(Text, nullable=False)
 
-    question_prompt = Column(Text, nullable=False)  # "Write a persuasive speech..."
-    statement = Column(Text, nullable=False)        # Core statement / proposition
-
-    opening_sentence = Column(Text, nullable=True)  # Optional but common
-    guidelines = Column(Text, nullable=True)        # Stored as newline-separated bullets
-
-    
-
-    # ── Source & auditing ───────────────────────────
-    source_file = Column(String, nullable=True)
+    source_file = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
  
 
@@ -5108,29 +5097,52 @@ def generate_exam_writing(
         "duration_minutes": exam.duration_minutes
     }
 
-def normalize_question_text(text: str) -> str:
-    text = text.replace("\r\n", "\n")
-    text = text.replace("\r", "\n")
-    return text.strip()
 
 
-def parse_writing_with_openai(text: str) -> list[dict]:
-    WRITING_PARSE_PROMPT = f"""
-You are an exam content parser.
+def parse_and_normalize_writing_with_openai(text: str) -> dict:
+    """
+    Uses OpenAI as a normalization and repair layer.
+    Converts loosely formatted or tagged writing questions into
+    strict, structured JSON that matches the DB schema.
+    """
 
-Your task is to IDENTIFY each writing question and COPY ITS FULL TEXT EXACTLY as it appears.
+    WRITING_NORMALIZE_PROMPT = f"""
+You are a document normalizer for an exam system.
 
-IMPORTANT:
-- The value of "question_text" MUST contain the COMPLETE writing prompt,
-  including title, task description, quoted statement, instructions, and bullet points.
-- Do NOT summarize
-- Do NOT shorten
-- Do NOT rewrite
-- Do NOT paraphrase
-- Preserve original wording and line breaks
-- Only remove leading/trailing whitespace
+Your task is to convert the input text into a STRICTLY STRUCTURED JSON
+object that follows the schema below.
 
-STRICT RULES:
+The input text may:
+- come from a Word document
+- contain formatting inconsistencies
+- contain tags (CLASS, SUBJECT, etc.) that may be imperfect
+- contain extra spacing, quotes, bullets, or line breaks
+
+You MUST:
+- Preserve all meaningful content
+- NOT invent new content
+- NOT remove instructional meaning
+- Normalize formatting where needed
+- Fix minor tag or formatting issues if present
+
+Return JSON that matches THIS SCHEMA EXACTLY:
+
+{{
+  "class_name": string,
+  "subject": "Writing",
+  "topic": string,
+  "difficulty": string,
+  "title": string,
+  "question_prompt": string,
+  "statement": string,
+  "opening_sentence": string,
+  "guidelines": string
+}}
+
+Rules:
+- guidelines must be a newline-separated list (no bullets)
+- opening_sentence must NOT include quotation marks
+- Remove surrounding quotes from text values if present
 - Return ONLY valid JSON
 - No markdown
 - No explanations
@@ -5138,20 +5150,7 @@ STRICT RULES:
 - No trailing commas
 - Do not wrap in ``` blocks
 
-If multiple questions exist, return a JSON array.
-If one question exists, return a single JSON object.
-
-Each question MUST follow this schema exactly:
-
-{{
-  "class_name": string,
-  "subject": "Writing",
-  "topic": string,
-  "difficulty": string,
-  "question_text": string
-}}
-
-Text to parse:
+Input text:
 ----------------
 {text}
 """
@@ -5160,13 +5159,14 @@ Text to parse:
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You return strict JSON only."},
-            {"role": "user", "content": WRITING_PARSE_PROMPT}
+            {"role": "user", "content": WRITING_NORMALIZE_PROMPT}
         ],
         temperature=0
     )
 
     raw = response.choices[0].message.content.strip()
 
+    # ── Parse JSON strictly ─────────────────────────
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as e:
@@ -5174,27 +5174,39 @@ Text to parse:
             f"OpenAI returned invalid JSON.\nRaw response:\n{raw}"
         ) from e
 
-    # ✅ Normalize to list
-    if isinstance(parsed, dict):
-        parsed = [parsed]
+    if not isinstance(parsed, dict):
+        raise ValueError("Expected a single JSON object from OpenAI")
 
-    if not isinstance(parsed, list):
-        raise ValueError("Unexpected JSON structure from OpenAI")
+    # ── Hard contract validation ────────────────────
+    REQUIRED_FIELDS = [
+        "class_name",
+        "subject",
+        "topic",
+        "difficulty",
+        "title",
+        "question_prompt",
+        "statement",
+        "opening_sentence",
+        "guidelines",
+    ]
 
-    # ✅ ADD THE CHECK **HERE**
-    for q in parsed:
-        qt = q.get("question_text", "").strip()
+    for field in REQUIRED_FIELDS:
+        value = parsed.get(field)
 
-        if len(qt) < 200:
-            raise ValueError(
-                "Parsed question_text is suspiciously short. "
-                "Full prompt was likely truncated."
-            )
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Missing or invalid field: {field}")
 
-        q["question_text"] = qt  # optional normalization
+        # Normalize whitespace defensively
+        parsed[field] = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+    # Final sanity checks (cheap but effective)
+    if parsed["subject"] != "Writing":
+        raise ValueError("Invalid subject. Expected 'Writing'.")
+
+    if len(parsed["guidelines"].splitlines()) < 2:
+        raise ValueError("Guidelines appear too short or malformed.")
 
     return parsed
-
 
 @app.post("/upload-word-writing")
 async def upload_word_writing(
@@ -5212,38 +5224,33 @@ async def upload_word_writing(
     extracted_text = extract_text_from_docx(raw)
 
     try:
-        questions = parse_writing_with_openai(extracted_text)
+        parsed = parse_and_normalize_writing_with_openai(extracted_text)
     except Exception as e:
-        print("❌ OpenAI parse error:", e)
-        raise HTTPException(500, "Failed to parse writing questions")
+        print("❌ Writing normalization error:", e)
+        raise HTTPException(400, str(e))
 
-    if not questions:
-        raise HTTPException(400, "No writing questions detected")
+    obj = WritingQuestionBank(
+        class_name=parsed["class_name"],
+        subject=parsed["subject"],
+        topic=parsed["topic"],
+        difficulty=parsed["difficulty"],
+        title=parsed["title"],
+        question_prompt=parsed["question_prompt"],
+        statement=parsed["statement"],
+        opening_sentence=parsed["opening_sentence"],
+        guidelines=parsed["guidelines"],
+        source_file=file.filename
+    )
 
-    saved_ids = []
-
-    for q in questions:
-        q["question_text"] = normalize_question_text(q["question_text"])
-    
-        obj = WritingQuestionBank(
-            class_name=q["class_name"],
-            subject=q["subject"],
-            topic=q["topic"],
-            difficulty=q["difficulty"],
-            question_text=q["question_text"],
-            source_file=file.filename
-        )
-    
-        db.add(obj)
-        db.flush()
-        saved_ids.append(obj.id)
+    db.add(obj)
     db.commit()
+    db.refresh(obj)
 
     return {
-        "message": "Writing questions uploaded successfully",
-        "count": len(saved_ids),
-        "question_ids": saved_ids
+        "message": "Writing question uploaded successfully",
+        "question_id": obj.id
     }
+
  
 @app.post("/api/quizzes-writing")
 def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db)):
