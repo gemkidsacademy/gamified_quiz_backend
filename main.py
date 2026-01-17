@@ -2356,7 +2356,7 @@ def get_question_bank_thinking_skills(
         for r in results
     ]
 
-@app.post("/api/quizzes/generate-new")
+@app.post("/generate-new-mr")
 def generate_exam(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
