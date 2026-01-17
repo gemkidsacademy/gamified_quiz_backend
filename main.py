@@ -5332,28 +5332,28 @@ def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
     """
 
     WRITING_NORMALIZE_PROMPT = f"""
-You are a document normalizer for an exam system.
+You are a document normalizer for an exam authoring system.
 
-Your task is to convert the input text into a STRICTLY STRUCTURED JSON
-that follows the schema below.
+Your task is to convert the input text into STRICT, VALID JSON
+that EXACTLY matches the schema defined below.
 
 The input text may:
-- come from a Word document
-- contain formatting inconsistencies
-- contain tags (CLASS, SUBJECT, etc.) that may be imperfect
-- contain extra spacing, quotes, bullets, or line breaks
+- come from a Microsoft Word document
+- contain inconsistent formatting
+- include imperfect or loosely written tags (CLASS, SUBJECT, etc.)
+- include extra spacing, quotes, bullets, or line breaks
 
 You MUST:
-- Preserve all meaningful content
-- NOT invent new content
-- NOT remove instructional meaning
-- Normalize formatting where needed
-- Fix minor tag or formatting issues if present
+- Preserve all meaningful instructional content
+- NOT invent, infer, or add new content
+- NOT remove or simplify the instructional intent
+- Normalize formatting only where necessary
+- Repair minor structural or tagging issues if present
 
 Return JSON that matches THIS SCHEMA EXACTLY.
 
-If multiple questions exist, return a JSON ARRAY.
-If one question exists, return a JSON OBJECT.
+If the input contains multiple writing questions, return a JSON ARRAY.
+If the input contains a single writing question, return a JSON OBJECT.
 
 Schema:
 
@@ -5363,26 +5363,35 @@ Schema:
   "topic": string,
   "difficulty": string,
   "title": string,
+
+  "question_text": string,
   "question_prompt": string,
+
   "statement": string,
   "opening_sentence": string,
   "guidelines": string
 }}
 
+Field definitions:
+- question_text: a short, student-facing task description (1–2 sentences)
+- question_prompt: the full detailed writing instructions
+- guidelines: instructional rules as plain text lines separated by newlines
+- opening_sentence: a starter sentence without quotation marks
+
 Rules:
-- guidelines must be newline-separated (no bullets)
-- opening_sentence must NOT include quotation marks
-- Remove surrounding quotes if present
+- guidelines MUST be newline-separated (no bullets, no numbering)
+- opening_sentence MUST NOT include quotation marks
+- Remove surrounding quotes from all fields if present
 - Return ONLY valid JSON
-- No markdown
-- No explanations
-- No comments
-- No trailing commas
+- Do NOT include markdown
+- Do NOT include explanations or comments
+- Do NOT include trailing commas
 
 Input text:
 ----------------
 {text}
 """
+
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -5415,6 +5424,7 @@ Input text:
         "topic",
         "difficulty",
         "title",
+        "question_text",      # 👈 ADD
         "question_prompt",
         "statement",
         "opening_sentence",
