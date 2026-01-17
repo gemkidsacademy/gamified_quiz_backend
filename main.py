@@ -2110,7 +2110,7 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
-@router.get("/api/reading/question-bank/summary")
+@app.get("/api/reading/question-bank/summary")
 def get_reading_question_bank_summary(
     subject: str = Query("reading_comprehension"),
     class_name: str = Query("selective"),
