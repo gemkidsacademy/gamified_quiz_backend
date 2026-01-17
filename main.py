@@ -925,6 +925,19 @@ class QuestionReading(Base):
     exam_bundle = Column(JSON, nullable=False)
 
 
+
+class ReadingQuestionPreview(BaseModel):
+    id: int
+    question_text: str
+    topic: str
+    difficulty: str
+
+
+class QuestionBankResponse(BaseModel):
+    questions: List[ReadingQuestionPreview]
+
+
+
 class QuestionReadingCreate(BaseModel):
     question_number: int
     question_text: str
@@ -2097,6 +2110,47 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+@router.get("/api/reading/question-bank/summary")
+def get_reading_question_bank_summary(
+    subject: str = Query("reading_comprehension"),
+    class_name: str = Query("selective"),
+    db: Session = Depends(get_db),
+):
+    """
+    Admin overview of reading question bank:
+    Difficulty | Topic | Total Questions
+    """
+
+    rows = (
+        db.query(
+            QuestionReading.difficulty,
+            QuestionReading.topic,
+            func.count(QuestionReading.id).label("total_questions"),
+        )
+        .filter(QuestionReading.subject == subject)
+        .filter(QuestionReading.class_name == class_name)
+        .group_by(
+            QuestionReading.difficulty,
+            QuestionReading.topic,
+        )
+        .order_by(
+            QuestionReading.difficulty,
+            QuestionReading.topic,
+        )
+        .all()
+    )
+
+    return {
+        "rows": [
+            {
+                "difficulty": r.difficulty.capitalize(),
+                "topic": r.topic,
+                "total_questions": r.total_questions,
+            }
+            for r in rows
+        ]
+    }
+
 @app.get("/api/admin/question-bank-reading")
 def get_question_bank_reading(
     db: Session = Depends(get_db)
