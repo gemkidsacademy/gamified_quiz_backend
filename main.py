@@ -695,24 +695,39 @@ class GeneratedExamWriting(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+
+
 class WritingQuestionBank(Base):
     __tablename__ = "writing_question_bank"
 
     id = Column(Integer, primary_key=True, index=True)
 
+    # -----------------------------
+    # FILTER / METADATA FIELDS
+    # -----------------------------
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
 
-    title = Column(String, nullable=True)                # “The Digital Teacher”
-    task_text = Column(Text, nullable=False)             # Write a persuasive speech...
-    statement_text = Column(Text, nullable=False)        # “AI should replace...”
-    opening_sentence = Column(Text, nullable=True)       # Imagine a teacher...
-    instructions = Column(Text, nullable=True)           # Bullet points (markdown)
+    # -----------------------------
+    # QUESTION CONTENT
+    # -----------------------------
+    title = Column(String, nullable=True)                 # e.g. "The Digital Teacher"
+    question_text = Column(Text, nullable=False)          # Main visible question
+    question_prompt = Column(Text, nullable=False)        # Detailed task prompt
+    statement = Column(Text, nullable=True)               # Opinion / stance text
+    opening_sentence = Column(Text, nullable=True)        # Starter sentence
 
-    source_file = Column(String)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # -----------------------------
+    # SOURCE / AUDIT
+    # -----------------------------
+    source_file = Column(String, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
  
 
 class WritingQuizSchema(BaseModel):
