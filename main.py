@@ -715,11 +715,7 @@ class WritingQuestionBank(Base):
     opening_sentence = Column(Text, nullable=True)  # Optional but common
     guidelines = Column(Text, nullable=True)        # Stored as newline-separated bullets
 
-    correct_answer_type = Column(
-        String,
-        nullable=False,
-        default="FREE TEXT"
-    )
+    
 
     # ── Source & auditing ───────────────────────────
     source_file = Column(String, nullable=True)
