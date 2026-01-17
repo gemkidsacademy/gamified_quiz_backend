@@ -1496,7 +1496,7 @@ def chunk_into_pages(paragraphs, per_page=18):
 def group_pages(pages, size=5):
     return [ "\n".join(pages[i:i+size]) for i in range(0, len(pages), size) ]
  
-import json
+
 
 def serialize_blocks_for_gpt(blocks: list[dict]) -> str:
     """
@@ -4672,9 +4672,6 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         "report": report_json
     }
 
-from datetime import datetime, timezone
-from fastapi import Depends, HTTPException
-from sqlalchemy.orm import Session
 
 @app.post("/api/exams/start-reading")
 def start_reading_exam(
@@ -5010,7 +5007,7 @@ Student response:
     print("🧪 Parsing AI response as JSON...")
 
     try:
-        import json
+        
         evaluation = json.loads(ai_result)
 
         writing_score = int(evaluation.get("score", 0))
@@ -11323,9 +11320,6 @@ def submit_answer(
     }
 
     
-from fastapi import FastAPI, HTTPException, Depends
-from sqlalchemy.orm import Session
-from datetime import datetime
 
 def send_otp_email(to_email: str, otp: str):
     message = Mail(
