@@ -622,7 +622,9 @@ class StudentExamWriting(Base):
     # Generated writing exam ID
     exam_id = Column(Integer, nullable=False)
 
+    # --------------------------------------------------
     # Exam lifecycle timestamps
+    # --------------------------------------------------
     started_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -634,22 +636,26 @@ class StudentExamWriting(Base):
         nullable=True
     )
 
+    # --------------------------------------------------
     # Exam configuration
+    # --------------------------------------------------
     duration_minutes = Column(
         Integer,
         default=40,
         nullable=False
     )
 
+    # --------------------------------------------------
     # Student response
+    # --------------------------------------------------
     answer_text = Column(
         Text,
         nullable=True
     )
 
-    # -----------------------------------------
-    # AI Writing Evaluation (Persisted)
-    # -----------------------------------------
+    # --------------------------------------------------
+    # AI Writing Evaluation (Summary fields)
+    # --------------------------------------------------
     ai_score = Column(
         Integer,
         nullable=True,
@@ -659,16 +665,27 @@ class StudentExamWriting(Base):
     ai_strengths = Column(
         Text,
         nullable=True,
-        comment="AI-identified writing strengths"
+        comment="AI-identified writing strengths (summary)"
     )
 
     ai_improvements = Column(
         Text,
         nullable=True,
-        comment="AI-identified areas for improvement"
+        comment="AI-identified areas for improvement (summary)"
     )
 
+    # --------------------------------------------------
+    # AI Writing Evaluation (Structured JSON)
+    # --------------------------------------------------
+    ai_evaluation_json = Column(
+        JSON,
+        nullable=True,
+        comment="Full structured AI evaluation for frontend rendering"
+    )
+
+    # --------------------------------------------------
     # Record creation timestamp
+    # --------------------------------------------------
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -2730,6 +2747,8 @@ def get_selective_report_dates(
     )
 
     return [r[0].isoformat() for r in rows]
+
+
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
@@ -4796,51 +4815,77 @@ def submit_writing_exam(
     # --------------------------------------------------
     print("🤖 Preparing OpenAI prompt...")
 
-    prompt = f"""
+   prompt = f"""
 You are an expert NSW Selective School writing marker.
 
-IMPORTANT OUTPUT RULES (MUST FOLLOW STRICTLY):
+CRITICAL OUTPUT RULES (MUST FOLLOW EXACTLY):
 - Respond with ONLY a valid JSON object
-- Do NOT include markdown
-- Do NOT include explanations or extra text
-- Do NOT include ```json or ``` blocks
-- Output must be directly parsable by json.loads()
+- Do not include markdown, bullet points, headings, or formatting characters
+- Do not include explanations, notes, or extra text
+- Do not include triple backticks or language tags
+- Output must be directly parsable using json.loads()
+- Use double quotes for all JSON keys and string values
 
-You will assess a student's writing using official NSW Selective School standards.
+TASK:
+Assess a student's writing response strictly against NSW Selective School exam standards.
 
-INPUTS YOU WILL RECEIVE:
+INPUTS PROVIDED:
 1. Writing prompt
 2. Student response
 
-ASSESSMENT INSTRUCTIONS:
-- Judge the response holistically.
-- Be strict but fair. Assume this is a competitive selective exam.
-- Prioritise clarity, task fulfilment, and accuracy over creativity.
-- Do NOT rewrite the response.
+ASSESSMENT GUIDELINES:
+- Judge the response holistically, but score using five criteria
+- Be strict but fair; assume a competitive selective exam context
+- Prioritise clarity, task fulfilment, and accuracy over creativity
+- Do not rewrite the student's response
+- Accuracy issues must meaningfully affect scores where present
 
-SCORING CRITERIA (TOTAL 25 MARKS):
+SCORING SYSTEM (TOTAL 20 MARKS):
+Each category is scored out of 4.
 
-1. Audience, Purpose & Form ( /5 )
-2. Ideas & Content ( /5 )
-3. Structure & Organisation ( /5 )
-4. Language & Vocabulary ( /5 )
-5. Grammar, Spelling & Punctuation ( /5 )
+Categories:
+1. Audience, Purpose and Form
+2. Ideas and Content
+3. Structure and Organisation
+4. Language and Vocabulary
+5. Grammar, Spelling and Punctuation
 
-After assessing all five criteria:
-- Calculate a total score out of 25
-- Then CONVERT the final score proportionally to a score out of 20
-- Round to the nearest whole number
+SELECTIVE READINESS BAND:
+Choose exactly one band based on the total score:
+- 18 to 20: Strong selective standard – very competitive
+- 14 to 17: On track for selective with minor improvements
+- 10 to 13: Developing – selective readiness needs strengthening
+- 6 to 9: Below selective standard – significant improvement needed
+- Below 6: Well below selective standard at this stage
 
-Required JSON schema:
-{{
-  "score": <integer between 0 and 20>,
-  "strengths": "<one short sentence summarising strengths>",
-  "improvements": "<one short sentence summarising key improvement>"
-}}
+REQUIRED JSON RESPONSE:
+Return a JSON object with the following keys only:
+- overall_score (integer between 0 and 20)
+- selective_readiness_band (string matching the score range)
+- category_scores (object containing five integer scores between 0 and 4)
+- strengths (one concise sentence)
+- improvements (one concise sentence)
+- teacher_feedback (three to four sentences, professional selective-exam tone)
+
+The category_scores object must contain these exact keys:
+- audience_purpose_form
+- ideas_content
+- structure_organisation
+- language_vocabulary
+- grammar_spelling_punctuation
+
+IMPORTANT CONSTRAINTS:
+- The readiness band must match the overall score
+- Do not invent information
+- Do not be lenient
+- Feedback must be suitable for parents and teachers
+- Maintain a professional NSW Selective exam tone
 
 Student response:
 {payload.answer_text}
 """
+
+
 
 
 
