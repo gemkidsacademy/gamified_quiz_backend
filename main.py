@@ -7131,46 +7131,34 @@ def generate_exam_reading(
             warnings.append(f"No bundles found for topic '{topic_name}'")
             continue
 
-        random.shuffle(bundles)
-
-        collected_questions = []
-        reading_material = None
-        answer_options = None
-        question_type = None
-
+        
+        
         # --------------------------------------------------
-        # Collect questions safely
+        # Collect questions STRICTLY by bundle size
         # --------------------------------------------------
+        matched_bundle = None
+        
         for bundle in bundles:
-            bundle_json = bundle.exam_bundle or {}
-
-            if not question_type:
-                question_type = bundle_json.get("question_type")
-
-            if not reading_material:
-                reading_material = bundle_json.get("reading_material")
-
-            if not answer_options:
-                answer_options = bundle_json.get("answer_options")
-
-            for q in bundle_json.get("questions", []):
-                q_copy = copy.deepcopy(q)
-                collected_questions.append(q_copy)
-
-             
-                if len(collected_questions) >= required:
-                    break
-
-            if len(collected_questions) >= required:
+            if bundle.total_questions == required:
+                matched_bundle = bundle
                 break
-
-        if len(collected_questions) < required:
-            warnings.append(
-                f"Only {len(collected_questions)} questions found for '{topic_name}'"
+        
+        if not matched_bundle:
+            raise HTTPException(
+                400,
+                f"Invalid exam config: '{topic_name}' requires {required} questions, "
+                f"but no matching bundle exists."
             )
-
-        if not collected_questions:
-            continue
+        
+        bundle_json = matched_bundle.exam_bundle or {}
+        
+        question_type = bundle_json.get("question_type")
+        reading_material = bundle_json.get("reading_material")
+        answer_options = bundle_json.get("answer_options")
+        
+        collected_questions = [
+            copy.deepcopy(q) for q in bundle_json.get("questions", [])
+        ]
 
         # --------------------------------------------------
         # Normalize question numbering (per section)
