@@ -4827,47 +4827,67 @@ CRITICAL OUTPUT RULES (MUST FOLLOW EXACTLY):
 - Use double quotes for all JSON keys and string values
 
 TASK:
-Assess a student's writing response strictly against NSW Selective School exam standards.
+Assess the student's writing response strictly against NSW Selective School exam standards.
 
-INPUTS PROVIDED:
+INPUTS YOU WILL RECEIVE:
 1. Writing prompt
 2. Student response
 
-ASSESSMENT GUIDELINES:
-- Judge the response holistically, but score using five criteria
-- Be strict but fair; assume a competitive selective exam context
+ASSESSMENT INSTRUCTIONS:
+- Judge the response holistically, but score using the five selective criteria
 - Prioritise clarity, task fulfilment, and accuracy over creativity
-- Do not rewrite the student's response
+- Be strict but fair; assume a competitive selective exam context
+- Do NOT rewrite the student's response unless explicitly asked
 - Accuracy issues must meaningfully affect scores where present
 
-SCORING SYSTEM (TOTAL 20 MARKS):
-Each category is scored out of 4.
+SCORING CRITERIA (TOTAL 25 MARKS):
+Each category is scored out of 5.
 
-Categories:
 1. Audience, Purpose and Form
-2. Ideas and Content
-3. Structure and Organisation
-4. Language and Vocabulary
-5. Grammar, Spelling and Punctuation
+- Match to required genre
+- Appropriate tone for audience
+- All task requirements addressed
 
-SELECTIVE READINESS BAND:
-Choose exactly one band based on the total score:
-- 18 to 20: Strong selective standard – very competitive
-- 14 to 17: On track for selective with minor improvements
-- 10 to 13: Developing – selective readiness needs strengthening
-- 6 to 9: Below selective standard – significant improvement needed
-- Below 6: Well below selective standard at this stage
+2. Ideas and Content
+- Relevance to the prompt
+- Clarity and development of ideas
+- No unnecessary or unrealistic content
+
+3. Structure and Organisation
+- Logical sequencing
+- Purposeful paragraphs
+- Clear beginning, middle, and end
+
+4. Language and Vocabulary
+- Precision and suitability of language
+- Sentence control and variety
+- Consistent and appropriate tone
+
+5. Grammar, Spelling and Punctuation
+- Accuracy of spelling and punctuation
+- Errors must not limit clarity
+- Frequent basic errors must reduce the score
+
+SELECTIVE READINESS BAND (MANDATORY):
+Based on the overall score (/25), assign ONE descriptor only:
+
+- 22 to 25: Strong selective standard – very competitive
+- 18 to 21: On track for selective with minor improvements
+- 14 to 17: Developing – selective readiness needs strengthening
+- 10 to 13: Below selective standard – significant improvement needed
+- Below 10: Well below selective standard at this stage
 
 REQUIRED JSON RESPONSE:
 Return a JSON object with the following keys only:
-- overall_score (integer between 0 and 20)
-- selective_readiness_band (string matching the score range)
-- category_scores (object containing five integer scores between 0 and 4)
+
+- overall_score (integer between 0 and 25)
+- selective_readiness_band (string that exactly matches the score range)
+- category_scores (object containing five integer scores between 0 and 5)
 - strengths (one concise sentence)
 - improvements (one concise sentence)
 - teacher_feedback (three to four sentences, professional selective-exam tone)
 
-The category_scores object must contain these exact keys:
+The category_scores object MUST contain these exact keys:
 - audience_purpose_form
 - ideas_content
 - structure_organisation
@@ -4875,7 +4895,7 @@ The category_scores object must contain these exact keys:
 - grammar_spelling_punctuation
 
 IMPORTANT CONSTRAINTS:
-- The readiness band must match the overall score
+- The readiness band MUST match the overall score
 - Do not invent information
 - Do not be lenient
 - Feedback must be suitable for parents and teachers
@@ -4884,6 +4904,7 @@ IMPORTANT CONSTRAINTS:
 Student response:
 {payload.answer_text}
 """
+
 
 
 
