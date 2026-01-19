@@ -8176,7 +8176,15 @@ EXTRACT RULES (STRICT):
 
 QUESTION RULES (STRICT):
 - questions MUST match Total_Questions exactly
-- correct_answer MUST match one of the extract labels present
+- Each question MUST contain:
+  - question_text
+  - correct_answer
+- A question MAY optionally contain:
+  - answer_options (object with keys A–D)
+- If answer_options are present:
+  - correct_answer MUST be one of the answer_options keys
+- If answer_options are NOT present:
+  - correct_answer MUST match one of the extract labels present
 - DO NOT infer or correct answers
 
 If ANY required field is missing, empty, invalid, or violates these rules,
@@ -8319,6 +8327,9 @@ OUTPUT RULES:
         # 🔹 Question validation (UPDATED)
         # --------------------------------------------------
         questions = parsed.get("questions", [])
+
+        has_explicit_options = any("answer_options" in q for q in questions)
+
         # 🔒 Enforce question count matches metadata
         if len(questions) != expected_q_count:
             print(
@@ -8334,21 +8345,37 @@ OUTPUT RULES:
             continue
         
         invalid_q = False
+
         for i, q in enumerate(questions, start=1):
             missing_keys = {"question_text", "correct_answer"} - q.keys()
-        
             if missing_keys:
                 print(f"❌ Question {i} missing keys: {missing_keys}")
                 invalid_q = True
                 break
         
-            if q["correct_answer"] not in extract_keys:
-                print(
-                    f"❌ Question {i} has invalid correct_answer: "
-                    f"{q['correct_answer']} (allowed: {extract_keys})"
-                )
-                invalid_q = True
-                break
+            if "answer_options" in q:
+                opts = q["answer_options"]
+        
+                if not isinstance(opts, dict) or len(opts) < 2:
+                    print(f"❌ Question {i} has invalid answer_options")
+                    invalid_q = True
+                    break
+        
+                if q["correct_answer"] not in opts:
+                    print(
+                        f"❌ Question {i} correct_answer not in answer_options"
+                    )
+                    invalid_q = True
+                    break
+        
+            else:
+                if q["correct_answer"] not in extract_keys:
+                    print(
+                        f"❌ Question {i} has invalid correct_answer: "
+                        f"{q['correct_answer']} (allowed: {extract_keys})"
+                    )
+                    invalid_q = True
+                    break
         
         if invalid_q:
             continue
@@ -8360,9 +8387,15 @@ OUTPUT RULES:
         # --------------------------------------------------
         print("\n🧩 STEP 7: Enriching bundle")
 
-        answer_options = {
-            key: f"Extract {key}" for key in extract_keys
-        }
+        
+        for q in questions:
+            if "answer_options" not in q:
+                q["answer_options"] = {
+                    key: f"Extract {key}" for key in extract_keys
+                }
+
+        
+
 
 
         for i, q in enumerate(questions, start=1):
@@ -8372,9 +8405,9 @@ OUTPUT RULES:
             "question_type": "comparative_analysis",
             "topic": parsed["topic"],
             "reading_material": rm,
-            "answer_options": answer_options,
             "questions": questions
         }
+
 
         # --------------------------------------------------
         # 8️⃣ Save to DB
@@ -8432,7 +8465,6 @@ OUTPUT RULES:
        },
        "saved_exam_ids": saved_ids
    }
-
 
 
 @app.post("/api/admin/create-reading-config")
