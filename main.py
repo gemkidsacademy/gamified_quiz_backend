@@ -8344,8 +8344,9 @@ OUTPUT RULES:
             print("❌ No questions extracted")
             continue
         
+        # NEW — supports extract-based AND MCQ-based comparative
         invalid_q = False
-
+        
         for i, q in enumerate(questions, start=1):
             missing_keys = {"question_text", "correct_answer"} - q.keys()
             if missing_keys:
@@ -8381,23 +8382,19 @@ OUTPUT RULES:
             continue
         
         print("✅ Validation passed")
+        
 
         # --------------------------------------------------
         # 7️⃣ Enrich bundle (RENDER-SAFE)
         # --------------------------------------------------
         print("\n🧩 STEP 7: Enriching bundle")
-
-        
         for q in questions:
             if "answer_options" not in q:
                 q["answer_options"] = {
                     key: f"Extract {key}" for key in extract_keys
                 }
-
-        
-
-
-
+      
+             
         for i, q in enumerate(questions, start=1):
             q["question_id"] = f"CA_Q{i}"
 
@@ -8413,11 +8410,13 @@ OUTPUT RULES:
         # 8️⃣ Save to DB
         # --------------------------------------------------
         print("\n💾 STEP 8: Saving exam to database")
+        subject = parsed["subject"].lower().replace(" ", "_")
+
 
         try:
             obj = QuestionReading(
                 class_name=parsed["class_name"].lower(),
-                subject=parsed["subject"],
+                subject=subject,
                 difficulty=parsed["difficulty"].lower(),
                 topic=parsed["topic"],
                 total_questions=len(questions),
