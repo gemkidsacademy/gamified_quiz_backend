@@ -8385,11 +8385,11 @@ OUTPUT RULES:
         print("\n🧩 STEP 7: Enriching bundle")
         if not is_mcq_comparative:
         # Extract-selection comparative
-        for q in questions:
-            if "answer_options" not in q:
-                q["answer_options"] = {
-                    key: f"Extract {key}" for key in extract_keys
-                }
+           for q in questions:
+               if "answer_options" not in q:
+                   q["answer_options"] = {
+                       key: f"Extract {key}" for key in extract_keys
+                   }
              
         for i, q in enumerate(questions, start=1):
             q["question_id"] = f"CA_Q{i}"
