@@ -13,7 +13,8 @@ import mammoth
 from collections import defaultdict
 from sqlalchemy.exc import IntegrityError
 from docx.oxml.ns import qn
- 
+import copy
+
 import pandas as pd
 import os
 import random
@@ -7011,14 +7012,16 @@ def generate_exam_reading(
     warnings = []
 
     sections = []
-
+    
     # --------------------------------------------------
     # 2️⃣ PROCESS EACH TOPIC AS A SECTION
     # --------------------------------------------------
-    for topic_spec in topics:
+    for section_index, topic_spec in enumerate(topics, start=1):
         topic_name = topic_spec["name"].strip()
         required = int(topic_spec["num_questions"])
         topic_lower = topic_name.lower()
+    
+        section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
 
         print(f"\n▶ Topic: {topic_name} | Required: {required}")
 
@@ -7064,7 +7067,10 @@ def generate_exam_reading(
                 answer_options = bundle_json.get("answer_options")
 
             for q in bundle_json.get("questions", []):
-                collected_questions.append(q)
+                q_copy = copy.deepcopy(q)
+                collected_questions.append(q_copy)
+
+             
                 if len(collected_questions) >= required:
                     break
 
@@ -7084,16 +7090,21 @@ def generate_exam_reading(
         # --------------------------------------------------
         for idx, q in enumerate(collected_questions, start=1):
             q["question_number"] = idx
+            q["question_id"] = f"{section_id}_Q{idx}"
+
 
         # --------------------------------------------------
         # Build SECTION (frontend-safe)
         # --------------------------------------------------
         section = {
+            "section_id": section_id,
+            "section_index": section_index,
             "question_type": question_type,
             "topic": topic_name,
             "reading_material": reading_material,
             "questions": collected_questions,
         }
+
 
         # Only attach answer_options if they exist
         if answer_options:
