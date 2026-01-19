@@ -7394,9 +7394,11 @@ async def upload_word_reading_gapped_multi_ai(
             detail="No exam blocks found. Missing EXAM START / EXAM END markers."
         )
 
-    print(f"✅ Total valid exam blocks detected: {len(blocks)}")
-
+    total_blocks = len(blocks)
+    print(f"✅ Total valid exam blocks detected: {total_blocks}")
+    
     saved_ids = []
+
 
     # --------------------------------------------------
     # 4️⃣ AI extraction prompt
@@ -7435,7 +7437,11 @@ OUTPUT:
     # --------------------------------------------------
     # 5️⃣ Process each exam block
     # --------------------------------------------------
+    failed_blocks = 0
+    failure_reasons = []
+    
     for block_idx, block_text in enumerate(blocks, start=1):
+
         print("\n" + "-" * 70)
         print(f"🔍 STEP 5: Processing block {block_idx}/{len(blocks)}")
         print("   → Block text length:", len(block_text))
@@ -7461,9 +7467,17 @@ OUTPUT:
         print("🧠 AI raw response length:", len(raw_output))
 
         if not raw_output.startswith("{"):
-            print("❌ AI OUTPUT IS NOT JSON")
-            print("   → Preview:", raw_output[:200])
-            continue
+           print("❌ AI OUTPUT IS NOT JSON")
+           print("   → Preview:", raw_output[:200])
+       
+           failed_blocks += 1
+           failure_reasons.append({
+               "block": block_idx,
+               "reason": "AI output not valid JSON"
+           })
+       
+           continue
+
 
         try:
             parsed = json.loads(raw_output)
@@ -7471,11 +7485,27 @@ OUTPUT:
         except Exception as e:
             print("❌ JSON PARSING FAILED")
             print("   → Exception:", str(e))
+        
+            failed_blocks += 1
+            failure_reasons.append({
+                "block": block_idx,
+                "reason": "JSON parsing failed"
+            })
+        
             continue
 
+
         if not parsed:
-            print("⚠️ AI returned EMPTY JSON")
-            continue
+           print("⚠️ AI returned EMPTY JSON")
+       
+           failed_blocks += 1
+           failure_reasons.append({
+               "block": block_idx,
+               "reason": "AI returned empty JSON"
+           })
+       
+           continue
+
 
         # --------------------------------------------------
         # 6️⃣ Hard validation
@@ -7484,27 +7514,58 @@ OUTPUT:
 
         rm = parsed.get("reading_material", {})
         if not rm.get("content"):
-            print("❌ Missing reading material content")
-            continue
+           print("❌ Missing reading material content")
+       
+           failed_blocks += 1
+           failure_reasons.append({
+               "block": block_idx,
+               "reason": "Missing reading material content"
+           })
+       
+           continue
+
 
         if len(rm["content"].strip()) < 300:
-            print("❌ Reading material too short")
-            continue
+           print("❌ Reading material too short")
+       
+           failed_blocks += 1
+           failure_reasons.append({
+               "block": block_idx,
+               "reason": "Reading material too short"
+           })
+       
+           continue
 
         opts = parsed.get("answer_options", {})
         required_opts = ["A", "B", "C", "D", "E", "F", "G"]
 
         missing_opts = [k for k in required_opts if not opts.get(k)]
         if missing_opts:
-            print("❌ Missing answer options:", missing_opts)
-            continue
+           print("❌ Missing answer options:", missing_opts)
+       
+           failed_blocks += 1
+           failure_reasons.append({
+               "block": block_idx,
+               "reason": f"Missing answer options: {missing_opts}"
+           })
+       
+           continue
+
 
         questions = parsed.get("questions", [])
         print("   → Questions extracted:", len(questions))
 
         if len(questions) != 6:
-            print("❌ Invalid question count")
-            continue
+           print("❌ Invalid question count")
+       
+           failed_blocks += 1
+           failure_reasons.append({
+               "block": block_idx,
+               "reason": "Invalid question count"
+           })
+       
+           continue
+
 
         print("✅ Validation passed")
 
@@ -7528,7 +7589,15 @@ OUTPUT:
         
         if missing_meta:
             print("❌ Missing required metadata:", missing_meta)
+        
+            failed_blocks += 1
+            failure_reasons.append({
+                "block": block_idx,
+                "reason": f"Missing metadata fields: {missing_meta}"
+            })
+        
             continue
+
         # --------------------------------------------------
         # 8️⃣ Save to DB
         # --------------------------------------------------
@@ -7564,10 +7633,18 @@ OUTPUT:
             print(f"✅ Block {block_idx} saved successfully | ID={obj.id}")
         
         except Exception as e:
-            db.rollback()
-            print("❌ DATABASE SAVE FAILED")
-            print("   → Exception:", str(e))
-            continue
+               db.rollback()
+               print("❌ DATABASE SAVE FAILED")
+               print("   → Exception:", str(e))
+           
+               failed_blocks += 1
+               failure_reasons.append({
+                   "block": block_idx,
+                   "reason": "Database save failed"
+               })
+           
+               continue
+
 
     # --------------------------------------------------
     # 9️⃣ Final response
@@ -7580,9 +7657,13 @@ OUTPUT:
 
     return {
         "message": "Gapped Text documents processed",
-        "saved_count": len(saved_ids),
-        "bundle_ids": saved_ids
+        "total_detected": total_blocks,
+        "successfully_saved": len(saved_ids),
+        "failed": failed_blocks,
+        "saved_ids": saved_ids,
+        "failures": failure_reasons
     }
+
 
 
 @app.post("/upload-word-reading-main-idea-ai")
