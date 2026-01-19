@@ -8024,7 +8024,7 @@ OUTPUT:
     }
 
 #here line 8026
-@app.post("/upload-word-reading-comparative-ai")
+@app.post("/upload-word-reading-comparative-ai-new")
 async def upload_word_reading_comparative_ai(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
