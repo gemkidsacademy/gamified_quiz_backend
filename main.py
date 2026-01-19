@@ -8023,7 +8023,7 @@ OUTPUT:
         "bundle_ids": saved_ids
     }
 
-
+#here line 8026
 @app.post("/upload-word-reading-comparative-ai")
 async def upload_word_reading_comparative_ai(
     file: UploadFile = File(...),
@@ -8345,14 +8345,30 @@ OUTPUT RULES:
                 break
         
             if is_mcq_comparative:
-                # MCQ-based comparative reading
-                if q["correct_answer"] not in {"A", "B", "C", "D"}:
-                    print(
-                        f"❌ Question {i} has invalid MCQ correct_answer: "
-                        f"{q['correct_answer']}"
-                    )
-                    invalid_q = True
-                    break
+               # MCQ-based comparative MUST have answer_options
+               opts = q.get("answer_options")
+           
+               if not opts:
+                   print(
+                       f"❌ Question {i} missing answer_options in MCQ comparative"
+                   )
+                   invalid_q = True
+                   break
+           
+               if not isinstance(opts, dict) or set(opts.keys()) != {"A", "B", "C", "D"}:
+                   print(
+                       f"❌ Question {i} has invalid answer_options keys: {opts}"
+                   )
+                   invalid_q = True
+                   break
+           
+               if q["correct_answer"] not in opts:
+                   print(
+                       f"❌ Question {i} correct_answer not in answer_options"
+                   )
+                   invalid_q = True
+                   break
+
             else:
                 # Extract-selection comparative
                 if q["correct_answer"] not in extract_keys:
@@ -8371,13 +8387,14 @@ OUTPUT RULES:
         # 7️⃣ Enrich bundle (RENDER-SAFE)
         # --------------------------------------------------
         print("\n🧩 STEP 7: Enriching bundle")
+
         if not is_mcq_comparative:
-        # Extract-selection comparative
-           for q in questions:
-               if "answer_options" not in q:
-                   q["answer_options"] = {
-                       key: f"Extract {key}" for key in extract_keys
-                   }
+            # Extract-selection comparative ONLY
+            for q in questions:
+                if "answer_options" not in q:
+                    q["answer_options"] = {
+                        key: f"Extract {key}" for key in extract_keys
+                    }
              
         for i, q in enumerate(questions, start=1):
             q["question_id"] = f"CA_Q{i}"
@@ -8388,6 +8405,11 @@ OUTPUT RULES:
             "reading_material": rm,
             "questions": questions
         }
+        
+        # Promote answer_options for frontend if MCQ
+        if is_mcq_comparative:
+            bundle["answer_options"] = questions[0]["answer_options"]
+
 
 
         # --------------------------------------------------
@@ -8449,7 +8471,7 @@ OUTPUT RULES:
        "saved_exam_ids": saved_ids
    }
 
-
+#here line 8452
 @app.post("/api/admin/create-reading-config")
 def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depends(get_db)):
 
