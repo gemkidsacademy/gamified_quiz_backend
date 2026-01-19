@@ -8238,6 +8238,8 @@ OUTPUT RULES:
         print("\n" + "-" * 70)
         print(f"🔍 STEP 5: Processing block {block_idx}/{len(blocks)}")
         print("   → Block length:", len(block_text))
+        is_mcq_comparative = "ANSWER_OPTIONS:" in block_text
+
 
         # --------------------------------------------------
         # 🔠 Detect extract labels from document (AUTHORITATIVE)
@@ -8346,7 +8348,7 @@ OUTPUT RULES:
         
         # NEW — supports extract-based AND MCQ-based comparative
         invalid_q = False
-        
+
         for i, q in enumerate(questions, start=1):
             missing_keys = {"question_text", "correct_answer"} - q.keys()
             if missing_keys:
@@ -8354,25 +8356,20 @@ OUTPUT RULES:
                 invalid_q = True
                 break
         
-            if "answer_options" in q:
-                opts = q["answer_options"]
-        
-                if not isinstance(opts, dict) or len(opts) < 2:
-                    print(f"❌ Question {i} has invalid answer_options")
-                    invalid_q = True
-                    break
-        
-                if q["correct_answer"] not in opts:
+            if is_mcq_comparative:
+                # MCQ-based comparative reading
+                if q["correct_answer"] not in {"A", "B", "C", "D"}:
                     print(
-                        f"❌ Question {i} correct_answer not in answer_options"
+                        f"❌ Question {i} has invalid MCQ correct_answer: "
+                        f"{q['correct_answer']}"
                     )
                     invalid_q = True
                     break
-        
             else:
+                # Extract-selection comparative
                 if q["correct_answer"] not in extract_keys:
                     print(
-                        f"❌ Question {i} has invalid correct_answer: "
+                        f"❌ Question {i} has invalid extract correct_answer: "
                         f"{q['correct_answer']} (allowed: {extract_keys})"
                     )
                     invalid_q = True
@@ -8380,9 +8377,7 @@ OUTPUT RULES:
         
         if invalid_q:
             continue
-        
-        print("✅ Validation passed")
-        
+
 
         # --------------------------------------------------
         # 7️⃣ Enrich bundle (RENDER-SAFE)
