@@ -5144,13 +5144,21 @@ def get_writing_result(
     if not exam_state:
         raise HTTPException(status_code=404, detail="No writing result found")
 
+    if exam_state.ai_evaluation_json is None:
+        raise HTTPException(
+            status_code=500,
+            detail="AI evaluation not available for this writing exam"
+        )
+
+    ai_eval = exam_state.ai_evaluation_json
+
     return {
         "exam_type": "Writing",
-        "status": exam_state.ai_evaluation_json.get("selective_readiness_band"),
+        "status": ai_eval.get("selective_readiness_band"),
         "score": exam_state.ai_score,
-        "max_score": 20,
+        "max_score": 25,
         "advisory": "This report is advisory only and does not guarantee placement.",
-        "evaluation": exam_state.ai_evaluation_json
+        "evaluation": ai_eval
     }
 
 
