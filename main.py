@@ -8135,22 +8135,29 @@ as top-level keys in the JSON output.
 CRITICAL SCHEMA REQUIREMENTS (FAIL HARD):
 
 The JSON output MUST contain:
+
+FOR MCQ-based comparative exams:
 {
-  "class_name": string,
-  "subject": string,
-  "topic": string,
-  "difficulty": string,
-  "reading_material": {
-    "extracts": {
-      "A": string,
-      "B": string,
-      "...": string
-    }
-  },
   "questions": [
     {
       "question_text": string,
+      "answer_options": {
+        "A": string,
+        "B": string,
+        "C": string,
+        "D": string
+      },
       "correct_answer": "A|B|C|D"
+    }
+  ]
+}
+
+FOR extract-selection comparative exams:
+{
+  "questions": [
+    {
+      "question_text": string,
+      "correct_answer": "A|B|C|..."
     }
   ]
 }
@@ -8163,17 +8170,27 @@ EXTRACT RULES (STRICT):
 - Extract text MUST be preserved exactly as written
 
 QUESTION RULES (STRICT):
+
 - questions MUST match Total_Questions exactly
-- Each question MUST contain:
+
+IF the document contains "ANSWER_OPTIONS:":
+- This is an MCQ-based comparative exam
+- EVERY question MUST contain:
+  - question_text
+  - answer_options (object with EXACT keys A, B, C, D)
+  - correct_answer (A–D)
+- correct_answer MUST be one of the answer_options keys
+
+IF the document does NOT contain "ANSWER_OPTIONS:":
+- This is extract-selection comparative
+- questions MUST contain:
   - question_text
   - correct_answer
-- A question MAY optionally contain:
-  - answer_options (object with keys A–D)
-- If answer_options are present:
-  - correct_answer MUST be one of the answer_options keys
-- If answer_options are NOT present:
-  - correct_answer MUST match one of the extract labels present
-- DO NOT infer or correct answers
+- questions MUST NOT contain answer_options
+- correct_answer MUST match one of the extract labels present
+
+DO NOT infer, generate, repair, or guess missing fields.
+If any rule is violated, RETURN {}.
 
 If ANY required field is missing, empty, invalid, or violates these rules,
 RETURN {}.
