@@ -4815,7 +4815,7 @@ def submit_writing_exam(
     # --------------------------------------------------
     print("🤖 Preparing OpenAI prompt...")
 
-   prompt = f"""
+    prompt = f"""
 You are an expert NSW Selective School writing marker.
 
 CRITICAL OUTPUT RULES (MUST FOLLOW EXACTLY):
@@ -4922,9 +4922,14 @@ Student response:
         
         evaluation = json.loads(ai_result)
 
-        writing_score = int(evaluation.get("score", 0))
+        writing_score = int(evaluation.get("overall_score", 0))
+
         strengths = evaluation.get("strengths", "")
         improvements = evaluation.get("improvements", "")
+        exam_state.ai_score = writing_score
+        exam_state.ai_strengths = strengths
+        exam_state.ai_improvements = improvements
+        exam_state.ai_evaluation_json = evaluation
 
         print("✅ Parsed AI evaluation:", {
             "score": writing_score,
@@ -4947,10 +4952,7 @@ Student response:
     # --------------------------------------------------
     print("💾 Storing AI evaluation on writing attempt...")
 
-    exam_state.ai_score = writing_score
-    exam_state.ai_strengths = strengths
-    exam_state.ai_improvements = improvements
-
+    
     # --------------------------------------------------
     # 6️⃣ Admin RAW SCORE snapshot
     # --------------------------------------------------
@@ -4966,7 +4968,18 @@ Student response:
         accuracy_percent=round((writing_score / 20) * 100, 2)
     )
 
-    db.add(admin_raw_score)
+    existing_raw = (
+        db.query(AdminExamRawScore)
+        .filter(
+            AdminExamRawScore.exam_attempt_id == exam_state.id,
+            AdminExamRawScore.subject == "writing"
+        )
+        .first()
+    )
+    
+    if not existing_raw:
+        db.add(admin_raw_score)
+
     print("✅ Admin raw score prepared:", {
         "student_id": admin_raw_score.student_id,
         "attempt_id": admin_raw_score.exam_attempt_id,
@@ -5097,26 +5110,38 @@ def get_writing_result(
     student_id: str,
     db: Session = Depends(get_db)
 ):
-    report = (
-        db.query(AdminExamReport)
+    exam_state = (
+        db.query(StudentExamWriting)
         .filter(
-            AdminExamReport.student_id == student_id,
-            AdminExamReport.exam_type == "writing"
+            StudentExamWriting.student_id == student_id,
+            StudentExamWriting.completed_at.isnot(None)
         )
-        .order_by(AdminExamReport.id.desc())
+        .order_by(StudentExamWriting.id.desc())
         .first()
     )
 
-    if not report:
-        raise HTTPException(status_code=404, detail="No writing result found")
+    if not exam_state:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed writing exam found"
+        )
+
+    if not exam_state.ai_evaluation_json:
+        raise HTTPException(
+            status_code=500,
+            detail="Writing evaluation not available"
+        )
+
+    evaluation = exam_state.ai_evaluation_json
 
     return {
         "exam_type": "Writing",
-        "status": report.readiness_band,
-        "score": report.overall_score,
+        "status": evaluation.get("selective_readiness_band"),
+        "score": exam_state.ai_score,
         "max_score": 20,
-        "percentage": round((report.overall_score / 20) * 100, 2),
-        "advisory": "This report is advisory only and does not guarantee placement."
+        "percentage": round((exam_state.ai_score / 20) * 100, 2),
+        "advisory": "This report is advisory only and does not guarantee placement.",
+        "evaluation": evaluation
     }
 
 
