@@ -10629,7 +10629,9 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         print("\n--- Deleting previous data (Exam → Quiz) ---")
 
         # 1️⃣ Delete dependent exams (StudentExam deleted automatically via cascade)
-        db.query(Exam).delete(synchronize_session=False)
+        db.query(Exam).filter(Exam.subject == "thinking_skills").delete(
+            synchronize_session=False
+        )
 
         # 2️⃣ Delete quizzes
         db.query(Quiz).delete(synchronize_session=False)
