@@ -8015,11 +8015,13 @@ OUTPUT:
         # 8️⃣ Bundle (RENDER-SAFE)
         # --------------------------------------------------
         bundle = {
-            "question_type": "literary_analysis",
+            "question_type": "main_idea",
+            "passage_style": "literary",
             "topic": parsed["topic"],
             "reading_material": reading_material,
             "questions": enriched_questions
         }
+
 
         # --------------------------------------------------
         # 9️⃣ Save to DB
