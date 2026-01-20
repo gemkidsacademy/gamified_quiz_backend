@@ -7773,8 +7773,7 @@ async def upload_word_reading_literary_ai(
         raise HTTPException(status_code=400, detail="File must be .docx")
 
     raw = await file.read()
-    print("✅ File read successfully")
-    print("   → Bytes read:", len(raw))
+    print("✅ File read successfully | bytes:", len(raw))
 
     # --------------------------------------------------
     # 2️⃣ Text extraction
@@ -7784,20 +7783,14 @@ async def upload_word_reading_literary_ai(
     try:
         full_text = extract_text_from_docx(raw)
     except Exception as e:
-        print("❌ DOCX TEXT EXTRACTION FAILED")
-        print("   → Exception:", str(e))
+        print("❌ DOCX TEXT EXTRACTION FAILED:", str(e))
         raise HTTPException(status_code=500, detail="Failed to extract document text")
 
-    if not full_text:
-        print("❌ Extracted text is EMPTY")
-        raise HTTPException(status_code=400, detail="Empty document")
-
-    print("✅ Text extracted")
-    print("   → Character count:", len(full_text))
-
-    if len(full_text.strip()) < 300:
-        print("❌ Document too short")
+    if not full_text or len(full_text.strip()) < 300:
+        print("❌ Invalid or empty document")
         raise HTTPException(status_code=400, detail="Invalid document")
+
+    print("✅ Text extracted | characters:", len(full_text))
 
     # --------------------------------------------------
     # 3️⃣ Exam block detection
@@ -7811,19 +7804,18 @@ async def upload_word_reading_literary_ai(
     print("   → START tokens found:", len(parts) - 1)
 
     blocks = []
-
     for idx, part in enumerate(parts[1:], start=1):
-        print(f"   → Inspecting block candidate {idx}")
+        print(f"   → Inspecting block {idx}")
 
         if end_token not in part:
-            print("     ⚠️ END token missing — skipped")
+            print("     ⚠️ END token missing, skipped")
             continue
 
         block = part.split(end_token)[0].strip()
         print("     → Block length:", len(block))
 
         if len(block) < 500:
-            print("     ⚠️ Block too short — skipped")
+            print("     ⚠️ Block too short, skipped")
             continue
 
         blocks.append(block)
@@ -7840,7 +7832,7 @@ async def upload_word_reading_literary_ai(
     saved_ids = []
 
     # --------------------------------------------------
-    # 4️⃣ AI extraction prompt
+    # 4️⃣ AI extraction prompt (STRICT CONTRACT)
     # --------------------------------------------------
     print("\n🤖 STEP 4: Preparing AI extraction prompt")
 
@@ -7849,16 +7841,24 @@ You are an exam content extraction engine.
 
 You MUST extract ONE COMPLETE LITERARY READING exam.
 
+RETURN JSON WITH EXACT KEYS:
+- class_name (string)
+- subject (string)
+- topic (string)
+- difficulty (string)
+- total_questions (number)
+- reading_material (string)
+- questions (array)
+
+Each question MUST contain:
+- question_text (string)
+- answer_options (object with keys A, B, C, D)
+- correct_answer (one of A, B, C, D)
+
 CRITICAL RULES (FAIL HARD):
 - DO NOT generate, infer, summarize, or rewrite
 - Extract ONLY what exists in the document
-- reading_material must include the full poem or passage as plain text
-- questions must include:
-  - question_number
-  - question_text
-  - answer_options (A–D)
-  - correct_answer (A–D)
-- Total questions MUST match Total_Questions
+- total_questions MUST equal number of questions
 - If ANY required field is missing or empty, RETURN {}
 
 OUTPUT:
@@ -7873,7 +7873,13 @@ OUTPUT:
     for block_idx, block_text in enumerate(blocks, start=1):
         print("\n" + "-" * 70)
         print(f"🔍 STEP 5: Processing block {block_idx}/{len(blocks)}")
-        print("   → Block length:", len(block_text))
+
+        # Normalize known metadata variations to stabilize extraction
+        normalized_block = block_text
+        normalized_block = normalized_block.replace("Total_Questions", "total_questions")
+        normalized_block = normalized_block.replace("TOPIC", "topic")
+        normalized_block = normalized_block.replace("DIFFICULTY", "difficulty")
+        normalized_block = normalized_block.replace("Reading_Material:", "reading_material:")
 
         try:
             response = client.chat.completions.create(
@@ -7883,30 +7889,26 @@ OUTPUT:
                     {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
-                        "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
+                        "content": f"BEGIN_DOCUMENT\n{normalized_block}\nEND_DOCUMENT"
                     }
                 ]
             )
         except Exception as e:
-            print("❌ OpenAI API CALL FAILED")
-            print("   → Exception:", str(e))
+            print("❌ OpenAI API CALL FAILED:", str(e))
             continue
 
         raw_output = response.choices[0].message.content.strip()
         print("🧠 AI response length:", len(raw_output))
 
         if not raw_output.startswith("{"):
-            print("❌ NON-JSON AI OUTPUT")
-            print("   → Preview:", raw_output[:300])
+            print("❌ NON-JSON AI OUTPUT:", raw_output[:300])
             continue
 
         try:
             parsed = json.loads(raw_output)
             print("✅ JSON parsed successfully")
         except Exception as e:
-            print("❌ JSON PARSE FAILED")
-            print("   → Exception:", str(e))
-            print("   → Raw output preview:", raw_output[:300])
+            print("❌ JSON PARSE FAILED:", str(e))
             continue
 
         if not parsed:
@@ -7918,39 +7920,72 @@ OUTPUT:
         # --------------------------------------------------
         print("\n🧪 STEP 6: Validating extracted content")
 
-        reading_material = parsed.get("reading_material")
-        questions = parsed.get("questions", [])
+        required_root_keys = [
+            "class_name",
+            "subject",
+            "topic",
+            "difficulty",
+            "total_questions",
+            "reading_material",
+            "questions"
+        ]
 
-        if not reading_material:
-            print("❌ Missing reading_material")
+        missing_root = [k for k in required_root_keys if k not in parsed]
+        if missing_root:
+            print("❌ Missing root fields:", missing_root)
             continue
 
-        print("   → Reading material length:", len(reading_material))
+        reading_material = parsed["reading_material"]
+        questions = parsed["questions"]
 
-        if not questions:
-            print("❌ No questions extracted")
+        try:
+            expected_total = int(parsed["total_questions"])
+        except Exception:
+            print("❌ total_questions is not numeric")
             continue
 
-        print("   → Questions found:", len(questions))
+        if isinstance(reading_material, dict):
+            print("⚠️ reading_material returned as object, normalizing")
+            reading_material = "\n".join(reading_material.values())
+
+        if not isinstance(reading_material, str) or len(reading_material.strip()) < 200:
+            print("❌ reading_material invalid or too short")
+            continue
+
+        if not isinstance(questions, list) or not questions:
+            print("❌ Invalid or empty questions list")
+            continue
+
+        if len(questions) != expected_total:
+            print(
+                f"❌ Question count mismatch: expected {expected_total}, got {len(questions)}"
+            )
+            continue
 
         invalid_q = False
         for i, q in enumerate(questions, start=1):
             print(f"   → Validating question {i}")
 
-            if "question_text" not in q:
-                print("     ❌ Missing question_text")
+            if (
+                "question_text" not in q
+                or "answer_options" not in q
+                or "correct_answer" not in q
+            ):
+                print("     ❌ Missing required question fields")
                 invalid_q = True
                 break
 
-            if "answer_options" not in q:
-                print("     ❌ Missing answer_options")
+            opts = q["answer_options"]
+            if not isinstance(opts, dict):
+                print("     ❌ answer_options not an object")
                 invalid_q = True
                 break
 
-            if "correct_answer" not in q:
-                print("     ❌ Missing correct_answer")
-                invalid_q = True
-                break
+            for opt in ["A", "B", "C", "D"]:
+                if opt not in opts or not isinstance(opts[opt], str) or not opts[opt].strip():
+                    print(f"     ❌ Invalid or missing option {opt}")
+                    invalid_q = True
+                    break
 
             if q["correct_answer"] not in ["A", "B", "C", "D"]:
                 print("     ❌ Invalid correct_answer:", q["correct_answer"])
@@ -7971,12 +8006,10 @@ OUTPUT:
         for i, q in enumerate(questions, start=1):
             enriched_questions.append({
                 "question_id": f"LIT_Q{i}",
-                "question_text": q["question_text"],
+                "question_text": q["question_text"].strip(),
                 "answer_options": q["answer_options"],
                 "correct_answer": q["correct_answer"]
             })
-
-        print("   → Enriched questions:", len(enriched_questions))
 
         # --------------------------------------------------
         # 8️⃣ Bundle (RENDER-SAFE)
@@ -7987,8 +8020,6 @@ OUTPUT:
             "reading_material": reading_material,
             "questions": enriched_questions
         }
-
-        print("📦 Bundle prepared")
 
         # --------------------------------------------------
         # 9️⃣ Save to DB
@@ -8014,8 +8045,7 @@ OUTPUT:
 
         except Exception as e:
             db.rollback()
-            print("❌ DATABASE SAVE FAILED")
-            print("   → Exception:", str(e))
+            print("❌ DATABASE SAVE FAILED:", str(e))
             continue
 
     # --------------------------------------------------
@@ -8032,6 +8062,7 @@ OUTPUT:
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
+
 
 
 
