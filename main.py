@@ -8085,7 +8085,7 @@ async def upload_word_reading_comparative_ai(
     parts = full_text.split(start_token)
     print("   → START tokens found:", len(parts) - 1)
 
-    blocks = []
+    blocks_new = []
 
     for idx, part in enumerate(parts[1:], start=1):
         print(f"   → Inspecting block candidate {idx}")
