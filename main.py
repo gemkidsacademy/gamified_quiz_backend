@@ -7077,8 +7077,10 @@ def generate_exam_reading(
 
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
+
     db.query(GeneratedExamReading).delete(synchronize_session=False)
     db.commit()
+
     # --------------------------------------------------
     # 1️⃣ LOAD CONFIG
     # --------------------------------------------------
@@ -7099,7 +7101,7 @@ def generate_exam_reading(
     warnings = []
 
     sections = []
-    
+
     # --------------------------------------------------
     # 2️⃣ PROCESS EACH TOPIC AS A SECTION
     # --------------------------------------------------
@@ -7107,14 +7109,9 @@ def generate_exam_reading(
         topic_name = topic_spec["name"].strip()
         required = int(topic_spec["num_questions"])
         topic_lower = topic_name.lower()
-    
+
         section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
 
-        print(f"\n▶ Topic: {topic_name} | Required: {required}")
-
-        # --------------------------------------------------
-        # Load question bundles
-        # --------------------------------------------------
         bundles = (
             db.query(QuestionReading)
             .filter(
@@ -7126,62 +7123,61 @@ def generate_exam_reading(
             .all()
         )
 
-
         if not bundles:
             warnings.append(f"No bundles found for topic '{topic_name}'")
             continue
 
-        
-        
-        # --------------------------------------------------
-        # Collect questions STRICTLY by bundle size
-        # --------------------------------------------------
-        matched_bundle = None
-        
-        for bundle in bundles:
-            if bundle.total_questions == required:
-                matched_bundle = bundle
-                break
-        
+        matched_bundle = next(
+            (b for b in bundles if b.total_questions == required),
+            None
+        )
+
         if not matched_bundle:
             raise HTTPException(
                 400,
-                f"Invalid exam config: '{topic_name}' requires {required} questions, "
-                f"but no matching bundle exists."
+                f"Invalid exam config: '{topic_name}' requires {required} questions"
             )
-        
+
         bundle_json = matched_bundle.exam_bundle or {}
-        
+
         question_type = bundle_json.get("question_type")
         reading_material = bundle_json.get("reading_material")
         answer_options = bundle_json.get("answer_options")
-        
+
+        # 🔑 NEW: explicit rendering hints
+        passage_style = bundle_json.get(
+            "passage_style",
+            "literary" if isinstance(reading_material, str) else "informational"
+        )
+
+        render_hint = (
+            "gapped_text"
+            if question_type == "gapped_text"
+            else "standard"
+        )
+
+        options_scope = "shared" if answer_options else "per_question"
+
         collected_questions = [
             copy.deepcopy(q) for q in bundle_json.get("questions", [])
         ]
 
-        # --------------------------------------------------
-        # Normalize question numbering (per section)
-        # --------------------------------------------------
         for idx, q in enumerate(collected_questions, start=1):
             q["question_number"] = idx
             q["question_id"] = f"{section_id}_Q{idx}"
 
-
-        # --------------------------------------------------
-        # Build SECTION (frontend-safe)
-        # --------------------------------------------------
         section = {
             "section_id": section_id,
             "section_index": section_index,
             "question_type": question_type,
             "topic": topic_name,
             "reading_material": reading_material,
+            "passage_style": passage_style,
+            "render_hint": render_hint,
+            "options_scope": options_scope,
             "questions": collected_questions,
         }
 
-
-        # Only attach answer_options if they exist
         if answer_options:
             section["answer_options"] = answer_options
 
@@ -7225,7 +7221,6 @@ def generate_exam_reading(
         "warnings": warnings,
         "exam_json": exam_json,
     }
-
 
 
 @app.get("/api/quizzes-reading")
