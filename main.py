@@ -7145,10 +7145,11 @@ def generate_exam_reading(
         answer_options = bundle_json.get("answer_options")
 
         # 🔑 NEW: explicit rendering hints
-        passage_style = bundle_json.get(
-            "passage_style",
-            "literary" if isinstance(reading_material, str) else "informational"
-        )
+        if question_type in ("main_idea", "literary_analysis"):
+            passage_style = "literary"
+        else:
+            passage_style = "informational"
+
 
         render_hint = (
             "gapped_text"
