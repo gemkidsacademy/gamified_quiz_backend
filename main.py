@@ -4820,9 +4820,9 @@ You are an expert NSW Selective School writing marker.
 
 CRITICAL OUTPUT RULES (MUST FOLLOW EXACTLY):
 - Respond with ONLY a valid JSON object
-- Do not include markdown, bullet points, headings, or formatting characters
-- Do not include explanations, notes, or extra text
-- Do not include triple backticks or language tags
+- Do NOT include markdown, headings, emojis, numbering symbols, or formatting characters
+- Do NOT include explanations, notes, or extra text outside the JSON
+- Do NOT include triple backticks or language tags
 - Output must be directly parsable using json.loads()
 - Use double quotes for all JSON keys and string values
 
@@ -4834,70 +4834,74 @@ INPUTS YOU WILL RECEIVE:
 2. Student response
 
 ASSESSMENT INSTRUCTIONS:
-- Judge the response holistically, but score using the five selective criteria
+- Judge the response holistically, but score using the five selective criteria below
 - Prioritise clarity, task fulfilment, and accuracy over creativity
-- Be strict but fair; assume a competitive selective exam context
-- Do NOT rewrite the student's response unless explicitly asked
-- Accuracy issues must meaningfully affect scores where present
+- Be strict but fair; assume this is a competitive selective exam
+- Do NOT rewrite or correct the student’s response
+- Accuracy issues must meaningfully reduce scores where present
 
 SCORING CRITERIA (TOTAL 25 MARKS):
 Each category is scored out of 5.
 
 1. Audience, Purpose and Form
-- Match to required genre
-- Appropriate tone for audience
-- All task requirements addressed
+- Matches the required genre
+- Appropriate tone for the intended audience
+- All parts of the task are addressed
 
 2. Ideas and Content
-- Relevance to the prompt
-- Clarity and development of ideas
-- No unnecessary or unrealistic content
+- Ideas are relevant to the prompt
+- Ideas are clearly explained and developed
+- No unnecessary, vague, or unrealistic content
 
 3. Structure and Organisation
-- Logical sequencing
-- Purposeful paragraphs
+- Logical sequencing of ideas
+- Purposeful paragraphing
 - Clear beginning, middle, and end
 
 4. Language and Vocabulary
-- Precision and suitability of language
-- Sentence control and variety
-- Consistent and appropriate tone
+- Precise and appropriate word choice
+- Controlled and varied sentence structures
+- Consistent and suitable tone
 
 5. Grammar, Spelling and Punctuation
 - Accuracy of spelling and punctuation
 - Errors must not limit clarity
-- Frequent basic errors must reduce the score
+- Frequent basic errors must significantly reduce the score
 
 SELECTIVE READINESS BAND (MANDATORY):
-Based on the overall score (/25), assign ONE descriptor only:
+Based on the overall score out of 25, assign ONE descriptor only:
 
-- 22 to 25: Strong selective standard – very competitive
-- 18 to 21: On track for selective with minor improvements
-- 14 to 17: Developing – selective readiness needs strengthening
-- 10 to 13: Below selective standard – significant improvement needed
+- 22–25: Strong selective standard – very competitive
+- 18–21: On track for selective with minor improvements
+- 14–17: Developing – selective readiness needs strengthening
+- 10–13: Below selective standard – significant improvement needed
 - Below 10: Well below selective standard at this stage
 
-REQUIRED JSON RESPONSE:
-Return a JSON object with the following keys only:
+REQUIRED JSON RESPONSE FORMAT:
+Return a JSON object with the following keys ONLY:
 
 - overall_score (integer between 0 and 25)
 - selective_readiness_band (string that exactly matches the score range)
-- category_scores (object containing five integer scores between 0 and 5)
-- strengths (one concise sentence)
-- improvements (one concise sentence)
-- teacher_feedback (three to four sentences, professional selective-exam tone)
+- categories (object)
+- teacher_feedback (3 to 4 sentences, professional selective-exam tone)
 
-The category_scores object MUST contain these exact keys:
+The categories object MUST contain the following keys exactly:
 - audience_purpose_form
 - ideas_content
 - structure_organisation
 - language_vocabulary
 - grammar_spelling_punctuation
 
+Each category MUST contain:
+- score (integer between 0 and 5)
+- strengths (array of 2–3 concise strings)
+- improvements (array of 2–3 concise, actionable strings)
+
 IMPORTANT CONSTRAINTS:
 - The readiness band MUST match the overall score
-- Do not invent information
-- Do not be lenient
+- Do NOT invent information
+- Do NOT be lenient
+- Clearly identify accuracy issues where present
 - Feedback must be suitable for parents and teachers
 - Maintain a professional NSW Selective exam tone
 
@@ -4945,18 +4949,31 @@ Student response:
 
         writing_score = int(evaluation.get("overall_score", 0))
 
-        strengths = evaluation.get("strengths", "")
-        improvements = evaluation.get("improvements", "")
-        exam_state.ai_score = writing_score
-        exam_state.ai_strengths = strengths
-        exam_state.ai_improvements = improvements
-        exam_state.ai_evaluation_json = evaluation
+        categories = evaluation.get("categories", {})
+        required_categories = [
+            "audience_purpose_form",
+            "ideas_content",
+            "structure_organisation",
+            "language_vocabulary",
+            "grammar_spelling_punctuation"
+        ]
+        
+        for key in required_categories:
+            if key not in categories:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"AI response missing category: {key}"
+                )
 
+        exam_state.ai_evaluation_json = evaluation
+        exam_state.ai_score = writing_score       
+        
+        
         print("✅ Parsed AI evaluation:", {
             "score": writing_score,
-            "strengths": strengths,
-            "improvements": improvements
+            "categories": list(categories.keys())
         })
+
 
     except Exception as e:
         print("❌ Failed to parse AI response as JSON")
@@ -5078,8 +5095,9 @@ Student response:
             section_name="Writing",
             raw_score=writing_score,
             performance_band=performance_band,
-            strengths_summary=strengths,
-            improvement_summary=improvements
+            strengths_summary="Per-category strengths recorded",
+            improvement_summary="Per-category improvements recorded"
+
         )
 
     
