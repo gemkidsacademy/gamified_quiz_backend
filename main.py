@@ -7750,6 +7750,289 @@ OUTPUT:
         "failures": failure_reasons
     }
 
+@app.post("/upload-word-reading-literary-ai")
+async def upload_word_reading_literary_ai(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 70)
+    print("📄 START: LITERARY READING WORD UPLOAD (AI - DEBUG MODE)")
+    print("=" * 70)
+
+    # --------------------------------------------------
+    # 1️⃣ File validation
+    # --------------------------------------------------
+    print("📥 STEP 1: File validation")
+    print("   → Filename:", file.filename)
+    print("   → Content-Type:", file.content_type)
+
+    if file.content_type != (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        print("❌ INVALID FILE TYPE")
+        raise HTTPException(status_code=400, detail="File must be .docx")
+
+    raw = await file.read()
+    print("✅ File read successfully")
+    print("   → Bytes read:", len(raw))
+
+    # --------------------------------------------------
+    # 2️⃣ Text extraction
+    # --------------------------------------------------
+    print("\n📄 STEP 2: Extracting text from DOCX")
+
+    try:
+        full_text = extract_text_from_docx(raw)
+    except Exception as e:
+        print("❌ DOCX TEXT EXTRACTION FAILED")
+        print("   → Exception:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to extract document text")
+
+    if not full_text:
+        print("❌ Extracted text is EMPTY")
+        raise HTTPException(status_code=400, detail="Empty document")
+
+    print("✅ Text extracted")
+    print("   → Character count:", len(full_text))
+
+    if len(full_text.strip()) < 300:
+        print("❌ Document too short")
+        raise HTTPException(status_code=400, detail="Invalid document")
+
+    # --------------------------------------------------
+    # 3️⃣ Exam block detection
+    # --------------------------------------------------
+    print("\n🧩 STEP 3: Detecting exam blocks")
+
+    start_token = "=== EXAM START ==="
+    end_token = "=== EXAM END ==="
+
+    parts = full_text.split(start_token)
+    print("   → START tokens found:", len(parts) - 1)
+
+    blocks = []
+
+    for idx, part in enumerate(parts[1:], start=1):
+        print(f"   → Inspecting block candidate {idx}")
+
+        if end_token not in part:
+            print("     ⚠️ END token missing — skipped")
+            continue
+
+        block = part.split(end_token)[0].strip()
+        print("     → Block length:", len(block))
+
+        if len(block) < 500:
+            print("     ⚠️ Block too short — skipped")
+            continue
+
+        blocks.append(block)
+        print("     ✅ Block accepted")
+
+    if not blocks:
+        print("❌ NO VALID EXAM BLOCKS FOUND")
+        raise HTTPException(
+            status_code=400,
+            detail="No exam blocks found. Missing EXAM START / EXAM END markers."
+        )
+
+    print("✅ Total valid exam blocks:", len(blocks))
+    saved_ids = []
+
+    # --------------------------------------------------
+    # 4️⃣ AI extraction prompt
+    # --------------------------------------------------
+    print("\n🤖 STEP 4: Preparing AI extraction prompt")
+
+    system_prompt = """
+You are an exam content extraction engine.
+
+You MUST extract ONE COMPLETE LITERARY READING exam.
+
+CRITICAL RULES (FAIL HARD):
+- DO NOT generate, infer, summarize, or rewrite
+- Extract ONLY what exists in the document
+- reading_material must include the full poem or passage as plain text
+- questions must include:
+  - question_number
+  - question_text
+  - answer_options (A–D)
+  - correct_answer (A–D)
+- Total questions MUST match Total_Questions
+- If ANY required field is missing or empty, RETURN {}
+
+OUTPUT:
+- VALID JSON ONLY
+- No markdown
+- No explanations
+"""
+
+    # --------------------------------------------------
+    # 5️⃣ Process each exam block
+    # --------------------------------------------------
+    for block_idx, block_text in enumerate(blocks, start=1):
+        print("\n" + "-" * 70)
+        print(f"🔍 STEP 5: Processing block {block_idx}/{len(blocks)}")
+        print("   → Block length:", len(block_text))
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
+                    }
+                ]
+            )
+        except Exception as e:
+            print("❌ OpenAI API CALL FAILED")
+            print("   → Exception:", str(e))
+            continue
+
+        raw_output = response.choices[0].message.content.strip()
+        print("🧠 AI response length:", len(raw_output))
+
+        if not raw_output.startswith("{"):
+            print("❌ NON-JSON AI OUTPUT")
+            print("   → Preview:", raw_output[:300])
+            continue
+
+        try:
+            parsed = json.loads(raw_output)
+            print("✅ JSON parsed successfully")
+        except Exception as e:
+            print("❌ JSON PARSE FAILED")
+            print("   → Exception:", str(e))
+            print("   → Raw output preview:", raw_output[:300])
+            continue
+
+        if not parsed:
+            print("⚠️ EMPTY JSON returned by AI")
+            continue
+
+        # --------------------------------------------------
+        # 6️⃣ Hard validation
+        # --------------------------------------------------
+        print("\n🧪 STEP 6: Validating extracted content")
+
+        reading_material = parsed.get("reading_material")
+        questions = parsed.get("questions", [])
+
+        if not reading_material:
+            print("❌ Missing reading_material")
+            continue
+
+        print("   → Reading material length:", len(reading_material))
+
+        if not questions:
+            print("❌ No questions extracted")
+            continue
+
+        print("   → Questions found:", len(questions))
+
+        invalid_q = False
+        for i, q in enumerate(questions, start=1):
+            print(f"   → Validating question {i}")
+
+            if "question_text" not in q:
+                print("     ❌ Missing question_text")
+                invalid_q = True
+                break
+
+            if "answer_options" not in q:
+                print("     ❌ Missing answer_options")
+                invalid_q = True
+                break
+
+            if "correct_answer" not in q:
+                print("     ❌ Missing correct_answer")
+                invalid_q = True
+                break
+
+            if q["correct_answer"] not in ["A", "B", "C", "D"]:
+                print("     ❌ Invalid correct_answer:", q["correct_answer"])
+                invalid_q = True
+                break
+
+        if invalid_q:
+            continue
+
+        print("✅ Validation passed")
+
+        # --------------------------------------------------
+        # 7️⃣ Enrich questions
+        # --------------------------------------------------
+        print("\n🧩 STEP 7: Enriching questions")
+
+        enriched_questions = []
+        for i, q in enumerate(questions, start=1):
+            enriched_questions.append({
+                "question_id": f"LIT_Q{i}",
+                "question_text": q["question_text"],
+                "answer_options": q["answer_options"],
+                "correct_answer": q["correct_answer"]
+            })
+
+        print("   → Enriched questions:", len(enriched_questions))
+
+        # --------------------------------------------------
+        # 8️⃣ Bundle (RENDER-SAFE)
+        # --------------------------------------------------
+        bundle = {
+            "question_type": "literary_analysis",
+            "topic": parsed["topic"],
+            "reading_material": reading_material,
+            "questions": enriched_questions
+        }
+
+        print("📦 Bundle prepared")
+
+        # --------------------------------------------------
+        # 9️⃣ Save to DB
+        # --------------------------------------------------
+        print("\n💾 STEP 8: Saving exam to database")
+
+        try:
+            obj = QuestionReading(
+                class_name=parsed["class_name"].lower(),
+                subject=parsed["subject"],
+                difficulty=parsed["difficulty"].lower(),
+                topic=parsed["topic"],
+                total_questions=len(enriched_questions),
+                exam_bundle=bundle
+            )
+
+            db.add(obj)
+            db.commit()
+            db.refresh(obj)
+
+            saved_ids.append(obj.id)
+            print(f"✅ Block {block_idx} saved | ID={obj.id}")
+
+        except Exception as e:
+            db.rollback()
+            print("❌ DATABASE SAVE FAILED")
+            print("   → Exception:", str(e))
+            continue
+
+    # --------------------------------------------------
+    # 🔟 Final response
+    # --------------------------------------------------
+    print("\n" + "=" * 70)
+    print("🎉 UPLOAD COMPLETE")
+    print("   → Total saved exams:", len(saved_ids))
+    print("   → IDs:", saved_ids)
+    print("=" * 70)
+
+    return {
+        "message": "Literary Reading documents processed",
+        "saved_count": len(saved_ids),
+        "bundle_ids": saved_ids
+    }
+
 
 
 @app.post("/upload-word-reading-main-idea-ai")
