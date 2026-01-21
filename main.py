@@ -5204,15 +5204,26 @@ def get_writing_result(
         )
 
     ai_eval = exam_state.ai_evaluation_json
+    selective_readiness_band = exam_state.ai_evaluation_json.get(
+        "selective_readiness_band"
+    )
+
 
     return {
         "exam_type": "Writing",
-        "status": ai_eval.get("selective_readiness_band"),
         "score": exam_state.ai_score,
         "max_score": 25,
-        "advisory": "This report is advisory only and does not guarantee placement.",
-        "evaluation": ai_eval
+    
+        # ✅ Explicit mandatory descriptor
+        "selective_readiness_band": selective_readiness_band,
+    
+        # ✅ Full AI evaluation
+        "evaluation": ai_eval,
+    
+        # ✅ Advisory (keep fallback for safety)
+        "advisory": "This report is advisory only and does not guarantee placement."
     }
+
 
 
 @app.get("/api/exams/writing/current")
