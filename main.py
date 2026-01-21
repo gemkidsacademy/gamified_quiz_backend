@@ -4920,52 +4920,7 @@ Student response:
         response = client.responses.create(
             model="gpt-4o-mini",
             input=prompt,
-            temperature=0.4,
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "writing_evaluation",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "overall_score": {"type": "integer"},
-                            "selective_readiness_band": {"type": "string"},
-                            "teacher_feedback": {"type": "string"},
-                            "categories": {
-                                "type": "object",
-                                "properties": {
-                                    "audience_purpose_form": {
-                                        "type": "object",
-                                        "properties": {
-                                            "score": {"type": "integer"},
-                                            "strengths": {"type": "array", "items": {"type": "string"}},
-                                            "improvements": {"type": "array", "items": {"type": "string"}}
-                                        },
-                                        "required": ["score", "strengths", "improvements"]
-                                    },
-                                    "ideas_content": { "$ref": "#/properties/categories/properties/audience_purpose_form" },
-                                    "structure_organisation": { "$ref": "#/properties/categories/properties/audience_purpose_form" },
-                                    "language_vocabulary": { "$ref": "#/properties/categories/properties/audience_purpose_form" },
-                                    "grammar_spelling_punctuation": { "$ref": "#/properties/categories/properties/audience_purpose_form" }
-                                },
-                                "required": [
-                                    "audience_purpose_form",
-                                    "ideas_content",
-                                    "structure_organisation",
-                                    "language_vocabulary",
-                                    "grammar_spelling_punctuation"
-                                ]
-                            }
-                        },
-                        "required": [
-                            "overall_score",
-                            "selective_readiness_band",
-                            "categories",
-                            "teacher_feedback"
-                        ]
-                    }
-                }
-            }
+            temperature=0.4
         )
 
 
