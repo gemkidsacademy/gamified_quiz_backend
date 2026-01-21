@@ -4920,8 +4920,54 @@ Student response:
         response = client.responses.create(
             model="gpt-4o-mini",
             input=prompt,
-            temperature=0.4
+            temperature=0.4,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "writing_evaluation",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "overall_score": {"type": "integer"},
+                            "selective_readiness_band": {"type": "string"},
+                            "teacher_feedback": {"type": "string"},
+                            "categories": {
+                                "type": "object",
+                                "properties": {
+                                    "audience_purpose_form": {
+                                        "type": "object",
+                                        "properties": {
+                                            "score": {"type": "integer"},
+                                            "strengths": {"type": "array", "items": {"type": "string"}},
+                                            "improvements": {"type": "array", "items": {"type": "string"}}
+                                        },
+                                        "required": ["score", "strengths", "improvements"]
+                                    },
+                                    "ideas_content": { "$ref": "#/properties/categories/properties/audience_purpose_form" },
+                                    "structure_organisation": { "$ref": "#/properties/categories/properties/audience_purpose_form" },
+                                    "language_vocabulary": { "$ref": "#/properties/categories/properties/audience_purpose_form" },
+                                    "grammar_spelling_punctuation": { "$ref": "#/properties/categories/properties/audience_purpose_form" }
+                                },
+                                "required": [
+                                    "audience_purpose_form",
+                                    "ideas_content",
+                                    "structure_organisation",
+                                    "language_vocabulary",
+                                    "grammar_spelling_punctuation"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "overall_score",
+                            "selective_readiness_band",
+                            "categories",
+                            "teacher_feedback"
+                        ]
+                    }
+                }
+            }
         )
+
 
         print("🧠 Raw OpenAI response object:", response)
 
@@ -4947,19 +4993,8 @@ Student response:
         
         evaluation = json.loads(ai_result)
 
-        writing_score = float(evaluation.get("overall_score", 0))
-        readiness_band = evaluation.get("selective_readiness_band", "")
-        performance_band = "Writing"
-        readiness_status = readiness_band
-
-        guidance_text = (
-            "This writing sample has been assessed against NSW Selective School "
-            "writing standards and reflects the student’s current level of readiness."
-        )
-
-
-
-
+        writing_score = int(evaluation.get("overall_score", 0))
+        
         categories = evaluation.get("categories", {})
         required_categories = [
             "audience_purpose_form",
@@ -4969,11 +5004,26 @@ Student response:
             "grammar_spelling_punctuation"
         ]
         
+        # ✅ HARD STRUCTURE VALIDATION (CRITICAL)
         for key in required_categories:
-            if key not in categories:
+            cat = categories.get(key)
+        
+            if not isinstance(cat, dict):
                 raise HTTPException(
                     status_code=500,
-                    detail=f"AI response missing category: {key}"
+                    detail=f"Invalid category format: {key}"
+                )
+        
+            if not all(field in cat for field in ["score", "strengths", "improvements"]):
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Category missing required fields: {key}"
+                )
+        
+            if not isinstance(cat["strengths"], list) or not isinstance(cat["improvements"], list):
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Category fields must be arrays: {key}"
                 )
 
         exam_state.ai_evaluation_json = evaluation
@@ -5011,10 +5061,11 @@ Student response:
         student_id=exam_state.student_id,
         exam_attempt_id=exam_state.id,
         subject="writing",
-        total_questions=20,
+        total_questions=25,
         correct_answers=writing_score,
-        wrong_answers=20 - writing_score,
-        accuracy_percent=round((writing_score / 20) * 100, 2)
+        wrong_answers=25 - writing_score,
+        accuracy_percent=round((writing_score / 25) * 100, 2)
+
     )
 
     existing_raw = (
@@ -5054,7 +5105,28 @@ Student response:
     if existing_report:
         print("⚠️ Writing admin report already exists. Skipping snapshot generation.")
     else:
-       
+        # --------------------------------------------------
+        # B) Determine performance band & readiness
+        # --------------------------------------------------
+        if writing_score >= 15:
+            performance_band = "Strong"
+            readiness_status = "Ready"
+            guidance_text = "Student demonstrates strong writing skills suitable for selective readiness."
+        elif writing_score >= 10:
+            performance_band = "Developing"
+            readiness_status = "Borderline"
+            guidance_text = "Student shows developing writing skills and may benefit from targeted practice."
+        else:
+            performance_band = "Weak"
+            readiness_status = "Not Ready"
+            guidance_text = "Student requires significant improvement in writing fundamentals."
+    
+        print("🧠 Writing classification:", {
+            "score": writing_score,
+            "band": performance_band,
+            "readiness": readiness_status
+        })
+    
         # --------------------------------------------------
         # C) Insert admin_exam_reports
         # --------------------------------------------------
@@ -5062,23 +5134,11 @@ Student response:
             exam_attempt_id=exam_state.id,
             student_id=exam_state.student_id,
             exam_type="writing",
-        
-            # ✅ TRUE score, not normalized
-            overall_score=writing_score,     # e.g. 22.5
-        
-            # ✅ REQUIRED to render correctly later
-            max_score=25,
-        
-            # ✅ Directly from AI (no recalculation)
-            readiness_band=readiness_band,
-        
-            # ✅ Human-readable guidance
+            overall_score=writing_score,
+            readiness_band=readiness_status,
             school_guidance_level=guidance_text,
-        
-            # ✅ Explicit disclosure for UI
-            summary_notes=f"Writing score: {writing_score} / 25"
+            summary_notes=f"Writing score: {writing_score}/20"
         )
-
 
 
     
@@ -5114,8 +5174,7 @@ Student response:
            admin_report_id=admin_report.id,
            rule_code="writing_score_threshold",
            rule_result=readiness_status,
-           rule_description=f"Writing score {writing_score}/25 classified as {readiness_band}"
-
+           rule_description=f"Writing score {writing_score}/20 classified as {performance_band}"
         )
 
     
