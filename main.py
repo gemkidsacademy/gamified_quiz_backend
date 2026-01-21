@@ -4881,7 +4881,8 @@ REQUIRED JSON RESPONSE FORMAT:
 Return a JSON object with the following keys ONLY:
 
 - overall_score (integer between 0 and 25)
-- selective_readiness_band (string that exactly matches the score range)
+- selective_readiness_band (string that exactly matches the descriptor wording above)
+
 - categories (object)
 - teacher_feedback (3 to 4 sentences, professional selective-exam tone)
 
@@ -4953,16 +4954,26 @@ Student response:
         categories = evaluation.get("categories", {})
         band = evaluation.get("selective_readiness_band")
 
-        if writing_score >= 22 and band != "22–25":
-            raise HTTPException(status_code=500, detail="Readiness band mismatch")
-        elif 18 <= writing_score <= 21 and band != "18–21":
-            raise HTTPException(status_code=500, detail="Readiness band mismatch")
-        elif 14 <= writing_score <= 17 and band != "14–17":
-            raise HTTPException(status_code=500, detail="Readiness band mismatch")
-        elif 10 <= writing_score <= 13 and band != "10–13":
-            raise HTTPException(status_code=500, detail="Readiness band mismatch")
-        elif writing_score < 10 and band != "Below 10":
-            raise HTTPException(status_code=500, detail="Readiness band mismatch")
+        EXPECTED_BANDS = {
+            range(22, 26): "Strong selective standard – very competitive",
+            range(18, 22): "On track for selective with minor improvements",
+            range(14, 18): "Developing – selective readiness needs strengthening",
+            range(10, 14): "Below selective standard – significant improvement needed",
+            range(0, 10): "Well below selective standard at this stage"
+        }
+        
+        expected_band = None
+        for score_range, label in EXPECTED_BANDS.items():
+            if writing_score in score_range:
+                expected_band = label
+                break
+        
+        if band != expected_band:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Readiness band mismatch: expected '{expected_band}', got '{band}'"
+            )
+
         required_categories = [
             "audience_purpose_form",
             "ideas_content",
