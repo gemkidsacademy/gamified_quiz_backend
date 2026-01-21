@@ -4947,7 +4947,18 @@ Student response:
         
         evaluation = json.loads(ai_result)
 
-        writing_score = int(evaluation.get("overall_score", 0))
+        writing_score = float(evaluation.get("overall_score", 0))
+        readiness_band = evaluation.get("selective_readiness_band", "")
+        performance_band = "Writing"
+        readiness_status = readiness_band
+
+        guidance_text = (
+            "This writing sample has been assessed against NSW Selective School "
+            "writing standards and reflects the student’s current level of readiness."
+        )
+
+
+
 
         categories = evaluation.get("categories", {})
         required_categories = [
@@ -5043,28 +5054,7 @@ Student response:
     if existing_report:
         print("⚠️ Writing admin report already exists. Skipping snapshot generation.")
     else:
-        # --------------------------------------------------
-        # B) Determine performance band & readiness
-        # --------------------------------------------------
-        if writing_score >= 15:
-            performance_band = "Strong"
-            readiness_status = "Ready"
-            guidance_text = "Student demonstrates strong writing skills suitable for selective readiness."
-        elif writing_score >= 10:
-            performance_band = "Developing"
-            readiness_status = "Borderline"
-            guidance_text = "Student shows developing writing skills and may benefit from targeted practice."
-        else:
-            performance_band = "Weak"
-            readiness_status = "Not Ready"
-            guidance_text = "Student requires significant improvement in writing fundamentals."
-    
-        print("🧠 Writing classification:", {
-            "score": writing_score,
-            "band": performance_band,
-            "readiness": readiness_status
-        })
-    
+       
         # --------------------------------------------------
         # C) Insert admin_exam_reports
         # --------------------------------------------------
@@ -5072,11 +5062,23 @@ Student response:
             exam_attempt_id=exam_state.id,
             student_id=exam_state.student_id,
             exam_type="writing",
-            overall_score=writing_score,
-            readiness_band=readiness_status,
+        
+            # ✅ TRUE score, not normalized
+            overall_score=writing_score,     # e.g. 22.5
+        
+            # ✅ REQUIRED to render correctly later
+            max_score=25,
+        
+            # ✅ Directly from AI (no recalculation)
+            readiness_band=readiness_band,
+        
+            # ✅ Human-readable guidance
             school_guidance_level=guidance_text,
-            summary_notes=f"Writing score: {writing_score}/20"
+        
+            # ✅ Explicit disclosure for UI
+            summary_notes=f"Writing score: {writing_score} / 25"
         )
+
 
 
     
@@ -5112,7 +5114,8 @@ Student response:
            admin_report_id=admin_report.id,
            rule_code="writing_score_threshold",
            rule_result=readiness_status,
-           rule_description=f"Writing score {writing_score}/20 classified as {performance_band}"
+           rule_description=f"Writing score {writing_score}/25 classified as {readiness_band}"
+
         )
 
     
