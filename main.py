@@ -2428,7 +2428,10 @@ def generate_exam(
 
         available = (
             db.query(Question)
-              .filter(func.lower(Question.topic) == topic_name.lower())
+              .filter(
+                  func.lower(Question.topic) == topic_name.lower(),
+                  Question.difficulty == difficulty
+              )
               .count()
         )
 
@@ -2457,11 +2460,15 @@ def generate_exam(
         # ---- DB questions
         db_questions = (
             db.query(Question)
-              .filter(func.lower(Question.topic) == topic_name.lower())
+              .filter(
+                  func.lower(Question.topic) == topic_name.lower(),
+                  Question.difficulty == difficulty
+              )
               .order_by(func.random())
               .limit(db_count)
               .all()
         )
+
         
         
         for q in db_questions:
