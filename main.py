@@ -4951,6 +4951,18 @@ Student response:
         writing_score = int(evaluation.get("overall_score", 0))
         
         categories = evaluation.get("categories", {})
+        band = evaluation.get("selective_readiness_band")
+
+        if writing_score >= 22 and band != "22–25":
+            raise HTTPException(status_code=500, detail="Readiness band mismatch")
+        elif 18 <= writing_score <= 21 and band != "18–21":
+            raise HTTPException(status_code=500, detail="Readiness band mismatch")
+        elif 14 <= writing_score <= 17 and band != "14–17":
+            raise HTTPException(status_code=500, detail="Readiness band mismatch")
+        elif 10 <= writing_score <= 13 and band != "10–13":
+            raise HTTPException(status_code=500, detail="Readiness band mismatch")
+        elif writing_score < 10 and band != "Below 10":
+            raise HTTPException(status_code=500, detail="Readiness band mismatch")
         required_categories = [
             "audience_purpose_form",
             "ideas_content",
@@ -5063,18 +5075,24 @@ Student response:
         # --------------------------------------------------
         # B) Determine performance band & readiness
         # --------------------------------------------------
-        if writing_score >= 15:
+        if writing_score >= 22:
             performance_band = "Strong"
+            readiness_status = "Very Competitive"
+            guidance_text = "Student demonstrates strong writing skills and is highly competitive for selective placement."
+        elif writing_score >= 18:
+            performance_band = "On Track"
             readiness_status = "Ready"
-            guidance_text = "Student demonstrates strong writing skills suitable for selective readiness."
-        elif writing_score >= 10:
+            guidance_text = "Student is on track for selective readiness with minor improvements."
+        elif writing_score >= 14:
             performance_band = "Developing"
             readiness_status = "Borderline"
-            guidance_text = "Student shows developing writing skills and may benefit from targeted practice."
+            guidance_text = "Student shows developing writing skills and would benefit from targeted improvement."
         else:
             performance_band = "Weak"
             readiness_status = "Not Ready"
             guidance_text = "Student requires significant improvement in writing fundamentals."
+
+
     
         print("🧠 Writing classification:", {
             "score": writing_score,
@@ -5092,7 +5110,7 @@ Student response:
             overall_score=writing_score,
             readiness_band=readiness_status,
             school_guidance_level=guidance_text,
-            summary_notes=f"Writing score: {writing_score}/20"
+            summary_notes=f"Writing score: {writing_score}/25"
         )
 
 
@@ -5129,7 +5147,7 @@ Student response:
            admin_report_id=admin_report.id,
            rule_code="writing_score_threshold",
            rule_result=readiness_status,
-           rule_description=f"Writing score {writing_score}/20 classified as {performance_band}"
+           rule_description=f"Writing score {writing_score}/25 classified as {performance_band}"
         )
 
     
