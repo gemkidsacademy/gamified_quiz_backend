@@ -1525,13 +1525,13 @@ scheduler.start()
 # ---------------------------
 def get_response_model(exam: str):
     if exam == "thinking_skills":
-        return StudentThinkingSkillResponse
+        return StudentExamResponseThinkingSkills
     if exam == "reading":
-        return StudentReadingResponse
+        return StudentExamReportReading
     if exam == "mathematics":
-        return StudentMathematicsResponse
+        return StudentExamResponse
     if exam == "writing":
-        return StudentWritingResponse
+        return StudentExamWriting
     raise HTTPException(status_code=400, detail="Invalid exam type")
 
 def chunk_into_pages(paragraphs, per_page=18):
