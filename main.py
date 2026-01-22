@@ -4,6 +4,8 @@ from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 import docx
+from datetime import date
+
 from io import BytesIO 
 from typing import List
 from sendgrid import SendGridAPIClient
@@ -2401,7 +2403,7 @@ def get_question_bank_thinking_skills(
 def get_student_exam_report(
     student_id: str,
     exam: str,
-    date: date_type,
+    date: date,
     db: Session = Depends(get_db),
 ):
     # -----------------------------------
