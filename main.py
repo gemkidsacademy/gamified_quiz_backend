@@ -8377,11 +8377,12 @@ OUTPUT:
         # --------------------------------------------------
         bundle = {
             "question_type": "main_idea",
-            "topic": parsed["topic"],
+            "topic": parsed.get("topic", "Main Idea and Summary"),
             "reading_material": rm,
             "answer_options": opts,
             "questions": enriched_questions
         }
+
 
         # --------------------------------------------------
         # 9️⃣ Save to DB
@@ -8393,10 +8394,11 @@ OUTPUT:
                 class_name=parsed["class_name"].lower(),
                 subject=parsed["subject"],
                 difficulty=parsed["difficulty"].lower(),
-                topic=parsed["topic"],
+                topic=parsed.get("topic", "Main Idea and Summary"),
                 total_questions=len(enriched_questions),
                 exam_bundle=bundle
             )
+
 
             db.add(obj)
             db.commit()
@@ -8425,7 +8427,7 @@ OUTPUT:
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
- 
+  
 
 
 #here line 8026
