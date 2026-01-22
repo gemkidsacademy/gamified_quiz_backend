@@ -8309,8 +8309,17 @@ OUTPUT:
         # --------------------------------------------------
         print("\n🧪 STEP 6: Validating extracted content")
 
-        rm = parsed.get("reading_material", {})
-        paragraphs = rm.get("paragraphs", {})
+        rm = parsed["reading_material"]
+
+        if isinstance(rm, dict):
+            paragraphs = rm.get("paragraphs", {})
+        elif isinstance(rm, str):
+            paragraphs = {"p1": rm}
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid reading_material format"
+            )
 
         if not paragraphs:
             print("❌ Missing paragraphs")
