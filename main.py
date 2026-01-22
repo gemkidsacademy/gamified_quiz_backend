@@ -2793,13 +2793,19 @@ def generate_overall_selective_report(
         )
         .all()
     )
+    if not reports:
+       raise HTTPException(
+           status_code=404,
+           detail={
+               "code": "NO_EXAMS_FOUND",
+               "message": "No exam reports exist for this student on the selected exam date.",
+               "student_id": student_id,
+               "exam_date": str(exam_date)
+           }
+       )
 
-    if len(reports) < 4:
-        raise HTTPException(
-            status_code=400,
-            detail="Overall readiness can be generated only after all four exams are completed."
-        )
 
+    
     # --------------------------------------------------
     # 3️⃣ Normalize exam types (🔥 FIX)
     # --------------------------------------------------
@@ -2821,11 +2827,20 @@ def generate_overall_selective_report(
     }
 
     missing = required_subjects - reports_by_subject.keys()
+
     if missing:
         raise HTTPException(
-            status_code=400,
-            detail=f"Missing required exam reports: {', '.join(missing)}"
+            status_code=409,
+            detail={
+                "code": "INCOMPLETE_EXAMS",
+                "message": "Overall readiness cannot be generated because not all required exams are completed.",
+                "missing_subjects": sorted(list(missing)),
+                "completed_subjects": sorted(list(reports_by_subject.keys())),
+                "student_id": student_id,
+                "exam_date": str(exam_date)
+            }
         )
+
 
     
     # --------------------------------------------------
