@@ -8309,17 +8309,17 @@ OUTPUT:
         # --------------------------------------------------
         print("\n🧪 STEP 6: Validating extracted content")
 
-        rm = parsed["reading_material"]
+        rm = parsed.get("reading_material")
 
         if isinstance(rm, dict):
             paragraphs = rm.get("paragraphs", {})
         elif isinstance(rm, str):
             paragraphs = {"p1": rm}
+        elif isinstance(rm, list):
+            paragraphs = {f"p{i+1}": p for i, p in enumerate(rm) if isinstance(p, str)}
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid reading_material format"
-            )
+            print("❌ Unsupported reading_material type:", type(rm))
+            continue
 
         if not paragraphs:
             print("❌ Missing paragraphs")
@@ -8427,7 +8427,7 @@ OUTPUT:
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
-   
+    
 
 
 #here line 8026
