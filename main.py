@@ -2400,7 +2400,7 @@ def get_question_bank_thinking_skills(
         for r in results
     ]
  
-@app.get("/api/reports/student")
+@app.get("/api/reports/student-new")
 def get_student_exam_report(
     student_id: str,
     exam: str,
