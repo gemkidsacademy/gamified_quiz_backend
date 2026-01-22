@@ -2406,9 +2406,18 @@ def get_student_exam_report(
     date: date,
     db: Session = Depends(get_db),
 ):
+    print("\n" + "=" * 80)
+    print("📊 STUDENT EXAM REPORT REQUEST RECEIVED")
+    print("=" * 80)
+    print("➡️ student_id:", student_id)
+    print("➡️ exam:", exam)
+    print("➡️ date:", date)
+
     # -----------------------------------
     # Step 1: Resolve exam attempt
     # -----------------------------------
+    print("\n🔍 STEP 1: Resolving exam attempt from AdminExamReport...")
+
     admin_report = (
         db.query(AdminExamReport)
         .filter(
@@ -2419,15 +2428,23 @@ def get_student_exam_report(
         .first()
     )
 
+    print("📌 AdminExamReport found:", bool(admin_report))
+
     if not admin_report:
+        print("❌ ERROR: No AdminExamReport entry found")
         raise HTTPException(status_code=404, detail="Exam attempt not found")
 
     exam_attempt_id = admin_report.exam_attempt_id
+    print("✅ Exam attempt resolved")
+    print("   • exam_attempt_id:", exam_attempt_id)
 
     # -----------------------------------
     # Step 2: Load correct response table
     # -----------------------------------
+    print("\n📘 STEP 2: Resolving response table for exam type...")
+
     ResponseModel = get_response_model(exam)
+    print("📘 ResponseModel resolved to:", ResponseModel.__name__)
 
     responses = (
         db.query(ResponseModel)
@@ -2438,20 +2455,34 @@ def get_student_exam_report(
         .all()
     )
 
+    print("📊 Total responses fetched:", len(responses))
+
     if not responses:
+        print("❌ ERROR: No responses found for this attempt")
         raise HTTPException(status_code=404, detail="No responses found")
 
     # -----------------------------------
     # Step 3: Overall summary
     # -----------------------------------
+    print("\n🧮 STEP 3: Computing overall summary...")
+
     total = len(responses)
     attempted = sum(1 for r in responses if r.is_correct is not None)
     correct = sum(1 for r in responses if r.is_correct is True)
     incorrect = sum(1 for r in responses if r.is_correct is False)
     not_attempted = total - attempted
 
+    print("   • total questions:", total)
+    print("   • attempted:", attempted)
+    print("   • correct:", correct)
+    print("   • incorrect:", incorrect)
+    print("   • not_attempted:", not_attempted)
+
     accuracy = round((correct / attempted) * 100) if attempted else 0
     result = "Pass" if accuracy >= 50 else "Fail"
+
+    print("   • accuracy (%):", accuracy)
+    print("   • result:", result)
 
     summary = {
         "total_questions": total,
@@ -2467,6 +2498,8 @@ def get_student_exam_report(
     # -----------------------------------
     # Step 4: Topic-wise aggregation
     # -----------------------------------
+    print("\n📚 STEP 4: Computing topic-wise breakdown...")
+
     topic_rows = (
         db.query(
             ResponseModel.topic,
@@ -2483,12 +2516,19 @@ def get_student_exam_report(
         .all()
     )
 
+    print("📊 Topics found:", len(topic_rows))
+
     topics = []
     improvement_areas = []
 
     for row in topic_rows:
         accuracy_pct = round((row.correct / row.attempted) * 100) if row.attempted else 0
         weakness = 100 - accuracy_pct
+
+        print(f"   🔹 Topic: {row.topic}")
+        print(f"      total={row.total}, attempted={row.attempted}, "
+              f"correct={row.correct}, incorrect={row.incorrect}, "
+              f"accuracy={accuracy_pct}%")
 
         topics.append({
             "topic": row.topic,
@@ -2507,6 +2547,9 @@ def get_student_exam_report(
     # -----------------------------------
     # Step 5: Final payload
     # -----------------------------------
+    print("\n✅ STEP 5: Report payload ready")
+    print("=" * 80 + "\n")
+
     return {
         "exam": exam,
         "date": date.isoformat(),
@@ -2514,6 +2557,7 @@ def get_student_exam_report(
         "topics": topics,
         "improvement_areas": improvement_areas,
     }
+
 @app.post("/generate-new-mr")
 def generate_exam(
     payload: dict = Body(...),
