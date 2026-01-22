@@ -8391,9 +8391,9 @@ OUTPUT:
 
         try:
             obj = QuestionReading(
-                class_name=parsed["class_name"].lower(),
-                subject=parsed["subject"],
-                difficulty=parsed["difficulty"].lower(),
+                class_name=parsed.get("class_name", "selective").lower(),
+                subject=parsed.get("subject", "Reading Comprehension"),
+                difficulty=parsed.get("difficulty", "hard").lower(),
                 topic=parsed.get("topic", "Main Idea and Summary"),
                 total_questions=len(enriched_questions),
                 exam_bundle=bundle
@@ -8427,7 +8427,7 @@ OUTPUT:
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
-  
+   
 
 
 #here line 8026
