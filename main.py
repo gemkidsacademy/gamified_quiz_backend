@@ -3053,6 +3053,43 @@ def get_student_selective_reports(
 
 
     return response
+@app.get("/api/exams/dates")
+def get_exam_dates(
+    exam: str,
+    student_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Returns available exam dates for:
+    - Per Student Report (exam + student_id)
+    - Per Class Report (exam only)
+    """
+
+    # Base query: filter by exam
+    query = (
+        db.query(AdminExamReport.created_at)
+        .filter(AdminExamReport.exam_type == exam)
+    )
+
+    # Per Student Report: further restrict by student
+    if student_id:
+        query = query.filter(AdminExamReport.student_id == student_id)
+
+    # Execute query
+    rows = (
+        query
+        .distinct()
+        .order_by(AdminExamReport.created_at.desc())
+        .all()
+    )
+
+    return {
+        "dates": [
+            row.created_at.date().isoformat()
+            for row in rows
+        ]
+    }
+ 
 
 @app.get("/api/admin/students")
 def get_admin_students(db: Session = Depends(get_db)):
