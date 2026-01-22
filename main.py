@@ -1521,6 +1521,17 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
+def get_response_model(exam: str):
+    if exam == "thinking_skills":
+        return StudentThinkingSkillResponse
+    if exam == "reading":
+        return StudentReadingResponse
+    if exam == "mathematics":
+        return StudentMathematicsResponse
+    if exam == "writing":
+        return StudentWritingResponse
+    raise HTTPException(status_code=400, detail="Invalid exam type")
+
 def chunk_into_pages(paragraphs, per_page=18):
     pages = []
     for i in range(0, len(paragraphs), per_page):
@@ -2386,7 +2397,121 @@ def get_question_bank_thinking_skills(
         }
         for r in results
     ]
+@app.get("/api/reports/student")
+def get_student_exam_report(
+    student_id: str,
+    exam: str,
+    date: date_type,
+    db: Session = Depends(get_db),
+):
+    # -----------------------------------
+    # Step 1: Resolve exam attempt
+    # -----------------------------------
+    admin_report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student_id,
+            AdminExamReport.exam_type == exam,
+            func.date(AdminExamReport.created_at) == date
+        )
+        .first()
+    )
 
+    if not admin_report:
+        raise HTTPException(status_code=404, detail="Exam attempt not found")
+
+    exam_attempt_id = admin_report.exam_attempt_id
+
+    # -----------------------------------
+    # Step 2: Load correct response table
+    # -----------------------------------
+    ResponseModel = get_response_model(exam)
+
+    responses = (
+        db.query(ResponseModel)
+        .filter(
+            ResponseModel.student_id == student_id,
+            ResponseModel.exam_attempt_id == exam_attempt_id
+        )
+        .all()
+    )
+
+    if not responses:
+        raise HTTPException(status_code=404, detail="No responses found")
+
+    # -----------------------------------
+    # Step 3: Overall summary
+    # -----------------------------------
+    total = len(responses)
+    attempted = sum(1 for r in responses if r.is_correct is not None)
+    correct = sum(1 for r in responses if r.is_correct is True)
+    incorrect = sum(1 for r in responses if r.is_correct is False)
+    not_attempted = total - attempted
+
+    accuracy = round((correct / attempted) * 100) if attempted else 0
+    result = "Pass" if accuracy >= 50 else "Fail"
+
+    summary = {
+        "total_questions": total,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy": accuracy,
+        "score": accuracy,
+        "result": result,
+    }
+
+    # -----------------------------------
+    # Step 4: Topic-wise aggregation
+    # -----------------------------------
+    topic_rows = (
+        db.query(
+            ResponseModel.topic,
+            func.count().label("total"),
+            func.count(case((ResponseModel.is_correct.isnot(None), 1))).label("attempted"),
+            func.count(case((ResponseModel.is_correct.is_(True), 1))).label("correct"),
+            func.count(case((ResponseModel.is_correct.is_(False), 1))).label("incorrect"),
+        )
+        .filter(
+            ResponseModel.student_id == student_id,
+            ResponseModel.exam_attempt_id == exam_attempt_id,
+        )
+        .group_by(ResponseModel.topic)
+        .all()
+    )
+
+    topics = []
+    improvement_areas = []
+
+    for row in topic_rows:
+        accuracy_pct = round((row.correct / row.attempted) * 100) if row.attempted else 0
+        weakness = 100 - accuracy_pct
+
+        topics.append({
+            "topic": row.topic,
+            "total": row.total,
+            "attempted": row.attempted,
+            "correct": row.correct,
+            "incorrect": row.incorrect,
+            "accuracy": accuracy_pct,
+        })
+
+        improvement_areas.append({
+            "topic": row.topic,
+            "weakness": weakness,
+        })
+
+    # -----------------------------------
+    # Step 5: Final payload
+    # -----------------------------------
+    return {
+        "exam": exam,
+        "date": date.isoformat(),
+        "summary": summary,
+        "topics": topics,
+        "improvement_areas": improvement_areas,
+    }
 @app.post("/generate-new-mr")
 def generate_exam(
     payload: dict = Body(...),
