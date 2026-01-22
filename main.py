@@ -2399,6 +2399,7 @@ def get_question_bank_thinking_skills(
         }
         for r in results
     ]
+ 
 @app.get("/api/reports/student")
 def get_student_exam_report(
     student_id: str,
@@ -2407,82 +2408,82 @@ def get_student_exam_report(
     db: Session = Depends(get_db),
 ):
     print("\n" + "=" * 80)
-    print("📊 STUDENT EXAM REPORT REQUEST RECEIVED")
+    print("📊 STUDENT EXAM REPORT REQUEST")
     print("=" * 80)
-    print("➡️ student_id:", student_id)
+    print("➡️ external student_id:", student_id)
     print("➡️ exam:", exam)
     print("➡️ date:", date)
 
-    # -----------------------------------
-    # Step 1: Resolve exam attempt
-    # -----------------------------------
-    print("\n🔍 STEP 1: Resolving exam attempt from AdminExamReport...")
+    # --------------------------------------------------
+    # 0️⃣ Resolve student (EXTERNAL → INTERNAL ID)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id.strip())
+        )
+        .first()
+    )
 
+    if not student:
+        print("❌ Student not found for external id:", student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved → internal id:", student.id)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve exam attempt via AdminExamReport
+    # --------------------------------------------------
     admin_report = (
         db.query(AdminExamReport)
         .filter(
-            AdminExamReport.student_id == student_id,
+            AdminExamReport.student_id == student.student_id,  # external id stored here
             AdminExamReport.exam_type == exam,
             func.date(AdminExamReport.created_at) == date
         )
         .first()
     )
 
-    print("📌 AdminExamReport found:", bool(admin_report))
-
     if not admin_report:
-        print("❌ ERROR: No AdminExamReport entry found")
+        print("❌ AdminExamReport not found")
         raise HTTPException(status_code=404, detail="Exam attempt not found")
 
     exam_attempt_id = admin_report.exam_attempt_id
-    print("✅ Exam attempt resolved")
-    print("   • exam_attempt_id:", exam_attempt_id)
+    print("✅ Exam attempt resolved → exam_attempt_id:", exam_attempt_id)
 
-    # -----------------------------------
-    # Step 2: Load correct response table
-    # -----------------------------------
-    print("\n📘 STEP 2: Resolving response table for exam type...")
-
+    # --------------------------------------------------
+    # 2️⃣ Load correct response table
+    # --------------------------------------------------
     ResponseModel = get_response_model(exam)
-    print("📘 ResponseModel resolved to:", ResponseModel.__name__)
+    print("📘 Response model:", ResponseModel.__name__)
 
     responses = (
         db.query(ResponseModel)
         .filter(
-            ResponseModel.student_id == student_id,
+            ResponseModel.student_id == student.id,   # ✅ INTERNAL ID (FIX)
             ResponseModel.exam_attempt_id == exam_attempt_id
         )
         .all()
     )
 
-    print("📊 Total responses fetched:", len(responses))
+    print("📊 Responses fetched:", len(responses))
 
     if not responses:
-        print("❌ ERROR: No responses found for this attempt")
+        print("❌ No responses found for this attempt")
         raise HTTPException(status_code=404, detail="No responses found")
 
-    # -----------------------------------
-    # Step 3: Overall summary
-    # -----------------------------------
-    print("\n🧮 STEP 3: Computing overall summary...")
-
+    # --------------------------------------------------
+    # 3️⃣ Overall summary
+    # --------------------------------------------------
     total = len(responses)
     attempted = sum(1 for r in responses if r.is_correct is not None)
     correct = sum(1 for r in responses if r.is_correct is True)
     incorrect = sum(1 for r in responses if r.is_correct is False)
     not_attempted = total - attempted
 
-    print("   • total questions:", total)
-    print("   • attempted:", attempted)
-    print("   • correct:", correct)
-    print("   • incorrect:", incorrect)
-    print("   • not_attempted:", not_attempted)
-
     accuracy = round((correct / attempted) * 100) if attempted else 0
     result = "Pass" if accuracy >= 50 else "Fail"
-
-    print("   • accuracy (%):", accuracy)
-    print("   • result:", result)
 
     summary = {
         "total_questions": total,
@@ -2495,11 +2496,9 @@ def get_student_exam_report(
         "result": result,
     }
 
-    # -----------------------------------
-    # Step 4: Topic-wise aggregation
-    # -----------------------------------
-    print("\n📚 STEP 4: Computing topic-wise breakdown...")
-
+    # --------------------------------------------------
+    # 4️⃣ Topic-wise aggregation
+    # --------------------------------------------------
     topic_rows = (
         db.query(
             ResponseModel.topic,
@@ -2509,14 +2508,12 @@ def get_student_exam_report(
             func.count(case((ResponseModel.is_correct.is_(False), 1))).label("incorrect"),
         )
         .filter(
-            ResponseModel.student_id == student_id,
+            ResponseModel.student_id == student.id,   # ✅ INTERNAL ID (FIX)
             ResponseModel.exam_attempt_id == exam_attempt_id,
         )
         .group_by(ResponseModel.topic)
         .all()
     )
-
-    print("📊 Topics found:", len(topic_rows))
 
     topics = []
     improvement_areas = []
@@ -2524,11 +2521,6 @@ def get_student_exam_report(
     for row in topic_rows:
         accuracy_pct = round((row.correct / row.attempted) * 100) if row.attempted else 0
         weakness = 100 - accuracy_pct
-
-        print(f"   🔹 Topic: {row.topic}")
-        print(f"      total={row.total}, attempted={row.attempted}, "
-              f"correct={row.correct}, incorrect={row.incorrect}, "
-              f"accuracy={accuracy_pct}%")
 
         topics.append({
             "topic": row.topic,
@@ -2544,10 +2536,10 @@ def get_student_exam_report(
             "weakness": weakness,
         })
 
-    # -----------------------------------
-    # Step 5: Final payload
-    # -----------------------------------
-    print("\n✅ STEP 5: Report payload ready")
+    # --------------------------------------------------
+    # 5️⃣ Final payload
+    # --------------------------------------------------
+    print("✅ Report generated successfully")
     print("=" * 80 + "\n")
 
     return {
