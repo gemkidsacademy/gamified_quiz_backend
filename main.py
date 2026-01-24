@@ -175,6 +175,75 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamMathematicalReasoning(Base):
+    __tablename__ = "student_exam_mathematical_reasoning"
+
+    # -----------------------------
+    # Primary Key
+    # -----------------------------
+    id = Column(Integer, primary_key=True, index=True)
+
+    # -----------------------------
+    # Student (INTERNAL ID)
+    # -----------------------------
+    student_id = Column(
+        Integer,
+        ForeignKey("students.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # -----------------------------
+    # Exam Definition
+    # -----------------------------
+    exam_id = Column(
+        Integer,
+        ForeignKey("exams.id", ondelete="RESTRICT"),
+        nullable=False
+    )
+
+    # -----------------------------
+    # Attempt Lifecycle
+    # -----------------------------
+    started_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    # -----------------------------
+    # Relationships (optional but recommended)
+    # -----------------------------
+    student = relationship("Student", backref="math_exam_attempts")
+    exam = relationship("Exam")
+
+    responses = relationship(
+        "StudentExamResponseMathematicalReasoning",
+        backref="exam_attempt",
+        cascade="all, delete-orphan"
+    )
+
+    results = relationship(
+        "StudentExamResultsMathematicalReasoning",
+        backref="exam_attempt",
+        cascade="all, delete-orphan",
+        uselist=False
+    )
+
+    def __repr__(self):
+        return (
+            f"<StudentExamMathematicalReasoning "
+            f"id={self.id} "
+            f"student_id={self.student_id} "
+            f"exam_id={self.exam_id} "
+            f"started_at={self.started_at} "
+            f"completed_at={self.completed_at}>"
+        )
 class UploadedImage(Base):
     __tablename__ = "uploaded_images"
 
