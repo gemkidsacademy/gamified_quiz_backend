@@ -5553,43 +5553,68 @@ def get_writing_result(
     student_id: str,
     db: Session = Depends(get_db)
 ):
-    exam_state = (
-        db.query(StudentExamWriting)
-        .filter(
-            StudentExamWriting.student_id == student_id,
-            StudentExamWriting.completed_at.isnot(None)
-        )
-        .order_by(StudentExamWriting.id.desc())
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (EXTERNAL → INTERNAL)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
         .first()
     )
 
-    if not exam_state:
-        raise HTTPException(status_code=404, detail="No writing result found")
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
 
-    if exam_state.ai_evaluation_json is None:
-        raise HTTPException(
-            status_code=500,
-            detail="AI evaluation not available for this writing exam"
+    # --------------------------------------------------
+    # 2️⃣ Load latest admin report (SOURCE OF TRUTH)
+    # --------------------------------------------------
+    admin_report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student.student_id,  # ✅ external ID
+            AdminExamReport.exam_type == "writing"
         )
-
-    ai_eval = exam_state.ai_evaluation_json
-    selective_readiness_band = exam_state.ai_evaluation_json.get(
-        "selective_readiness_band"
+        .order_by(AdminExamReport.created_at.desc())
+        .first()
     )
 
+    if not admin_report:
+        raise HTTPException(
+            status_code=404,
+            detail="Writing result not found"
+        )
 
+    # --------------------------------------------------
+    # 3️⃣ Load writing attempt (for AI details)
+    # --------------------------------------------------
+    exam_state = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.id == admin_report.exam_attempt_id
+        )
+        .first()
+    )
+
+    if not exam_state or not exam_state.ai_evaluation_json:
+        raise HTTPException(
+            status_code=500,
+            detail="AI evaluation missing for writing exam"
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ Final response (UI SAFE)
+    # --------------------------------------------------
     return {
         "exam_type": "Writing",
-        "score": exam_state.ai_score,
+        "score": admin_report.overall_score,
         "max_score": 25,
-    
-        # ✅ Explicit mandatory descriptor
-        "selective_readiness_band": selective_readiness_band,
-    
-        # ✅ Full AI evaluation
-        "evaluation": ai_eval,
-    
-        # ✅ Advisory (keep fallback for safety)
+
+        # ✅ canonical readiness band
+        "selective_readiness_band": admin_report.readiness_band,
+
+        # ✅ full AI breakdown
+        "evaluation": exam_state.ai_evaluation_json,
+
         "advisory": "This report is advisory only and does not guarantee placement."
     }
 
