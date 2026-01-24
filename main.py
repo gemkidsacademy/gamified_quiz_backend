@@ -4869,19 +4869,21 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         # --------------------------------------------------
         # 2️⃣ Resolve student
         # --------------------------------------------------
-        print("🟡 STEP 2: Resolving student")
+        
+        print("🟡 Resolving student via INTERNAL ID")
 
         student = (
             db.query(Student)
-            .filter(Student.student_id == session.student_id)
+            .filter(Student.id == session.student_id)
             .first()
         )
-
+        
         if not student:
-            print("❌ ERROR: Student not found")
+            print("❌ ERROR: Student not found for Student.id =", session.student_id)
             raise HTTPException(status_code=404, detail="Student not found")
-
+        
         print("✅ Student resolved:", student.id)
+
 
         # --------------------------------------------------
         # 3️⃣ Load exam
