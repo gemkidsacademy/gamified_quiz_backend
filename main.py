@@ -5109,6 +5109,14 @@ def submit_writing_exam(
     print("\n================ SUBMIT WRITING EXAM =================")
     print("➡️ Incoming student_id:", student_id)
     print("➡️ Payload received:", payload.dict())
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+    
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
 
     # --------------------------------------------------
     # 1️⃣ Load active writing attempt
@@ -5118,7 +5126,7 @@ def submit_writing_exam(
     exam_state = (
         db.query(StudentExamWriting)
         .filter(
-            StudentExamWriting.student_id == student_id,
+            StudentExamWriting.student_id == student.id,
             StudentExamWriting.completed_at.is_(None)
         )
         .order_by(StudentExamWriting.started_at.desc())
@@ -5411,8 +5419,10 @@ Student response:
     existing_report = (
         db.query(AdminExamReport)
         .filter(
-            AdminExamReport.exam_attempt_id == exam_state.id
+            AdminExamReport.exam_attempt_id == exam_state.id,
+            AdminExamReport.exam_type == "writing"
         )
+
         .first()
     )
 
@@ -5453,13 +5463,14 @@ Student response:
         # --------------------------------------------------
         admin_report = AdminExamReport(
             exam_attempt_id=exam_state.id,
-            student_id=exam_state.student_id,
+            student_id=student.student_id,   # external id string (Gem002)
             exam_type="writing",
             overall_score=writing_score,
             readiness_band=readiness_status,
             school_guidance_level=guidance_text,
             summary_notes=f"Writing score: {writing_score}/25"
         )
+
 
 
     
