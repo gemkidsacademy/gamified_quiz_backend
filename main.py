@@ -624,6 +624,12 @@ class StudentExamWriting(Base):
     # Generated writing exam ID
     exam_id = Column(Integer, nullable=False)
 
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_thinking_skills.id"),
+        nullable=False
+    )
+
     # --------------------------------------------------
     # Exam lifecycle timestamps
     # --------------------------------------------------
