@@ -5598,28 +5598,45 @@ def get_writing_result(
 @app.get("/api/exams/writing/current")
 def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
-    # 1️⃣ Get latest writing attempt (completed OR active)
-    session = (
+    # --------------------------------------------------
+    # 0️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch ACTIVE writing attempt ONLY
+    # --------------------------------------------------
+    attempt = (
         db.query(StudentExamWriting)
-        .filter(StudentExamWriting.student_id == student_id)
+        .filter(
+            StudentExamWriting.student_id == student.id,
+            StudentExamWriting.completed_at.is_(None)
+        )
         .order_by(StudentExamWriting.started_at.desc())
         .first()
     )
 
-    if not session:
+    if not attempt:
+        # 🔑 This is intentional.
+        # Frontend will call start-writing-exam.
         raise HTTPException(
             status_code=404,
-            detail="No writing exam attempt found"
+            detail="No active writing exam"
         )
 
-    # 2️⃣ Completed → redirect
-    if session.completed_at:
-        return {"completed": True}
-
-    # 3️⃣ Load exam
+    # --------------------------------------------------
+    # 2️⃣ Load exam definition
+    # --------------------------------------------------
     exam = (
         db.query(GeneratedExamWriting)
-        .filter(GeneratedExamWriting.id == session.exam_id)
+        .filter(GeneratedExamWriting.id == attempt.exam_id)
         .first()
     )
 
@@ -5629,23 +5646,29 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
             detail="Writing exam not found"
         )
 
-    # 4️⃣ Calculate remaining time
-    started_at = session.started_at
+    # --------------------------------------------------
+    # 3️⃣ Compute remaining time
+    # --------------------------------------------------
+    started_at = attempt.started_at
     if started_at.tzinfo is None:
         started_at = started_at.replace(tzinfo=timezone.utc)
 
     now = datetime.now(timezone.utc)
     elapsed = int((now - started_at).total_seconds())
-    total = session.duration_minutes * 60
-    remaining = max(0, total - elapsed)
+    total_seconds = attempt.duration_minutes * 60
+    remaining = max(0, total_seconds - elapsed)
 
-    # 5️⃣ Timeout → auto-complete
+    # --------------------------------------------------
+    # 4️⃣ Timeout → auto-complete
+    # --------------------------------------------------
     if remaining == 0:
-        session.completed_at = now
+        attempt.completed_at = now
         db.commit()
         return {"completed": True}
 
-    # 6️⃣ Active attempt
+    # --------------------------------------------------
+    # 5️⃣ Active attempt response
+    # --------------------------------------------------
     return {
         "completed": False,
         "remaining_seconds": remaining,
@@ -5653,7 +5676,7 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
             "exam_id": exam.id,
             "difficulty": exam.difficulty,
             "question_text": exam.question_text,
-            "duration_minutes": session.duration_minutes
+            "duration_minutes": attempt.duration_minutes
         }
     }
 
