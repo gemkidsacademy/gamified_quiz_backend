@@ -175,6 +175,37 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamMathematicalReasoning(Base):
+    __tablename__ = "student_exam_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Internal student FK (NOT external student_id string)
+    student_id = Column(
+        Integer,
+        ForeignKey("students.id"),
+        nullable=False,
+        index=True
+    )
+
+    # Exam definition FK
+    exam_id = Column(
+        Integer,
+        ForeignKey("exams.id"),
+        nullable=False
+    )
+
+    # Attempt lifecycle
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    ) 
 class UploadedImage(Base):
     __tablename__ = "uploaded_images"
 
