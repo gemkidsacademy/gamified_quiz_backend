@@ -10162,9 +10162,13 @@ def finish_mathematical_reasoning_exam(
 
     student = (
         db.query(Student)
-        .filter(Student.student_id == req.student_id)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
         .first()
     )
+
 
     if not student:
         print("❌ STUDENT NOT FOUND → student_id =", req.student_id)
@@ -10303,13 +10307,32 @@ def finish_mathematical_reasoning_exam(
         saved_responses += 1
 
     wrong = saved_responses - correct
-    accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
+    accuracy = round((correct / total_questions) * 100, 2) if saved_responses else 0
 
     print("📊 Scoring complete")
     print("   ├─ attempted:", saved_responses)
     print("   ├─ correct:", correct)
     print("   ├─ wrong:", wrong)
     print("   └─ accuracy:", accuracy)
+    # --------------------------------------------------
+    # 🔒 HARD SAFETY CHECK — attempt must still exist
+    # --------------------------------------------------
+    print("🔒 Verifying attempt still exists before saving results...")
+    
+    attempt_exists = (
+        db.query(StudentExamMathematicalReasoning.id)
+        .filter(StudentExamMathematicalReasoning.id == attempt.id)
+        .first()
+    )
+    
+    if not attempt_exists:
+        print("❌ Attempt disappeared mid-processing → aborting")
+        raise HTTPException(
+            status_code=409,
+            detail="Exam attempt no longer exists. Please restart the exam."
+        )
+    
+    print("✅ Attempt verified — safe to persist results")
 
     # --------------------------------------------------
     # 6️⃣ Save result
@@ -10326,6 +10349,7 @@ def finish_mathematical_reasoning_exam(
     )
 
     db.add(result_row)
+    db.flush()
 
     print("✅ Result row staged for insert")
 
@@ -10334,7 +10358,7 @@ def finish_mathematical_reasoning_exam(
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
     print("🏁 Attempt marked completed at:", attempt.completed_at)
-
+    
     # --------------------------------------------------
     # 8️⃣ Admin report generation
     # --------------------------------------------------
