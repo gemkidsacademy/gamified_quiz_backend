@@ -7,7 +7,7 @@ import docx
 from datetime import date
 
 from io import BytesIO 
-from typing import List 
+from typing import List
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta,date, timezone
 from sqlalchemy.dialects.postgresql import JSONB
@@ -175,145 +175,6 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
-class StudentExamMathematicalReasoning(Base):
-    __tablename__ = "student_exam_mathematical_reasoning"
-
-    # -----------------------------
-    # Primary Key
-    # -----------------------------
-    id = Column(Integer, primary_key=True, index=True)
-
-    # -----------------------------
-    # Student (INTERNAL ID)
-    # -----------------------------
-    student_id = Column(
-        Integer,
-        ForeignKey("students.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
-
-    # -----------------------------
-    # Exam Definition
-    # -----------------------------
-    exam_id = Column(
-        Integer,
-        ForeignKey("exams.id", ondelete="RESTRICT"),
-        nullable=False
-    )
-
-    # -----------------------------
-    # Attempt Lifecycle
-    # -----------------------------
-    started_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc)
-    )
-
-    completed_at = Column(
-        DateTime(timezone=True),
-        nullable=True
-    )
-
-    # -----------------------------
-    # Relationships (optional but recommended)
-    # -----------------------------
-    student = relationship("Student", backref="math_exam_attempts")
-    exam = relationship("Exam")
-
-    responses = relationship(
-        "StudentExamResponseMathematicalReasoning",
-        backref="exam_attempt",
-        cascade="all, delete-orphan"
-    )
-
-    
-
-    def __repr__(self):
-        return (
-            f"<StudentExamMathematicalReasoning "
-            f"id={self.id} "
-            f"student_id={self.student_id} "
-            f"exam_id={self.exam_id} "
-            f"started_at={self.started_at} "
-            f"completed_at={self.completed_at}>"
-        )
-class StudentExamResponseMathematicalReasoning(Base):
-    __tablename__ = "student_exam_response_mathematical_reasoning"
-
-    # -----------------------------
-    # Primary Key
-    # -----------------------------
-    id = Column(Integer, primary_key=True, index=True)
-
-    # -----------------------------
-    # Internal Student FK
-    # -----------------------------
-    student_id = Column(
-        Integer,
-        ForeignKey("students.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
-
-    # -----------------------------
-    # Exam Definition FK
-    # -----------------------------
-    exam_id = Column(
-        Integer,
-        ForeignKey("exams.id", ondelete="RESTRICT"),
-        nullable=False
-    )
-
-    # -----------------------------
-    # Exam Attempt FK (CRITICAL)
-    # -----------------------------
-    exam_attempt_id = Column(
-        Integer,
-        ForeignKey(
-            "student_exam_mathematical_reasoning.id",
-            ondelete="CASCADE"
-        ),
-        nullable=False,
-        index=True
-    )
-
-    # -----------------------------
-    # Question Identity
-    # -----------------------------
-    q_id = Column(
-        Integer,
-        nullable=False
-    )
-
-    # -----------------------------
-    # Student Answer State
-    # -----------------------------
-    selected_option = Column(Text, nullable=True)
-    correct_option = Column(Text, nullable=True)
-
-    is_correct = Column(Boolean, nullable=True)
-    # None   → not attempted
-    # True   → correct
-    # False  → incorrect
-
-    # -----------------------------
-    # Relationships (optional but useful)
-    # -----------------------------
-    student = relationship("Student")
-    exam = relationship("Exam")
-    attempt = relationship("StudentExamMathematicalReasoning")
-
-    def __repr__(self):
-        return (
-            f"<StudentExamResponseMathematicalReasoning "
-            f"id={self.id} "
-            f"attempt_id={self.exam_attempt_id} "
-            f"q_id={self.q_id} "
-            f"selected={self.selected_option} "
-            f"is_correct={self.is_correct}>"
-        )
 class UploadedImage(Base):
     __tablename__ = "uploaded_images"
 
@@ -10227,7 +10088,11 @@ def finish_exam(
     # --------------------------------------------------
     student = (
         db.query(Student)
-        .filter(Student.student_id == req.student_id)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+
         .first()
     )
 
@@ -10241,23 +10106,35 @@ def finish_exam(
     # 2️⃣ Get active Mathematical Reasoning attempt
     # --------------------------------------------------
     attempt = (
-        db.query(StudentExam)
-        .join(Exam, StudentExam.exam_id == Exam.id)
+        db.query(StudentExamMathematicalReasoning)
         .filter(
-            StudentExam.student_id == student.id,
-            StudentExam.completed_at.is_(None),
-            Exam.subject == "mathematical_reasoning"
+            StudentExamMathematicalReasoning.student_id == student.id,
+            StudentExamMathematicalReasoning.completed_at.is_(None)
         )
-        .order_by(StudentExam.started_at.desc())
+        .order_by(StudentExamMathematicalReasoning.started_at.desc())
         .first()
     )
-
-
     if not attempt:
-        print("⚠️ No active attempt found")
+        print("⚠️ No active mathematical reasoning attempt found")
+        return {"status": "completed"}
+    print("✅ Active mathematical reasoning attempt found → id:", attempt.id)
+
+    existing_result = (
+        db.query(StudentExamResultsMathematicalReasoning)
+        .filter(StudentExamResultsMathematicalReasoning.exam_attempt_id == attempt.id)
+        .first()
+    )
+    
+    if existing_result:
+        print("⚠️ Result already exists → returning idempotent response")
         return {"status": "completed"}
 
-    print("✅ Active attempt found → id:", attempt.id)
+
+
+
+    
+    
+    
 
     # --------------------------------------------------
     # 3️⃣ Load exam (STRICT subject guard)
@@ -10287,12 +10164,7 @@ def finish_exam(
     # --------------------------------------------------
     # Clear previous reports for this student + subject
     # --------------------------------------------------
-    db.query(StudentExamResultsMathematicalReasoning).filter(
-        StudentExamResultsMathematicalReasoning.student_id == student.id
-    ).delete(synchronize_session=False)
     
-    db.commit()
-
     
     # --------------------------------------------------
     # 5️⃣ Update student responses (NO inserts)
@@ -10326,16 +10198,19 @@ def finish_exam(
         if is_correct:
             correct += 1
         response = (
-            db.query(StudentExamResponse)
+            db.query(StudentExamResponseMathematicalReasoning)
             .filter(
-                StudentExamResponse.exam_attempt_id == attempt.id,
-                StudentExamResponse.q_id == q_id
+                StudentExamResponseMathematicalReasoning.exam_attempt_id == attempt.id,
+                StudentExamResponseMathematicalReasoning.q_id == q_id
             )
             .first()
         )
 
+
         if not response:
+            print(f"⚠️ Missing response row for q_id={q_id}, attempt_id={attempt.id}")
             continue
+
 
         response.selected_option = selected
         response.correct_option = q.get("correct")
@@ -10344,7 +10219,7 @@ def finish_exam(
         saved_responses += 1
 
     wrong = saved_responses - correct
-    accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
+    accuracy = round((correct / total_questions) * 100, 2) if saved_responses else 0
 
     print("📊 Result computed → correct:", correct, "wrong:", wrong)
     existing_raw = (
@@ -10388,12 +10263,13 @@ def finish_exam(
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
     # --------------------------------------------------
-# 8️⃣ Generate Admin Report Snapshot (ADMIN)
-# --------------------------------------------------
+    # 8️⃣ Generate Admin Report Snapshot (ADMIN)
+    # --------------------------------------------------
     if not admin_report_exists(
         db=db,
         exam_attempt_id=attempt.id,
-        exam_type="thinking_skills"
+        exam_type="mathematical_reasoning"
+
     ):
         generate_admin_exam_report_math(
             db=db,
