@@ -187,6 +187,12 @@ class StudentExamResponseMathematicalReasoning(Base):
         nullable=False,
         index=True
     )
+    exam_id = Column(
+        Integer,
+        ForeignKey("exams.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    ) 
 
     # 🔑 Attempt FK (student_exam_mathematical_reasoning.id)
     exam_attempt_id = Column(
