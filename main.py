@@ -180,15 +180,15 @@ class StudentExamMathematicalReasoning(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # Internal student FK (NOT external student_id string)
+    # Internal student FK (TEXT — matches students.id)
     student_id = Column(
-        Integer,
+        Text,
         ForeignKey("students.id"),
         nullable=False,
         index=True
     )
 
-    # Exam definition FK
+    # Exam definition FK (INTEGER — matches exams.id)
     exam_id = Column(
         Integer,
         ForeignKey("exams.id"),
