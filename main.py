@@ -5000,6 +5000,16 @@ def get_foundational_classes(db: Session = Depends(get_db)):
 @app.post("/api/student/start-writing-exam")
 def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+    
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+
     # --------------------------------------------------
     # 1️⃣ Get current writing exam
     # --------------------------------------------------
@@ -5019,7 +5029,7 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     attempt = (
         db.query(StudentExamWriting)
         .filter(
-            StudentExamWriting.student_id == student_id,
+            StudentExamWriting.student_id == student.id,
             StudentExamWriting.exam_id == exam.id
         )
         .order_by(StudentExamWriting.started_at.desc())
@@ -5058,7 +5068,7 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     # 🔵 CASE C — Start new writing attempt
     # --------------------------------------------------
     new_attempt = StudentExamWriting(
-        student_id=student_id,
+        student_id=student.id,
         exam_id=exam.id,
         started_at=datetime.now(timezone.utc),
         duration_minutes=exam.duration_minutes
