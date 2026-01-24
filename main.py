@@ -2514,7 +2514,17 @@ def get_question_bank_thinking_skills(
         }
         for r in results
     ]
- 
+
+def get_attempt_filter(ResponseModel, exam_attempt_id):
+    if hasattr(ResponseModel, "exam_attempt_id"):
+        return ResponseModel.exam_attempt_id == exam_attempt_id
+    elif hasattr(ResponseModel, "session_id"):
+        return ResponseModel.session_id == exam_attempt_id
+    else:
+        raise RuntimeError(
+            f"{ResponseModel.__name__} has no attempt identifier column"
+        )
+
 @app.get("/api/reports/student")
 def get_student_exam_report(
     student_id: str,
@@ -2576,11 +2586,12 @@ def get_student_exam_report(
     responses = (
         db.query(ResponseModel)
         .filter(
-            ResponseModel.student_id == student.id,   # ✅ INTERNAL ID (FIX)
-            ResponseModel.exam_attempt_id == exam_attempt_id
+            ResponseModel.student_id == student.id,
+            get_attempt_filter(ResponseModel, exam_attempt_id)
         )
         .all()
     )
+
 
     print("📊 Responses fetched:", len(responses))
 
@@ -2614,7 +2625,7 @@ def get_student_exam_report(
     # --------------------------------------------------
     # 4️⃣ Topic-wise aggregation
     # --------------------------------------------------
-    topic_rows = (
+     topic_rows = (
         db.query(
             ResponseModel.topic,
             func.count().label("total"),
@@ -2623,8 +2634,8 @@ def get_student_exam_report(
             func.count(case((ResponseModel.is_correct.is_(False), 1))).label("incorrect"),
         )
         .filter(
-            ResponseModel.student_id == student.id,   # ✅ INTERNAL ID (FIX)
-            ResponseModel.exam_attempt_id == exam_attempt_id,
+            ResponseModel.student_id == student.id,
+            get_attempt_filter(ResponseModel, exam_attempt_id)
         )
         .group_by(ResponseModel.topic)
         .all()
