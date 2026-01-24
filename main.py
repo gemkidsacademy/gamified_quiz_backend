@@ -5061,20 +5061,50 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
 
 @app.post("/api/exams/start-reading")
-def start_reading_exam(
-    student_id: str,
+def start_exam_reading(
+    req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    """
-    Start or resume a Reading Comprehension exam session.
-    Assumes exam_json is already frontend-safe and self-contained.
-    """
-
-    print("\n==================== START READING EXAM ====================")
-    print("Student ID:", student_id)
+    print("\n📘 START-READING REQUEST")
+    print("➡ payload:", req.dict())
 
     # --------------------------------------------------
-    # 1) Load latest generated reading exam
+    # 1️⃣ Resolve student (robust, same as Thinking Skills)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"✅ Student resolved: id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest READING attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamReading)
+        .filter(StudentExamReading.student_id == student.id)
+        .order_by(StudentExamReading.started_at.desc())
+        .first()
+    )
+
+    # --------------------------------------------------
+    # ✅ Completed guard (no re-attempt)
+    # --------------------------------------------------
+    if attempt and attempt.finished:
+        print("✅ Reading exam already completed")
+        return {"completed": True}
+
+    # --------------------------------------------------
+    # 3️⃣ Load latest generated READING exam
+    # (client-approved behavior: latest exam is active)
     # --------------------------------------------------
     exam = (
         db.query(GeneratedExamReading)
@@ -5083,70 +5113,62 @@ def start_reading_exam(
     )
 
     if not exam:
-        raise HTTPException(status_code=404, detail="No reading exam found")
-
-    print("Loaded exam ID:", exam.id)
+        raise HTTPException(status_code=404, detail="Reading exam not found")
 
     exam_json = exam.exam_json or {}
+    duration_minutes = exam_json.get("duration_minutes", 40)
 
     # --------------------------------------------------
-    # 2) Check existing student session
+    # 🟡 CASE B — Resume active attempt
     # --------------------------------------------------
-    session = (
-        db.query(StudentExamReading)
-        .filter(
-            StudentExamReading.student_id == student_id,
-            StudentExamReading.exam_id == exam.id
-        )
-        .first()
-    )
+    if attempt and not attempt.finished:
+        print("⏳ Resuming active Reading attempt")
 
-    # Always use timezone-aware UTC
-    now = datetime.now(timezone.utc)
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
 
-    # --------------------------------------------------
-    # 3) Resume existing session
-    # --------------------------------------------------
-    if session:
-        print("Existing session found:", session.id)
+        now = datetime.now(timezone.utc)
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, duration_minutes * 60 - elapsed)
 
-        start_time = session.started_at
-
-        # Normalize old rows that may be timezone-naive
-        if start_time.tzinfo is None:
-            start_time = start_time.replace(tzinfo=timezone.utc)
+        # Auto-complete if time expired
+        if remaining == 0:
+            attempt.finished = True
+            attempt.finished_at = now
+            db.commit()
+            return {"completed": True}
 
         return {
-            "session_id": session.id,
+            "completed": False,
+            "exam": "reading",
+            "attempt_id": attempt.id,
             "exam_json": exam_json,
-            "duration_minutes": exam_json.get("duration_minutes", 40),
-            "start_time": start_time,
-            "server_now": now,
-            "finished": bool(session.finished)
+            "remaining_time": remaining
         }
 
     # --------------------------------------------------
-    # 4) Create new session
+    # 🔵 CASE C — Start new READING attempt
     # --------------------------------------------------
-    new_session = StudentExamReading(
-        student_id=student_id,
+    print("🆕 Starting new Reading attempt")
+
+    new_attempt = StudentExamReading(
+        student_id=student.id,
         exam_id=exam.id,
-        started_at=now
+        started_at=datetime.now(timezone.utc),
+        finished=False
     )
 
-    db.add(new_session)
+    db.add(new_attempt)
     db.commit()
-    db.refresh(new_session)
-
-    print("New session created:", new_session.id)
+    db.refresh(new_attempt)
 
     return {
-        "session_id": new_session.id,
+        "completed": False,
+        "exam": "reading",
+        "attempt_id": new_attempt.id,
         "exam_json": exam_json,
-        "duration_minutes": exam_json.get("duration_minutes", 40),
-        "start_time": new_session.started_at,
-        "server_now": now,
-        "finished": False
+        "remaining_time": duration_minutes * 60
     }
 
 
