@@ -4971,12 +4971,24 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         print(f"   📌 {topic} →", stats, "accuracy:", accuracy)
 
         topics_report.append({
-            "topic": topic,
-            **stats,
-            "accuracy": accuracy
+            "name": topic,                  # frontend label
+            "total": stats["total"],
+            "attempted": stats["attempted"],
+            "correct": stats["correct"],
+            "incorrect": stats["incorrect"],
+            "accuracy": accuracy             # optional, keep for later use
         })
 
+
     overall_accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+    # --------------------------------------------------
+    # ✅ CHANGE 1: Normalize score & result for UI
+    # --------------------------------------------------
+    score_percent = overall_accuracy  # Reading score = accuracy-based
+    
+    # Pass/Fail rule (adjust threshold if needed)
+    result = "Pass" if score_percent >= 50 else "Fail"
+
     # --------------------------------------------------
     # ADMIN RAW SCORE SNAPSHOT (Reading) — SAFE VERSION
     # --------------------------------------------------
@@ -5007,6 +5019,15 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         )
         db.add(admin_raw_score)
 
+
+    # --------------------------------------------------
+    # ✅ CHANGE 3: Improvement Areas Guard
+    # --------------------------------------------------
+    MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
+    
+    has_sufficient_data = attempted >= MIN_ATTEMPTS
+
+
     report_json = {
         "overall": {
             "total_questions": total_questions,
@@ -5014,12 +5035,17 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
             "correct": correct,
             "incorrect": incorrect,
             "not_attempted": not_attempted,
-            "accuracy": overall_accuracy
+            "accuracy": overall_accuracy,
+            "score": score_percent,
+            "result": result
         },
         "topics": topics_report,
-        "improvement_order": [
-            t["topic"] for t in sorted(topics_report, key=lambda x: x["accuracy"])
-        ]
+        "has_sufficient_data": has_sufficient_data,
+        "improvement_order": (
+            [t["name"] for t in sorted(topics_report, key=lambda x: x["accuracy"])]
+            if has_sufficient_data
+            else []
+        )
     }
 
     print("\n📈 Final overall report:", report_json["overall"])
