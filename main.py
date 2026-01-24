@@ -1643,7 +1643,8 @@ def get_response_model(exam: str):
     if exam == "reading":
         return StudentExamReportReading
     if exam == "mathematical_reasoning":
-        return StudentExamResponse
+        return StudentExamResponseMathematicalReasoning
+
     if exam == "writing":
         return StudentExamWriting
     raise HTTPException(status_code=400, detail="Invalid exam type")
