@@ -5068,29 +5068,18 @@ def start_exam_reading(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n📘 START-READING REQUEST")
-    print("➡ payload:", req.dict())
+    print("\n📘 START-READING REQUEST:", req.dict())
 
-    # --------------------------------------------------
-    # 1️⃣ Resolve student (robust, same as Thinking Skills)
-    # --------------------------------------------------
+    # 1️⃣ Resolve student (robust)
     student = (
         db.query(Student)
-        .filter(
-            func.lower(Student.student_id) ==
-            func.lower(req.student_id.strip())
-        )
+        .filter(func.lower(Student.student_id) == func.lower(req.student_id.strip()))
         .first()
     )
-
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"✅ Student resolved: id={student.id}")
-
-    # --------------------------------------------------
-    # 2️⃣ Get latest READING attempt
-    # --------------------------------------------------
+    # 2️⃣ Latest reading attempt
     attempt = (
         db.query(StudentExamReading)
         .filter(StudentExamReading.student_id == student.id)
@@ -5098,82 +5087,72 @@ def start_exam_reading(
         .first()
     )
 
-    # --------------------------------------------------
-    # ✅ Completed guard (no re-attempt)
-    # --------------------------------------------------
+    # 🚫 No reattempt allowed
     if attempt and attempt.finished:
-        print("✅ Reading exam already completed")
         return {"completed": True}
 
-    # --------------------------------------------------
-    # 3️⃣ Load latest generated READING exam
-    # (client-approved behavior: latest exam is active)
-    # --------------------------------------------------
+    # 3️⃣ Latest reading exam
     exam = (
         db.query(GeneratedExamReading)
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
-
     if not exam:
         raise HTTPException(status_code=404, detail="Reading exam not found")
 
-    exam_json = exam.exam_json or {}
-    duration_minutes = exam_json.get("duration_minutes", 40)
+    duration_minutes = exam.exam_json.get("duration_minutes", 40)
 
-    # --------------------------------------------------
-    # 🟡 CASE B — Resume active attempt
-    # --------------------------------------------------
+    # 🔁 Resume attempt
     if attempt and not attempt.finished:
-        print("⏳ Resuming active Reading attempt")
-
-        started_at = attempt.started_at
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-
         now = datetime.now(timezone.utc)
-        elapsed = int((now - started_at).total_seconds())
-        remaining = max(0, duration_minutes * 60 - elapsed)
+        started_at = attempt.started_at.replace(tzinfo=timezone.utc)
+        remaining = max(0, duration_minutes * 60 - int((now - started_at).total_seconds()))
 
-        # Auto-complete if time expired
         if remaining == 0:
             attempt.finished = True
-            attempt.finished_at = now
             db.commit()
             return {"completed": True}
 
         return {
             "completed": False,
-            "exam": "reading",
             "attempt_id": attempt.id,
-            "exam_json": exam_json,
+            "exam_id": exam.id,
             "remaining_time": remaining
         }
 
-    # --------------------------------------------------
-    # 🔵 CASE C — Start new READING attempt
-    # --------------------------------------------------
-    print("🆕 Starting new Reading attempt")
-
+    # 🆕 New attempt
     new_attempt = StudentExamReading(
         student_id=student.id,
         exam_id=exam.id,
         started_at=datetime.now(timezone.utc),
         finished=False
     )
-
     db.add(new_attempt)
     db.commit()
     db.refresh(new_attempt)
 
     return {
         "completed": False,
-        "exam": "reading",
         "attempt_id": new_attempt.id,
-        "exam_json": exam_json,
+        "exam_id": exam.id,
         "remaining_time": duration_minutes * 60
     }
 
+
+@app.get("/api/exams/reading-content/{exam_id}")
+def get_reading_content(exam_id: int, db: Session = Depends(get_db)):
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.id == exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        raise HTTPException(status_code=404, detail="Exam content not found")
+
+    return {
+        "exam_json": exam.exam_json
+    }
 
 
 @app.get("/api/foundational/classes")
