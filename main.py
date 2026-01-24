@@ -244,6 +244,81 @@ class StudentExamMathematicalReasoning(Base):
             f"started_at={self.started_at} "
             f"completed_at={self.completed_at}>"
         )
+class StudentExamResponseMathematicalReasoning(Base):
+    __tablename__ = "student_exam_response_mathematical_reasoning"
+
+    # -----------------------------
+    # Primary Key
+    # -----------------------------
+    id = Column(Integer, primary_key=True, index=True)
+
+    # -----------------------------
+    # Internal Student FK
+    # -----------------------------
+    student_id = Column(
+        Integer,
+        ForeignKey("students.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # -----------------------------
+    # Exam Definition FK
+    # -----------------------------
+    exam_id = Column(
+        Integer,
+        ForeignKey("exams.id", ondelete="RESTRICT"),
+        nullable=False
+    )
+
+    # -----------------------------
+    # Exam Attempt FK (CRITICAL)
+    # -----------------------------
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey(
+            "student_exam_mathematical_reasoning.id",
+            ondelete="CASCADE"
+        ),
+        nullable=False,
+        index=True
+    )
+
+    # -----------------------------
+    # Question Identity
+    # -----------------------------
+    q_id = Column(
+        Integer,
+        nullable=False
+    )
+
+    # -----------------------------
+    # Student Answer State
+    # -----------------------------
+    selected_option = Column(Text, nullable=True)
+    correct_option = Column(Text, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)
+    # None   → not attempted
+    # True   → correct
+    # False  → incorrect
+
+    # -----------------------------
+    # Relationships (optional but useful)
+    # -----------------------------
+    student = relationship("Student")
+    exam = relationship("Exam")
+    attempt = relationship("StudentExamMathematicalReasoning")
+
+    def __repr__(self):
+        return (
+            f"<StudentExamResponseMathematicalReasoning "
+            f"id={self.id} "
+            f"attempt_id={self.exam_attempt_id} "
+            f"q_id={self.q_id} "
+            f"selected={self.selected_option} "
+            f"is_correct={self.is_correct}>"
+        )
 class UploadedImage(Base):
     __tablename__ = "uploaded_images"
 
