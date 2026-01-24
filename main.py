@@ -7,7 +7,7 @@ import docx
 from datetime import date
 
 from io import BytesIO 
-from typing import List
+from typing import List 
 from sendgrid import SendGridAPIClient
 from datetime import datetime, timedelta,date, timezone
 from sqlalchemy.dialects.postgresql import JSONB
