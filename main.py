@@ -228,12 +228,7 @@ class StudentExamMathematicalReasoning(Base):
         cascade="all, delete-orphan"
     )
 
-    results = relationship(
-        "StudentExamResultsMathematicalReasoning",
-        backref="exam_attempt",
-        cascade="all, delete-orphan",
-        uselist=False
-    )
+    
 
     def __repr__(self):
         return (
