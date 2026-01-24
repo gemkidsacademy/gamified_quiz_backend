@@ -10082,7 +10082,7 @@ def generate_admin_exam_report_math(
 
 
 @app.post("/api/student/finish-exam")
-def finish_exam(
+def finish_mathematical_reasoning_exam(
     req: FinishExamRequest,
     db: Session = Depends(get_db)
 ):
@@ -10090,8 +10090,10 @@ def finish_exam(
     print("📥 Incoming payload:", req.dict())
 
     # --------------------------------------------------
-    # 1️⃣ Resolve student (external → internal)
+    # 1️⃣ Resolve student
     # --------------------------------------------------
+    print("🔍 Resolving student with external ID:", req.student_id)
+
     student = (
         db.query(Student)
         .filter(Student.student_id == req.student_id)
@@ -10099,36 +10101,68 @@ def finish_exam(
     )
 
     if not student:
-        print("❌ Student NOT FOUND:", req.student_id)
+        print("❌ STUDENT NOT FOUND → student_id =", req.student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print("✅ Student resolved → id:", student.id)
+    print("✅ Student resolved → internal id:", student.id)
 
     # --------------------------------------------------
-    # 2️⃣ Get active Mathematical Reasoning attempt
+    # 2️⃣ Fetch active attempt
     # --------------------------------------------------
+    print("🔍 Looking for ACTIVE mathematical reasoning attempt...")
+
     attempt = (
-        db.query(StudentExam)
-        .join(Exam, StudentExam.exam_id == Exam.id)
+        db.query(StudentExamMathematicalReasoning)
         .filter(
-            StudentExam.student_id == student.id,
-            StudentExam.completed_at.is_(None),
-            Exam.subject == "mathematical_reasoning"
+            StudentExamMathematicalReasoning.student_id == student.id,
+            StudentExamMathematicalReasoning.completed_at.is_(None)
         )
-        .order_by(StudentExam.started_at.desc())
+        .order_by(StudentExamMathematicalReasoning.started_at.desc())
         .first()
     )
 
-
     if not attempt:
-        print("⚠️ No active attempt found")
+        print("⚠️ NO ACTIVE ATTEMPT FOUND → returning idempotent response")
         return {"status": "completed"}
 
-    print("✅ Active attempt found → id:", attempt.id)
+    print("✅ Active attempt FOUND")
+    print("   ├─ attempt.id:", attempt.id)
+    print("   ├─ exam_id:", attempt.exam_id)
+    print("   ├─ started_at:", attempt.started_at)
+    print("   └─ completed_at:", attempt.completed_at)
 
     # --------------------------------------------------
-    # 3️⃣ Load exam (STRICT subject guard)
+    # 3️⃣ Idempotency guard
     # --------------------------------------------------
+    print("🔍 Checking if result already exists for attempt.id =", attempt.id)
+
+    existing_result = (
+        db.query(StudentExamResultsMathematicalReasoning)
+        .filter(
+            StudentExamResultsMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .first()
+    )
+
+    if existing_result:
+        print("⚠️ RESULT ALREADY EXISTS")
+        print("   ├─ result.id:", existing_result.id)
+        print("   └─ attempt already finalized")
+
+        if attempt.completed_at is None:
+            print("🔧 Marking attempt as completed (was incomplete)")
+            attempt.completed_at = datetime.now(timezone.utc)
+            db.commit()
+
+        return {"status": "completed"}
+
+    # --------------------------------------------------
+    # 4️⃣ Load exam
+    # --------------------------------------------------
+    print("📘 Loading exam definition...")
+    print("   ├─ exam_id:", attempt.exam_id)
+    print("   └─ expected subject: mathematical_reasoning")
+
     exam = (
         db.query(Exam)
         .filter(
@@ -10139,73 +10173,65 @@ def finish_exam(
     )
 
     if not exam:
-        raise HTTPException(
-            status_code=400,
-            detail="Finish endpoint called for non-mathematical reasoning exam"
-        )
+        print("❌ EXAM NOT FOUND OR SUBJECT MISMATCH")
+        raise HTTPException(status_code=404, detail="Exam not found")
 
     questions = exam.questions or []
     total_questions = len(questions)
 
-    print("📘 Exam loaded → questions:", total_questions)
+    print("✅ Exam loaded successfully")
+    print("   ├─ total_questions:", total_questions)
 
     question_map = {q["q_id"]: q for q in questions}
 
     # --------------------------------------------------
-    # Clear previous reports for this student + subject
+    # 5️⃣ Evaluate responses
     # --------------------------------------------------
-    db.query(StudentExamResultsMathematicalReasoning).filter(
-        StudentExamResultsMathematicalReasoning.student_id == student.id
-    ).delete(synchronize_session=False)
-    
-    db.commit()
+    print("🧮 Evaluating student responses...")
 
-    
-    # --------------------------------------------------
-    # 5️⃣ Update student responses (NO inserts)
-    # --------------------------------------------------
     correct = 0
     saved_responses = 0
 
     for q_id_str, selected in req.answers.items():
+        print("➡️ Processing answer")
+        print("   ├─ raw q_id:", q_id_str)
+        print("   └─ selected option:", selected)
+
         try:
             q_id = int(q_id_str)
         except ValueError:
+            print("❌ INVALID q_id FORMAT:", q_id_str)
             continue
-    
+
         q = question_map.get(q_id)
         if not q:
+            print("⚠️ Question NOT FOUND in exam JSON → q_id =", q_id)
             continue
-    
-        correct_answer = q.get("correct")
-    
-        # 🔍 DEBUG LOGS (THIS IS THE KEY)
-        print("🧪 EVALUATING QUESTION")
-        print("Question ID:", q_id)
-        print("Student Answer:", selected)
-        print("Correct Answer (DB):", correct_answer)
-    
-        is_correct = selected == correct_answer
-    
-        print("➡️ MATCH RESULT:", is_correct)
-        print("------------------------------------")
-    
+
+        correct_option = q.get("correct")
+        is_correct = selected == correct_option
+
+        print("   ├─ correct option:", correct_option)
+        print("   └─ is_correct:", is_correct)
+
         if is_correct:
             correct += 1
+
         response = (
-            db.query(StudentExamResponse)
+            db.query(StudentExamResponseMathematicalReasoning)
             .filter(
-                StudentExamResponse.exam_attempt_id == attempt.id,
-                StudentExamResponse.q_id == q_id
+                StudentExamResponseMathematicalReasoning.exam_attempt_id == attempt.id,
+                StudentExamResponseMathematicalReasoning.q_id == q_id
             )
             .first()
         )
 
         if not response:
+            print("❌ RESPONSE ROW MISSING → q_id =", q_id)
             continue
 
         response.selected_option = selected
-        response.correct_option = q.get("correct")
+        response.correct_option = correct_option
         response.is_correct = is_correct
 
         saved_responses += 1
@@ -10213,32 +10239,17 @@ def finish_exam(
     wrong = saved_responses - correct
     accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
 
-    print("📊 Result computed → correct:", correct, "wrong:", wrong)
-    existing_raw = (
-        db.query(AdminExamRawScore)
-        .filter(
-            AdminExamRawScore.exam_attempt_id == attempt.id,
-            AdminExamRawScore.subject == "mathematical_reasoning"
-        )
-        .first()
-    )
-    
-    if not existing_raw:
-        raw_score = AdminExamRawScore(
-            student_id=student.id,
-            exam_attempt_id=attempt.id,
-            subject="mathematical_reasoning",
-            total_questions=total_questions,
-            correct_answers=correct,
-            wrong_answers=wrong,
-            accuracy_percent=accuracy
-        )
-        db.add(raw_score)
-
+    print("📊 Scoring complete")
+    print("   ├─ attempted:", saved_responses)
+    print("   ├─ correct:", correct)
+    print("   ├─ wrong:", wrong)
+    print("   └─ accuracy:", accuracy)
 
     # --------------------------------------------------
-    # 6️⃣ Save summary (NEW TABLE)
+    # 6️⃣ Save result
     # --------------------------------------------------
+    print("💾 Saving summary result...")
+
     result_row = StudentExamResultsMathematicalReasoning(
         student_id=student.id,
         exam_attempt_id=attempt.id,
@@ -10250,34 +10261,42 @@ def finish_exam(
 
     db.add(result_row)
 
+    print("✅ Result row staged for insert")
+
     # --------------------------------------------------
     # 7️⃣ Mark attempt completed
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
+    print("🏁 Attempt marked completed at:", attempt.completed_at)
+
     # --------------------------------------------------
-# 8️⃣ Generate Admin Report Snapshot (ADMIN)
-# --------------------------------------------------
-    if not admin_report_exists(
-        db=db,
-        exam_attempt_id=attempt.id
-    ):
-        generate_admin_exam_report_math(
+    # 8️⃣ Admin report generation
+    # --------------------------------------------------
+    print("📄 Checking admin report existence...")
+
+    if not admin_report_exists(db=db, exam_attempt_id=attempt.id):
+        print("🧾 Generating admin exam report...")
+        generate_admin_exam_report(
             db=db,
             student=student,
             exam_attempt=attempt,
+            subject="mathematical_reasoning",
             accuracy=accuracy,
             correct=correct,
             wrong=wrong,
             total_questions=total_questions
         )
-    
+    else:
+        print("ℹ️ Admin report already exists → skipping")
+
     # --------------------------------------------------
-    # 9️⃣ Final commit (single transaction)
+    # 9️⃣ Commit transaction
     # --------------------------------------------------
+    print("💾 Committing database transaction...")
     db.commit()
 
+    print("✅ Commit successful")
     print("================ FINISH MATHEMATICAL REASONING EXAM END =================\n")
-    
 
     return {
         "status": "completed",
