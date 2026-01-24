@@ -2625,21 +2625,21 @@ def get_student_exam_report(
     # --------------------------------------------------
     # 4️⃣ Topic-wise aggregation
     # --------------------------------------------------
-     topic_rows = (
-        db.query(
-            ResponseModel.topic,
-            func.count().label("total"),
-            func.count(case((ResponseModel.is_correct.isnot(None), 1))).label("attempted"),
-            func.count(case((ResponseModel.is_correct.is_(True), 1))).label("correct"),
-            func.count(case((ResponseModel.is_correct.is_(False), 1))).label("incorrect"),
-        )
-        .filter(
-            ResponseModel.student_id == student.id,
-            get_attempt_filter(ResponseModel, exam_attempt_id)
-        )
-        .group_by(ResponseModel.topic)
-        .all()
-    )
+    topic_rows = (
+       db.query(
+           ResponseModel.topic,
+           func.count().label("total"),
+           func.count(case((ResponseModel.is_correct.isnot(None), 1))).label("attempted"),
+           func.count(case((ResponseModel.is_correct.is_(True), 1))).label("correct"),
+           func.count(case((ResponseModel.is_correct.is_(False), 1))).label("incorrect"),
+       )
+       .filter(
+           ResponseModel.student_id == student.id,
+           get_attempt_filter(ResponseModel, exam_attempt_id)
+       )
+       .group_by(ResponseModel.topic)
+       .all()
+   )
 
     topics = []
     improvement_areas = []
