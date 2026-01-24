@@ -175,6 +175,35 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamResponseMathematicalReasoning(Base):
+    __tablename__ = "student_exam_response_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Internal student FK (TEXT — matches students.id)
+    student_id = Column(
+        Text,
+        ForeignKey("students.id"),
+        nullable=False,
+        index=True
+    )
+
+    # Link to math exam attempt
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_mathematical_reasoning.id"),
+        nullable=False,
+        index=True
+    )
+
+    # Question metadata
+    q_id = Column(Integer, nullable=False)
+    topic = Column(Text, nullable=True)
+
+    # Student response
+    selected_option = Column(Text, nullable=True)
+    correct_option = Column(Text, nullable=True)
+    is_correct = Column(Boolean, nullable=True)
 class StudentExamMathematicalReasoning(Base):
     __tablename__ = "student_exam_mathematical_reasoning"
 
