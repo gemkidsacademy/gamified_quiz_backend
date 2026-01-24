@@ -9367,7 +9367,7 @@ def start_exam(
     # 🧮 MATHEMATICAL REASONING ATTEMPT HANDLING
     # --------------------------------------------------
     print("🔍 Checking Mathematical Reasoning attempts...")
-    
+
     math_attempt = (
         db.query(StudentExamMathematicalReasoning)
         .filter(
@@ -9390,6 +9390,32 @@ def start_exam(
     # --------------------------------------------------
     if math_attempt and math_attempt.completed_at is None:
         print("⏳ Active math attempt → resuming")
+    
+        # 🔒 DEFENSIVE: ensure response rows exist
+        existing_count = (
+            db.query(StudentExamResponseMathematicalReasoning)
+            .filter(
+                StudentExamResponseMathematicalReasoning.exam_attempt_id == math_attempt.id
+            )
+            .count()
+        )
+    
+        if existing_count == 0:
+            print("⚠️ Active attempt has no response rows — rehydrating")
+            for q in exam.questions or []:
+                db.add(
+                    StudentExamResponseMathematicalReasoning(
+                        student_id=student.id,
+                        exam_id=exam.id,
+                        exam_attempt_id=math_attempt.id,
+                        q_id=q["q_id"],
+                        topic=q.get("topic"),
+                        selected_option=None,
+                        correct_option=q.get("correct"),
+                        is_correct=None
+                    )
+                )
+            db.commit()
     
         started_at = math_attempt.started_at
         if started_at.tzinfo is None:
@@ -9436,20 +9462,30 @@ def start_exam(
     # --------------------------------------------------
     print("🧱 Pre-creating response rows")
     
-    for idx, q in enumerate(exam.questions or []):
+    for q in exam.questions or []:
         db.add(
             StudentExamResponseMathematicalReasoning(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
-                q_id=idx + 1,
+                q_id=q["q_id"],              # ✅ CORRECT
+                topic=q.get("topic"),
                 selected_option=None,
                 correct_option=q.get("correct"),
                 is_correct=None
             )
         )
+
     
     db.commit()
+    print(
+       "🧱 Response rows created:",
+       db.query(StudentExamResponseMathematicalReasoning)
+         .filter(
+             StudentExamResponseMathematicalReasoning.exam_attempt_id == new_attempt.id
+         )
+         .count()
+   )
     
     return {
         "completed": False,
