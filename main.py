@@ -175,6 +175,108 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamResponseMathematicalReasoning(Base):
+    __tablename__ = "student_exam_response_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 🔑 Internal student FK (students.id)
+    student_id = Column(
+        Integer,
+        ForeignKey("students.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # 🔑 Attempt FK (student_exam_mathematical_reasoning.id)
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey(
+            "student_exam_mathematical_reasoning.id",
+            ondelete="CASCADE"
+        ),
+        nullable=False,
+        index=True
+    )
+
+    # 🧮 Question metadata
+    q_id = Column(Integer, nullable=False, index=True)
+    topic = Column(Text, nullable=True)
+
+    # 📝 Answer evaluation
+    selected_option = Column(Text, nullable=True)
+    correct_option = Column(Text, nullable=True)
+    is_correct = Column(Boolean, nullable=True)
+
+    # --------------------------------------------------
+    # SAFE relationships (optional)
+    # --------------------------------------------------
+    student = relationship("Student", lazy="joined")
+    attempt = relationship("StudentExamMathematicalReasoning", lazy="joined")
+
+
+# Helpful indexes
+Index(
+    "idx_math_response_attempt_q",
+    StudentExamResponseMathematicalReasoning.exam_attempt_id,
+    StudentExamResponseMathematicalReasoning.q_id
+)
+class StudentExamMathematicalReasoning(Base):
+    __tablename__ = "student_exam_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 🔑 INTERNAL student FK (students.id)"
+    student_id = Column(
+        Integer,
+        ForeignKey("students.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # 🔑 Exam definition FK (exams.id)
+    exam_id = Column(
+        Integer,
+        ForeignKey("exams.id", ondelete="RESTRICT"),
+        nullable=False
+    )
+
+    # 🕒 Attempt lifecycle
+    started_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    # --------------------------------------------------
+    # OPTIONAL (SAFE) relationships
+    # --------------------------------------------------
+    student = relationship(
+        "Student",
+        backref="math_exam_attempts",
+        lazy="joined"
+    )
+
+    exam = relationship(
+        "Exam",
+        lazy="joined"
+    )
+
+    # ⚠️ DO NOT add relationship to results/responses yet
+    # Query those tables explicitly to avoid mapper issues
+
+
+# Helpful indexes (Postgres will love you for this)
+Index(
+    "idx_math_exam_active_attempt",
+    StudentExamMathematicalReasoning.student_id,
+    StudentExamMathematicalReasoning.completed_at
+)
 class UploadedImage(Base):
     __tablename__ = "uploaded_images"
 
