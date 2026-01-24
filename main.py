@@ -2664,6 +2664,170 @@ def get_student_exam_report(
         "topics": topics,
         "improvement_areas": improvement_areas,
     }
+@app.get("/api/exams/writing/dates")
+def get_writing_exam_dates(student_id: str, db: Session = Depends(get_db)):
+
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(404, "Student not found")
+
+    dates = (
+        db.query(func.date(AdminExamReport.created_at))
+        .filter(
+            AdminExamReport.student_id == student.student_id,
+            AdminExamReport.exam_type == "writing"
+        )
+        .order_by(func.date(AdminExamReport.created_at).desc())
+        .distinct()
+        .all()
+    )
+
+    return {
+        "dates": [d[0].isoformat() for d in dates]
+    }
+
+
+@app.get("/api/exams/writing/result")
+def get_writing_result(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (EXTERNAL → INTERNAL)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Load latest admin report (SOURCE OF TRUTH)
+    # --------------------------------------------------
+    admin_report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student.student_id,  # ✅ external ID
+            AdminExamReport.exam_type == "writing"
+        )
+        .order_by(AdminExamReport.created_at.desc())
+        .first()
+    )
+
+    if not admin_report:
+        raise HTTPException(
+            status_code=404,
+            detail="Writing result not found"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Load writing attempt (for AI details)
+    # --------------------------------------------------
+    exam_state = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.id == admin_report.exam_attempt_id
+        )
+        .first()
+    )
+
+    if not exam_state or not exam_state.ai_evaluation_json:
+        raise HTTPException(
+            status_code=500,
+            detail="AI evaluation missing for writing exam"
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ Final response (UI SAFE)
+    # --------------------------------------------------
+    return {
+        "exam_type": "Writing",
+        "score": admin_report.overall_score,
+        "max_score": 25,
+
+        # ✅ canonical readiness band
+        "selective_readiness_band": admin_report.readiness_band,
+
+        # ✅ full AI breakdown
+        "evaluation": exam_state.ai_evaluation_json,
+
+        "advisory": "This report is advisory only and does not guarantee placement."
+    }
+
+
+@app.get("/api/reports/student/writing")
+def get_student_writing_report(
+    student_id: str,
+    date: date,
+    db: Session = Depends(get_db)
+):
+    # 1️⃣ Resolve student
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(404, "Student not found")
+
+    # 2️⃣ Find admin report for this date
+    report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student.student_id,  # external ID
+            AdminExamReport.exam_type == "writing",
+            func.date(AdminExamReport.created_at) == date
+        )
+        .order_by(AdminExamReport.created_at.desc())
+        .first()
+    )
+
+    if not report:
+        raise HTTPException(404, "Writing report not found")
+
+    # 3️⃣ Load writing attempt
+    exam_state = (
+        db.query(StudentExamWriting)
+        .filter(StudentExamWriting.id == report.exam_attempt_id)
+        .first()
+    )
+
+    if not exam_state or not exam_state.ai_evaluation_json:
+        raise HTTPException(500, "Writing evaluation not available")
+
+    # 4️⃣ Return data in SAME SHAPE as MCQ reports
+    return {
+        "exam": "writing",
+        "date": report.created_at.date().isoformat(),
+
+        "summary": {
+            "total_questions": 25,
+            "attempted": 25,
+            "correct": report.overall_score,
+            "incorrect": 25 - report.overall_score,
+            "not_attempted": 0,
+            "accuracy": round((report.overall_score / 25) * 100),
+            "score": round((report.overall_score / 25) * 100),
+            "result": report.readiness_band,
+        },
+
+        "topics": [],            # writing has no topics
+        "improvement_areas": [],
+
+        # 👇 Writing-specific payload
+        "evaluation": exam_state.ai_evaluation_json,
+    }
+
+
 
 @app.post("/generate-new-mr")
 def generate_exam(
