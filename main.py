@@ -5016,7 +5016,28 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         session.finished = True
         session.completed_at = datetime.now(timezone.utc)
         session.report_json = report_json
-
+        # --------------------------------------------------
+        # 6️⃣b Generate Admin Exam Report (Reading)
+        # --------------------------------------------------
+        print("🟡 STEP 6b: Generating AdminExamReport (Reading)")
+        
+        if not admin_report_exists(
+            db=db,
+            exam_attempt_id=session.id,
+            exam_type="reading"
+        ):
+            generate_admin_exam_report_reading(
+                db=db,
+                student=student,
+                exam_attempt=session,
+                overall_accuracy=overall_accuracy,
+                topic_stats=topic_stats
+            )
+            print("🟢 AdminExamReport created")
+        else:
+            print("⚠️ AdminExamReport already exists — skipping")
+     
+  
         print("🟡 STEP 7: About to commit DB")
         db.commit()
         print("🟢 DB commit successful")
