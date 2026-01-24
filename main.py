@@ -4816,274 +4816,228 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
     print("\n================ SUBMIT READING EXAM ================")
     print("📥 Raw payload received:", payload)
 
-    # --------------------------------------------------
-    # 0️⃣ Validate payload
-    # --------------------------------------------------
-    session_id = payload.get("session_id")
-    answers = payload.get("answers", {})
+    try:
+        # --------------------------------------------------
+        # 0️⃣ Validate payload
+        # --------------------------------------------------
+        print("🟡 STEP 0: Validating payload")
 
-    print("🆔 session_id:", session_id)
-    print("📝 answers keys:", list(answers.keys()) if isinstance(answers, dict) else answers)
+        session_id = payload.get("session_id")
+        answers = payload.get("answers", {})
 
-    if not session_id:
-        print("❌ ERROR: session_id missing")
-        raise HTTPException(status_code=400, detail="session_id is required")
+        print("🆔 session_id:", session_id)
+        print("📝 answers keys:",
+              list(answers.keys()) if isinstance(answers, dict) else answers)
 
-    if not isinstance(answers, dict):
-        print("❌ ERROR: answers is not a dict")
-        raise HTTPException(status_code=400, detail="answers must be a dictionary")
+        if not session_id:
+            print("❌ ERROR: session_id missing")
+            raise HTTPException(status_code=400, detail="session_id is required")
 
-    # --------------------------------------------------
-    # 1️⃣ Load session
-    # --------------------------------------------------
-    session = (
-        db.query(StudentExamReading)
-        .filter(StudentExamReading.id == session_id)
-        .first()
-    )
+        if not isinstance(answers, dict):
+            print("❌ ERROR: answers is not a dict")
+            raise HTTPException(status_code=400, detail="answers must be a dictionary")
 
-    if not session:
-        print("❌ ERROR: Session not found for session_id:", session_id)
-        raise HTTPException(status_code=404, detail="Session not found")
+        # --------------------------------------------------
+        # 1️⃣ Load session
+        # --------------------------------------------------
+        print("🟡 STEP 1: Loading StudentExamReading session")
 
-    print("✅ Session loaded:", {
-        "session_id": session.id,
-        "student_id": session.student_id,
-        "exam_id": session.exam_id,
-        "finished": session.finished
-    })
+        session = (
+            db.query(StudentExamReading)
+            .filter(StudentExamReading.id == session_id)
+            .first()
+        )
 
-    if session.finished:
-        print("⚠️ Session already finished — idempotent exit")
-        return {
-            "status": "ok",
-            "message": "Exam already submitted"
-        }
-    
-    # --------------------------------------------------
-    # Resolve student (external → internal)
-    # --------------------------------------------------
-    student = (
-        db.query(Student)
-        .filter(Student.student_id == session.student_id)
-        .first()
-    )
-    
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
+        if not session:
+            print("❌ ERROR: Session not found:", session_id)
+            raise HTTPException(status_code=404, detail="Session not found")
 
-    # --------------------------------------------------
-    # 2️⃣ Load exam
-    # --------------------------------------------------
-    exam = (
-        db.query(GeneratedExamReading)
-        .filter(GeneratedExamReading.id == session.exam_id)
-        .first()
-    )
+        print("✅ Session loaded:", {
+            "id": session.id,
+            "student_id": session.student_id,
+            "exam_id": session.exam_id,
+            "finished": session.finished
+        })
 
-    if not exam or not exam.exam_json:
-        print("❌ ERROR: Exam or exam_json missing for exam_id:", session.exam_id)
-        raise HTTPException(status_code=500, detail="Exam data not found")
+        if session.finished:
+            print("⚠️ Session already finished — idempotent exit")
+            return {
+                "status": "ok",
+                "message": "Exam already submitted"
+            }
 
-    sections = exam.exam_json.get("sections", [])
-    print("📚 Sections found:", len(sections))
+        # --------------------------------------------------
+        # 2️⃣ Resolve student
+        # --------------------------------------------------
+        print("🟡 STEP 2: Resolving student")
 
-    # --------------------------------------------------
-    # 3️⃣ Initialize counters
-    # --------------------------------------------------
-    topic_stats = {}
-    total_questions = attempted = correct = incorrect = not_attempted = 0
+        student = (
+            db.query(Student)
+            .filter(Student.student_id == session.student_id)
+            .first()
+        )
 
-    # --------------------------------------------------
-    # 4️⃣ Evaluate questions
-    # --------------------------------------------------
-    for section_idx, section in enumerate(sections):
-        topic = section.get("topic", "Other")
-        questions = section.get("questions", [])
+        if not student:
+            print("❌ ERROR: Student not found")
+            raise HTTPException(status_code=404, detail="Student not found")
 
-        print(f"\n📂 Section {section_idx + 1}: {topic}")
-        print("❓ Questions in section:", len(questions))
+        print("✅ Student resolved:", student.id)
 
-        if topic not in topic_stats:
-            topic_stats[topic] = {
+        # --------------------------------------------------
+        # 3️⃣ Load exam
+        # --------------------------------------------------
+        print("🟡 STEP 3: Loading GeneratedExamReading")
+
+        exam = (
+            db.query(GeneratedExamReading)
+            .filter(GeneratedExamReading.id == session.exam_id)
+            .first()
+        )
+
+        if not exam or not exam.exam_json:
+            print("❌ ERROR: exam or exam_json missing")
+            raise HTTPException(status_code=500, detail="Exam data not found")
+
+        sections = exam.exam_json.get("sections", [])
+        print("📚 Sections found:", len(sections))
+
+        # --------------------------------------------------
+        # 4️⃣ Evaluate questions
+        # --------------------------------------------------
+        print("🟡 STEP 4: Evaluating answers")
+
+        topic_stats = {}
+        total_questions = attempted = correct = incorrect = not_attempted = 0
+
+        for section in sections:
+            topic = section.get("topic", "Other")
+            questions = section.get("questions", [])
+
+            topic_stats.setdefault(topic, {
                 "total": 0,
                 "attempted": 0,
                 "correct": 0,
                 "incorrect": 0,
                 "not_attempted": 0
-            }
+            })
 
-        for q_idx, q in enumerate(questions):
-            question_id = q.get("question_id")
-            correct_answer = q.get("correct_answer")
-            selected_answer = answers.get(question_id)
+            for q in questions:
+                question_id = q.get("question_id")
+                correct_answer = q.get("correct_answer")
+                selected_answer = answers.get(question_id)
 
-            print(f"   🔹 Q{q_idx + 1} | ID:", question_id)
-            print("      ➜ correct_answer:", correct_answer)
-            print("      ➜ selected_answer:", selected_answer)
+                is_attempted = selected_answer is not None
+                is_correct = is_attempted and selected_answer == correct_answer
 
-            is_attempted = selected_answer is not None
-            is_correct = is_attempted and selected_answer == correct_answer
+                total_questions += 1
+                topic_stats[topic]["total"] += 1
 
-            total_questions += 1
-            topic_stats[topic]["total"] += 1
-
-            if is_attempted:
-                attempted += 1
-                topic_stats[topic]["attempted"] += 1
-                if is_correct:
-                    correct += 1
-                    topic_stats[topic]["correct"] += 1
-                    print("      ✅ Correct")
+                if is_attempted:
+                    attempted += 1
+                    topic_stats[topic]["attempted"] += 1
+                    if is_correct:
+                        correct += 1
+                        topic_stats[topic]["correct"] += 1
+                    else:
+                        incorrect += 1
+                        topic_stats[topic]["incorrect"] += 1
                 else:
-                    incorrect += 1
-                    topic_stats[topic]["incorrect"] += 1
-                    print("      ❌ Incorrect")
-            else:
-                not_attempted += 1
-                topic_stats[topic]["not_attempted"] += 1
-                print("      ⚠️ Not Attempted")
+                    not_attempted += 1
+                    topic_stats[topic]["not_attempted"] += 1
 
-            # Persist per-question row
-            db.add(StudentExamReportReading(
-                student_id=session.student_id,
-                exam_id=session.exam_id,
-                session_id=session.id,
-                topic=topic,
-                question_id=question_id,
-                selected_answer=selected_answer,
-                correct_answer=correct_answer,
-                is_correct=is_correct
-            ))
+                db.add(StudentExamReportReading(
+                    student_id=session.student_id,
+                    exam_id=session.exam_id,
+                    session_id=session.id,
+                    topic=topic,
+                    question_id=question_id,
+                    selected_answer=selected_answer,
+                    correct_answer=correct_answer,
+                    is_correct=is_correct
+                ))
 
-    # --------------------------------------------------
-    # 5️⃣ Build report
-    # --------------------------------------------------
-    print("\n📊 Building report summary")
+        print("✅ Evaluation complete")
 
-    topics_report = []
-    for topic, stats in topic_stats.items():
-        accuracy = (
-            round((stats["correct"] / stats["attempted"]) * 100, 2)
-            if stats["attempted"] > 0 else 0.0
-        )
+        # --------------------------------------------------
+        # 5️⃣ Build report
+        # --------------------------------------------------
+        print("🟡 STEP 5: Building report")
 
-        print(f"   📌 {topic} →", stats, "accuracy:", accuracy)
+        topics_report = []
+        for topic, stats in topic_stats.items():
+            accuracy = (
+                round((stats["correct"] / stats["attempted"]) * 100, 2)
+                if stats["attempted"] > 0 else 0.0
+            )
+            topics_report.append({
+                "name": topic,
+                "total": stats["total"],
+                "attempted": stats["attempted"],
+                "correct": stats["correct"],
+                "incorrect": stats["incorrect"],
+                "accuracy": accuracy
+            })
 
-        topics_report.append({
-            "name": topic,                  # frontend label
-            "total": stats["total"],
-            "attempted": stats["attempted"],
-            "correct": stats["correct"],
-            "incorrect": stats["incorrect"],
-            "accuracy": accuracy             # optional, keep for later use
-        })
+        overall_accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+        score_percent = overall_accuracy
+        result = "Pass" if score_percent >= 50 else "Fail"
 
+        MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
+        has_sufficient_data = attempted >= MIN_ATTEMPTS
 
-    overall_accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
-    # --------------------------------------------------
-    # ✅ CHANGE 1: Normalize score & result for UI
-    # --------------------------------------------------
-    score_percent = overall_accuracy  # Reading score = accuracy-based
-    
-    # Pass/Fail rule (adjust threshold if needed)
-    result = "Pass" if score_percent >= 50 else "Fail"
+        report_json = {
+            "overall": {
+                "total_questions": total_questions,
+                "attempted": attempted,
+                "correct": correct,
+                "incorrect": incorrect,
+                "not_attempted": not_attempted,
+                "accuracy": overall_accuracy,
+                "score": score_percent,
+                "result": result
+            },
+            "topics": topics_report,
+            "has_sufficient_data": has_sufficient_data,
+            "improvement_order": (
+                [t["name"] for t in sorted(topics_report, key=lambda x: x["accuracy"])]
+                if has_sufficient_data else []
+            )
+        }
 
-    # --------------------------------------------------
-    # ADMIN RAW SCORE SNAPSHOT (Reading) — SAFE VERSION
-    # --------------------------------------------------
-    existing_raw_score = (
-        db.query(AdminExamRawScore)
-        .filter(AdminExamRawScore.exam_attempt_id == session.id)
-        .first()
-    )
-    
-    if existing_raw_score:
-        # Update existing snapshot (idempotent)
-        existing_raw_score.student_id = student.id
-        existing_raw_score.subject = "reading"
-        existing_raw_score.total_questions = total_questions
-        existing_raw_score.correct_answers = correct
-        existing_raw_score.wrong_answers = incorrect
-        existing_raw_score.accuracy_percent = overall_accuracy
-    else:
-        # Insert new snapshot
-        admin_raw_score = AdminExamRawScore(
-            student_id=student.id,
-            exam_attempt_id=session.id,
-            subject="reading",
-            total_questions=total_questions,
-            correct_answers=correct,
-            wrong_answers=incorrect,
-            accuracy_percent=overall_accuracy
-        )
-        db.add(admin_raw_score)
+        print("📈 Report built successfully")
 
+        # --------------------------------------------------
+        # 6️⃣ Mark session finished
+        # --------------------------------------------------
+        print("🟡 STEP 6: Marking session finished")
 
-    # --------------------------------------------------
-    # ✅ CHANGE 3: Improvement Areas Guard
-    # --------------------------------------------------
-    MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
-    
-    has_sufficient_data = attempted >= MIN_ATTEMPTS
+        session.finished = True
+        session.completed_at = datetime.now(timezone.utc)
+        session.report_json = report_json
 
+        print("🟡 STEP 7: About to commit DB")
+        db.commit()
+        print("🟢 DB commit successful")
 
-    report_json = {
-        "overall": {
-            "total_questions": total_questions,
-            "attempted": attempted,
-            "correct": correct,
-            "incorrect": incorrect,
-            "not_attempted": not_attempted,
-            "accuracy": overall_accuracy,
-            "score": score_percent,
-            "result": result
-        },
-        "topics": topics_report,
-        "has_sufficient_data": has_sufficient_data,
-        "improvement_order": (
-            [t["name"] for t in sorted(topics_report, key=lambda x: x["accuracy"])]
-            if has_sufficient_data
-            else []
-        )
-    }
+        # --------------------------------------------------
+        # 7️⃣ Return response
+        # --------------------------------------------------
+        print("🟢 STEP 8: Returning response")
+        print("================ END SUBMIT READING EXAM ================\n")
 
-    print("\n📈 Final overall report:", report_json["overall"])
-    print("📉 Improvement order:", report_json["improvement_order"])
+        return {
+            "status": "submitted",
+            "message": "Reading exam submitted successfully",
+            "report": report_json
+        }
 
-    # --------------------------------------------------
-    # 6️⃣ Mark session finished
-    # --------------------------------------------------
-    session.finished = True
-    session.completed_at = datetime.now(timezone.utc)
-    session.report_json = report_json
-
-    if not admin_report_exists(
-        db=db,
-        exam_attempt_id=session.id
-    ):
-        generate_admin_exam_report_reading(
-            db=db,
-            student=student,
-            exam_attempt=session,
-            overall_accuracy=overall_accuracy,
-            topic_stats=topic_stats
-        )
-
-
-    db.commit()
-
-    print("✅ Exam submission committed successfully")
-    print("================ END SUBMIT READING EXAM ================\n")
-
-    # --------------------------------------------------
-    # 7️⃣ Return response
-    # --------------------------------------------------
-    return {
-        "status": "submitted",
-        "message": "Reading exam submitted successfully",
-        "report": report_json
-    }
+    except Exception as e:
+        print("❌❌❌ UNHANDLED EXCEPTION IN submit_reading_exam ❌❌❌")
+        print("Exception type:", type(e))
+        print("Exception message:", str(e))
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 @app.post("/api/exams/start-reading")
