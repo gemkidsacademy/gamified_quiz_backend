@@ -2353,13 +2353,14 @@ def class_exam_report(
         print("[STEP 2] Resolving students")
 
         students = (
-            db.query(Student.student_id, Student.name)
+            db.query(Student.id, Student.student_id, Student.name)
             .filter(
                 Student.class_name == class_name,
                 Student.class_day == class_day
             )
             .all()
         )
+
 
         students_total = len(students)
         print("[STEP 2] Students found:", students_total)
@@ -2379,26 +2380,31 @@ def class_exam_report(
             })
             continue
 
-        student_name_map = {s.student_id: s.name for s in students}
-        student_ids = list(student_name_map.keys())
+        student_name_map = {s.id: s.name for s in students}
+        student_code_map = {s.id: s.student_id for s in students}  # optional but useful
+        
+        student_internal_ids = list(student_name_map.keys())
 
-        print("[STEP 2] Student IDs:", student_ids)
+
+        print("[STEP 2] Student internal IDs:", student_internal_ids)
+
 
         # ---------------------------
         # Resolve exam responses
         # ---------------------------
         print("[STEP 3] Resolving exam attempts for date")
- 
-        # 1. Resolve exam_attempt_ids for this date + exam
+        external_ids = list(student_code_map.values())
+
         attempt_ids = (
             db.query(AdminExamReport.exam_attempt_id)
             .filter(
                 AdminExamReport.exam_type == exam,
                 func.date(AdminExamReport.created_at) == date,
-                AdminExamReport.student_id.in_(student_ids)
+                AdminExamReport.student_id.in_(external_ids)
             )
             .all()
         )
+
         
         attempt_ids = [a[0] for a in attempt_ids]
         
@@ -2450,11 +2456,13 @@ def class_exam_report(
                 score = round((correct / total) * 100) if total else 0
             
                 result = {
-                    "student_id": student_id,
-                    "student_name": student_name_map.get(student_id, "Unknown"),
+                    "student_id": student_id,  # internal ID
+                    "student_code": student_code_map.get(student_id),
+                    "student_name": student_name_map.get(student_id),
                     "score": score,
                     "accuracy": score
                 }
+
             
                 print("[STEP 3] Student result:", result)
                 student_results.append(result)
@@ -2488,7 +2496,7 @@ def class_exam_report(
         ):
             leaderboard.append({
                 "rank": idx,
-                "student": s["student_name"],
+                "student": f"{s['student_name']} ({s['student_code']})",
                 "score": s["score"],
                 "accuracy": s["accuracy"]
             })
