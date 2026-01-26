@@ -2387,15 +2387,33 @@ def class_exam_report(
         # ---------------------------
         # Resolve exam responses
         # ---------------------------
-        # ===========================
-        # STEP 3: Resolve exam responses (per attempt)
-        # ===========================
-        print("[STEP 3] Resolving exam responses")
+        print("[STEP 3] Resolving exam attempts for date")
+ 
+        # 1. Resolve exam_attempt_ids for this date + exam
+        attempt_ids = (
+            db.query(AdminExamReport.exam_attempt_id)
+            .filter(
+                AdminExamReport.exam == exam,
+                AdminExamReport.date == date,
+                AdminExamReport.student_id.in_(student_ids)
+            )
+            .all()
+        )
         
-        ResponseModel = get_exam_response_model(exam)
-        print("[STEP 3] Using response model:", ResponseModel.__name__)
+        attempt_ids = [a[0] for a in attempt_ids]
         
-        try:
+        print("[STEP 3] Exam attempt IDs:", attempt_ids)
+        
+        if not attempt_ids:
+            print("[STEP 3] No exam attempts found for this date")
+            students_attempted = 0
+            student_results = []
+        else:
+            print("[STEP 3] Resolving exam responses")
+        
+            ResponseModel = get_exam_response_model(exam)
+            print("[STEP 3] Using response model:", ResponseModel.__name__)
+        
             raw_rows = (
                 db.query(
                     ResponseModel.student_id,
@@ -2403,72 +2421,48 @@ def class_exam_report(
                     ResponseModel.is_correct
                 )
                 .filter(
-                    ResponseModel.student_id.in_(student_ids),
-                    ResponseModel.date == date
+                    ResponseModel.exam_attempt_id.in_(attempt_ids)
                 )
                 .all()
             )
-        except Exception as e:
-            print("[ERROR] Failed querying exam responses:", e)
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to resolve exam responses"
-            )
         
-        print("[STEP 3] Raw rows fetched:", len(raw_rows))
+            print("[STEP 3] Raw rows fetched:", len(raw_rows))
         
-        if not raw_rows:
-            print("[STEP 3] No exam attempts found for this date")
-            students_attempted = 0
-            student_results = []
-        else:
-            # ---------------------------
-            # Group by student + attempt
-            # ---------------------------
             attempts = {}
-        
+            
             for r in raw_rows:
                 key = (r.student_id, r.exam_attempt_id)
+            
                 if key not in attempts:
-                    attempts[key] = {
-                        "total": 0,
-                        "correct": 0
-                    }
-        
+                    attempts[key] = {"total": 0, "correct": 0}
+            
                 attempts[key]["total"] += 1
-        
-                # NULL is treated as incorrect
+            
+                # NULL treated as incorrect
                 if r.is_correct is True:
                     attempts[key]["correct"] += 1
-        
-            print("[STEP 3] Attempts resolved:", attempts)
-        
-            # ---------------------------
-            # Build per-student results
-            # ---------------------------
+            
             student_results = []
-        
-            for (student_id, attempt_id), stats in attempts.items():
+            
+            for (student_id, _), stats in attempts.items():
                 total = stats["total"]
                 correct = stats["correct"]
-        
-                score = round((correct / total) * 100) if total > 0 else 0
-        
+            
+                score = round((correct / total) * 100) if total else 0
+            
                 result = {
                     "student_id": student_id,
                     "student_name": student_name_map.get(student_id, "Unknown"),
                     "score": score,
                     "accuracy": score
                 }
-        
+            
                 print("[STEP 3] Student result:", result)
                 student_results.append(result)
-        
+            
             students_attempted = len(student_results)
-        
-        print("[STEP 3] Students attempted:", students_attempted)
-
-        
+            print("[STEP 3] Students attempted:", students_attempted)
+  
 
         # ---------------------------
         # STEP 5: Summary metrics
