@@ -19,7 +19,7 @@ import copy
 
 import pandas as pd
 import os
-import random
+import random 
 import time
 from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
