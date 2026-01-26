@@ -2296,10 +2296,6 @@ def get_exam_response_model(exam: str):
 
     raise HTTPException(status_code=400, detail="Unsupported exam type")
 
-from fastapi import Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-from collections import defaultdict
 
 @app.get("/api/reports/class")
 def class_exam_report(
@@ -2391,16 +2387,16 @@ def class_exam_report(
         # ---------------------------
         # Resolve exam responses
         # ---------------------------
+        # ===========================
+        # STEP 3: Resolve exam responses (per attempt)
+        # ===========================
         print("[STEP 3] Resolving exam responses")
-
+        
+        ResponseModel = get_exam_response_model(exam)
+        print("[STEP 3] Using response model:", ResponseModel.__name__)
+        
         try:
-            ResponseModel = get_exam_response_model(exam)
-            print("[STEP 3] Using response model:", ResponseModel.__name__)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Unsupported exam type")
-
-        try:
-            rows = (
+            raw_rows = (
                 db.query(
                     ResponseModel.student_id,
                     ResponseModel.exam_attempt_id,
@@ -2413,64 +2409,79 @@ def class_exam_report(
                 .all()
             )
         except Exception as e:
-            print("[ERROR] Failed querying responses:", e)
-            raise HTTPException(status_code=500, detail="Failed querying responses")
+            print("[ERROR] Failed querying exam responses:", e)
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to resolve exam responses"
+            )
+        
+        print("[STEP 3] Raw rows fetched:", len(raw_rows))
+        
+        if not raw_rows:
+            print("[STEP 3] No exam attempts found for this date")
+            students_attempted = 0
+            student_results = []
+        else:
+            # ---------------------------
+            # Group by student + attempt
+            # ---------------------------
+            attempts = {}
+        
+            for r in raw_rows:
+                key = (r.student_id, r.exam_attempt_id)
+                if key not in attempts:
+                    attempts[key] = {
+                        "total": 0,
+                        "correct": 0
+                    }
+        
+                attempts[key]["total"] += 1
+        
+                # NULL is treated as incorrect
+                if r.is_correct is True:
+                    attempts[key]["correct"] += 1
+        
+            print("[STEP 3] Attempts resolved:", attempts)
+        
+            # ---------------------------
+            # Build per-student results
+            # ---------------------------
+            student_results = []
+        
+            for (student_id, attempt_id), stats in attempts.items():
+                total = stats["total"]
+                correct = stats["correct"]
+        
+                score = round((correct / total) * 100) if total > 0 else 0
+        
+                result = {
+                    "student_id": student_id,
+                    "student_name": student_name_map.get(student_id, "Unknown"),
+                    "score": score,
+                    "accuracy": score
+                }
+        
+                print("[STEP 3] Student result:", result)
+                student_results.append(result)
+        
+            students_attempted = len(student_results)
+        
+        print("[STEP 3] Students attempted:", students_attempted)
 
-        print("[STEP 3] Total response rows:", len(rows))
-
-        if not rows:
-            print("[DAY RESULT] No attempts for this day")
-            reports.append({
-                "class_day": class_day,
-                "summary": {
-                    "students_total": students_total,
-                    "students_attempted": 0,
-                    "average_score": 0,
-                    "highest_score": 0
-                },
-                "leaderboard": [],
-                "score_distribution": _empty_buckets()
-            })
-            continue
-
-        # ---------------------------
-        # STEP 4: Aggregate per student
-        # ---------------------------
-        print("[STEP 4] Aggregating per-student results")
-
-        per_student = defaultdict(lambda: {
-            "correct": 0,
-            "total": 0
-        })
-
-        for r in rows:
-            per_student[r.student_id]["total"] += 1
-            if r.is_correct:
-                per_student[r.student_id]["correct"] += 1
-
-        student_results = []
-
-        for student_id, stats in per_student.items():
-            score = round((stats["correct"] / stats["total"]) * 100)
-            result = {
-                "student_id": student_id,
-                "student_name": student_name_map.get(student_id, "Unknown"),
-                "score": score,
-                "accuracy": score
-            }
-            print("[STEP 4] Result:", result)
-            student_results.append(result)
-
-        students_attempted = len(student_results)
+        
 
         # ---------------------------
         # STEP 5: Summary metrics
         # ---------------------------
-        average_score = round(
-            sum(s["score"] for s in student_results) / students_attempted
-        )
-        highest_score = max(s["score"] for s in student_results)
-
+        if students_attempted == 0:
+            average_score = 0
+            highest_score = 0
+        else:
+            average_score = round(
+                sum(s["score"] for s in student_results) / students_attempted
+            )
+            highest_score = max(s["score"] for s in student_results)
+        
         print("[STEP 5] Average score:", average_score)
         print("[STEP 5] Highest score:", highest_score)
 
