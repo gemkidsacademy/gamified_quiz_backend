@@ -2272,6 +2272,23 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         raise Exception(f"GCS upload failed: {str(e)}")
 
 #api end points
+def get_days_for_class(db: Session, class_name: str):
+    results = (
+        db.query(distinct(Student.class_day))
+        .filter(Student.class_name == class_name)
+        .order_by(Student.class_day)
+        .all()
+    )
+
+    # [('Monday',), ('Wednesday',)] → ['Monday', 'Wedne
+
+@app.get("/api/classes/{class_name}/days")
+def fetch_class_days(class_name: str, db: Session = Depends(get_db)):
+    days = get_days_for_class(db, class_name)
+    return {
+        "class": class_name,
+        "days": days
+    }
 
 
 
