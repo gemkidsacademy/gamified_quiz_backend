@@ -2297,7 +2297,7 @@ def get_exam_response_model(exam: str):
     raise HTTPException(status_code=400, detail="Unsupported exam type")
 
 
-@app.get("/api/reports/class")
+@app.get("/api/reports/class-new")
 def class_exam_report(
     class_name: str,
     exam: str,
