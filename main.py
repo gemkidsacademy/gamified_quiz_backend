@@ -2280,6 +2280,8 @@ def get_days_for_class(db: Session, class_name: str):
         .all()
     )
 
+    # [('Monday',), ('Wednesday',)] → ['Monday', 'Wednesday']
+    return [row[0] for row in results if row[0]]
     # [('Monday',), ('Wednesday',)] → ['Monday', 'Wedne
 
 @app.get("/api/classes/{class_name}/days")
