@@ -2393,8 +2393,8 @@ def class_exam_report(
         attempt_ids = (
             db.query(AdminExamReport.exam_attempt_id)
             .filter(
-                AdminExamReport.exam == exam,
-                AdminExamReport.date == date,
+                AdminExamReport.exam_type == exam,
+                func.date(AdminExamReport.created_at) == date,
                 AdminExamReport.student_id.in_(student_ids)
             )
             .all()
@@ -2402,8 +2402,7 @@ def class_exam_report(
         
         attempt_ids = [a[0] for a in attempt_ids]
         
-        print("[STEP 3] Exam attempt IDs:", attempt_ids)
-        
+        print("[STEP 3] Exam attempt IDs:", attempt_ids)        
         if not attempt_ids:
             print("[STEP 3] No exam attempts found for this date")
             students_attempted = 0
