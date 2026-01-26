@@ -2838,6 +2838,22 @@ def get_student_writing_report(
         "evaluation": exam_state.ai_evaluation_json,
     }
 
+def get_all_classes(db: Session):
+    results = (
+        db.query(distinct(Student.class_name))
+        .order_by(Student.class_name)
+        .all()
+    )
+
+    # results comes as list of tuples → [('Class A',), ('Class B',)]
+    return [row[0] for row in results if row[0]]
+
+@app.get("/api/classes")
+def fetch_classes(db: Session = Depends(get_db)):
+    classes = get_all_classes(db)
+    return {
+        "classes": classes
+    }
 
 
 @app.post("/generate-new-mr")
