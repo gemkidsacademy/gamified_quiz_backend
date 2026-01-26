@@ -2296,6 +2296,11 @@ def get_exam_response_model(exam: str):
 
     raise HTTPException(status_code=400, detail="Unsupported exam type")
 
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from collections import defaultdict
+
 @app.get("/api/reports/class")
 def class_exam_report(
     class_name: str,
@@ -2326,12 +2331,10 @@ def class_exam_report(
         raise HTTPException(status_code=500, detail="Failed to resolve class days")
 
     class_days = [d[0] for d in class_days_raw if d[0]]
-
     print("[STEP 1] Class days found:", class_days)
 
     if not class_days:
         print("[EARLY EXIT] No class days found")
-
         return {
             "class_name": class_name,
             "exam": exam,
@@ -2367,7 +2370,6 @@ def class_exam_report(
 
         if students_total == 0:
             print("[DAY SKIP] No students for this day")
-
             reports.append({
                 "class_day": class_day,
                 "summary": {
@@ -2377,12 +2379,7 @@ def class_exam_report(
                     "highest_score": 0
                 },
                 "leaderboard": [],
-                "score_distribution": [
-                    {"range": "0-40", "count": 0},
-                    {"range": "41-60", "count": 0},
-                    {"range": "61-80", "count": 0},
-                    {"range": "81-100", "count": 0}
-                ]
+                "score_distribution": _empty_buckets()
             })
             continue
 
@@ -2396,29 +2393,33 @@ def class_exam_report(
         # ---------------------------
         print("[STEP 3] Resolving exam responses")
 
-        ResponseModel = get_exam_response_model(exam)
-        print("[STEP 3] Using response model:", ResponseModel.__name__)
+        try:
+            ResponseModel = get_exam_response_model(exam)
+            print("[STEP 3] Using response model:", ResponseModel.__name__)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Unsupported exam type")
 
-        responses = (
-            db.query(
-                ResponseModel.student_id,
-                ResponseModel.score,
-                ResponseModel.correct_count,
-                ResponseModel.total_questions
+        try:
+            rows = (
+                db.query(
+                    ResponseModel.student_id,
+                    ResponseModel.exam_attempt_id,
+                    ResponseModel.is_correct
+                )
+                .filter(
+                    ResponseModel.student_id.in_(student_ids),
+                    ResponseModel.date == date
+                )
+                .all()
             )
-            .filter(
-                ResponseModel.student_id.in_(student_ids),
-                ResponseModel.date == date
-            )
-            .all()
-        )
+        except Exception as e:
+            print("[ERROR] Failed querying responses:", e)
+            raise HTTPException(status_code=500, detail="Failed querying responses")
 
-        students_attempted = len(responses)
-        print("[STEP 3] Students attempted:", students_attempted)
+        print("[STEP 3] Total response rows:", len(rows))
 
-        if students_attempted == 0:
+        if not rows:
             print("[DAY RESULT] No attempts for this day")
-
             reports.append({
                 "class_day": class_day,
                 "summary": {
@@ -2428,35 +2429,42 @@ def class_exam_report(
                     "highest_score": 0
                 },
                 "leaderboard": [],
-                "score_distribution": [
-                    {"range": "0-40", "count": 0},
-                    {"range": "41-60", "count": 0},
-                    {"range": "61-80", "count": 0},
-                    {"range": "81-100", "count": 0}
-                ]
+                "score_distribution": _empty_buckets()
             })
             continue
 
         # ---------------------------
-        # Per-student results
+        # STEP 4: Aggregate per student
         # ---------------------------
-        print("[STEP 4] Computing per-student results")
+        print("[STEP 4] Aggregating per-student results")
+
+        per_student = defaultdict(lambda: {
+            "correct": 0,
+            "total": 0
+        })
+
+        for r in rows:
+            per_student[r.student_id]["total"] += 1
+            if r.is_correct:
+                per_student[r.student_id]["correct"] += 1
 
         student_results = []
 
-        for r in responses:
-            accuracy = round((r.correct_count / r.total_questions) * 100)
+        for student_id, stats in per_student.items():
+            score = round((stats["correct"] / stats["total"]) * 100)
             result = {
-                "student_id": r.student_id,
-                "student_name": student_name_map.get(r.student_id, "Unknown"),
-                "score": r.score,
-                "accuracy": accuracy
+                "student_id": student_id,
+                "student_name": student_name_map.get(student_id, "Unknown"),
+                "score": score,
+                "accuracy": score
             }
             print("[STEP 4] Result:", result)
             student_results.append(result)
 
+        students_attempted = len(student_results)
+
         # ---------------------------
-        # Summary metrics
+        # STEP 5: Summary metrics
         # ---------------------------
         average_score = round(
             sum(s["score"] for s in student_results) / students_attempted
@@ -2467,26 +2475,22 @@ def class_exam_report(
         print("[STEP 5] Highest score:", highest_score)
 
         # ---------------------------
-        # Leaderboard
+        # STEP 6: Leaderboard
         # ---------------------------
-        sorted_students = sorted(
-            student_results,
-            key=lambda x: x["score"],
-            reverse=True
-        )
-
         leaderboard = []
-        for idx, s in enumerate(sorted_students, start=1):
-            entry = {
+        for idx, s in enumerate(
+            sorted(student_results, key=lambda x: x["score"], reverse=True),
+            start=1
+        ):
+            leaderboard.append({
                 "rank": idx,
                 "student": s["student_name"],
                 "score": s["score"],
                 "accuracy": s["accuracy"]
-            }
-            leaderboard.append(entry)
+            })
 
         # ---------------------------
-        # Score distribution
+        # STEP 7: Score distribution
         # ---------------------------
         buckets = {
             "0-40": 0,
@@ -2505,7 +2509,7 @@ def class_exam_report(
             else:
                 buckets["81-100"] += 1
 
-        print("[STEP 6] Buckets:", buckets)
+        print("[STEP 7] Buckets:", buckets)
 
         reports.append({
             "class_day": class_day,
@@ -2533,6 +2537,15 @@ def class_exam_report(
         "date": date,
         "reports": reports
     }
+
+
+def _empty_buckets():
+    return [
+        {"range": "0-40", "count": 0},
+        {"range": "41-60", "count": 0},
+        {"range": "61-80", "count": 0},
+        {"range": "81-100", "count": 0}
+    ]
 
 
 @app.get("/api/classes/{class_name}/days")
