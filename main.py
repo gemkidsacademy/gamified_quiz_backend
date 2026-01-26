@@ -2299,7 +2299,6 @@ def get_exam_response_model(exam: str):
 @app.get("/api/reports/class")
 def class_exam_report(
     class_name: str,
-    class_day: str,
     exam: str,
     date: str,
     db: Session = Depends(get_db)
@@ -2307,16 +2306,53 @@ def class_exam_report(
     print("========================================")
     print("[CLASS REPORT] Request received")
     print("class_name:", class_name)
-    print("class_day:", class_day)
     print("exam:", exam)
     print("date:", date)
 
     # ===========================
-    # STEP 1: Resolve students
+    # STEP 1: Resolve class days
     # ===========================
-    print("\n[STEP 1] Resolving students for class + day")
+    print("\n[STEP 1] Resolving distinct class days")
 
     try:
+        class_days_raw = (
+            db.query(Student.class_day)
+            .filter(Student.class_name == class_name)
+            .distinct()
+            .all()
+        )
+    except Exception as e:
+        print("[ERROR] Failed resolving class days:", e)
+        raise HTTPException(status_code=500, detail="Failed to resolve class days")
+
+    class_days = [d[0] for d in class_days_raw if d[0]]
+
+    print("[STEP 1] Class days found:", class_days)
+
+    if not class_days:
+        print("[EARLY EXIT] No class days found")
+
+        return {
+            "class_name": class_name,
+            "exam": exam,
+            "date": date,
+            "reports": []
+        }
+
+    reports = []
+
+    # ===========================
+    # STEP 2: Loop per class day
+    # ===========================
+    for class_day in class_days:
+        print("\n----------------------------------------")
+        print(f"[DAY LOOP] Processing day: {class_day}")
+
+        # ---------------------------
+        # Resolve students
+        # ---------------------------
+        print("[STEP 2] Resolving students")
+
         students = (
             db.query(Student.student_id, Student.name)
             .filter(
@@ -2325,56 +2361,44 @@ def class_exam_report(
             )
             .all()
         )
-    except Exception as e:
-        print("[ERROR] Failed querying students:", e)
-        raise HTTPException(status_code=500, detail="Failed to resolve students")
 
-    students_total = len(students)
-    print("[STEP 1] Students found:", students_total)
+        students_total = len(students)
+        print("[STEP 2] Students found:", students_total)
 
-    if students_total == 0:
-        print("[EARLY EXIT] No students found for this class/day")
+        if students_total == 0:
+            print("[DAY SKIP] No students for this day")
 
-        return {
-            "meta": {
-                "class_name": class_name,
+            reports.append({
                 "class_day": class_day,
-                "exam": exam,
-                "date": date
-            },
-            "summary": {
-                "students_total": 0,
-                "students_attempted": 0,
-                "average_score": 0,
-                "highest_score": 0
-            },
-            "leaderboard": [],
-            "score_distribution": [
-                {"range": "0-40", "count": 0},
-                {"range": "41-60", "count": 0},
-                {"range": "61-80", "count": 0},
-                {"range": "81-100", "count": 0}
-            ]
-        }
+                "summary": {
+                    "students_total": 0,
+                    "students_attempted": 0,
+                    "average_score": 0,
+                    "highest_score": 0
+                },
+                "leaderboard": [],
+                "score_distribution": [
+                    {"range": "0-40", "count": 0},
+                    {"range": "41-60", "count": 0},
+                    {"range": "61-80", "count": 0},
+                    {"range": "81-100", "count": 0}
+                ]
+            })
+            continue
 
-    student_name_map = {s.student_id: s.name for s in students}
-    student_ids = list(student_name_map.keys())
+        student_name_map = {s.student_id: s.name for s in students}
+        student_ids = list(student_name_map.keys())
 
-    print("[STEP 1] Student IDs:", student_ids)
+        print("[STEP 2] Student IDs:", student_ids)
 
-    # ===========================
-    # STEP 2: Resolve exam responses
-    # ===========================
-    print("\n[STEP 2] Resolving exam responses")
+        # ---------------------------
+        # Resolve exam responses
+        # ---------------------------
+        print("[STEP 3] Resolving exam responses")
 
-    try:
         ResponseModel = get_exam_response_model(exam)
-        print("[STEP 2] Response model resolved:", ResponseModel.__name__)
-    except Exception as e:
-        print("[ERROR] Unsupported exam type:", exam)
-        raise
+        print("[STEP 3] Using response model:", ResponseModel.__name__)
 
-    try:
         responses = (
             db.query(
                 ResponseModel.student_id,
@@ -2388,144 +2412,128 @@ def class_exam_report(
             )
             .all()
         )
-    except Exception as e:
-        print("[ERROR] Failed querying exam responses:", e)
-        raise HTTPException(status_code=500, detail="Failed to resolve exam responses")
 
-    students_attempted = len(responses)
-    print("[STEP 2] Students attempted exam:", students_attempted)
+        students_attempted = len(responses)
+        print("[STEP 3] Students attempted:", students_attempted)
 
-    if students_attempted == 0:
-        print("[EARLY EXIT] No students attempted this exam on this date")
+        if students_attempted == 0:
+            print("[DAY RESULT] No attempts for this day")
 
-        return {
-            "meta": {
-                "class_name": class_name,
+            reports.append({
                 "class_day": class_day,
-                "exam": exam,
-                "date": date
-            },
+                "summary": {
+                    "students_total": students_total,
+                    "students_attempted": 0,
+                    "average_score": 0,
+                    "highest_score": 0
+                },
+                "leaderboard": [],
+                "score_distribution": [
+                    {"range": "0-40", "count": 0},
+                    {"range": "41-60", "count": 0},
+                    {"range": "61-80", "count": 0},
+                    {"range": "81-100", "count": 0}
+                ]
+            })
+            continue
+
+        # ---------------------------
+        # Per-student results
+        # ---------------------------
+        print("[STEP 4] Computing per-student results")
+
+        student_results = []
+
+        for r in responses:
+            accuracy = round((r.correct_count / r.total_questions) * 100)
+            result = {
+                "student_id": r.student_id,
+                "student_name": student_name_map.get(r.student_id, "Unknown"),
+                "score": r.score,
+                "accuracy": accuracy
+            }
+            print("[STEP 4] Result:", result)
+            student_results.append(result)
+
+        # ---------------------------
+        # Summary metrics
+        # ---------------------------
+        average_score = round(
+            sum(s["score"] for s in student_results) / students_attempted
+        )
+        highest_score = max(s["score"] for s in student_results)
+
+        print("[STEP 5] Average score:", average_score)
+        print("[STEP 5] Highest score:", highest_score)
+
+        # ---------------------------
+        # Leaderboard
+        # ---------------------------
+        sorted_students = sorted(
+            student_results,
+            key=lambda x: x["score"],
+            reverse=True
+        )
+
+        leaderboard = []
+        for idx, s in enumerate(sorted_students, start=1):
+            entry = {
+                "rank": idx,
+                "student": s["student_name"],
+                "score": s["score"],
+                "accuracy": s["accuracy"]
+            }
+            leaderboard.append(entry)
+
+        # ---------------------------
+        # Score distribution
+        # ---------------------------
+        buckets = {
+            "0-40": 0,
+            "41-60": 0,
+            "61-80": 0,
+            "81-100": 0
+        }
+
+        for s in student_results:
+            if s["score"] <= 40:
+                buckets["0-40"] += 1
+            elif s["score"] <= 60:
+                buckets["41-60"] += 1
+            elif s["score"] <= 80:
+                buckets["61-80"] += 1
+            else:
+                buckets["81-100"] += 1
+
+        print("[STEP 6] Buckets:", buckets)
+
+        reports.append({
+            "class_day": class_day,
             "summary": {
                 "students_total": students_total,
-                "students_attempted": 0,
-                "average_score": 0,
-                "highest_score": 0
+                "students_attempted": students_attempted,
+                "average_score": average_score,
+                "highest_score": highest_score
             },
-            "leaderboard": [],
+            "leaderboard": leaderboard,
             "score_distribution": [
-                {"range": "0-40", "count": 0},
-                {"range": "41-60", "count": 0},
-                {"range": "61-80", "count": 0},
-                {"range": "81-100", "count": 0}
+                {"range": k, "count": v} for k, v in buckets.items()
             ]
-        }
+        })
 
     # ===========================
-    # STEP 3: Per-student results
+    # STEP 8: Final response
     # ===========================
-    print("\n[STEP 3] Computing per-student results")
-
-    student_results = []
-
-    for r in responses:
-        accuracy = round((r.correct_count / r.total_questions) * 100)
-
-        result = {
-            "student_id": r.student_id,
-            "student_name": student_name_map.get(r.student_id, "Unknown"),
-            "score": r.score,
-            "accuracy": accuracy
-        }
-
-        print("[STEP 3] Student result:", result)
-        student_results.append(result)
-
-    # ===========================
-    # STEP 4: Summary metrics
-    # ===========================
-    print("\n[STEP 4] Computing summary metrics")
-
-    average_score = round(
-        sum(s["score"] for s in student_results) / students_attempted
-    )
-    highest_score = max(s["score"] for s in student_results)
-
-    print("[STEP 4] Average score:", average_score)
-    print("[STEP 4] Highest score:", highest_score)
-
-    # ===========================
-    # STEP 5: Leaderboard
-    # ===========================
-    print("\n[STEP 5] Building leaderboard")
-
-    sorted_students = sorted(
-        student_results,
-        key=lambda x: x["score"],
-        reverse=True
-    )
-
-    leaderboard = []
-    for idx, s in enumerate(sorted_students, start=1):
-        entry = {
-            "rank": idx,
-            "student": s["student_name"],
-            "score": s["score"],
-            "accuracy": s["accuracy"]
-        }
-        print("[STEP 5] Leaderboard entry:", entry)
-        leaderboard.append(entry)
-
-    # ===========================
-    # STEP 6: Score distribution
-    # ===========================
-    print("\n[STEP 6] Computing score distribution")
-
-    buckets = {
-        "0-40": 0,
-        "41-60": 0,
-        "61-80": 0,
-        "81-100": 0
-    }
-
-    for s in student_results:
-        score = s["score"]
-        if score <= 40:
-            buckets["0-40"] += 1
-        elif score <= 60:
-            buckets["41-60"] += 1
-        elif score <= 80:
-            buckets["61-80"] += 1
-        else:
-            buckets["81-100"] += 1
-
-    print("[STEP 6] Buckets:", buckets)
-
-    score_distribution = [
-        {"range": k, "count": v} for k, v in buckets.items()
-    ]
-
-    # ===========================
-    # STEP 7: Final response
-    # ===========================
-    print("\n[STEP 7] Returning final response")
+    print("\n[STEP 8] Returning multi-day class report")
     print("========================================")
 
     return {
-        "meta": {
-            "class_name": class_name,
-            "class_day": class_day,
-            "exam": exam,
-            "date": date
-        },
-        "summary": {
-            "students_total": students_total,
-            "students_attempted": students_attempted,
-            "average_score": average_score,
-            "highest_score": highest_score
-        },
-        "leaderboard": leaderboard,
-        "score_distribution": score_distribution
+        "class_name": class_name,
+        "exam": exam,
+        "date": date,
+        "reports": reports
     }
+
 
 @app.get("/api/classes/{class_name}/days")
 def fetch_class_days(class_name: str, db: Session = Depends(get_db)):
