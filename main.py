@@ -175,6 +175,22 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamResponseThinkingSkillsView(Base):
+    __tablename__ = "student_exam_responses_thinking_skills"
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(Integer)
+    exam_id = Column(Integer)
+    exam_attempt_id = Column(Integer)
+
+    q_id = Column(Integer)
+    topic = Column(String)
+
+    selected_option = Column(String)
+    correct_option = Column(String)
+    is_correct = Column(Boolean)
+
 class StudentExamResponseMathematicalReasoning(Base):
     __tablename__ = "student_exam_response_mathematical_reasoning"
 
@@ -1639,7 +1655,7 @@ scheduler.start()
 # ---------------------------
 def get_response_model(exam: str):
     if exam == "thinking_skills":
-        return StudentExamResponseThinkingSkills
+        return StudentExamResponseThinkingSkillsView
     if exam == "reading":
         return StudentExamReportReading
     if exam == "mathematical_reasoning":
