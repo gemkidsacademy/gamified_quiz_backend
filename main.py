@@ -2410,9 +2410,11 @@ def get_student_cumulative_report(
     student_id: str,
     exam: str,
     topic: str,
-    attempt_dates: List[str] = Query(...),
+    attempt_dates: list[str] | None = Query(None),
     db: Session = Depends(get_db),
 ):
+    print("🔥 attempt_dates type:", type(attempt_dates), attempt_dates)
+
     print("\n==============================")
     print("📥 [CUMULATIVE] REQUEST RECEIVED")
     print("   student_id:", student_id)
