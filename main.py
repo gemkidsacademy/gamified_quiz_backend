@@ -2298,21 +2298,21 @@ def get_exam_response_model(exam: str):
 
 
 
+
 @app.get("/api/reports/student/cumulative")
 def get_student_cumulative_report(
     student_id: str,
     exam: str,
     topic: str,
     attempt_dates: List[str] = Query(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    print("\n==============================")
-    print("🚀 CUMULATIVE REPORT REQUEST")
-    print("==============================")
-    print("student_id:", student_id)
-    print("exam:", exam)
-    print("topic:", topic)
-    print("attempt_dates:", attempt_dates)
+    print("📥 [CUMULATIVE] student_id =", student_id)
+    print("📥 [CUMULATIVE] exam =", exam)
+    print("📥 [CUMULATIVE] topic =", topic)
+    print("📥 [CUMULATIVE] attempt_dates =", attempt_dates)
+
+    ...
 
     # --------------------------------------------------
     # 1️⃣ Resolve internal student
