@@ -2288,14 +2288,25 @@ def get_exam_response_model(exam: str):
     if exam == "thinking_skills":
         return StudentExamResponseThinkingSkills
     elif exam == "reading":
-        return StudentExamResponseReading
+        return StudentExamReportReading
     elif exam == "mathematical_reasoning":
-        return StudentExamResponseMathematics
+        return StudentExamResponse
     elif exam == "writing":
-        return StudentExamResponseWriting
+        return StudentExamWriting
 
     raise HTTPException(status_code=400, detail="Unsupported exam type")
 
+def get_question_model(exam: str):
+    if exam == "thinking_skills":
+        return Question
+    elif exam == "mathematical_reasoning":
+        return Question
+    elif exam == "reading":
+        return QuestionReading
+    elif exam == "writing":
+        return WritingQuestionBank
+    else:
+        raise RuntimeError(f"Unsupported exam type: {exam}")
 
 
 
