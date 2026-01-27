@@ -175,21 +175,6 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
-class StudentExamResponseThinkingSkillsView(Base):
-    __tablename__ = "student_exam_responses_thinking_skills"
-
-    id = Column(Integer, primary_key=True)
-
-    student_id = Column(Integer)
-    exam_id = Column(Integer)
-    exam_attempt_id = Column(Integer)
-
-    q_id = Column(Integer)
-    topic = Column(String)
-
-    selected_option = Column(String)
-    correct_option = Column(String)
-    is_correct = Column(Boolean)
 
 class StudentExamResponseMathematicalReasoning(Base):
     __tablename__ = "student_exam_response_mathematical_reasoning"
@@ -1440,6 +1425,22 @@ try:
 except Exception as e:
     print("Error creating tables:", e)
 
+class StudentExamResponseThinkingSkillsView(Base):
+    __tablename__ = "student_exam_responses_thinking_skills"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(Integer)
+    exam_id = Column(Integer)
+    exam_attempt_id = Column(Integer)
+
+    q_id = Column(Integer)
+    topic = Column(String)
+
+    selected_option = Column(String)
+    correct_option = Column(String)
+    is_correct = Column(Boolean)
 
 # ---------------------------
 # FastAPI App
@@ -2489,6 +2490,12 @@ def get_student_cumulative_report(
     print("\n[3] Resolving response & question models...")
 
     ResponseModel = get_response_model(exam)
+    print(
+       "🧪 QUERYING TABLE:",
+       ResponseModel.__tablename__,
+       "| MODEL:",
+       ResponseModel.__name__,
+   )
 
     if not ResponseModel:
         print("❌ [ABORT @3] Unsupported exam type")
