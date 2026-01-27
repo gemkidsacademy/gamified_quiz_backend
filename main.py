@@ -2444,15 +2444,37 @@ def get_student_cumulative_report(
             attempt.exam_attempt_id,
         )
 
-        responses = (
+        # --------------------------------------------------
+        # Topic-aware response filtering
+        # --------------------------------------------------
+        raw_responses = (
             db.query(ResponseModel)
             .filter(
                 ResponseModel.student_id == student.id,
                 ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
-                ResponseModel.topic == topic,
             )
             .all()
         )
+        
+        print("     raw_responses_found:", len(raw_responses))
+        
+        if response_has_own_topic(ResponseModel):
+            responses = [
+                r for r in raw_responses
+                if r.topic and normalize_topic(r.topic) == topic
+            ]
+            print("     topic_match_mode: response.topic (normalized)")
+        else:
+            responses = raw_responses  # fallback for safety
+
+        if not responses:
+            print(
+                "⚠️ No responses found for topic",
+                topic,
+                "in exam_attempt_id",
+                attempt.exam_attempt_id
+            )
+
 
 
         print("     responses_found:", len(responses))
@@ -8602,6 +8624,19 @@ CANONICAL_READING_TOPICS = {
     "main idea & summary": "Main Idea & Summary",
     "main idea and summary": "Main Idea & Summary",
 }
+def normalize_topic(value: str) -> str:
+    return (
+        value.lower()
+        .replace("&", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("-", " ")
+        .replace("/", " ")
+        .replace(",", "")
+        .strip()
+        .replace("  ", " ")
+        .replace(" ", "_")
+    )
 
 def normalize_topic(raw_topic: str) -> str:
     if not raw_topic:
