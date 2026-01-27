@@ -2777,6 +2777,91 @@ def get_topics(
 
     return topic_list
 
+
+@app.get("/api/exams/{exam}/topics")
+def get_exam_topics(
+    exam: str,
+    db: Session = Depends(get_db)
+):
+    # ===============================
+    # Thinking Skills
+    # ===============================
+    if exam == "thinking_skills":
+        results = (
+            db.query(Question.topic)
+            .filter(
+                Question.subject == "Thinking Skills",
+                Question.topic.isnot(None)
+            )
+            .group_by(Question.topic)
+            .order_by(Question.topic)
+            .all()
+        )
+
+    # ===============================
+    # Mathematical Reasoning
+    # ===============================
+    elif exam == "mathematical_reasoning":
+        results = (
+            db.query(Question.topic)
+            .filter(
+                Question.subject == "Mathematical Reasoning",
+                Question.topic.isnot(None)
+            )
+            .group_by(Question.topic)
+            .order_by(Question.topic)
+            .all()
+        )
+
+    # ===============================
+    # Reading
+    # ===============================
+    elif exam == "reading":
+        results = (
+            db.query(ReadingQuestion.topic)
+            .filter(
+                ReadingQuestion.topic.isnot(None)
+            )
+            .group_by(ReadingQuestion.topic)
+            .order_by(ReadingQuestion.topic)
+            .all()
+        )
+
+    # ===============================
+    # Writing
+    # ===============================
+    elif exam == "writing":
+        results = (
+            db.query(WritingQuestion.topic)
+            .filter(
+                WritingQuestion.topic.isnot(None)
+            )
+            .group_by(WritingQuestion.topic)
+            .order_by(WritingQuestion.topic)
+            .all()
+        )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported exam type"
+        )
+
+    return {
+        "exam": exam,
+        "topics": [
+            {
+                "key": r.topic,
+                "label": " ".join(
+                    word.capitalize()
+                    for word in r.topic.split("_")
+                )
+            }
+            for r in results
+        ]
+    }
+
+
 @app.get("/api/admin/question-bank-thinking-skills")
 def get_question_bank_thinking_skills(
     db: Session = Depends(get_db)
