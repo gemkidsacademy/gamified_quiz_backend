@@ -2388,29 +2388,6 @@ def response_has_own_topic(ResponseModel):
 # ----------------------------------------
 # Endpoint
 # ----------------------------------------
-RAW_TOPIC_ALIASES = {
-    "spatial_visual_reasoning": {
-        "Spatial & Visual Reasoning",
-        "Spatial and Visual Reasoning",  # <-- ADD THIS
-    },
-
-    "patterns_sequences_relationships": {
-        "Patterns, Sequences & Relationships",
-    },
-
-    "quantitative_analytical_reasoning": {
-        "Quantitative & Analytical Reasoning",
-    },
-
-    "critical_thinking_argument_analysis": {
-        "Critical Thinking & Argument Analysis",
-        "Argument Analysis",
-    },
-}
-TOPIC_ALIASES = {
-    key: {normalize_topic(v) for v in values}
-    for key, values in RAW_TOPIC_ALIASES.items()
-}
 
 
 @app.get("/api/reports/student/cumulative")
@@ -2539,6 +2516,15 @@ def get_student_cumulative_report(
         )
 
         print("     raw_responses_found:", len(raw_responses))
+        normalized_db_topics = {
+            normalize_topic(r.topic)
+            for r in raw_responses
+            if r.topic
+        }
+        
+        print("🧠 normalized_db_topics:", normalized_db_topics)
+        print("🧠 requested_topic:", normalized_request_topic)
+
 
         # Topic-aware filtering
         if response_has_own_topic(ResponseModel):
