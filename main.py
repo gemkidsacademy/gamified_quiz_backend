@@ -2355,15 +2355,6 @@ def get_student_cumulative_report(
     print("==============================")
 
     # --------------------------------------------------
-    # 0️⃣ Guardrails
-    # --------------------------------------------------
-    if exam == "writing":
-        raise HTTPException(
-            status_code=400,
-            detail="Cumulative topic progress is not supported for writing exams"
-        )
-
-    # --------------------------------------------------
     # 1️⃣ Resolve internal student
     # --------------------------------------------------
     print("\n[1] Resolving internal student...")
@@ -2375,7 +2366,8 @@ def get_student_cumulative_report(
     )
 
     if not student:
-        print("❌ Student not found:", student_id)
+        print("❌ [ABORT @1] Student not found")
+        print("   student_id:", student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
     print("✅ Student resolved")
@@ -2392,7 +2384,7 @@ def get_student_cumulative_report(
         .filter(
             AdminExamReport.student_id == student_id,
             AdminExamReport.exam_type == exam,
-            func.date(AdminExamReport.created_at).in_(attempt_dates)
+            func.date(AdminExamReport.created_at).in_(attempt_dates),
         )
         .order_by(AdminExamReport.created_at)
         .all()
@@ -2403,36 +2395,44 @@ def get_student_cumulative_report(
     for a in attempts:
         print(
             "   → exam_attempt_id:", a.exam_attempt_id,
-            "| date:", a.created_at.date()
+            "| date:", a.created_at.date(),
+            "| created_at:", a.created_at,
         )
 
     if not attempts:
+        print("❌ [ABORT @2] No exam attempts matched filters")
+        print("   exam:", exam)
+        print("   attempt_dates:", attempt_dates)
         raise HTTPException(
             status_code=404,
-            detail="No exam attempts found for given dates"
+            detail="No exam attempts found for given filters",
         )
 
     # --------------------------------------------------
-    # 3️⃣ Resolve response model
+    # 3️⃣ Resolve models dynamically
     # --------------------------------------------------
-    print("\n[3] Resolving response model...")
+    print("\n[3] Resolving response & question models...")
 
     ResponseModel = get_response_model(exam)
+    QuestionModel = get_question_model(exam)
+
+    if not ResponseModel or not QuestionModel:
+        print("❌ [ABORT @3] Failed to resolve models")
+        print("   exam:", exam)
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported exam type",
+        )
 
     print("   ResponseModel:", ResponseModel.__name__)
-
-    if not response_has_own_topic(ResponseModel):
-        raise HTTPException(
-            status_code=500,
-            detail=f"{ResponseModel.__name__} does not support topic-based reporting"
-        )
+    print("   QuestionModel:", QuestionModel.__name__)
 
     results = []
 
     # --------------------------------------------------
-    # 4️⃣ Process attempts (time series)
+    # 4️⃣ Process each attempt
     # --------------------------------------------------
-    print("\n[4] Processing attempts...")
+    print("\n[4] Processing attempts (time series)...")
 
     for idx, attempt in enumerate(attempts, start=1):
         print(f"\n   ▶ Attempt {idx}")
@@ -2441,55 +2441,68 @@ def get_student_cumulative_report(
 
         attempt_filter = get_attempt_filter(
             ResponseModel,
-            attempt.exam_attempt_id
+            attempt.exam_attempt_id,
         )
 
         responses = (
             db.query(ResponseModel)
+            .join(
+                QuestionModel,
+                ResponseModel.question_id == QuestionModel.id,
+            )
             .filter(
                 ResponseModel.student_id == student.id,
-                attempt_filter
+                attempt_filter,
+                QuestionModel.topic == topic,
             )
             .all()
         )
 
-        print("     total_responses:", len(responses))
+        print("     responses_found:", len(responses))
+        print("     topic_filter_used:", topic)
 
-        # Normalize topics from DB and match against requested key
-        filtered = []
-        for r in responses:
-            if not r.topic:
-                continue
+        if not responses:
+            print("⚠️  [WARN @4] No responses for this attempt & topic")
+            print("     exam_attempt_id:", attempt.exam_attempt_id)
 
-            normalized_db_topic = normalize_topic(r.topic)
-
-            if normalized_db_topic == topic:
-                filtered.append(r)
-
-        print("     topic_matched_responses:", len(filtered))
-
-        attempted = len(filtered)
-        correct = sum(1 for r in filtered if r.is_correct)
-
-        accuracy = round((correct / attempted) * 100, 2) if attempted else 0
-        score = accuracy  # explicit semantic choice
+        attempted = len(responses)
+        correct = sum(1 for r in responses if r.is_correct)
 
         print("     attempted:", attempted)
         print("     correct:", correct)
+
+        if attempted == 0:
+            print("❌ [ABORT @4] Attempt has zero questions for topic")
+            raise HTTPException(
+                status_code=400,
+                detail=f"No questions found for topic '{topic}'",
+            )
+
+        accuracy = round((correct / attempted) * 100, 2)
+        score = accuracy
+
         print("     accuracy:", accuracy)
+        print("     score:", score)
 
         results.append({
             "date": attempt.created_at.date().isoformat(),
             "questions_attempted": attempted,
             "correct_answers": correct,
             "accuracy": accuracy,
-            "score": score
+            "score": score,
         })
 
     # --------------------------------------------------
-    # 5️⃣ Build summary
+    # 5️⃣ Build cumulative summary
     # --------------------------------------------------
-    print("\n[5] Building summary...")
+    print("\n[5] Building cumulative summary...")
+
+    if len(results) < 1:
+        print("❌ [ABORT @5] No valid attempt results produced")
+        raise HTTPException(
+            status_code=400,
+            detail="No valid attempts for cumulative report",
+        )
 
     first = results[0]
     last = results[-1]
@@ -2498,18 +2511,18 @@ def get_student_cumulative_report(
         "first_attempt_score": first["score"],
         "latest_attempt_score": last["score"],
         "score_change": round(last["score"] - first["score"], 2),
-
         "first_attempt_accuracy": first["accuracy"],
         "latest_attempt_accuracy": last["accuracy"],
-        "accuracy_change": round(last["accuracy"] - first["accuracy"], 2),
-
+        "accuracy_change": round(
+            last["accuracy"] - first["accuracy"], 2
+        ),
         "trend": (
             "improving"
             if last["accuracy"] > first["accuracy"]
             else "declining"
             if last["accuracy"] < first["accuracy"]
             else "stable"
-        )
+        ),
     }
 
     print("   summary:", summary)
@@ -2517,7 +2530,7 @@ def get_student_cumulative_report(
     # --------------------------------------------------
     # 6️⃣ Final response
     # --------------------------------------------------
-    print("\n[6] Returning cumulative report")
+    print("\n[6] Returning cumulative report payload")
     print("   total_attempts:", len(results))
     print("==============================\n")
 
@@ -2527,11 +2540,12 @@ def get_student_cumulative_report(
         "exam": exam,
         "topic": {
             "key": topic,
-            "label": topic.replace("_", " ").title()
+            "label": topic.replace("_", " ").title(),
         },
         "attempts": results,
-        "summary": summary
+        "summary": summary,
     }
+
 
 @app.get("/api/reports/class-new")
 def class_exam_report(
