@@ -2391,13 +2391,17 @@ def response_has_own_topic(ResponseModel):
 RAW_TOPIC_ALIASES = {
     "spatial_visual_reasoning": {
         "Spatial & Visual Reasoning",
+        "Spatial and Visual Reasoning",  # <-- ADD THIS
     },
+
     "patterns_sequences_relationships": {
         "Patterns, Sequences & Relationships",
     },
+
     "quantitative_analytical_reasoning": {
         "Quantitative & Analytical Reasoning",
     },
+
     "critical_thinking_argument_analysis": {
         "Critical Thinking & Argument Analysis",
         "Argument Analysis",
