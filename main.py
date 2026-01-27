@@ -2366,7 +2366,7 @@ def get_question_model(exam: str):
 # Helpers
 # ----------------------------------------
 
-def normalize_topic(value: str) -> str:
+def normalize_topic_reporting(value: str) -> str:
     value = value.lower()
 
     # Replace symbols with spaces
@@ -2385,7 +2385,6 @@ def normalize_topic(value: str) -> str:
     ]
 
     return "_".join(tokens)
-
 def response_has_own_topic(ResponseModel):
     return hasattr(ResponseModel, "topic")
 
@@ -2521,6 +2520,13 @@ def get_student_cumulative_report(
         )
 
         print("     raw_responses_found:", len(raw_responses))
+        if raw_responses:
+            print(
+                "🧪 SAMPLE DB TOPIC:",
+                repr(raw_responses[0].topic),
+                "→",
+                repr(normalize_topic(raw_responses[0].topic))
+            )
         normalized_db_topics = {
             normalize_topic(r.topic)
             for r in raw_responses
