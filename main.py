@@ -2309,6 +2309,34 @@ def get_question_model(exam: str):
         raise RuntimeError(f"Unsupported exam type: {exam}")
 
 
+# ----------------------------------------
+# Helpers
+# ----------------------------------------
+
+def normalize_topic(value: str) -> str:
+    """
+    Normalize topic text to a stable comparison key.
+    """
+    return (
+        value.lower()
+        .replace("&", "and")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("-", " ")
+        .replace(",", "")
+        .strip()
+        .replace("  ", " ")
+        .replace(" ", "_")
+    )
+
+
+def response_has_own_topic(ResponseModel):
+    return hasattr(ResponseModel, "topic")
+
+
+# ----------------------------------------
+# Endpoint
+# ----------------------------------------
 
 @app.get("/api/reports/student/cumulative")
 def get_student_cumulative_report(
@@ -2318,12 +2346,22 @@ def get_student_cumulative_report(
     attempt_dates: List[str] = Query(...),
     db: Session = Depends(get_db),
 ):
-    print("📥 [CUMULATIVE] student_id =", student_id)
-    print("📥 [CUMULATIVE] exam =", exam)
-    print("📥 [CUMULATIVE] topic =", topic)
-    print("📥 [CUMULATIVE] attempt_dates =", attempt_dates)
+    print("\n==============================")
+    print("📥 [CUMULATIVE] REQUEST RECEIVED")
+    print("   student_id:", student_id)
+    print("   exam:", exam)
+    print("   topic (key):", topic)
+    print("   attempt_dates:", attempt_dates)
+    print("==============================")
 
-    ...
+    # --------------------------------------------------
+    # 0️⃣ Guardrails
+    # --------------------------------------------------
+    if exam == "writing":
+        raise HTTPException(
+            status_code=400,
+            detail="Cumulative topic progress is not supported for writing exams"
+        )
 
     # --------------------------------------------------
     # 1️⃣ Resolve internal student
@@ -2337,7 +2375,7 @@ def get_student_cumulative_report(
     )
 
     if not student:
-        print("❌ Student not found for student_id:", student_id)
+        print("❌ Student not found:", student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
     print("✅ Student resolved")
@@ -2347,7 +2385,7 @@ def get_student_cumulative_report(
     # --------------------------------------------------
     # 2️⃣ Resolve exam attempts
     # --------------------------------------------------
-    print("\n[2] Resolving exam attempts from AdminExamReport...")
+    print("\n[2] Resolving exam attempts (AdminExamReport)...")
 
     attempts = (
         db.query(AdminExamReport)
@@ -2364,69 +2402,81 @@ def get_student_cumulative_report(
 
     for a in attempts:
         print(
-            "   → attempt:",
-            "exam_attempt_id=", a.exam_attempt_id,
-            "created_at=", a.created_at
+            "   → exam_attempt_id:", a.exam_attempt_id,
+            "| date:", a.created_at.date()
         )
 
     if not attempts:
-        print("❌ No exam attempts matched the criteria")
-        raise HTTPException(status_code=404, detail="No exam attempts found")
+        raise HTTPException(
+            status_code=404,
+            detail="No exam attempts found for given dates"
+        )
 
     # --------------------------------------------------
-    # 3️⃣ Resolve models dynamically
+    # 3️⃣ Resolve response model
     # --------------------------------------------------
-    print("\n[3] Resolving models dynamically...")
+    print("\n[3] Resolving response model...")
 
     ResponseModel = get_response_model(exam)
-    QuestionModel = get_question_model(exam)
 
     print("   ResponseModel:", ResponseModel.__name__)
-    print("   QuestionModel:", QuestionModel.__name__)
+
+    if not response_has_own_topic(ResponseModel):
+        raise HTTPException(
+            status_code=500,
+            detail=f"{ResponseModel.__name__} does not support topic-based reporting"
+        )
 
     results = []
 
     # --------------------------------------------------
-    # 4️⃣ Process each attempt
+    # 4️⃣ Process attempts (time series)
     # --------------------------------------------------
-    print("\n[4] Processing attempts (time series)...")
+    print("\n[4] Processing attempts...")
 
     for idx, attempt in enumerate(attempts, start=1):
-        exam_attempt_id = attempt.exam_attempt_id
-
         print(f"\n   ▶ Attempt {idx}")
-        print("     exam_attempt_id:", exam_attempt_id)
+        print("     exam_attempt_id:", attempt.exam_attempt_id)
         print("     created_at:", attempt.created_at)
 
-        attempt_filter = get_attempt_filter(ResponseModel, exam_attempt_id)
+        attempt_filter = get_attempt_filter(
+            ResponseModel,
+            attempt.exam_attempt_id
+        )
 
         responses = (
             db.query(ResponseModel)
-            .join(
-                QuestionModel,
-                ResponseModel.question_id == QuestionModel.id
-            )
             .filter(
                 ResponseModel.student_id == student.id,
-                attempt_filter,
-                QuestionModel.topic == topic
+                attempt_filter
             )
             .all()
         )
 
-        print("     responses_found:", len(responses))
+        print("     total_responses:", len(responses))
 
-        attempted = len(responses)
-        correct = sum(1 for r in responses if r.is_correct)
+        # Normalize topics from DB and match against requested key
+        filtered = []
+        for r in responses:
+            if not r.topic:
+                continue
+
+            normalized_db_topic = normalize_topic(r.topic)
+
+            if normalized_db_topic == topic:
+                filtered.append(r)
+
+        print("     topic_matched_responses:", len(filtered))
+
+        attempted = len(filtered)
+        correct = sum(1 for r in filtered if r.is_correct)
+
+        accuracy = round((correct / attempted) * 100, 2) if attempted else 0
+        score = accuracy  # explicit semantic choice
 
         print("     attempted:", attempted)
         print("     correct:", correct)
-
-        accuracy = round((correct / attempted) * 100, 2) if attempted else 0
-        score = accuracy
-
         print("     accuracy:", accuracy)
-        print("     score:", score)
 
         results.append({
             "date": attempt.created_at.date().isoformat(),
@@ -2467,7 +2517,7 @@ def get_student_cumulative_report(
     # --------------------------------------------------
     # 6️⃣ Final response
     # --------------------------------------------------
-    print("\n[6] Returning cumulative report payload")
+    print("\n[6] Returning cumulative report")
     print("   total_attempts:", len(results))
     print("==============================\n")
 
