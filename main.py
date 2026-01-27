@@ -2397,9 +2397,15 @@ def get_student_cumulative_report(
     student_id: str,
     exam: str,
     topic: str,
-    attempt_dates: list[str] | None = Query(None),
+    attempt_dates: list[str] = Query(...),
     db: Session = Depends(get_db),
 ):
+    if not attempt_dates:
+       print("❌ ABORT: attempt_dates missing or empty")
+       raise HTTPException(
+           status_code=400,
+           detail="At least one attempt date is required",
+       )
     print("🔥 attempt_dates type:", type(attempt_dates), attempt_dates)
 
     print("\n==============================")
@@ -2484,6 +2490,7 @@ def get_student_cumulative_report(
     print("   request_topic_normalized:", repr(normalized_request_topic))
 
     print("   normalized_request_topic:", normalized_request_topic)
+    print("🟢 ENTERING STEP 4 — attempts count:", len(attempts))
 
     # --------------------------------------------------
     # 4️⃣ Process each attempt (time series)
