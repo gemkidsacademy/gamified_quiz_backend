@@ -2314,12 +2314,10 @@ def get_question_model(exam: str):
 # ----------------------------------------
 
 def normalize_topic(value: str) -> str:
-    """
-    Normalize topic text to a stable comparison key.
-    """
     return (
         value.lower()
-        .replace("&", "and")
+        .replace("&", "")
+        .replace("and", "")
         .replace("(", "")
         .replace(")", "")
         .replace("-", " ")
@@ -2566,7 +2564,7 @@ def get_student_cumulative_report(
     }
 
 
-@app.get("/api/reports/class-new")
+@app.get("/api/reports/class")
 def class_exam_report(
     class_name: str,
     exam: str,
