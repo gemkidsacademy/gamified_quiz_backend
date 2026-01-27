@@ -2371,37 +2371,24 @@ def response_has_own_topic(ResponseModel):
 # ----------------------------------------
 # Endpoint
 # ----------------------------------------
-TOPIC_ALIASES = {
-    # --- Spatial & Visual Reasoning ---
+RAW_TOPIC_ALIASES = {
     "spatial_visual_reasoning": {
-        "spatial_visual_reasoning",
-        "spatial_and_visual_reasoning",
+        "Spatial & Visual Reasoning",
     },
-
-    # --- Patterns / Sequences / Relationships ---
     "patterns_sequences_relationships": {
-        "patterns_sequences_relationships",
-        "pattern_sequence_relationships",
+        "Patterns, Sequences & Relationships",
     },
-
-    # --- Quantitative & Analytical Reasoning ---
     "quantitative_analytical_reasoning": {
-        "quantitative_analytical_reasoning",
-        "quantitative_and_analytical_reasoning",
+        "Quantitative & Analytical Reasoning",
     },
-
-    # --- Critical Thinking & Argument Analysis ---
-    # Frontend may send either of these keys
     "critical_thinking_argument_analysis": {
-        "critical_thinking_argument_analysis",
-        "argument_analysis",
+        "Critical Thinking & Argument Analysis",
+        "Argument Analysis",
     },
-
-    # Safety alias if frontend sends the shorter key
-    "argument_analysis": {
-        "critical_thinking_argument_analysis",
-        "argument_analysis",
-    },
+}
+TOPIC_ALIASES = {
+    key: {normalize_topic(v) for v in values}
+    for key, values in RAW_TOPIC_ALIASES.items()
 }
 
 
@@ -2554,7 +2541,13 @@ def get_student_cumulative_report(
             }
             print("     available_db_topics:", available_db_topics)
 
-            allowed_topics = TOPIC_ALIASES.get(topic)
+            allowed_topics = TOPIC_ALIASES.get(normalized_request_topic)
+
+            print("     allowed_topics:", allowed_topics)
+            print(
+                "     normalized_db_topics:",
+                {normalize_topic(r.topic) for r in raw_responses if r.topic}
+            )
 
             if allowed_topics is None:
                 print(f"❌ No topic aliases defined for key: {topic}")
