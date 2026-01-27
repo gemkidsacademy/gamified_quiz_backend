@@ -2379,7 +2379,7 @@ def response_has_own_topic(ResponseModel):
 # ----------------------------------------
 
 
-@app.get("/api/reports/student/cumulative")
+@app.get("/api/reports/student/cumulative-new")
 def get_student_cumulative_report(
     student_id: str,
     exam: str,
