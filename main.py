@@ -2371,7 +2371,32 @@ def response_has_own_topic(ResponseModel):
 # ----------------------------------------
 # Endpoint
 # ----------------------------------------
+TOPIC_ALIASES = {
+    "spatial_visual_reasoning": {
+        "spatial_visual_reasoning",
+        "spatial_and_visual_reasoning",
+    },
+    "argument_analysis": {
+        "argument_analysis",
+        "critical_thinking_argument_analysis",
+    },
+}
 
+TOPIC_ALIASES = {
+    "spatial_visual_reasoning": {
+        "spatial_visual_reasoning",
+        "spatial_and_visual_reasoning",
+    },
+    "argument_analysis": {
+        "argument_analysis",
+        "critical_thinking_argument_analysis",
+    },
+    "logical_deduction_rulebased_reasoning": {
+        "logical_deduction_rulebased_reasoning",
+        "logical_deduction_and_rulebased_reasoning",
+    },
+    # add others as you confirm them
+}
 
 @app.get("/api/reports/student/cumulative")
 def get_student_cumulative_report(
@@ -2520,11 +2545,16 @@ def get_student_cumulative_report(
             }
             print("     available_db_topics:", available_db_topics)
 
-            responses = [
-                r for r in raw_responses
-                if r.topic
-                and normalize_topic(r.topic) == normalized_request_topic
-            ]
+            allowed_topics = TOPIC_ALIASES.get(topic)
+
+            if allowed_topics is None:
+                print(f"❌ No topic aliases defined for key: {topic}")
+                responses = []
+            else:
+                responses = [
+                    r for r in raw_responses
+                    if r.topic and normalize_topic(r.topic) in allowed_topics
+                ]
 
             if raw_responses:
                 print(
