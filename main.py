@@ -2372,31 +2372,38 @@ def response_has_own_topic(ResponseModel):
 # Endpoint
 # ----------------------------------------
 TOPIC_ALIASES = {
+    # --- Spatial & Visual Reasoning ---
     "spatial_visual_reasoning": {
         "spatial_visual_reasoning",
         "spatial_and_visual_reasoning",
     },
-    "argument_analysis": {
-        "argument_analysis",
+
+    # --- Patterns / Sequences / Relationships ---
+    "patterns_sequences_relationships": {
+        "patterns_sequences_relationships",
+        "pattern_sequence_relationships",
+    },
+
+    # --- Quantitative & Analytical Reasoning ---
+    "quantitative_analytical_reasoning": {
+        "quantitative_analytical_reasoning",
+        "quantitative_and_analytical_reasoning",
+    },
+
+    # --- Critical Thinking & Argument Analysis ---
+    # Frontend may send either of these keys
+    "critical_thinking_argument_analysis": {
         "critical_thinking_argument_analysis",
+        "argument_analysis",
+    },
+
+    # Safety alias if frontend sends the shorter key
+    "argument_analysis": {
+        "critical_thinking_argument_analysis",
+        "argument_analysis",
     },
 }
 
-TOPIC_ALIASES = {
-    "spatial_visual_reasoning": {
-        "spatial_visual_reasoning",
-        "spatial_and_visual_reasoning",
-    },
-    "argument_analysis": {
-        "argument_analysis",
-        "critical_thinking_argument_analysis",
-    },
-    "logical_deduction_rulebased_reasoning": {
-        "logical_deduction_rulebased_reasoning",
-        "logical_deduction_and_rulebased_reasoning",
-    },
-    # add others as you confirm them
-}
 
 @app.get("/api/reports/student/cumulative")
 def get_student_cumulative_report(
