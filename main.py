@@ -2953,87 +2953,92 @@ def get_topics(
     return topic_list
 
 
+
+def normalize_topic_key(raw: str) -> str:
+    """
+    Converts:
+    'Argument Analysis (Critical Thinking)'
+    -> 'argument_analysis'
+    """
+    raw = raw.lower()
+    raw = re.sub(r"\(.*?\)", "", raw)      # remove parentheses
+    raw = re.sub(r"[^a-z0-9\s_]", "", raw) # remove symbols
+    raw = raw.strip()
+    raw = raw.replace(" ", "_")
+    raw = re.sub(r"_+", "_", raw)
+    return raw
+
+
 @app.get("/api/exams/{exam}/topics")
 def get_exam_topics(
     exam: str,
     db: Session = Depends(get_db)
 ):
-    # ===============================
-    # Thinking Skills
-    # ===============================
+    print(f"📘 [TOPICS] Requested exam = {exam}")
+
     if exam == "thinking_skills":
-        results = (
+        rows = (
             db.query(Question.topic)
             .filter(
                 Question.subject == "Thinking Skills",
                 Question.topic.isnot(None)
             )
-            .group_by(Question.topic)
+            .distinct()
             .order_by(Question.topic)
             .all()
         )
 
-    # ===============================
-    # Mathematical Reasoning
-    # ===============================
     elif exam == "mathematical_reasoning":
-        results = (
+        rows = (
             db.query(Question.topic)
             .filter(
                 Question.subject == "Mathematical Reasoning",
                 Question.topic.isnot(None)
             )
-            .group_by(Question.topic)
+            .distinct()
             .order_by(Question.topic)
             .all()
         )
 
-    # ===============================
-    # Reading
-    # ===============================
     elif exam == "reading":
-        results = (
+        rows = (
             db.query(ReadingQuestion.topic)
-            .filter(
-                ReadingQuestion.topic.isnot(None)
-            )
-            .group_by(ReadingQuestion.topic)
+            .filter(ReadingQuestion.topic.isnot(None))
+            .distinct()
             .order_by(ReadingQuestion.topic)
             .all()
         )
 
-    # ===============================
-    # Writing
-    # ===============================
     elif exam == "writing":
-        results = (
+        rows = (
             db.query(WritingQuestion.topic)
-            .filter(
-                WritingQuestion.topic.isnot(None)
-            )
-            .group_by(WritingQuestion.topic)
+            .filter(WritingQuestion.topic.isnot(None))
+            .distinct()
             .order_by(WritingQuestion.topic)
             .all()
         )
 
     else:
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported exam type"
-        )
+        raise HTTPException(status_code=400, detail="Unsupported exam type")
+
+    topics = []
+
+    for (raw_topic,) in rows:
+        key = normalize_topic_key(raw_topic)
+        label = raw_topic.strip()
+
+        print(f"🧩 [TOPIC] raw='{raw_topic}' → key='{key}'")
+
+        topics.append({
+            "key": key,
+            "label": label
+        })
+
+    print(f"✅ [TOPICS] Returning {len(topics)} topics")
 
     return {
         "exam": exam,
-        "topics": [
-            {
-                "key": r.topic,
-                "label": " ".join(
-                    word.capitalize()
-                    for word in r.topic.split("_")
-                )
-            }
-            for r in results
-        ]
+        "topics": topics
     }
 
 
