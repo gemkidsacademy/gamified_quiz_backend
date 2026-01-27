@@ -2284,6 +2284,42 @@ def get_days_for_class(db: Session, class_name: str):
     return [row[0] for row in results if row[0]]
     # [('Monday',), ('Wednesday',)] → ['Monday', 'Wedne
 
+@app.get("/api/classes/{class_name}/exam-dates")
+def get_class_exam_dates(
+    class_name: str,
+    exam: str,
+    db: Session = Depends(get_db),
+):
+    print("\n==============================")
+    print("📥 [CLASS EXAM DATES] REQUEST")
+    print("   class_name:", class_name)
+    print("   exam:", exam)
+    print("==============================")
+
+    dates = (
+        db.query(func.date(AdminExamReport.created_at))
+        .join(
+            Student,
+            Student.student_id == AdminExamReport.student_id
+        )
+        .filter(
+            Student.class_name == class_name,
+            AdminExamReport.exam_type == exam,
+        )
+        .distinct()
+        .order_by(func.date(AdminExamReport.created_at))
+        .all()
+    )
+
+    date_list = [d[0].isoformat() for d in dates if d[0]]
+
+    print("✅ dates_found:", date_list)
+
+    return {
+        "class_name": class_name,
+        "exam": exam,
+        "dates": date_list,
+    }
 def get_exam_response_model(exam: str):
     if exam == "thinking_skills":
         return StudentExamResponseThinkingSkills
@@ -2335,6 +2371,7 @@ def response_has_own_topic(ResponseModel):
 # ----------------------------------------
 # Endpoint
 # ----------------------------------------
+
 
 @app.get("/api/reports/student/cumulative")
 def get_student_cumulative_report(
@@ -2457,10 +2494,22 @@ def get_student_cumulative_report(
         print("     raw_responses_found:", len(raw_responses))
         
         if response_has_own_topic(ResponseModel):
+            normalized_request_topic = normalize_topic(topic)
+            print("     normalized_request_topic:", normalized_request_topic)
+        
             responses = [
                 r for r in raw_responses
-                if r.topic and normalize_topic(r.topic) == topic
+                if r.topic and normalize_topic(r.topic) == normalized_request_topic
             ]
+        
+            if raw_responses:
+                print(
+                    "     sample_db_topic:",
+                    raw_responses[0].topic,
+                    "→",
+                    normalize_topic(raw_responses[0].topic)
+                )
+        
             print("     topic_match_mode: response.topic (normalized)")
         else:
             responses = raw_responses  # fallback for safety
