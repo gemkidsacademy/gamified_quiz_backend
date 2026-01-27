@@ -2402,7 +2402,6 @@ def get_student_cumulative_report(
 
     if not student:
         print("❌ [ABORT @1] Student not found")
-        print("   student_id:", student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
     print("✅ Student resolved")
@@ -2436,8 +2435,6 @@ def get_student_cumulative_report(
 
     if not attempts:
         print("❌ [ABORT @2] No exam attempts matched filters")
-        print("   exam:", exam)
-        print("   attempt_dates:", attempt_dates)
         raise HTTPException(
             status_code=404,
             detail="No exam attempts found for given filters",
@@ -2449,23 +2446,23 @@ def get_student_cumulative_report(
     print("\n[3] Resolving response & question models...")
 
     ResponseModel = get_response_model(exam)
-    QuestionModel = get_question_model(exam)
 
-    if not ResponseModel or not QuestionModel:
-        print("❌ [ABORT @3] Failed to resolve models")
-        print("   exam:", exam)
+    if not ResponseModel:
+        print("❌ [ABORT @3] Unsupported exam type")
         raise HTTPException(
             status_code=400,
             detail="Unsupported exam type",
         )
 
     print("   ResponseModel:", ResponseModel.__name__)
-    print("   QuestionModel:", QuestionModel.__name__)
 
     results = []
 
+    normalized_request_topic = normalize_topic(topic)
+    print("   normalized_request_topic:", normalized_request_topic)
+
     # --------------------------------------------------
-    # 4️⃣ Process each attempt
+    # 4️⃣ Process each attempt (time series)
     # --------------------------------------------------
     print("\n[4] Processing attempts (time series)...")
 
@@ -2474,14 +2471,6 @@ def get_student_cumulative_report(
         print("     exam_attempt_id:", attempt.exam_attempt_id)
         print("     created_at:", attempt.created_at)
 
-        attempt_filter = get_attempt_filter(
-            ResponseModel,
-            attempt.exam_attempt_id,
-        )
-
-        # --------------------------------------------------
-        # Topic-aware response filtering
-        # --------------------------------------------------
         raw_responses = (
             db.query(ResponseModel)
             .filter(
@@ -2490,59 +2479,44 @@ def get_student_cumulative_report(
             )
             .all()
         )
-        
+
         print("     raw_responses_found:", len(raw_responses))
-        
+
+        # Topic-aware filtering
         if response_has_own_topic(ResponseModel):
-            normalized_request_topic = normalize_topic(topic)
-            print("     normalized_request_topic:", normalized_request_topic)
-        
+            available_db_topics = {
+                normalize_topic(r.topic)
+                for r in raw_responses
+                if r.topic
+            }
+            print("     available_db_topics:", available_db_topics)
+
             responses = [
                 r for r in raw_responses
-                if r.topic and normalize_topic(r.topic) == normalized_request_topic
+                if r.topic
+                and normalize_topic(r.topic) == normalized_request_topic
             ]
-        
+
             if raw_responses:
                 print(
                     "     sample_db_topic:",
                     raw_responses[0].topic,
                     "→",
-                    normalize_topic(raw_responses[0].topic)
+                    normalize_topic(raw_responses[0].topic),
                 )
-        
-            print("     topic_match_mode: response.topic (normalized)")
         else:
-            responses = raw_responses  # fallback for safety
-
-        if not responses:
-            print(
-                "⚠️ No responses found for topic",
-                topic,
-                "in exam_attempt_id",
-                attempt.exam_attempt_id
-            )
-
-
-
-        print("     responses_found:", len(responses))
-        print("     topic_filter_used:", topic)
-
-        if not responses:
-            print("⚠️  [WARN @4] No responses for this attempt & topic")
-            print("     exam_attempt_id:", attempt.exam_attempt_id)
+            responses = raw_responses  # safety fallback
 
         attempted = len(responses)
         correct = sum(1 for r in responses if r.is_correct)
 
-        print("     attempted:", attempted)
+        print("     responses_found:", attempted)
         print("     correct:", correct)
 
+        # ✅ Skip empty attempts — DO NOT abort
         if attempted == 0:
-            print("❌ [ABORT @4] Attempt has zero questions for topic")
-            raise HTTPException(
-                status_code=400,
-                detail=f"No questions found for topic '{topic}'",
-            )
+            print("⚠️ Skipping attempt — no matching topic questions")
+            continue
 
         accuracy = round((correct / attempted) * 100, 2)
         score = accuracy
@@ -2563,11 +2537,11 @@ def get_student_cumulative_report(
     # --------------------------------------------------
     print("\n[5] Building cumulative summary...")
 
-    if len(results) < 1:
-        print("❌ [ABORT @5] No valid attempt results produced")
+    if not results:
+        print("❌ [ABORT @5] No valid attempts after filtering")
         raise HTTPException(
             status_code=400,
-            detail="No valid attempts for cumulative report",
+            detail="No data found to generate the required report.",
         )
 
     first = results[0]
@@ -2611,7 +2585,6 @@ def get_student_cumulative_report(
         "attempts": results,
         "summary": summary,
     }
-
 
 @app.get("/api/reports/class")
 def class_exam_report(
