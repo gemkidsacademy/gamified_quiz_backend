@@ -2459,6 +2459,9 @@ def get_student_cumulative_report(
     results = []
 
     normalized_request_topic = normalize_topic(topic)
+    print("   request_topic_raw:", repr(topic))
+    print("   request_topic_normalized:", repr(normalized_request_topic))
+
     print("   normalized_request_topic:", normalized_request_topic)
 
     # --------------------------------------------------
@@ -2484,6 +2487,32 @@ def get_student_cumulative_report(
 
         # Topic-aware filtering
         if response_has_own_topic(ResponseModel):
+            
+            raw_db_topics = {
+                r.topic for r in raw_responses if r.topic
+            }
+            print("     raw_db_topics:", raw_db_topics)
+
+            print("     🔍 Topic match evaluation:")
+            for r in raw_responses:
+                if not r.topic:
+                    continue
+        
+                raw = r.topic
+                normalized = normalize_topic(raw)
+                matches = normalized == normalized_request_topic
+        
+                print(
+                    "       DB:",
+                    repr(raw),
+                    "→",
+                    repr(normalized),
+                    "| matches request:",
+                    matches,
+                )
+            
+            print("     raw_db_topics:", raw_db_topics)
+
             available_db_topics = {
                 normalize_topic(r.topic)
                 for r in raw_responses
