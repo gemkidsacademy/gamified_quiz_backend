@@ -2367,19 +2367,24 @@ def get_question_model(exam: str):
 # ----------------------------------------
 
 def normalize_topic(value: str) -> str:
-    return (
-        value.lower()
-        .replace("&", "")
-        .replace("and", "")
-        .replace("(", "")
-        .replace(")", "")
-        .replace("-", " ")
-        .replace(",", "")
-        .strip()
-        .replace("  ", " ")
-        .replace(" ", "_")
-    )
+    value = value.lower()
 
+    # Replace symbols with spaces
+    value = value.replace("&", " ")
+
+    # Remove punctuation
+    value = re.sub(r"[(),-]", " ", value)
+
+    # Normalize whitespace
+    value = re.sub(r"\s+", " ", value).strip()
+
+    # Remove standalone word "and"
+    tokens = [
+        word for word in value.split(" ")
+        if word != "and"
+    ]
+
+    return "_".join(tokens)
 
 def response_has_own_topic(ResponseModel):
     return hasattr(ResponseModel, "topic")
