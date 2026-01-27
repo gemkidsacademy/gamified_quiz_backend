@@ -2387,281 +2387,260 @@ def get_student_cumulative_report(
     attempt_dates: list[str] = Query(...),
     db: Session = Depends(get_db),
 ):
-    if not attempt_dates:
-       print("❌ ABORT: attempt_dates missing or empty")
-       raise HTTPException(
-           status_code=400,
-           detail="At least one attempt date is required",
-       )
-    print("🔥 attempt_dates type:", type(attempt_dates), attempt_dates)
-
     print("\n==============================")
     print("📥 [CUMULATIVE] REQUEST RECEIVED")
     print("   student_id:", student_id)
     print("   exam:", exam)
-    print("   topic (key):", topic)
+    print("   topic (raw):", repr(topic))
     print("   attempt_dates:", attempt_dates)
     print("==============================")
 
-    # --------------------------------------------------
-    # 1️⃣ Resolve internal student
-    # --------------------------------------------------
-    print("\n[1] Resolving internal student...")
-
-    student = (
-        db.query(Student)
-        .filter(Student.student_id == student_id)
-        .first()
-    )
-
-    if not student:
-        print("❌ [ABORT @1] Student not found")
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    print("✅ Student resolved")
-    print("   internal_id:", student.id)
-    print("   name:", student.name)
-
-    # --------------------------------------------------
-    # 2️⃣ Resolve exam attempts
-    # --------------------------------------------------
-    print("\n[2] Resolving exam attempts (AdminExamReport)...")
-
-    attempts = (
-        db.query(AdminExamReport)
-        .filter(
-            AdminExamReport.student_id == student_id,
-            AdminExamReport.exam_type == exam,
-            func.date(AdminExamReport.created_at).in_(attempt_dates),
-        )
-        .order_by(AdminExamReport.created_at)
-        .all()
-    )
-
-    print("   attempts_found:", len(attempts))
-
-    for a in attempts:
-        print(
-            "   → exam_attempt_id:", a.exam_attempt_id,
-            "| date:", a.created_at.date(),
-            "| created_at:", a.created_at,
-        )
-
-    if not attempts:
-        print("❌ [ABORT @2] No exam attempts matched filters")
-        raise HTTPException(
-            status_code=404,
-            detail="No exam attempts found for given filters",
-        )
-
-    # --------------------------------------------------
-    # 3️⃣ Resolve models dynamically
-    # --------------------------------------------------
-    print("\n[3] Resolving response & question models...")
-
-    ResponseModel = get_response_model(exam)
-    print(
-       "🧪 QUERYING TABLE:",
-       ResponseModel.__tablename__,
-       "| MODEL:",
-       ResponseModel.__name__,
-   )
-
-    if not ResponseModel:
-        print("❌ [ABORT @3] Unsupported exam type")
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported exam type",
-        )
-
-    print("   ResponseModel:", ResponseModel.__name__)
-
-    results = []
-
-    normalized_request_topic = normalize_topic(topic)
-    print("   request_topic_raw:", repr(topic))
-    print("   request_topic_normalized:", repr(normalized_request_topic))
-
-    print("   normalized_request_topic:", normalized_request_topic)
-    print("🟢 ENTERING STEP 4 — attempts count:", len(attempts))
-
-    # --------------------------------------------------
-    # 4️⃣ Process each attempt (time series)
-    # --------------------------------------------------
-    print("\n[4] Processing attempts (time series)...")
-
-    for idx, attempt in enumerate(attempts, start=1):
-        print(f"\n   ▶ Attempt {idx}")
-        print("     exam_attempt_id:", attempt.exam_attempt_id)
-        print("     created_at:", attempt.created_at)
-
-        raw_responses = (
-            db.query(ResponseModel)
-            .filter(
-                ResponseModel.student_id == student.id,
-                ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
+    try:
+        # --------------------------------------------------
+        # 0️⃣ Guard: attempt_dates
+        # --------------------------------------------------
+        if not attempt_dates:
+            print("❌ [ABORT @0] attempt_dates missing or empty")
+            raise HTTPException(
+                status_code=400,
+                detail="At least one attempt date is required",
             )
+
+        print("🔥 attempt_dates type:", type(attempt_dates), attempt_dates)
+
+        # --------------------------------------------------
+        # 1️⃣ Resolve internal student
+        # --------------------------------------------------
+        print("\n[1] Resolving internal student...")
+
+        student = (
+            db.query(Student)
+            .filter(Student.student_id == student_id)
+            .first()
+        )
+
+        if not student:
+            print("❌ [ABORT @1] Student not found:", student_id)
+            raise HTTPException(
+                status_code=404,
+                detail="Student not found",
+            )
+
+        print("✅ Student resolved")
+        print("   internal_id:", student.id)
+        print("   name:", student.name)
+
+        # --------------------------------------------------
+        # 2️⃣ Resolve exam attempts
+        # --------------------------------------------------
+        print("\n[2] Resolving exam attempts (AdminExamReport)...")
+
+        attempts = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.student_id == student_id,
+                AdminExamReport.exam_type == exam,
+                func.date(AdminExamReport.created_at).in_(attempt_dates),
+            )
+            .order_by(AdminExamReport.created_at)
             .all()
         )
 
-        print("     raw_responses_found:", len(raw_responses))
-        if raw_responses:
+        print("   attempts_found:", len(attempts))
+
+        for a in attempts:
             print(
-                "🧪 SAMPLE DB TOPIC:",
-                repr(raw_responses[0].topic),
-                "→",
-                repr(normalize_topic(raw_responses[0].topic))
+                "   → exam_attempt_id:", a.exam_attempt_id,
+                "| date:", a.created_at.date(),
+                "| created_at:", a.created_at,
             )
-        normalized_db_topics = {
-            normalize_topic(r.topic)
-            for r in raw_responses
-            if r.topic
-        }
-        
-        print("🧠 normalized_db_topics:", normalized_db_topics)
-        print("🧠 requested_topic:", normalized_request_topic)
 
+        if not attempts:
+            print("❌ [ABORT @2] No exam attempts matched filters")
+            raise HTTPException(
+                status_code=404,
+                detail="No exam attempts found for given filters",
+            )
 
-        # Topic-aware filtering
-        if response_has_own_topic(ResponseModel):
-            
-            raw_db_topics = {
-                r.topic for r in raw_responses if r.topic
-            }
-            print("     raw_db_topics:", raw_db_topics)
+        # --------------------------------------------------
+        # 3️⃣ Resolve response model
+        # --------------------------------------------------
+        print("\n[3] Resolving response model...")
 
-            print("     🔍 Topic match evaluation:")
-            for r in raw_responses:
-                if not r.topic:
-                    continue
-        
-                raw = r.topic
-                normalized = normalize_topic(raw)
-                matches = normalized == normalized_request_topic
-        
-                print(
-                    "       DB:",
-                    repr(raw),
-                    "→",
-                    repr(normalized),
-                    "| matches request:",
-                    matches,
+        ResponseModel = get_response_model(exam)
+
+        if not ResponseModel:
+            print("❌ [ABORT @3] Unsupported exam type:", exam)
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported exam type",
+            )
+
+        print(
+            "🧪 QUERYING TABLE:",
+            ResponseModel.__tablename__,
+            "| MODEL:",
+            ResponseModel.__name__,
+        )
+
+        # --------------------------------------------------
+        # 4️⃣ Normalize requested topic
+        # --------------------------------------------------
+        normalized_request_topic = normalize_topic_reporting(topic)
+
+        print("\n[4] Topic normalization")
+        print("   request_topic_raw:", repr(topic))
+        print("   request_topic_normalized:", repr(normalized_request_topic))
+
+        results = []
+
+        # --------------------------------------------------
+        # 5️⃣ Process each attempt (time series)
+        # --------------------------------------------------
+        print("\n[5] Processing attempts (time series)...")
+
+        for idx, attempt in enumerate(attempts, start=1):
+            print(f"\n   ▶ Attempt {idx}")
+            print("     exam_attempt_id:", attempt.exam_attempt_id)
+            print("     created_at:", attempt.created_at)
+
+            raw_responses = (
+                db.query(ResponseModel)
+                .filter(
+                    ResponseModel.student_id == student.id,
+                    ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
                 )
-            
-            print("     raw_db_topics:", raw_db_topics)
+                .all()
+            )
 
-            available_db_topics = {
-                normalize_topic(r.topic)
+            print("     raw_responses_found:", len(raw_responses))
+
+            if not raw_responses:
+                print("     ⚠️ No responses found for this attempt")
+                continue
+
+            # --- Inspect DB topics ---
+            normalized_db_topics = {
+                normalize_topic_reporting(r.topic)
                 for r in raw_responses
                 if r.topic
             }
-            print("     available_db_topics:", available_db_topics)
 
-            allowed_topics = TOPIC_ALIASES.get(normalized_request_topic)
+            print("     🧠 normalized_db_topics:", normalized_db_topics)
+            print("     🧠 requested_topic:", normalized_request_topic)
 
-            print("     allowed_topics:", allowed_topics)
+            # --- Topic filtering (DIRECT equality) ---
+            responses = [
+                r for r in raw_responses
+                if r.topic
+                and normalize_topic_reporting(r.topic)
+                == normalized_request_topic
+            ]
+
             print(
-                "     normalized_db_topics:",
-                {normalize_topic(r.topic) for r in raw_responses if r.topic}
+                "     🔍 topic_filtering:",
+                f"{len(responses)} / {len(raw_responses)} matched",
             )
 
-            if allowed_topics is None:
-                print(f"❌ No topic aliases defined for key: {topic}")
-                responses = []
-            else:
-                responses = [
-                    r for r in raw_responses
-                    if r.topic and normalize_topic(r.topic) in allowed_topics
-                ]
+            attempted = len(responses)
+            correct = sum(1 for r in responses if r.is_correct)
 
-            if raw_responses:
-                print(
-                    "     sample_db_topic:",
-                    raw_responses[0].topic,
-                    "→",
-                    normalize_topic(raw_responses[0].topic),
-                )
-        else:
-            responses = raw_responses  # safety fallback
+            print("     responses_found:", attempted)
+            print("     correct:", correct)
 
-        attempted = len(responses)
-        correct = sum(1 for r in responses if r.is_correct)
+            # Skip empty attempts safely
+            if attempted == 0:
+                print("     ⚠️ Skipping attempt — no matching topic questions")
+                continue
 
-        print("     responses_found:", attempted)
-        print("     correct:", correct)
+            accuracy = round((correct / attempted) * 100, 2)
+            score = accuracy
 
-        # ✅ Skip empty attempts — DO NOT abort
-        if attempted == 0:
-            print("⚠️ Skipping attempt — no matching topic questions")
-            continue
+            print("     accuracy:", accuracy)
+            print("     score:", score)
 
-        accuracy = round((correct / attempted) * 100, 2)
-        score = accuracy
+            results.append({
+                "date": attempt.created_at.date().isoformat(),
+                "questions_attempted": attempted,
+                "correct_answers": correct,
+                "accuracy": accuracy,
+                "score": score,
+            })
 
-        print("     accuracy:", accuracy)
-        print("     score:", score)
+        # --------------------------------------------------
+        # 6️⃣ Final validation
+        # --------------------------------------------------
+        print("\n[6] Final validation")
+        print("   total_valid_attempts:", len(results))
+        print("   results_payload:", results)
 
-        results.append({
-            "date": attempt.created_at.date().isoformat(),
-            "questions_attempted": attempted,
-            "correct_answers": correct,
-            "accuracy": accuracy,
-            "score": score,
-        })
+        if not results:
+            print("❌ [ABORT @6] No valid attempts after topic filtering")
+            raise HTTPException(
+                status_code=400,
+                detail="No data found to generate the required report.",
+            )
 
-    # --------------------------------------------------
-    # 5️⃣ Build cumulative summary
-    # --------------------------------------------------
-    print("\n[5] Building cumulative summary...")
+        # --------------------------------------------------
+        # 7️⃣ Build cumulative summary
+        # --------------------------------------------------
+        print("\n[7] Building cumulative summary...")
 
-    if not results:
-        print("❌ [ABORT @5] No valid attempts after filtering")
+        first = results[0]
+        last = results[-1]
+
+        summary = {
+            "first_attempt_score": first["score"],
+            "latest_attempt_score": last["score"],
+            "score_change": round(last["score"] - first["score"], 2),
+            "first_attempt_accuracy": first["accuracy"],
+            "latest_attempt_accuracy": last["accuracy"],
+            "accuracy_change": round(
+                last["accuracy"] - first["accuracy"], 2
+            ),
+            "trend": (
+                "improving"
+                if last["accuracy"] > first["accuracy"]
+                else "declining"
+                if last["accuracy"] < first["accuracy"]
+                else "stable"
+            ),
+        }
+
+        print("   summary:", summary)
+
+        # --------------------------------------------------
+        # 8️⃣ Return response
+        # --------------------------------------------------
+        print("\n[8] Returning cumulative report payload")
+        print("==============================\n")
+
+        return {
+            "student_id": student_id,
+            "student_name": student.name,
+            "exam": exam,
+            "topic": {
+                "key": topic,
+                "label": topic.replace("_", " ").title(),
+            },
+            "attempts": results,
+            "summary": summary,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("🔥🔥🔥 UNHANDLED CUMULATIVE ERROR 🔥🔥🔥")
+        print("Type:", type(e))
+        print("Message:", str(e))
+        import traceback
+        traceback.print_exc()
+
         raise HTTPException(
-            status_code=400,
-            detail="No data found to generate the required report.",
+            status_code=500,
+            detail="Internal error while generating cumulative report",
         )
-
-    first = results[0]
-    last = results[-1]
-
-    summary = {
-        "first_attempt_score": first["score"],
-        "latest_attempt_score": last["score"],
-        "score_change": round(last["score"] - first["score"], 2),
-        "first_attempt_accuracy": first["accuracy"],
-        "latest_attempt_accuracy": last["accuracy"],
-        "accuracy_change": round(
-            last["accuracy"] - first["accuracy"], 2
-        ),
-        "trend": (
-            "improving"
-            if last["accuracy"] > first["accuracy"]
-            else "declining"
-            if last["accuracy"] < first["accuracy"]
-            else "stable"
-        ),
-    }
-
-    print("   summary:", summary)
-
-    # --------------------------------------------------
-    # 6️⃣ Final response
-    # --------------------------------------------------
-    print("\n[6] Returning cumulative report payload")
-    print("   total_attempts:", len(results))
-    print("==============================\n")
-
-    return {
-        "student_id": student_id,
-        "student_name": student.name,
-        "exam": exam,
-        "topic": {
-            "key": topic,
-            "label": topic.replace("_", " ").title(),
-        },
-        "attempts": results,
-        "summary": summary,
-    }
 
 @app.get("/api/reports/class")
 def class_exam_report(
