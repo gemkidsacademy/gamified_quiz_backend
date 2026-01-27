@@ -2446,17 +2446,14 @@ def get_student_cumulative_report(
 
         responses = (
             db.query(ResponseModel)
-            .join(
-                QuestionModel,
-                ResponseModel.question_id == QuestionModel.id,
-            )
             .filter(
                 ResponseModel.student_id == student.id,
-                attempt_filter,
-                QuestionModel.topic == topic,
+                ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
+                ResponseModel.topic == topic,
             )
             .all()
         )
+
 
         print("     responses_found:", len(responses))
         print("     topic_filter_used:", topic)
