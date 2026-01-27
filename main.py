@@ -1426,21 +1426,23 @@ except Exception as e:
     print("Error creating tables:", e)
 
 class StudentExamResponseThinkingSkillsView(Base):
-    __tablename__ = "student_exam_responses_thinking_skills"
+    """
+    READ-ONLY view model for reporting / analytics
+    """
+    __tablename__ = "student_exam_response_thinking_skills"
     __table_args__ = {"extend_existing": True}
+    __mapper_args__ = {"primary_key": ["id"]}
 
-    id = Column(Integer, primary_key=True)
-
+    id = Column(Integer)
     student_id = Column(Integer)
     exam_id = Column(Integer)
     exam_attempt_id = Column(Integer)
-
     q_id = Column(Integer)
     topic = Column(String)
-
     selected_option = Column(String)
     correct_option = Column(String)
     is_correct = Column(Boolean)
+
 
 # ---------------------------
 # FastAPI App
