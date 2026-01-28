@@ -2324,7 +2324,7 @@ def normalize_questions_exam_review(raw_questions):
 
     return normalized
 @app.get(
-    "/api/student/exam-review/thinking-skills",
+    "/api/student/exam-review/thinking-skills-new",
     response_model=ExamReviewResponse
 )
 def get_exam_review_thinking_skills(
