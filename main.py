@@ -2295,6 +2295,24 @@ def get_days_for_class(db: Session, class_name: str):
     # [('Monday',), ('Wednesday',)] → ['Monday', 'Wednesday']
     return [row[0] for row in results if row[0]]
     # [('Monday',), ('Wednesday',)] → ['Monday', 'Wedne
+
+def normalize_questions(raw_questions):
+        normalized = []
+
+        for q in raw_questions or []:
+            fixed = dict(q)
+            opts = fixed.get("options")
+
+            if isinstance(opts, dict):
+                fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
+            elif isinstance(opts, list):
+                fixed["options"] = opts
+            else:
+                fixed["options"] = []
+
+            normalized.append(fixed)
+
+        return normalized
 @app.get(
     "/api/student/exam-review/thinking-skills",
     response_model=ExamReviewResponse
