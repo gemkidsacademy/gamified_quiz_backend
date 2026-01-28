@@ -2296,23 +2296,33 @@ def get_days_for_class(db: Session, class_name: str):
     return [row[0] for row in results if row[0]]
     # [('Monday',), ('Wednesday',)] → ['Monday', 'Wedne
 
-def normalize_questions(raw_questions):
-        normalized = []
+def normalize_questions_exam_review(raw_questions):
+    normalized = []
 
-        for q in raw_questions or []:
-            fixed = dict(q)
-            opts = fixed.get("options")
+    for q in raw_questions or []:
+        fixed = dict(q)
+        opts = fixed.get("options")
 
-            if isinstance(opts, dict):
-                fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
-            elif isinstance(opts, list):
-                fixed["options"] = opts
-            else:
-                fixed["options"] = []
+        # ✅ Preserve options as a DICT (A, B, C, D)
+        if isinstance(opts, dict):
+            fixed["options"] = opts
 
-            normalized.append(fixed)
+        # Defensive fallback (rare, but safe)
+        elif isinstance(opts, list):
+            fixed["options"] = {
+                chr(65 + i): {
+                    "type": "text",
+                    "content": v
+                }
+                for i, v in enumerate(opts)
+            }
 
-        return normalized
+        else:
+            fixed["options"] = {}
+
+        normalized.append(fixed)
+
+    return normalized
 @app.get(
     "/api/student/exam-review/thinking-skills",
     response_model=ExamReviewResponse
@@ -2456,7 +2466,7 @@ def get_exam_review_thinking_skills(
     raw_questions = exam.questions or []
     print(f"📚 Raw questions loaded: {len(raw_questions)}")
 
-    normalized = normalize_questions(raw_questions)
+    normalized = normalize_questions_exam_review(raw_questions)
     print(f"🧹 Normalized questions count: {len(normalized)}")
 
     question_map = {q["q_id"]: q for q in normalized}
