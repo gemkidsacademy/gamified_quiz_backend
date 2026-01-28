@@ -2480,20 +2480,20 @@ def get_exam_review_thinking_skills(
     review_questions = []
     missing_questions = 0
 
-    for r in responses:
-        q = question_map.get(r.q_id)
-
-        if not q:
-            print(f"⚠️ Missing question definition for q_id={r.q_id}")
-            missing_questions += 1
-            continue
-
+    # Map responses by q_id for quick lookup
+    response_map = {r.q_id: r for r in responses}
+    
+    review_questions = []
+    
+    for q in normalized:
+        r = response_map.get(q["q_id"])
+    
         review_questions.append({
-            "q_id": r.q_id,
+            "q_id": q["q_id"],
             "blocks": q.get("blocks", []),
             "options": q.get("options", {}),
-            "student_answer": r.selected_option,
-            "correct_answer": r.correct_option
+            "student_answer": r.selected_option if r else None,
+            "correct_answer": r.correct_option if r else None,
         })
 
     print(f"✅ Review questions prepared: {len(review_questions)}")
