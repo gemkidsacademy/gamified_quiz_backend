@@ -2313,7 +2313,7 @@ def get_exam_review_thinking_skills(
 
     student = (
         db.query(Student)
-        .filter(Student.external_id == student_id)
+        .filter(Student.student_id == student_id)
         .first()
     )
 
