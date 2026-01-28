@@ -175,7 +175,17 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class ReviewQuestion(BaseModel):
+    q_id: int
+    blocks: List[Dict[str, Any]]
+    options: Dict[str, Dict[str, Any]]
+    student_answer: Optional[str]
+    correct_answer: str
 
+
+class ExamReviewResponse(BaseModel):
+    exam_attempt_id: int
+    questions: List[ReviewQuestion]
 class StudentExamResponseMathematicalReasoning(Base):
     __tablename__ = "student_exam_response_mathematical_reasoning"
 
@@ -2285,6 +2295,152 @@ def get_days_for_class(db: Session, class_name: str):
     # [('Monday',), ('Wednesday',)] → ['Monday', 'Wednesday']
     return [row[0] for row in results if row[0]]
     # [('Monday',), ('Wednesday',)] → ['Monday', 'Wedne
+@app.get(
+    "/api/student/exam-review/thinking-skills",
+    response_model=ExamReviewResponse
+)
+def get_exam_review_thinking_skills(
+    student_id: int,
+    exam_attempt_id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n================ EXAM REVIEW (THINKING SKILLS) =================")
+    print(f"➡️ Incoming request: student_id={student_id}, exam_attempt_id={exam_attempt_id}")
+
+    # --------------------------------------------------
+    # 1️⃣ Validate attempt ownership
+    # --------------------------------------------------
+    print("🔍 Validating exam attempt ownership...")
+
+    attempt = (
+        db.query(StudentExamThinkingSkills)
+        .filter(
+            StudentExamThinkingSkills.id == exam_attempt_id,
+            StudentExamThinkingSkills.student_id == student_id
+        )
+        .first()
+    )
+
+    if not attempt:
+        print("❌ Attempt NOT FOUND or does not belong to student")
+        raise HTTPException(
+            status_code=404,
+            detail="Exam attempt not found for this student"
+        )
+
+    print(
+        "✅ Attempt found:",
+        f"id={attempt.id}, exam_id={attempt.exam_id}, student_id={attempt.student_id}"
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch all responses (INCLUDING skipped)
+    # --------------------------------------------------
+    print("📥 Fetching student responses for this attempt...")
+
+    responses = (
+        db.query(StudentExamResponseThinkingSkills)
+        .filter(
+            StudentExamResponseThinkingSkills.exam_attempt_id == exam_attempt_id
+        )
+        .order_by(StudentExamResponseThinkingSkills.q_id)
+        .all()
+    )
+
+    print(f"📊 Total response rows fetched: {len(responses)}")
+
+    if not responses:
+        print("⚠️ No responses found for this attempt")
+        return {
+            "exam_attempt_id": exam_attempt_id,
+            "questions": []
+        }
+
+    # Log a few sample rows (safe, short)
+    for r in responses[:3]:
+        print(
+            f"   ↳ q_id={r.q_id}, "
+            f"selected={r.selected_option}, "
+            f"correct={r.correct_option}, "
+            f"is_correct={r.is_correct}"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Load exam questions
+    # --------------------------------------------------
+    print("📘 Loading exam definition...")
+
+    exam = (
+        db.query(Exam)
+        .filter(Exam.id == attempt.exam_id)
+        .first()
+    )
+
+    if not exam:
+        print("❌ Exam NOT FOUND for exam_id =", attempt.exam_id)
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    raw_questions = exam.questions or []
+    print(f"📚 Raw questions loaded from exam: {len(raw_questions)}")
+
+    normalized = normalize_questions(raw_questions)
+    print(f"🧹 Normalized questions count: {len(normalized)}")
+
+    # Build map: q_id -> normalized question
+    question_map = {}
+    for q in normalized:
+        qid = q.get("q_id")
+        if qid in question_map:
+            print(f"⚠️ Duplicate q_id detected in questions: {qid}")
+        question_map[qid] = q
+
+    print(f"🗺️ Question map built with {len(question_map)} entries")
+
+    # --------------------------------------------------
+    # 4️⃣ Build review response
+    # --------------------------------------------------
+    print("🧩 Building review payload...")
+
+    review_questions = []
+    missing_questions = 0
+
+    for r in responses:
+        q = question_map.get(r.q_id)
+        if not q:
+            print(f"⚠️ No question definition found for q_id={r.q_id}")
+            missing_questions += 1
+            continue
+
+        review_questions.append({
+            "q_id": r.q_id,
+            "blocks": q.get("blocks", []),
+            "options": q.get("options", {}),
+            "student_answer": r.selected_option,
+            "correct_answer": r.correct_option
+        })
+
+    print(f"✅ Review questions prepared: {len(review_questions)}")
+
+    if missing_questions:
+        print(f"⚠️ Questions missing definitions: {missing_questions}")
+
+    # --------------------------------------------------
+    # 5️⃣ Final summary
+    # --------------------------------------------------
+    skipped = sum(1 for q in review_questions if q["student_answer"] is None)
+    print(
+        "📈 Summary:",
+        f"total={len(review_questions)},",
+        f"skipped={skipped},",
+        f"attempted={len(review_questions) - skipped}"
+    )
+
+    print("================ END EXAM REVIEW =================\n")
+
+    return {
+        "exam_attempt_id": exam_attempt_id,
+        "questions": review_questions
+    }
 
 @app.get("/api/classes/{class_name}/exam-dates")
 def get_class_exam_dates(
