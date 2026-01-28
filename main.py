@@ -10592,6 +10592,7 @@ def start_exam(
 
     if not exam:
         raise HTTPException(status_code=404, detail="Thinking Skills exam not found")
+    
 
     # --------------------------------------------------
     # 🔧 Normalize questions for frontend
@@ -10701,6 +10702,9 @@ def start_exam(
             normalized.append(fixed)
     
         return normalized
+     
+    raw_questions = exam.questions or []
+    normalized_questions = normalize_questions(raw_questions)
 
     # --------------------------------------------------
     # 🟡 CASE B — Resume active attempt
@@ -10723,9 +10727,10 @@ def start_exam(
 
         return {
             "completed": False,
-            "questions": normalize_questions(exam.questions),
+            "questions": normalized_questions,
             "remaining_time": remaining
         }
+
 
     # --------------------------------------------------
     # 🔵 CASE C — Start new THINKING SKILLS attempt
@@ -10746,29 +10751,32 @@ def start_exam(
     # --------------------------------------------------
     # ✅ PRE-CREATE RESPONSE ROWS (THINKING SKILLS)
     # --------------------------------------------------
-    for idx, q in enumerate(exam.questions or []):
+    for q in normalized_questions:
         db.add(
             StudentExamResponseThinkingSkills(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
-
-                q_id=idx + 1,
+    
+                q_id=q["q_id"],
                 topic=q.get("topic"),
-
+    
                 selected_option=None,
-                correct_option=q.get("correct_answer"),
+                correct_option=q["correct_answer"],  # ✅ guaranteed
                 is_correct=None
             )
         )
+
 
     db.commit()
 
     return {
         "completed": False,
-        "questions": normalize_questions(exam.questions),
+        "questions": normalized_questions,
         "remaining_time": new_attempt.duration_minutes * 60
     }
+
+
 
 
 
