@@ -2301,16 +2301,39 @@ def get_days_for_class(db: Session, class_name: str):
 )
 def get_exam_review_thinking_skills(
     student_id: int,
-    exam_attempt_id: int,
     db: Session = Depends(get_db)
 ):
     print("\n================ EXAM REVIEW (THINKING SKILLS) =================")
-    print(f"➡️ Incoming request: student_id={student_id}, exam_attempt_id={exam_attempt_id}")
+    print(f"➡️ Incoming request: student_id={student_id}")
 
     # --------------------------------------------------
-    # 1️⃣ Validate attempt ownership
+    # 1️⃣ Resolve latest exam_attempt_id for student
     # --------------------------------------------------
-    print("🔍 Validating exam attempt ownership...")
+    print("🔍 Resolving latest exam_attempt_id from responses...")
+
+    latest_attempt = (
+        db.query(StudentExamResponseThinkingSkills.exam_attempt_id)
+        .filter(
+            StudentExamResponseThinkingSkills.student_id == student_id
+        )
+        .order_by(StudentExamResponseThinkingSkills.exam_attempt_id.desc())
+        .first()
+    )
+
+    if not latest_attempt:
+        print("❌ No exam responses found for this student")
+        raise HTTPException(
+            status_code=404,
+            detail="No completed exam attempt found for this student"
+        )
+
+    exam_attempt_id = latest_attempt.exam_attempt_id
+    print(f"✅ Latest exam_attempt_id resolved: {exam_attempt_id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Validate exam attempt exists
+    # --------------------------------------------------
+    print("🔍 Validating exam attempt record...")
 
     attempt = (
         db.query(StudentExamThinkingSkills)
@@ -2322,7 +2345,7 @@ def get_exam_review_thinking_skills(
     )
 
     if not attempt:
-        print("❌ Attempt NOT FOUND or does not belong to student")
+        print("❌ Exam attempt not found or ownership mismatch")
         raise HTTPException(
             status_code=404,
             detail="Exam attempt not found for this student"
@@ -2334,9 +2357,9 @@ def get_exam_review_thinking_skills(
     )
 
     # --------------------------------------------------
-    # 2️⃣ Fetch all responses (INCLUDING skipped)
+    # 3️⃣ Fetch all responses for this attempt
     # --------------------------------------------------
-    print("📥 Fetching student responses for this attempt...")
+    print("📥 Fetching student responses...")
 
     responses = (
         db.query(StudentExamResponseThinkingSkills)
@@ -2356,7 +2379,6 @@ def get_exam_review_thinking_skills(
             "questions": []
         }
 
-    # Log a few sample rows (safe, short)
     for r in responses[:3]:
         print(
             f"   ↳ q_id={r.q_id}, "
@@ -2366,7 +2388,7 @@ def get_exam_review_thinking_skills(
         )
 
     # --------------------------------------------------
-    # 3️⃣ Load exam questions
+    # 4️⃣ Load exam definition
     # --------------------------------------------------
     print("📘 Loading exam definition...")
 
@@ -2381,23 +2403,16 @@ def get_exam_review_thinking_skills(
         raise HTTPException(status_code=404, detail="Exam not found")
 
     raw_questions = exam.questions or []
-    print(f"📚 Raw questions loaded from exam: {len(raw_questions)}")
+    print(f"📚 Raw questions loaded: {len(raw_questions)}")
 
     normalized = normalize_questions(raw_questions)
     print(f"🧹 Normalized questions count: {len(normalized)}")
 
-    # Build map: q_id -> normalized question
-    question_map = {}
-    for q in normalized:
-        qid = q.get("q_id")
-        if qid in question_map:
-            print(f"⚠️ Duplicate q_id detected in questions: {qid}")
-        question_map[qid] = q
-
+    question_map = {q["q_id"]: q for q in normalized}
     print(f"🗺️ Question map built with {len(question_map)} entries")
 
     # --------------------------------------------------
-    # 4️⃣ Build review response
+    # 5️⃣ Build review payload
     # --------------------------------------------------
     print("🧩 Building review payload...")
 
@@ -2407,7 +2422,7 @@ def get_exam_review_thinking_skills(
     for r in responses:
         q = question_map.get(r.q_id)
         if not q:
-            print(f"⚠️ No question definition found for q_id={r.q_id}")
+            print(f"⚠️ Missing question definition for q_id={r.q_id}")
             missing_questions += 1
             continue
 
@@ -2424,10 +2439,8 @@ def get_exam_review_thinking_skills(
     if missing_questions:
         print(f"⚠️ Questions missing definitions: {missing_questions}")
 
-    # --------------------------------------------------
-    # 5️⃣ Final summary
-    # --------------------------------------------------
     skipped = sum(1 for q in review_questions if q["student_answer"] is None)
+
     print(
         "📈 Summary:",
         f"total={len(review_questions)},",
