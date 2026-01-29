@@ -2324,7 +2324,7 @@ def normalize_questions_exam_review(raw_questions):
 
     return normalized
  
- @app.get(
+@app.get(
     "/api/student/exam-review/mathematical-reasoning",
     response_model=ExamReviewResponse
 )
