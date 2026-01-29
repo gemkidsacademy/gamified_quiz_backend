@@ -2323,7 +2323,49 @@ def normalize_questions_exam_review(raw_questions):
         normalized.append(fixed)
 
     return normalized
- 
+ def normalize_mr_questions_exam_review(raw_questions):
+    normalized = []
+
+    for q in raw_questions or []:
+        blocks = []
+
+        # 🔹 Question text
+        if q.get("question"):
+            blocks.append({
+                "type": "text",
+                "content": q["question"]
+            })
+
+        # 🔹 Optional image
+        if q.get("image"):
+            blocks.append({
+                "type": "image",
+                "src": q["image"]
+            })
+
+        # 🔹 Normalize options (reuse logic)
+        opts = q.get("options")
+        if isinstance(opts, dict):
+            options = opts
+        elif isinstance(opts, list):
+            options = {
+                chr(65 + i): {
+                    "type": "text",
+                    "content": v
+                }
+                for i, v in enumerate(opts)
+            }
+        else:
+            options = {}
+
+        normalized.append({
+            "q_id": q["q_id"],
+            "blocks": blocks,     # ✅ THIS FIXES YOUR ISSUE
+            "options": options
+        })
+
+    return normalized
+
 @app.get(
     "/api/student/exam-review/mathematical-reasoning",
     response_model=ExamReviewResponse
@@ -2472,7 +2514,8 @@ def get_exam_review_mathematical_reasoning(
     raw_questions = exam.questions or []
     print(f"📚 Raw questions loaded: {len(raw_questions)}")
 
-    normalized = normalize_questions_exam_review(raw_questions)
+    normalized = normalize_mr_questions_exam_review(raw_questions)
+
     print(f"🧹 Normalized questions count: {len(normalized)}")
 
     question_map = {q["q_id"]: q for q in normalized}
