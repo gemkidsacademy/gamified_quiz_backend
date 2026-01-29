@@ -2323,48 +2323,67 @@ def normalize_questions_exam_review(raw_questions):
         normalized.append(fixed)
 
     return normalized
+
 def normalize_mr_questions_exam_review(raw_questions):
+    print("\n🧪 normalize_mr_questions_exam_review CALLED")
+    print(f"🧾 raw_questions type: {type(raw_questions)}")
+    print(f"🧾 raw_questions count: {len(raw_questions or [])}")
+
     normalized = []
 
-    for q in raw_questions or []:
+    for idx, q in enumerate(raw_questions or []):
+        print("\n--------------------------------------------")
+        print(f"🔍 Processing question #{idx}")
+        print(f"🔑 q_id: {q.get('q_id')}")
+        print(f"📦 Full raw question object:\n{q}")
+
+        print("🗂️ Available keys:", list(q.keys()))
+
         blocks = []
 
-        # 🔹 Question text
-        if q.get("question"):
+        # 🔎 Try to extract question text
+        question_text = q.get("question")
+        if question_text:
+            print("✅ Found question text under key 'question'")
+            print("📝 question:", question_text)
+
             blocks.append({
                 "type": "text",
-                "content": q["question"]
+                "content": question_text
             })
+        else:
+            print("❌ NO 'question' key found or value is empty")
 
-        # 🔹 Optional image
-        if q.get("image"):
+        # 🔎 Try image
+        image_src = q.get("image")
+        if image_src:
+            print("🖼️ Found image:", image_src)
             blocks.append({
                 "type": "image",
-                "src": q["image"]
+                "src": image_src
             })
-
-        # 🔹 Normalize options (reuse logic)
-        opts = q.get("options")
-        if isinstance(opts, dict):
-            options = opts
-        elif isinstance(opts, list):
-            options = {
-                chr(65 + i): {
-                    "type": "text",
-                    "content": v
-                }
-                for i, v in enumerate(opts)
-            }
         else:
-            options = {}
+            print("ℹ️ No image found")
+
+        print(f"🧱 Final blocks for q_id {q.get('q_id')}: {blocks}")
 
         normalized.append({
-            "q_id": q["q_id"],
-            "blocks": blocks,     # ✅ THIS FIXES YOUR ISSUE
-            "options": options
+            "q_id": q.get("q_id"),
+            "blocks": blocks,
+            "options": q.get("options", {})
         })
 
+    print("\n✅ Normalization complete")
+    print(f"📊 Normalized questions count: {len(normalized)}")
+
+    if normalized:
+        print("🧪 Sample normalized output:")
+        print(normalized[0])
+
+    print("============================================\n")
+
     return normalized
+
 
 @app.get(
     "/api/student/exam-review/mathematical-reasoning",
