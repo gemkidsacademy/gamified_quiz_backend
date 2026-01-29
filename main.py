@@ -2335,15 +2335,35 @@ def normalize_mr_questions_exam_review(raw_questions):
         print(f"🔍 Processing q_id={q.get('q_id')}")
         print("🗂️ Available keys:", list(q.keys()))
 
+        # ✅ FIX BLOCKS
         blocks = q.get("question_blocks", [])
         print(f"🧱 question_blocks count: {len(blocks)}")
 
+        # ✅ FIX OPTIONS
+        opts = q.get("options", {})
+        normalized_options = {}
+
+        if isinstance(opts, list):
+            for i, opt in enumerate(opts):
+                key = chr(65 + i)  # A, B, C...
+                normalized_options[key] = {
+                    "type": "text",
+                    "content": opt
+                }
+
+        elif isinstance(opts, dict):
+            normalized_options = opts
+
+        else:
+            normalized_options = {}
+
         normalized.append({
             "q_id": q.get("q_id"),
-            "blocks": blocks,           # ✅ KEY FIX
-            "options": q.get("options", {})
+            "blocks": blocks,
+            "options": normalized_options
         })
 
+    print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
 
 
