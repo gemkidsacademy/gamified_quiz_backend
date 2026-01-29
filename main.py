@@ -2368,7 +2368,7 @@ def normalize_mr_questions_exam_review(raw_questions):
 
 
 @app.get(
-    "/api/student/exam-review/mathematical-reasoning",
+    "/api/student/exam-review/mathematical-reasoning-new",
     response_model=ExamReviewResponse
 )
 def get_exam_review_mathematical_reasoning(
