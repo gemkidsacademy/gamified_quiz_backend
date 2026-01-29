@@ -2323,7 +2323,7 @@ def normalize_questions_exam_review(raw_questions):
         normalized.append(fixed)
 
     return normalized
- def normalize_mr_questions_exam_review(raw_questions):
+def normalize_mr_questions_exam_review(raw_questions):
     normalized = []
 
     for q in raw_questions or []:
