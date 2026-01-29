@@ -5440,14 +5440,21 @@ def get_thinking_skills_report(
         "improvement_areas": improvement_areas              # Report D
     }
 
+# ============================================================
+# ❌ OLD / LEGACY MATHEMATICAL REASONING REPORT (DO NOT USE)
+# This version reads from GENERIC tables:
+#   - StudentExam
+#   - StudentExamResponse
+# It is incompatible with the current finish-exam implementation
+# ============================================================
+
+"""
 @app.get("/api/student/exam-report/mathematical-reasoning")
 def get_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
     db: Session = Depends(get_db)
 ):
-    # --------------------------------------------------
     # 1️⃣ Resolve student
-    # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(Student.student_id == student_id)
@@ -5456,9 +5463,7 @@ def get_thinking_skills_report(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # --------------------------------------------------
-    # 2️⃣ Get latest completed attempt
-    # --------------------------------------------------
+    # 2️⃣ Get latest completed attempt (GENERIC TABLE ❌)
     attempt = (
         db.query(StudentExam)
         .filter(
@@ -5472,9 +5477,7 @@ def get_thinking_skills_report(
     if not attempt:
         raise HTTPException(status_code=404, detail="No completed exam found")
 
-    # --------------------------------------------------
-    # 3️⃣ Load all responses for this attempt
-    # --------------------------------------------------
+    # 3️⃣ Load responses (GENERIC TABLE ❌)
     responses = (
         db.query(StudentExamResponse)
         .filter(StudentExamResponse.exam_attempt_id == attempt.id)
@@ -5483,6 +5486,64 @@ def get_thinking_skills_report(
 
     if not responses:
         raise HTTPException(status_code=404, detail="No responses found")
+
+    # Remaining logic omitted for brevity
+"""
+
+
+
+@app.get("/api/student/exam-report/mathematical-reasoning")
+def get_mathematical_reasoning_report(
+    student_id: str = Query(..., description="External student id e.g. Gem002"),
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest completed Mathematical Reasoning attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamMathematicalReasoning)
+        .filter(
+            StudentExamMathematicalReasoning.student_id == student.id,
+            StudentExamMathematicalReasoning.completed_at.isnot(None)
+        )
+        .order_by(StudentExamMathematicalReasoning.completed_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Mathematical Reasoning exam found"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Load responses for this attempt
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseMathematicalReasoning)
+        .filter(
+            StudentExamResponseMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for Mathematical Reasoning exam"
+        )
 
     # --------------------------------------------------
     # 4️⃣ OVERALL SUMMARY (Report B)
@@ -5494,7 +5555,7 @@ def get_thinking_skills_report(
     not_attempted = total_questions - attempted
 
     accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
-    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+    score_percent = round((correct / total_questions) * 100, 2)
 
     overall = {
         "total_questions": total_questions,
@@ -5504,7 +5565,7 @@ def get_thinking_skills_report(
         "not_attempted": not_attempted,
         "accuracy_percent": accuracy_percent,
         "score_percent": score_percent,
-        "pass": None  # set rule later if required
+        "pass": None
     }
 
     # --------------------------------------------------
@@ -5513,7 +5574,8 @@ def get_thinking_skills_report(
     topic_map = {}
 
     for r in responses:
-        topic = r.topic
+        topic = r.topic or "Unknown"
+
         if topic not in topic_map:
             topic_map[topic] = {
                 "topic": topic,
@@ -5538,7 +5600,7 @@ def get_thinking_skills_report(
     topic_wise_performance = list(topic_map.values())
 
     # --------------------------------------------------
-    # 6️⃣ TOPIC ACCURACY & RESULT (Report C)
+    # 6️⃣ TOPIC ACCURACY (Report C)
     # --------------------------------------------------
     topic_accuracy = []
 
@@ -5583,10 +5645,11 @@ def get_thinking_skills_report(
     # 8️⃣ Final response
     # --------------------------------------------------
     return {
-        "overall": overall,                         # Report B
-        "topic_wise_performance": topic_wise_performance,  # Report A
-        "topic_accuracy": topic_accuracy,           # Report C
-        "improvement_areas": improvement_areas      # Report D
+        "overall": overall,
+        "topic_wise_performance": topic_wise_performance,
+        "topic_accuracy": topic_accuracy,
+        "improvement_areas": improvement_areas,
+        "exam_attempt_id": attempt.id
     }
 
 
