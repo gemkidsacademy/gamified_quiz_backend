@@ -2325,33 +2325,24 @@ def normalize_questions_exam_review(raw_questions):
     return normalized
 
 def normalize_mr_questions_exam_review(raw_questions):
-    print("\n🧪 normalize_mr_questions_exam_review CALLED")
-    print(f"🧾 raw_questions count: {len(raw_questions or [])}")
-
     normalized = []
 
-    for idx, q in enumerate(raw_questions or []):
-        print("\n--------------------------------------------")
+    print("🧪 normalize_mr_questions_exam_review CALLED")
+    print(f"🧾 raw_questions count: {len(raw_questions or [])}")
+
+    for q in raw_questions or []:
+        print("--------------------------------------------")
         print(f"🔍 Processing q_id={q.get('q_id')}")
         print("🗂️ Available keys:", list(q.keys()))
 
-        # ✅ THIS IS THE FIX
         blocks = q.get("question_blocks", [])
-
         print(f"🧱 question_blocks count: {len(blocks)}")
 
         normalized.append({
             "q_id": q.get("q_id"),
-            "blocks": blocks,          # ✅ pass through as-is
+            "blocks": blocks,           # ✅ KEY FIX
             "options": q.get("options", {})
         })
-
-    print("\n✅ Normalization complete")
-    print("🧪 Sample normalized question:")
-    if normalized:
-        print(normalized[0])
-
-    print("============================================\n")
 
     return normalized
 
