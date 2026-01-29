@@ -10724,7 +10724,7 @@ def start_exam(
     if math_attempt and math_attempt.completed_at is not None:
         print("✅ Completed math attempt exists → returning completed=true")
         return {"completed": True}
-
+ 
     # --------------------------------------------------
     # 🟡 CASE B — ACTIVE math attempt → RESUME
     # --------------------------------------------------
