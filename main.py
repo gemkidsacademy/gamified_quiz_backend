@@ -2326,58 +2326,29 @@ def normalize_questions_exam_review(raw_questions):
 
 def normalize_mr_questions_exam_review(raw_questions):
     print("\n🧪 normalize_mr_questions_exam_review CALLED")
-    print(f"🧾 raw_questions type: {type(raw_questions)}")
     print(f"🧾 raw_questions count: {len(raw_questions or [])}")
 
     normalized = []
 
     for idx, q in enumerate(raw_questions or []):
         print("\n--------------------------------------------")
-        print(f"🔍 Processing question #{idx}")
-        print(f"🔑 q_id: {q.get('q_id')}")
-        print(f"📦 Full raw question object:\n{q}")
-
+        print(f"🔍 Processing q_id={q.get('q_id')}")
         print("🗂️ Available keys:", list(q.keys()))
 
-        blocks = []
+        # ✅ THIS IS THE FIX
+        blocks = q.get("question_blocks", [])
 
-        # 🔎 Try to extract question text
-        question_text = q.get("question")
-        if question_text:
-            print("✅ Found question text under key 'question'")
-            print("📝 question:", question_text)
-
-            blocks.append({
-                "type": "text",
-                "content": question_text
-            })
-        else:
-            print("❌ NO 'question' key found or value is empty")
-
-        # 🔎 Try image
-        image_src = q.get("image")
-        if image_src:
-            print("🖼️ Found image:", image_src)
-            blocks.append({
-                "type": "image",
-                "src": image_src
-            })
-        else:
-            print("ℹ️ No image found")
-
-        print(f"🧱 Final blocks for q_id {q.get('q_id')}: {blocks}")
+        print(f"🧱 question_blocks count: {len(blocks)}")
 
         normalized.append({
             "q_id": q.get("q_id"),
-            "blocks": blocks,
+            "blocks": blocks,          # ✅ pass through as-is
             "options": q.get("options", {})
         })
 
     print("\n✅ Normalization complete")
-    print(f"📊 Normalized questions count: {len(normalized)}")
-
+    print("🧪 Sample normalized question:")
     if normalized:
-        print("🧪 Sample normalized output:")
         print(normalized[0])
 
     print("============================================\n")
