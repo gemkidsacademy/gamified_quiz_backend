@@ -2442,12 +2442,18 @@ def review_reading_exam(
         for q in questions:
             qid = q.get("question_id")
             r = report_map.get(qid)
+            # Resolve answer options correctly
+            if section.get("question_type") == "gapped_text":
+                answer_options = section.get("answer_options", {})
+            else:
+                answer_options = q.get("answer_options", {})
+
 
             review_questions.append({
                 "question_id": qid,
                 "question_number": q.get("question_number"),
                 "question_text": q.get("question_text"),
-                "answer_options": q.get("answer_options", {}),
+                "answer_options": answer_options,
                 "student_answer": r.selected_answer if r else None,
                 "correct_answer": r.correct_answer if r else None,
                 "is_correct": r.is_correct if r else False,
