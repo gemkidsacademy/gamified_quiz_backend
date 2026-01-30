@@ -6463,9 +6463,12 @@ def start_exam_reading(
         .first()
     )
 
-    # 🚫 No reattempt allowed
+    # 🚫 No reattempt allowed — but return attempt_id
     if attempt and attempt.finished:
-        return {"completed": True}
+        return {
+            "completed": True,
+            "attempt_id": attempt.id
+        }
 
     # 3️⃣ Latest reading exam
     exam = (
