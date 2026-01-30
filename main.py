@@ -2365,6 +2365,93 @@ def normalize_mr_questions_exam_review(raw_questions):
 
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
+@app.get("/api/exams/review-reading")
+def review_reading_exam(
+    student_id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n================ REVIEW READING EXAM ================")
+
+    # --------------------------------------------------
+    # 1️⃣ Load latest finished session
+    # --------------------------------------------------
+    session = (
+        db.query(StudentExamReading)
+        .filter(
+            StudentExamReading.student_id == student_id,
+            StudentExamReading.finished == True
+        )
+        .order_by(StudentExamReading.completed_at.desc())
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=404, detail="No completed reading exam found")
+
+    # --------------------------------------------------
+    # 2️⃣ Load exam content
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.id == session.exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        raise HTTPException(status_code=500, detail="Exam content missing")
+
+    sections = exam.exam_json.get("sections", [])
+
+    # --------------------------------------------------
+    # 3️⃣ Load student answers
+    # --------------------------------------------------
+    reports = (
+        db.query(StudentExamReportReading)
+        .filter(StudentExamReportReading.session_id == session.id)
+        .all()
+    )
+
+    report_map = {
+        r.question_id: r for r in reports
+    }
+
+    # --------------------------------------------------
+    # 4️⃣ Build review payload
+    # --------------------------------------------------
+    review_questions = []
+
+    for section in sections:
+        topic = section.get("topic", "Other")
+        passage_style = section.get("passage_style", "informational")
+        reading_material = section.get("reading_material")
+
+        questions = section.get("questions", [])
+
+        for q in questions:
+            qid = q.get("question_id")
+            r = report_map.get(qid)
+
+            review_questions.append({
+                "question_id": qid,
+                "question_number": q.get("question_number"),
+                "question_text": q.get("question_text"),
+                "answer_options": q.get("answer_options", {}),
+                "student_answer": r.selected_answer if r else None,
+                "correct_answer": r.correct_answer if r else None,
+                "is_correct": r.is_correct if r else False,
+                "topic": topic,
+                "passage_style": passage_style,
+                "reading_material": reading_material
+            })
+
+    print("🟢 Review questions built:", len(review_questions))
+    print("================ END REVIEW READING EXAM ================\n")
+
+    return {
+        "session_id": session.id,
+        "exam_id": session.exam_id,
+        "questions": review_questions
+    }
 
 
 @app.get(
