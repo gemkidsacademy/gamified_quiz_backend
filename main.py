@@ -2367,26 +2367,35 @@ def normalize_mr_questions_exam_review(raw_questions):
     return normalized
 @app.get("/api/exams/review-reading")
 def review_reading_exam(
-    student_id: int,
+    session_id: int = Query(..., description="Reading exam session ID"),
     db: Session = Depends(get_db)
 ):
     print("\n================ REVIEW READING EXAM ================")
+    print("🆔 session_id:", session_id)
 
     # --------------------------------------------------
-    # 1️⃣ Load latest finished session
+    # 1️⃣ Load finished session
     # --------------------------------------------------
     session = (
         db.query(StudentExamReading)
-        .filter(
-            StudentExamReading.student_id == student_id,
-            StudentExamReading.finished == True
-        )
-        .order_by(StudentExamReading.completed_at.desc())
+        .filter(StudentExamReading.id == session_id)
         .first()
     )
 
     if not session:
-        raise HTTPException(status_code=404, detail="No completed reading exam found")
+        print("❌ Session not found")
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if not session.finished:
+        print("❌ Session not finished yet")
+        raise HTTPException(status_code=400, detail="Exam not finished yet")
+
+    print("✅ Session loaded:", {
+        "session_id": session.id,
+        "student_id": session.student_id,
+        "exam_id": session.exam_id,
+        "completed_at": session.completed_at
+    })
 
     # --------------------------------------------------
     # 2️⃣ Load exam content
@@ -2398,12 +2407,14 @@ def review_reading_exam(
     )
 
     if not exam or not exam.exam_json:
+        print("❌ Exam content missing")
         raise HTTPException(status_code=500, detail="Exam content missing")
 
     sections = exam.exam_json.get("sections", [])
+    print(f"📘 Sections loaded: {len(sections)}")
 
     # --------------------------------------------------
-    # 3️⃣ Load student answers
+    # 3️⃣ Load student answers for this session
     # --------------------------------------------------
     reports = (
         db.query(StudentExamReportReading)
@@ -2411,21 +2422,22 @@ def review_reading_exam(
         .all()
     )
 
-    report_map = {
-        r.question_id: r for r in reports
-    }
+    print(f"📝 Answer rows found: {len(reports)}")
+
+    report_map = {r.question_id: r for r in reports}
 
     # --------------------------------------------------
     # 4️⃣ Build review payload
     # --------------------------------------------------
     review_questions = []
 
-    for section in sections:
+    for section_idx, section in enumerate(sections):
         topic = section.get("topic", "Other")
         passage_style = section.get("passage_style", "informational")
         reading_material = section.get("reading_material")
 
         questions = section.get("questions", [])
+        print(f"🧱 Section {section_idx + 1}: {topic} | questions: {len(questions)}")
 
         for q in questions:
             qid = q.get("question_id")
@@ -2444,14 +2456,37 @@ def review_reading_exam(
                 "reading_material": reading_material
             })
 
-    print("🟢 Review questions built:", len(review_questions))
-    print("================ END REVIEW READING EXAM ================\n")
-
-    return {
+    # --------------------------------------------------
+    # 5️⃣ Final payload logging (CRITICAL)
+    # --------------------------------------------------
+    response_payload = {
         "session_id": session.id,
         "exam_id": session.exam_id,
         "questions": review_questions
     }
+
+    print("📤 REVIEW PAYLOAD SUMMARY")
+    print("   session_id:", response_payload["session_id"])
+    print("   exam_id:", response_payload["exam_id"])
+    print("   total_questions:", len(review_questions))
+
+    if review_questions:
+        print("📌 SAMPLE QUESTION SENT TO FRONTEND:")
+        print({
+            k: response_payload["questions"][0][k]
+            for k in [
+                "question_id",
+                "question_number",
+                "student_answer",
+                "correct_answer",
+                "is_correct",
+                "topic"
+            ]
+        })
+
+    print("================ END REVIEW READING EXAM ================\n")
+
+    return response_payload
 
 
 @app.get(
