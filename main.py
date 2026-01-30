@@ -2690,7 +2690,7 @@ def get_exam_review_mathematical_reasoning(
         "questions": review_questions
     }
 @app.get(
-    "/api/student/exam-review/thinking-skills-new",
+    "/api/student/exam-review/thinking-skills",
     response_model=ExamReviewResponse
 )
 def get_exam_review_thinking_skills(
