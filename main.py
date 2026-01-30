@@ -7431,36 +7431,23 @@ def generate_exam_writing(
 
 def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
     """
-    Uses OpenAI as a normalization and repair layer.
-    Converts loosely formatted or tagged writing questions into
-    strict, structured JSON that matches the DB schema.
+    Normalize loosely formatted writing questions into structured JSON.
+    This function is tolerant of missing optional fields and never invents content.
     """
 
     WRITING_NORMALIZE_PROMPT = f"""
 You are a document normalizer for an exam authoring system.
 
-Your task is to convert the input text into STRICT, VALID JSON
-that EXACTLY matches the schema defined below.
+Convert the input text into STRICT, VALID JSON that matches the schema below.
 
-The input text may:
-- come from a Microsoft Word document
-- contain inconsistent formatting
-- include imperfect or loosely written tags (CLASS, SUBJECT, etc.)
-- include extra spacing, quotes, bullets, or line breaks
+Rules:
+- Preserve all instructional meaning
+- Do NOT invent content
+- If a field is not explicitly present, return an empty string
+- Always include ALL fields in the output
+- Return JSON only (no markdown, no comments)
 
-You MUST:
-- Preserve all meaningful instructional content
-- NOT invent, infer, or add new content
-- NOT remove or simplify the instructional intent
-- Normalize formatting only where necessary
-- Repair minor structural or tagging issues if present
-
-Return JSON that matches THIS SCHEMA EXACTLY.
-
-If the input contains multiple writing questions, return a JSON ARRAY.
-If the input contains a single writing question, return a JSON OBJECT.
-
-Schema:
+Schema (ALL fields required):
 
 {{
   "class_name": string,
@@ -7477,34 +7464,23 @@ Schema:
   "guidelines": string
 }}
 
-Field definitions:
-- question_text: a short, student-facing task description (1–2 sentences)
-- question_prompt: the full detailed writing instructions
-- guidelines: instructional rules as plain text lines separated by newlines
-- opening_sentence: a starter sentence without quotation marks
-
-Rules:
-- guidelines MUST be newline-separated (no bullets, no numbering)
-- opening_sentence MUST NOT include quotation marks
-- Remove surrounding quotes from all fields if present
-- Return ONLY valid JSON
-- Do NOT include markdown
-- Do NOT include explanations or comments
-- Do NOT include trailing commas
+Guidelines formatting rules:
+- guidelines = plain text
+- newline-separated
+- no bullets or numbering
+- empty string allowed
 
 Input text:
-----------------
 {text}
 """
-
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You return strict JSON only."},
-            {"role": "user", "content": WRITING_NORMALIZE_PROMPT}
+            {"role": "system", "content": "Return valid JSON only."},
+            {"role": "user", "content": WRITING_NORMALIZE_PROMPT},
         ],
-        temperature=0
+        temperature=0,
     )
 
     raw = response.choices[0].message.content.strip()
@@ -7516,14 +7492,16 @@ Input text:
             f"OpenAI returned invalid JSON.\nRaw response:\n{raw}"
         ) from e
 
-    # ✅ Normalize shape: ALWAYS LIST
+    # Always normalize to list
     if isinstance(parsed, dict):
         parsed = [parsed]
 
     if not isinstance(parsed, list):
         raise ValueError("Expected JSON object or array from OpenAI")
 
-    REQUIRED_FIELDS = [
+    normalized = []
+
+    REQUIRED_STRING_FIELDS = [
         "class_name",
         "subject",
         "topic",
@@ -7534,46 +7512,39 @@ Input text:
         "opening_sentence",
         "guidelines",
     ]
-    
-
-    normalized = []
 
     for item in parsed:
         if not isinstance(item, dict):
-            raise ValueError("Each question must be a JSON object")
-        if "title" in item and isinstance(item["title"], str):
-            item["title"] = item["title"].strip()
+            continue
 
-    
-        for field in REQUIRED_FIELDS:
+        # Ensure all required fields exist and are strings
+        for field in REQUIRED_STRING_FIELDS:
             value = item.get(field)
-    
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"Missing or invalid field: {field}")
-    
+            if not isinstance(value, str):
+                value = ""
             item[field] = value.replace("\r\n", "\n").replace("\r", "\n").strip()
-    
-        if item["subject"] != "Writing":
+
+        # Optional title
+        title = item.get("title")
+        item["title"] = title.strip() if isinstance(title, str) else ""
+
+        # Subject sanity check (soft)
+        if item["subject"] and item["subject"] != "Writing":
             raise ValueError("Invalid subject. Expected 'Writing'.")
-    
-        # ----------------------------------
-        # Normalize guidelines: strip bullets
-        # ----------------------------------
-        guidelines_lines = []
-        for line in item["guidelines"].splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            line = line.lstrip("-•* ").strip()
-            guidelines_lines.append(line)
-    
-        item["guidelines"] = "\n".join(guidelines_lines)
-    
-        # Validate guidelines AFTER normalization
-        if len(item["guidelines"].splitlines()) < 2:
-            raise ValueError("Guidelines appear too short or malformed.")
-    
+
+        # Normalize guidelines text (strip bullets safely)
+        if item["guidelines"]:
+            lines = []
+            for line in item["guidelines"].splitlines():
+                line = line.strip().lstrip("-•* ").strip()
+                if line:
+                    lines.append(line)
+            item["guidelines"] = "\n".join(lines)
+
         normalized.append(item)
+
+    if not normalized:
+        raise ValueError("No valid writing questions detected")
 
     return normalized
 
