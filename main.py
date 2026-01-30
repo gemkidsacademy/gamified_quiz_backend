@@ -4974,29 +4974,78 @@ def get_student_selective_reports(
  
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
-    id: str,   # 🔴 CHANGE HERE (int → str)
+    id: str,
     db: Session = Depends(get_db)
 ):
     print("\n================ DELETE STUDENT (EXAM MODULE) ================")
     print("➡ student id:", id)
 
-    student = (
-        db.query(Student)
-        .filter(Student.id == id)
-        .first()
-    )
+    student = db.query(Student).filter(Student.id == id).first()
 
     if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    try:
+        # -----------------------------
+        # 0️⃣ READING MODULE (NO FK)
+        # -----------------------------
+        db.query(StudentExamReportReading)\
+            .filter(StudentExamReportReading.student_id == id)\
+            .delete(synchronize_session=False)
+
+        db.query(StudentExamReading)\
+            .filter(StudentExamReading.student_id == id)\
+            .delete(synchronize_session=False)
+
+        # -----------------------------
+        # 1️⃣ RESPONSE tables
+        # -----------------------------
+        db.query(StudentExamResponseThinkingSkills)\
+            .filter(StudentExamResponseThinkingSkills.student_id == id)\
+            .delete(synchronize_session=False)
+
+        db.query(StudentExamResponseMathematicalReasoning)\
+            .filter(StudentExamResponseMathematicalReasoning.student_id == id)\
+            .delete(synchronize_session=False)
+
+        # -----------------------------
+        # 2️⃣ RESULT tables
+        # -----------------------------
+        db.query(StudentExamResultsThinkingSkills)\
+            .filter(StudentExamResultsThinkingSkills.student_id == id)\
+            .delete(synchronize_session=False)
+
+        db.query(StudentExamResultsMathematicalReasoning)\
+            .filter(StudentExamResultsMathematicalReasoning.student_id == id)\
+            .delete(synchronize_session=False)
+
+        # -----------------------------
+        # 3️⃣ EXAM attempts
+        # -----------------------------
+        db.query(StudentExamThinkingSkills)\
+            .filter(StudentExamThinkingSkills.student_id == id)\
+            .delete(synchronize_session=False)
+
+        db.query(StudentExamMathematicalReasoning)\
+            .filter(StudentExamMathematicalReasoning.student_id == id)\
+            .delete(synchronize_session=False)
+
+        # -----------------------------
+        # 4️⃣ STUDENT
+        # -----------------------------
+        db.delete(student)
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        print("❌ Delete failed:", e)
         raise HTTPException(
-            status_code=404,
-            detail="Student not found"
+            status_code=500,
+            detail="Failed to delete student and related data"
         )
 
-    db.delete(student)
-    db.commit()
-
     return {
-        "message": "Student deleted successfully",
+        "message": "Student and all related data deleted successfully",
         "deleted_id": id
     }
 
