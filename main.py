@@ -2496,7 +2496,7 @@ def review_reading_exam(
 
 
 @app.get(
-    "/api/student/exam-review/mathematical-reasoning-new",
+    "/api/student/exam-review/mathematical-reasoning",
     response_model=ExamReviewResponse
 )
 def get_exam_review_mathematical_reasoning(
