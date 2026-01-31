@@ -2365,7 +2365,7 @@ def normalize_mr_questions_exam_review(raw_questions):
 
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
-@app.get("/api/exams/review-reading-new")
+@app.get("/api/exams/review-reading")
 def review_reading_exam(
     session_id: int = Query(..., description="Reading exam session ID"),
     db: Session = Depends(get_db)
