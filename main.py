@@ -11314,6 +11314,224 @@ def start_exam(
     
 
     
+# @app.post("/api/student/start-exam-thinkingskills")
+# def start_exam(
+#     req: StartExamRequest = Body(...),
+#     db: Session = Depends(get_db)
+# ):
+#     print("\n🚀 START-EXAM REQUEST")
+#     print("➡ payload:", req.dict())
+#
+#     # --------------------------------------------------
+#     # 1️⃣ Resolve student
+#     # --------------------------------------------------
+#     student = (
+#         db.query(Student)
+#         .filter(
+#             func.lower(Student.student_id) ==
+#             func.lower(req.student_id.strip())
+#         )
+#         .first()
+#     )
+#
+#     if not student:
+#         raise HTTPException(status_code=404, detail="Student not found")
+#
+#     print(f"✅ Student resolved: id={student.id}")
+#
+#     # --------------------------------------------------
+#     # 2️⃣ Get latest THINKING SKILLS attempt
+#     # --------------------------------------------------
+#     attempt = (
+#         db.query(StudentExamThinkingSkills)
+#         .filter(StudentExamThinkingSkills.student_id == student.id)
+#         .order_by(StudentExamThinkingSkills.started_at.desc())
+#         .first()
+#     )
+#
+#     if attempt and attempt.completed_at:
+#         print("✅ Exam already completed")
+#         return {"completed": True}
+#
+#     # --------------------------------------------------
+#     # 3️⃣ Load latest THINKING SKILLS exam
+#     # --------------------------------------------------
+#     exam = (
+#         db.query(Exam)
+#         .filter(
+#             func.lower(Exam.class_name) ==
+#             func.lower(student.class_name),
+#             Exam.subject == "thinking_skills"
+#         )
+#         .order_by(Exam.created_at.desc())
+#         .first()
+#     )
+#
+#     if not exam:
+#         raise HTTPException(status_code=404, detail="Thinking Skills exam not found")
+#
+#     # --------------------------------------------------
+#     # 🔧 Normalize questions for frontend
+#     # --------------------------------------------------
+#     def normalize_questions(raw_questions):
+#         normalized = []
+#
+#         for q in raw_questions or []:
+#             fixed = dict(q)
+#
+#             qid = fixed.get("q_id")
+#
+#             # ==================================================
+#             # ✅ Normalize OPTIONS (ALL supported formats)
+#             # ==================================================
+#             opts = fixed.get("options")
+#             normalized_opts = {}
+#
+#             if isinstance(opts, dict):
+#                 normalized_opts = opts
+#
+#             elif isinstance(opts, list):
+#                 if opts and isinstance(opts[0], str) and ")" in opts[0]:
+#                     for raw in opts:
+#                         key, payload = raw.split(")", 1)
+#                         key = key.strip()
+#
+#                         try:
+#                             option_obj = ast.literal_eval(payload.strip())
+#                             if isinstance(option_obj, dict):
+#                                 normalized_opts[key] = option_obj
+#                         except Exception:
+#                             normalized_opts[key] = {
+#                                 "type": "text",
+#                                 "content": payload.strip()
+#                             }
+#                 else:
+#                     for idx, text in enumerate(opts):
+#                         key = chr(ord("A") + idx)
+#                         normalized_opts[key] = {
+#                             "type": "text",
+#                             "content": text
+#                         }
+#
+#             fixed["options"] = normalized_opts
+#
+#             if not normalized_opts:
+#                 print(f"[WARN] No options parsed for question {qid}")
+#
+#             # ==================================================
+#             # ✅ Normalize CORRECT ANSWER
+#             # ==================================================
+#             fixed["correct_answer"] = (
+#                 fixed.get("correct_answer")
+#                 or fixed.get("correct")
+#             )
+#
+#             if not fixed["correct_answer"]:
+#                 print(f"[WARN] No correct_answer for question {qid}")
+#
+#             # ==================================================
+#             # 🔥 Normalize BLOCKS (text + images)
+#             # ==================================================
+#             blocks = fixed.get("blocks") or fixed.get("question_blocks") or []
+#
+#             for block in blocks:
+#                 if block.get("type") != "image":
+#                     continue
+#
+#                 src = block.get("src")
+#                 if not src:
+#                     print(f"[WARN] Image block missing src in question {qid}")
+#                     continue
+#
+#                 if src.startswith("http"):
+#                     continue
+#
+#                 img_norm = src.strip().lower()
+#
+#                 record = (
+#                     db.query(UploadedImage)
+#                     .filter(
+#                         func.lower(UploadedImage.original_name) == img_norm
+#                     )
+#                     .first()
+#                 )
+#
+#                 if not record:
+#                     print(f"[WARN] Unresolved image '{src}' in question {qid}")
+#                     continue
+#
+#                 block["src"] = record.gcs_url
+#
+#             fixed["blocks"] = blocks
+#             normalized.append(fixed)
+#
+#         return normalized
+#
+#     raw_questions = exam.questions or []
+#     normalized_questions = normalize_questions(raw_questions)
+#
+#     # --------------------------------------------------
+#     # 🟡 Resume active attempt
+#     # --------------------------------------------------
+#     if attempt and attempt.completed_at is None:
+#         print("⏳ Resuming active attempt")
+#
+#         started_at = attempt.started_at
+#         if started_at.tzinfo is None:
+#             started_at = started_at.replace(tzinfo=timezone.utc)
+#
+#         now = datetime.now(timezone.utc)
+#         elapsed = int((now - started_at).total_seconds())
+#         remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+#
+#         if remaining == 0:
+#             attempt.completed_at = now
+#             db.commit()
+#             return {"completed": True}
+#
+#         return {
+#             "completed": False,
+#             "questions": normalized_questions,
+#             "remaining_time": remaining
+#         }
+#
+#     # --------------------------------------------------
+#     # 🔵 Start new attempt
+#     # --------------------------------------------------
+#     print("🆕 Starting new Thinking Skills attempt")
+#
+#     new_attempt = StudentExamThinkingSkills(
+#         student_id=student.id,
+#         exam_id=exam.id,
+#         started_at=datetime.now(timezone.utc),
+#         duration_minutes=40
+#     )
+#
+#     db.add(new_attempt)
+#     db.commit()
+#     db.refresh(new_attempt)
+#
+#     for q in normalized_questions:
+#         db.add(
+#             StudentExamResponseThinkingSkills(
+#                 student_id=student.id,
+#                 exam_id=exam.id,
+#                 exam_attempt_id=new_attempt.id,
+#                 q_id=q["q_id"],
+#                 topic=q.get("topic"),
+#                 selected_option=None,
+#                 correct_option=q["correct_answer"],
+#                 is_correct=None
+#             )
+#         )
+#
+#     db.commit()
+#
+#     return {
+#         "completed": False,
+#         "questions": normalized_questions,
+#         "remaining_time": new_attempt.duration_minutes * 60
+#     }
     
 
 @app.post("/api/student/start-exam-thinkingskills")
