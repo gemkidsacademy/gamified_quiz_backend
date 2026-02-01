@@ -2432,7 +2432,16 @@ def review_reading_exam(
     review_questions = []
 
     for section_idx, section in enumerate(sections):
-        topic = section.get("topic", "Other")
+        TOPIC_LABELS = {
+            "main_idea": "Main Idea and Summary",
+            "main_idea_and_summary": "Main Idea and Summary",
+            "comparative_analysis": "Comparative Analysis",
+            "gapped_text": "Gapped Text",
+        }
+        
+        raw_topic = section.get("topic") or section.get("question_type")
+        topic = TOPIC_LABELS.get(raw_topic, "Other")
+
         passage_style = section.get("passage_style", "informational")
         reading_material = section.get("reading_material")
 
