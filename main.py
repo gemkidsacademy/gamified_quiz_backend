@@ -6434,6 +6434,12 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         for section in sections:
             raw_topic = section.get("topic") or section.get("question_type")
             topic = TOPIC_LABELS.get(raw_topic, "Other")
+            print("🧪 SECTION DEBUG:", {
+                "keys": list(section.keys()),
+                "topic": section.get("topic"),
+                "question_type": section.get("question_type"),
+            })
+
 
             questions = section.get("questions", [])
 
