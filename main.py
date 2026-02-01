@@ -2443,10 +2443,16 @@ def review_reading_exam(
             qid = q.get("question_id")
             r = report_map.get(qid)
             # Resolve answer options correctly
-            if section.get("question_type") == "gapped_text":
+            # ✅ FIX A: resolve answer options correctly for ALL question types
+            options_scope = section.get("options_scope", "per_question")
+            
+            if options_scope == "shared":
                 answer_options = section.get("answer_options", {})
             else:
                 answer_options = q.get("answer_options", {})
+            
+            # 🔒 Safety: never send None
+            answer_options = answer_options or {}
 
 
             review_questions.append({
