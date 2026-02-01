@@ -4331,6 +4331,9 @@ def generate_exam(
     # 5️⃣ Clear previous exams (FULL WIPE)
     # --------------------------------------------------
     db.query(StudentExamResponse).delete(synchronize_session=False)
+    db.query(StudentExamMathematicalReasoning).delete(
+        synchronize_session=False
+    )
     db.query(StudentExamResultsMathematicalReasoning).delete(
         synchronize_session=False
     )
