@@ -3670,9 +3670,10 @@ def get_reading_topics(
     topics = (
         db.query(func.distinct(QuestionReading.topic))
         .filter(
-            func.lower(func.trim(QuestionReading.subject)) == DB_SUBJECT,
+            func.lower(func.trim(QuestionReading.subject)).like("reading%"),
             func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
         )
+
         .order_by(QuestionReading.topic)
         .all()
     )
