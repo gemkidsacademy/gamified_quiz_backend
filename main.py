@@ -11690,6 +11690,80 @@ def generate_admin_exam_report(
 
     db.add(rule_applied)
 
+def normalize_thinking_skills_questions(raw_questions, db):
+    normalized = []
+
+    for q in raw_questions or []:
+        fixed = dict(q)
+        qid = fixed.get("q_id")
+
+        # -----------------------------
+        # Normalize OPTIONS
+        # -----------------------------
+        opts = fixed.get("options")
+        normalized_opts = {}
+
+        if isinstance(opts, dict):
+            normalized_opts = opts
+
+        elif isinstance(opts, list):
+            if opts and isinstance(opts[0], str) and ")" in opts[0]:
+                for raw in opts:
+                    key, payload = raw.split(")", 1)
+                    key = key.strip()
+
+                    try:
+                        option_obj = ast.literal_eval(payload.strip())
+                        if isinstance(option_obj, dict):
+                            normalized_opts[key] = option_obj
+                    except Exception:
+                        normalized_opts[key] = {
+                            "type": "text",
+                            "content": payload.strip()
+                        }
+            else:
+                for idx, text in enumerate(opts):
+                    key = chr(ord("A") + idx)
+                    normalized_opts[key] = {
+                        "type": "text",
+                        "content": text
+                    }
+
+        fixed["options"] = normalized_opts
+
+        # -----------------------------
+        # Normalize CORRECT ANSWER
+        # -----------------------------
+        fixed["correct_answer"] = (
+            fixed.get("correct_answer") or fixed.get("correct")
+        )
+
+        # -----------------------------
+        # Normalize BLOCKS (images)
+        # -----------------------------
+        blocks = fixed.get("blocks") or fixed.get("question_blocks") or []
+
+        for block in blocks:
+            if block.get("type") != "image":
+                continue
+
+            src = block.get("src")
+            if not src or src.startswith("http"):
+                continue
+
+            record = (
+                db.query(UploadedImage)
+                .filter(func.lower(UploadedImage.original_name) == src.strip().lower())
+                .first()
+            )
+
+            if record:
+                block["src"] = record.gcs_url
+
+        fixed["blocks"] = blocks
+        normalized.append(fixed)
+
+    return normalized
 
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
