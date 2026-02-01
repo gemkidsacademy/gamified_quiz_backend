@@ -4185,25 +4185,15 @@ def fetch_classes(db: Session = Depends(get_db)):
 
 @app.post("/generate-new-mr")
 def generate_exam(
-    payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
-    difficulty = payload.get("difficulty")
-
-    if not difficulty:
-        raise HTTPException(
-            status_code=400,
-            detail="Difficulty is required"
-        )
-
     # --------------------------------------------------
-    # 1️⃣ Fetch latest quiz by subject + difficulty
+    # 1️⃣ Fetch latest Mathematical Reasoning quiz
     # --------------------------------------------------
     quiz = (
         db.query(QuizMathematicalReasoning)
         .filter(
-            QuizMathematicalReasoning.subject == "mathematical_reasoning",
-            QuizMathematicalReasoning.difficulty == difficulty
+            QuizMathematicalReasoning.subject == "mathematical_reasoning"
         )
         .order_by(QuizMathematicalReasoning.id.desc())
         .first()
@@ -4214,6 +4204,9 @@ def generate_exam(
             status_code=404,
             detail="No Mathematical Reasoning quiz found"
         )
+
+    # ✅ Difficulty now comes from DB
+    difficulty = quiz.difficulty
 
     # --------------------------------------------------
     # 2️⃣ PRE-FLIGHT DB VALIDATION (CRITICAL)
@@ -4226,7 +4219,7 @@ def generate_exam(
             db.query(Question)
               .filter(
                   func.lower(Question.topic) == topic_name.lower(),
-                  Question.difficulty == difficulty
+                  func.lower(Question.difficulty) == difficulty.lower()
               )
               .count()
         )
@@ -4258,15 +4251,13 @@ def generate_exam(
             db.query(Question)
               .filter(
                   func.lower(Question.topic) == topic_name.lower(),
-                  Question.difficulty == difficulty
+                  func.lower(Question.difficulty) == difficulty.lower()
               )
               .order_by(func.random())
               .limit(db_count)
               .all()
         )
 
-        
-        
         for q in db_questions:
             if not q.question_blocks:
                 raise HTTPException(
@@ -4281,7 +4272,7 @@ def generate_exam(
                     status_code=500,
                     detail=f"Question {q.id} has no valid question_blocks after sanitation"
                 )
-            
+
             questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
@@ -4290,11 +4281,8 @@ def generate_exam(
                 "correct": q.correct_answer
             })
             q_id += 1
-            
 
-
-
-        # ---- AI questions (STRICT + RETRY SAFE)
+        # ---- AI questions
         if ai_count > 0:
             ai_questions = generate_ai_questions_strict_Mathematical_Reasoning(
                 quiz=quiz,
@@ -4318,7 +4306,6 @@ def generate_exam(
                 })
                 q_id += 1
 
-
     # --------------------------------------------------
     # 4️⃣ FINAL TOTAL VALIDATION (NON-NEGOTIABLE)
     # --------------------------------------------------
@@ -4339,30 +4326,21 @@ def generate_exam(
                 f"This indicates a generation inconsistency."
             )
         )
+
     # --------------------------------------------------
-    # 5️⃣ Clear previous exams (FULL WIPE - EXPLICIT)
+    # 5️⃣ Clear previous exams (FULL WIPE)
     # --------------------------------------------------
-    
-    # --------------------------------------------------
-    # 5️⃣ Clear previous exams (FULL WIPE - UNCONDITIONAL)
-    # --------------------------------------------------
-    
-    # 🔥 1. DELETE ALL student exam responses
     db.query(StudentExamResponse).delete(synchronize_session=False)
-    # 🔥 2. DELETE ALL student_exam_results_mathematical_reasoning
     db.query(StudentExamResultsMathematicalReasoning).delete(
         synchronize_session=False
-    )    
-    # 🔥 3. DELETE ALL student exams
+    )
     db.query(StudentExam).delete(synchronize_session=False)
-    
-    # 🔥 4. DELETE ALL exams
     db.query(Exam).filter(
         Exam.subject == "mathematical_reasoning"
     ).delete(synchronize_session=False)
 
-    
     db.commit()
+
     # --------------------------------------------------
     # 6️⃣ Save exam
     # --------------------------------------------------
