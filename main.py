@@ -11071,20 +11071,46 @@ def start_exam(
         raise HTTPException(status_code=404, detail="Exam not generated")
     def normalize_questions(raw_questions):
         normalized = []
-
+    
         for q in raw_questions or []:
             fixed = dict(q)
+    
+            # -----------------------------
+            # ✅ NORMALIZE QUESTION CONTENT
+            # -----------------------------
+            question_text = (
+                fixed.get("question")
+                or fixed.get("question_text")
+                or fixed.get("text")
+                or ""
+            )
+    
+            fixed["blocks"] = [
+                {
+                    "type": "text",
+                    "content": question_text
+                }
+            ]
+    
+            # -----------------------------
+            # ✅ NORMALIZE OPTIONS
+            # -----------------------------
             opts = fixed.get("options")
-
+    
             if isinstance(opts, dict):
-                fixed["options"] = [f"{k}) {v}" for k, v in opts.items()]
+                fixed["options"] = {
+                    k: {"content": v} for k, v in opts.items()
+                }
             elif isinstance(opts, list):
-                fixed["options"] = opts
+                fixed["options"] = {
+                    chr(65 + i): {"content": v}
+                    for i, v in enumerate(opts)
+                }
             else:
-                fixed["options"] = []
-
+                fixed["options"] = {}
+    
             normalized.append(fixed)
-
+    
         return normalized
     # --------------------------------------------------
     # 🧮 MATHEMATICAL REASONING ATTEMPT HANDLING
