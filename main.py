@@ -11846,9 +11846,26 @@ def generate_admin_exam_report(
     total_questions: int
 ):
     """
-    Generates an immutable admin report snapshot for a completed exam attempt.
-    This function MUST NOT commit. Caller controls the transaction.
+    Ensures a single immutable admin report snapshot per exam attempt.
+    Safe to call multiple times.
+    MUST NOT commit. Caller controls the transaction.
     """
+
+    # -------------------------------
+    # 0️⃣ Idempotency guard (CRITICAL)
+    # -------------------------------
+    existing_report = (
+        db.query(AdminExamReport)
+        .filter(AdminExamReport.exam_attempt_id == exam_attempt.id)
+        .first()
+    )
+
+    if existing_report:
+        print(
+            f"ℹ️ Admin report already exists — skipping creation "
+            f"(attempt_id={exam_attempt.id})"
+        )
+        return existing_report
 
     # -------------------------------
     # 1️⃣ Determine performance band
@@ -11872,7 +11889,7 @@ def generate_admin_exam_report(
     admin_report = AdminExamReport(
         student_id=student.student_id,
         exam_attempt_id=exam_attempt.id,
-        exam_type="thinking_skills",
+        exam_type=subject,
         overall_score=accuracy,
         readiness_band=readiness_band,
         school_guidance_level=school_guidance,
@@ -11880,7 +11897,7 @@ def generate_admin_exam_report(
     )
 
     db.add(admin_report)
-    db.flush()  # get admin_report.id without commit
+    db.flush()  # safe now
 
     # -------------------------------
     # 3️⃣ Create section result
@@ -11897,7 +11914,7 @@ def generate_admin_exam_report(
     db.add(section_result)
 
     # -------------------------------
-    # 4️⃣ Store applied rule (audit safety)
+    # 4️⃣ Store applied rule
     # -------------------------------
     rule_applied = AdminReadinessRuleApplied(
         admin_report_id=admin_report.id,
@@ -11907,6 +11924,8 @@ def generate_admin_exam_report(
     )
 
     db.add(rule_applied)
+
+    return admin_report
 
 def normalize_thinking_skills_questions(raw_questions, db):
     normalized = []
