@@ -6494,13 +6494,14 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
                 if stats["attempted"] > 0 else 0.0
             )
             topics_report.append({
-                "name": topic,
+                "topic": topic,
                 "total": stats["total"],
                 "attempted": stats["attempted"],
                 "correct": stats["correct"],
                 "incorrect": stats["incorrect"],
                 "accuracy": accuracy
             })
+
 
         overall_accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
         score_percent = overall_accuracy
@@ -6523,7 +6524,7 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
             "topics": topics_report,
             "has_sufficient_data": has_sufficient_data,
             "improvement_order": (
-                [t["name"] for t in sorted(topics_report, key=lambda x: x["accuracy"])]
+                [t["topic"] for t in sorted(topics_report, key=lambda x: x["accuracy"])]
                 if has_sufficient_data else []
             )
         }
