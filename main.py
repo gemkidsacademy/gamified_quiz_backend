@@ -2432,15 +2432,7 @@ def review_reading_exam(
     review_questions = []
 
     for section_idx, section in enumerate(sections):
-        TOPIC_LABELS = {
-            "main_idea": "Main Idea and Summary",
-            "main_idea_and_summary": "Main Idea and Summary",
-            "comparative_analysis": "Comparative Analysis",
-            "gapped_text": "Gapped Text",
-        }
-        
-        raw_topic = section.get("topic") or section.get("question_type")
-        topic = TOPIC_LABELS.get(raw_topic, "Other")
+        topic = section.get("topic", "Other")
 
         passage_style = section.get("passage_style", "informational")
         reading_material = section.get("reading_material")
@@ -6432,9 +6424,17 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
         topic_stats = {}
         total_questions = attempted = correct = incorrect = not_attempted = 0
+        TOPIC_LABELS = {
+            "main_idea": "Main Idea and Summary",
+            "main_idea_and_summary": "Main Idea and Summary",
+            "comparative_analysis": "Comparative Analysis",
+            "gapped_text": "Gapped Text",
+        }
 
         for section in sections:
-            topic = section.get("topic", "Other")
+            raw_topic = section.get("topic") or section.get("question_type")
+            topic = TOPIC_LABELS.get(raw_topic, "Other")
+
             questions = section.get("questions", [])
 
             topic_stats.setdefault(topic, {
