@@ -3665,17 +3665,18 @@ def get_reading_topics(
     print(f"   difficulty={difficulty}")
 
     # DB VALUE (even if misspelled)
-    DB_SUBJECT = "Reading Comprehension"
+    DB_SUBJECT = "reading_comprehension"
 
     topics = (
         db.query(func.distinct(QuestionReading.topic))
         .filter(
-            func.lower(func.trim(QuestionReading.subject)) == DB_SUBJECT.lower(),
+            func.lower(func.trim(QuestionReading.subject)) == DB_SUBJECT,
             func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
         )
         .order_by(QuestionReading.topic)
         .all()
     )
+
 
     topic_list = [{"name": t[0]} for t in topics]
 
@@ -10891,7 +10892,8 @@ async def upload_word_reading_comparative_ai(
         # 8️⃣ Save to DB
         # --------------------------------------------------
         print("\n💾 STEP 8: Saving exam to database")
-        subject = parsed["subject"].lower().replace(" ", "_")
+        subject = "reading_comprehension"
+
 
 
         try:
