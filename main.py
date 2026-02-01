@@ -5171,69 +5171,116 @@ def normalize_options(raw_options):
 
     return []
 
-
-IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
+GCS_IMAGE_PREFIX = "https://storage.googleapis.com/exammoduleimages/"
 
 def sanitize_question_blocks(blocks):
     """
-    - Removes embedded answer hints like 'E. 12 kg'
-    - Converts legacy 'IMAGES : filename.png' text into image blocks
-    - Preserves order
+    HARD GUARANTEES:
+    - Preserves question order
+    - Preserves full image URLs (UUID-safe)
+    - Rejects legacy IMAGES: filename references
+    - Removes leaked answer hints (A. / B) / E.)
+    - Never reconstructs or guesses image URLs
     """
+
     if not isinstance(blocks, list):
         return []
 
     sanitized = []
 
-    for block in blocks:
+    for idx, block in enumerate(blocks):
         if not isinstance(block, dict):
             continue
 
         block_type = block.get("type")
 
-        # -------------------------
-        # TEXT BLOCK HANDLING
-        # -------------------------
+        # --------------------------------------------------
+        # TEXT BLOCK
+        # --------------------------------------------------
         if block_type == "text":
-            content = block.get("content", "").strip()
+            content = (block.get("content") or "").strip()
 
-            # 🔥 Remove leaked answers (A. ... / B) ... / E. ...)
+            if not content:
+                continue
+
+            # 🔥 Strip leaked answers (A. ..., B) ..., E. ...)
             if re.match(r"^[A-E][\.\)]\s*", content):
-               continue
+                continue
 
-
-
-            # 🔥 Convert legacy IMAGES : filename.png
-            img_match = re.match(
-                r"IMAGES?\s*\d*\s*:\s*([A-Za-z0-9_\-\.]+)",
+            # 🚨 HARD FAIL on legacy image references
+            legacy_img_match = re.match(
+                r"IMAGES?\s*\d*\s*:\s*(.+)",
                 content,
                 flags=re.IGNORECASE
             )
 
-            if img_match:
-                sanitized.append({
-                    "type": "image",
-                    "src": IMAGE_BASE + img_match.group(1)
-                })
-                continue
+            if legacy_img_match:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "Legacy image reference detected in question_blocks. "
+                        f"Found text-based image reference: '{content}'. "
+                        "All images must be stored as explicit image blocks "
+                        "with full GCS URLs. Please migrate this question."
+                    )
+                )
 
-            # Normal text
-            if content:
-                sanitized.append({
-                    "type": "text",
-                    "content": content
-                })
-
-        # -------------------------
-        # IMAGE BLOCK HANDLING
-        # -------------------------
-        elif block_type == "image" and block.get("src"):
             sanitized.append({
-                "type": "image",
-                "src": block["src"]
+                "type": "text",
+                "content": content
             })
 
+        # --------------------------------------------------
+        # IMAGE BLOCK
+        # --------------------------------------------------
+        elif block_type == "image":
+            src = block.get("src")
+
+            if not src or not isinstance(src, str):
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"Invalid image block detected (missing src). "
+                        f"Block index: {idx}"
+                    )
+                )
+
+            # 🔒 Enforce FULL GCS URL
+            if not src.startswith(GCS_IMAGE_PREFIX):
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "Invalid image URL detected. "
+                        f"Image src must be a full GCS URL. Found: {src}"
+                    )
+                )
+
+            sanitized.append({
+                "type": "image",
+                "src": src
+            })
+
+        # --------------------------------------------------
+        # UNKNOWN BLOCK TYPE
+        # --------------------------------------------------
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Unknown question block type '{block_type}' "
+                    f"at index {idx}. Allowed types are 'text' and 'image'."
+                )
+            )
+
+    if not sanitized:
+        raise HTTPException(
+            status_code=500,
+            detail="Question has no valid question_blocks after sanitization."
+        )
+
     return sanitized
+
+
 
 
 @app.post("/api/exams/generate-thinking-skills")
