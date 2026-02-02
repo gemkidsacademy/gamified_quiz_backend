@@ -12283,46 +12283,27 @@ def finish_thinking_skills_exam(
     print("✅ Student found → internal id:", student.id)
 
     # --------------------------------------------------
-    # 2️⃣ Get active THINKING SKILLS attempt
+    # 2️⃣ Fetch MOST RECENT Thinking Skills attempt
+    #     ⚠️ DO NOT filter by completed_at
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamThinkingSkills)
-        .filter(
-            StudentExamThinkingSkills.student_id == student.id,
-            StudentExamThinkingSkills.completed_at.is_(None)
-        )
+        .filter(StudentExamThinkingSkills.student_id == student.id)
         .order_by(StudentExamThinkingSkills.started_at.desc())
         .first()
     )
 
     if not attempt:
-        print("⚠️ No active Thinking Skills attempt found")
-        return {"status": "completed"}
-
-    print("✅ Active attempt found → attempt.id =", attempt.id)
-
-    # --------------------------------------------------
-    # 3️⃣ Idempotency guard (result already saved)
-    # --------------------------------------------------
-    existing_result = (
-        db.query(StudentExamResultsThinkingSkills)
-        .filter(
-            StudentExamResultsThinkingSkills.exam_attempt_id == attempt.id
+        print("❌ No Thinking Skills attempt found for student")
+        raise HTTPException(
+            status_code=404,
+            detail="No Thinking Skills exam attempt found"
         )
-        .first()
-    )
 
-    if existing_result:
-        print("⚠️ Result already exists → idempotent return")
-
-        if attempt.completed_at is None:
-            attempt.completed_at = datetime.now(timezone.utc)
-            db.commit()
-
-        return {"status": "completed"}
+    print("✅ Latest attempt found → attempt.id =", attempt.id)
 
     # --------------------------------------------------
-    # 4️⃣ Load exam (Thinking Skills only)
+    # 3️⃣ Load exam definition
     # --------------------------------------------------
     exam = (
         db.query(Exam)
@@ -12339,20 +12320,17 @@ def finish_thinking_skills_exam(
 
     questions = exam.questions or []
     total_questions = len(questions)
-
     question_map = {q["q_id"]: q for q in questions}
 
     print("📊 Total questions in exam:", total_questions)
 
     # --------------------------------------------------
-    # 5️⃣ Update student responses (DO NOT INSERT)
+    # 4️⃣ Update student responses (IDEMPOTENT)
     # --------------------------------------------------
     correct = 0
     saved_responses = 0
 
     for q_id_str, selected in req.answers.items():
-        print(f"➡️ Processing answer: q_id={q_id_str}, selected={selected}")
-
         try:
             q_id = int(q_id_str)
         except ValueError:
@@ -12361,7 +12339,7 @@ def finish_thinking_skills_exam(
 
         q = question_map.get(q_id)
         if not q:
-            print("⚠️ Question not found in exam JSON for q_id =", q_id)
+            print("⚠️ Question not found for q_id =", q_id)
             continue
 
         is_correct = selected == q.get("correct")
@@ -12384,7 +12362,6 @@ def finish_thinking_skills_exam(
         response.selected_option = selected
         response.correct_option = q.get("correct")
         response.is_correct = is_correct
-
         saved_responses += 1
 
     print("📈 Responses updated:", saved_responses)
@@ -12393,43 +12370,42 @@ def finish_thinking_skills_exam(
     wrong = saved_responses - correct
     accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
 
-    # 🔒 HARD SAFETY CHECK — attempt must still exist
-    attempt_exists = (
-        db.query(StudentExamThinkingSkills.id)
-        .filter(StudentExamThinkingSkills.id == attempt.id)
+    # --------------------------------------------------
+    # 5️⃣ Save result row (IDEMPOTENT)
+    # --------------------------------------------------
+    existing_result = (
+        db.query(StudentExamResultsThinkingSkills)
+        .filter(
+            StudentExamResultsThinkingSkills.exam_attempt_id == attempt.id
+        )
         .first()
     )
-    
-    if not attempt_exists:
-        raise HTTPException(
-            status_code=409,
-            detail="Thinking Skills exam attempt no longer exists. Please restart the exam."
+
+    if not existing_result:
+        print("💾 Saving new Thinking Skills result row")
+        db.add(
+            StudentExamResultsThinkingSkills(
+                student_id=student.id,
+                exam_attempt_id=attempt.id,
+                total_questions=total_questions,
+                correct_answers=correct,
+                wrong_answers=wrong,
+                accuracy_percent=accuracy
+            )
         )
+    else:
+        print("⚠️ Result already exists → idempotent skip")
 
     # --------------------------------------------------
-    # 6️⃣ Save summary result
+    # 6️⃣ Generate Admin Exam Report (CRITICAL FIX)
+    #     🔑 DO NOT depend on completed_at
     # --------------------------------------------------
-    result_row = StudentExamResultsThinkingSkills(
-        student_id=student.id,
-        exam_attempt_id=attempt.id,
-        total_questions=total_questions,
-        correct_answers=correct,
-        wrong_answers=wrong,
-        accuracy_percent=accuracy
-    )
-
-    db.add(result_row)
-
-    # --------------------------------------------------
-    # 7️⃣ Mark attempt completed
-    # --------------------------------------------------
-    attempt.completed_at = datetime.now(timezone.utc)
     if not admin_report_exists(
         db=db,
         exam_attempt_id=attempt.id,
         exam_type="thinking_skills"
     ):
-
+        print("📘 Generating admin exam report (thinking_skills)")
         generate_admin_exam_report(
             db=db,
             student=student,
@@ -12440,10 +12416,17 @@ def finish_thinking_skills_exam(
             wrong=wrong,
             total_questions=total_questions
         )
+    else:
+        print("⚠️ Admin report already exists → skip")
+
+    # --------------------------------------------------
+    # 7️⃣ Mark attempt completed (LAST STEP)
+    # --------------------------------------------------
+    if attempt.completed_at is None:
+        attempt.completed_at = datetime.now(timezone.utc)
+        print("✅ Attempt marked completed")
 
     db.commit()
-    # 8️⃣ Generate Admin Report Snapshot (NEW)
-    
 
     print("================ FINISH THINKING SKILLS EXAM END =================\n")
 
@@ -12455,6 +12438,7 @@ def finish_thinking_skills_exam(
         "wrong": wrong,
         "accuracy": accuracy
     }
+
 
 def aggregate_math_sections(db: Session, exam_attempt_id: int):
     """
