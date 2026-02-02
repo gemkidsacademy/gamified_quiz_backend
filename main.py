@@ -6495,23 +6495,28 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         # 4️⃣ Evaluate questions
         # --------------------------------------------------
         print("🟡 STEP 4: Evaluating answers")
+        # Canonical topic keys only (NO labels here)
+        CANONICAL_TOPICS = {
+            "main_idea": "main_idea",
+            "main_idea_and_summary": "main_idea",
+            "comparative_analysis": "comparative_analysis",
+            "gapped_text": "gapped_text",
+        }
+
 
         topic_stats = {}
         total_questions = attempted = correct = incorrect = not_attempted = 0
-        TOPIC_LABELS = {
-            "main_idea": "Main Idea and Summary",
-            "main_idea_and_summary": "Main Idea and Summary",
-            "comparative_analysis": "Comparative Analysis",
-            "gapped_text": "Gapped Text",
-        }
+        
 
         for section in sections:
-            raw_topic = section.get("topic") or section.get("question_type")
-            topic = TOPIC_LABELS.get(raw_topic, "Other")
-            print("🧪 SECTION DEBUG:", {
-                "keys": list(section.keys()),
-                "topic": section.get("topic"),
-                "question_type": section.get("question_type"),
+            raw_topic = section.get("question_type")
+            topic = CANONICAL_TOPICS.get(raw_topic, "other")
+            
+
+            print("🧪 CANONICAL TOPIC RESOLVED:", {
+                "section_id": section.get("section_id"),
+                "question_type": raw_topic,
+                "stored_topic": topic
             })
 
 
