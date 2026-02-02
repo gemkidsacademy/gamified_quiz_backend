@@ -12146,7 +12146,10 @@ def generate_admin_exam_report(
 
     existing_report = (
         db.query(AdminExamReport)
-        .filter(AdminExamReport.exam_attempt_id == exam_attempt.id)
+        .filter(
+            AdminExamReport.exam_attempt_id == exam_attempt.id,
+            AdminExamReport.exam_type == subject
+        )
         .first()
     )
 
