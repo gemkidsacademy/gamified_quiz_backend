@@ -5712,12 +5712,6 @@ def get_reading_report(
     session_id: int = Query(..., description="Exam session ID"),
     db: Session = Depends(get_db)
 ):
-    print("\n================ GET READING REPORT ================")
-    print("🆔 session_id:", session_id)
-
-    # --------------------------------------------------
-    # 1️⃣ Load session
-    # --------------------------------------------------
     session = (
         db.query(StudentExamReading)
         .filter(StudentExamReading.id == session_id)
@@ -5725,75 +5719,13 @@ def get_reading_report(
     )
 
     if not session:
-        print("❌ Session NOT FOUND for session_id:", session_id)
         raise HTTPException(status_code=404, detail="Session not found")
 
-    print("📘 Session loaded:", {
-        "session_id": session.id,
-        "student_id": session.student_id,
-        "exam_id": session.exam_id,
-        "started_at": session.started_at,
-        "finished": session.finished,
-        "has_report_json": bool(session.report_json)
-    })
-
-    # --------------------------------------------------
-    # 2️⃣ Finished guard
-    # --------------------------------------------------
     if not session.finished:
-        print("❌ Session exists but NOT finished yet")
         raise HTTPException(status_code=400, detail="Exam not finished yet")
 
-    # --------------------------------------------------
-    # 3️⃣ Is this the latest attempt?
-    # --------------------------------------------------
-    latest_attempt = (
-        db.query(StudentExamReading)
-        .filter(StudentExamReading.student_id == session.student_id)
-        .order_by(StudentExamReading.started_at.desc())
-        .first()
-    )
-
-    print("🧪 Latest attempt check:", {
-        "latest_attempt_id": latest_attempt.id if latest_attempt else None,
-        "requested_session_id": session.id,
-        "is_latest": latest_attempt.id == session.id if latest_attempt else False
-    })
-
-    # --------------------------------------------------
-    # 4️⃣ Check answers linked to this session
-    # --------------------------------------------------
-    answer_count = (
-        db.query(StudentExamReadingAnswer)
-        .filter(StudentExamReadingAnswer.session_id == session.id)
-        .count()
-    )
-
-    print("📝 Answer rows linked:", answer_count)
-
-    # --------------------------------------------------
-    # 5️⃣ Diagnose missing report_json
-    # --------------------------------------------------
     if not session.report_json:
-        print("❌ report_json MISSING")
-        print("🧨 Diagnostic summary:", {
-            "session_id": session.id,
-            "finished": session.finished,
-            "answers_exist": answer_count > 0,
-            "likely_cause": (
-                "auto-finished (timeout)" if answer_count == 0
-                else "submission occurred but report generation failed"
-            )
-        })
-
         raise HTTPException(status_code=404, detail="Report not available")
-
-    # --------------------------------------------------
-    # 6️⃣ Success
-    # --------------------------------------------------
-    print("✅ Report JSON found")
-    print("📦 Report summary keys:", list(session.report_json.keys()))
-    print("===================================================\n")
 
     return session.report_json
 
