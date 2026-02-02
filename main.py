@@ -350,18 +350,16 @@ class AdminExamReport(Base):
     student_id = Column(String, nullable=False, index=True)
 
     # references exam attempt table (thinking / reading / etc)
-    exam_attempt_id = Column(Integer, nullable=False, unique=True, index=True)
+    exam_attempt_id = Column(Integer, nullable=False, index=True)
 
-    exam_type = Column(String, nullable=False)
-    # e.g. "selective"
+    # subject / exam type
+    exam_type = Column(String, nullable=False, index=True)
 
     overall_score = Column(Float, nullable=True)
 
     readiness_band = Column(String, nullable=False)
-    # e.g. "Strong Selective Potential"
 
     school_guidance_level = Column(String, nullable=False)
-    # e.g. "Mid-tier Selective"
 
     summary_notes = Column(String, nullable=True)
 
@@ -371,6 +369,13 @@ class AdminExamReport(Base):
         nullable=False
     )
 
+    __table_args__ = (
+        UniqueConstraint(
+            "exam_attempt_id",
+            "exam_type",
+            name="uq_admin_exam_reports_attempt_subject"
+        ),
+    )
 
 class AdminExamSectionResult(Base):
     __tablename__ = "admin_exam_section_results"
