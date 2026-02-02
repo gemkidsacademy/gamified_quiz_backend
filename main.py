@@ -12087,10 +12087,29 @@ def get_exam(session_id: int, db: Session = Depends(get_db)):
         "completed": session.completed_at is not None
     }
 def admin_report_exists(db, exam_attempt_id, exam_type):
-    return db.query(AdminExamReport).filter(
-        AdminExamReport.exam_attempt_id == exam_attempt_id,
-        AdminExamReport.exam_type == exam_type
-    ).first() is not None
+    report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.exam_attempt_id == exam_attempt_id,
+            AdminExamReport.exam_type == exam_type
+        )
+        .first()
+    )
+
+    if report:
+        print("🟡 admin_report_exists = TRUE", {
+            "exam_attempt_id": exam_attempt_id,
+            "exam_type": exam_type,
+            "admin_report_id": report.id,
+            "created_at": report.created_at
+        })
+        return True
+
+    print("🟢 admin_report_exists = FALSE", {
+        "exam_attempt_id": exam_attempt_id,
+        "exam_type": exam_type
+    })
+    return False
  
 def generate_admin_exam_report(
     db: Session,
@@ -12108,9 +12127,23 @@ def generate_admin_exam_report(
     MUST NOT commit. Caller controls the transaction.
     """
 
-    # -------------------------------
+    print("\n🧠 ================== GENERATE ADMIN EXAM REPORT START ==================")
+    print("🧾 Input payload:", {
+        "student_external_id": student.student_id,
+        "student_internal_id": student.id,
+        "exam_attempt_id": exam_attempt.id,
+        "exam_subject": subject,
+        "accuracy": accuracy,
+        "correct": correct,
+        "wrong": wrong,
+        "total_questions": total_questions
+    })
+
+    # --------------------------------------------------
     # 0️⃣ Idempotency guard (CRITICAL)
-    # -------------------------------
+    # --------------------------------------------------
+    print("🔎 Checking for existing AdminExamReport (idempotency guard)")
+
     existing_report = (
         db.query(AdminExamReport)
         .filter(AdminExamReport.exam_attempt_id == exam_attempt.id)
@@ -12118,15 +12151,22 @@ def generate_admin_exam_report(
     )
 
     if existing_report:
-        print(
-            f"ℹ️ Admin report already exists — skipping creation "
-            f"(attempt_id={exam_attempt.id})"
-        )
+        print("⚠️ IDPOTENCY HIT: Admin report already exists", {
+            "admin_report_id": existing_report.id,
+            "exam_attempt_id": exam_attempt.id,
+            "exam_type": existing_report.exam_type,
+            "created_at": existing_report.created_at
+        })
+        print("🧠 ================== GENERATE ADMIN EXAM REPORT END ==================\n")
         return existing_report
 
-    # -------------------------------
-    # 1️⃣ Determine performance band
-    # -------------------------------
+    print("✅ No existing admin report found — proceeding with creation")
+
+    # --------------------------------------------------
+    # 1️⃣ Determine performance & readiness bands
+    # --------------------------------------------------
+    print("📊 Determining performance and readiness bands")
+
     if accuracy >= 80:
         performance_band = "A"
         readiness_band = "Strong Selective Potential"
@@ -12140,9 +12180,17 @@ def generate_admin_exam_report(
         readiness_band = "Not Yet Selective Ready"
         school_guidance = "General Stream Recommended"
 
-    # -------------------------------
+    print("🎯 Bands resolved:", {
+        "performance_band": performance_band,
+        "readiness_band": readiness_band,
+        "school_guidance": school_guidance
+    })
+
+    # --------------------------------------------------
     # 2️⃣ Create main admin report
-    # -------------------------------
+    # --------------------------------------------------
+    print("📝 Creating AdminExamReport row")
+
     admin_report = AdminExamReport(
         student_id=student.student_id,
         exam_attempt_id=exam_attempt.id,
@@ -12154,11 +12202,21 @@ def generate_admin_exam_report(
     )
 
     db.add(admin_report)
-    db.flush()  # safe now
 
-    # -------------------------------
+    print("💾 AdminExamReport added to session — flushing to obtain ID")
+    db.flush()  # critical point
+
+    print("✅ AdminExamReport flushed successfully", {
+        "admin_report_id": admin_report.id,
+        "exam_attempt_id": exam_attempt.id,
+        "exam_type": admin_report.exam_type
+    })
+
+    # --------------------------------------------------
     # 3️⃣ Create section result
-    # -------------------------------
+    # --------------------------------------------------
+    print("📐 Creating AdminExamSectionResult")
+
     section_result = AdminExamSectionResult(
         admin_report_id=admin_report.id,
         section_name="thinking",
@@ -12170,17 +12228,36 @@ def generate_admin_exam_report(
 
     db.add(section_result)
 
-    # -------------------------------
-    # 4️⃣ Store applied rule
-    # -------------------------------
+    print("✅ Section result staged", {
+        "admin_report_id": admin_report.id,
+        "section_name": "thinking",
+        "raw_score": accuracy,
+        "performance_band": performance_band
+    })
+
+    # --------------------------------------------------
+    # 4️⃣ Store applied readiness rule
+    # --------------------------------------------------
+    print("📜 Recording applied readiness rule")
+
+    rule_result = "passed" if accuracy >= 60 else "failed"
+
     rule_applied = AdminReadinessRuleApplied(
         admin_report_id=admin_report.id,
         rule_code="THINKING_SKILLS_ACCURACY",
         rule_description="Thinking Skills accuracy used for readiness classification",
-        rule_result="passed" if accuracy >= 60 else "failed"
+        rule_result=rule_result
     )
 
     db.add(rule_applied)
+
+    print("✅ Readiness rule staged", {
+        "admin_report_id": admin_report.id,
+        "rule_code": "THINKING_SKILLS_ACCURACY",
+        "rule_result": rule_result
+    })
+
+    print("🧠 ================== GENERATE ADMIN EXAM REPORT END ==================\n")
 
     return admin_report
 
@@ -12268,7 +12345,7 @@ def finish_thinking_skills_exam(
     print("📥 Incoming payload:", req.dict())
 
     # --------------------------------------------------
-    # 1️⃣ Validate student (external ID → internal ID)
+    # 1️⃣ Validate student
     # --------------------------------------------------
     student = (
         db.query(Student)
@@ -12277,14 +12354,17 @@ def finish_thinking_skills_exam(
     )
 
     if not student:
-        print("❌ Student NOT FOUND for student_id =", req.student_id)
+        print("❌ ABORT: Student not found for student_id =", req.student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print("✅ Student found → internal id:", student.id)
+    print("✅ Student resolved:", {
+        "external_id": student.student_id,
+        "internal_id": student.id
+    })
 
     # --------------------------------------------------
     # 2️⃣ Fetch MOST RECENT Thinking Skills attempt
-    #     ⚠️ DO NOT filter by completed_at
+    #     (CRITICAL: do NOT filter by completed_at)
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamThinkingSkills)
@@ -12294,13 +12374,18 @@ def finish_thinking_skills_exam(
     )
 
     if not attempt:
-        print("❌ No Thinking Skills attempt found for student")
+        print("❌ ABORT: No Thinking Skills attempt exists for student")
         raise HTTPException(
             status_code=404,
             detail="No Thinking Skills exam attempt found"
         )
 
-    print("✅ Latest attempt found → attempt.id =", attempt.id)
+    print("✅ Latest attempt found:", {
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
 
     # --------------------------------------------------
     # 3️⃣ Load exam definition
@@ -12315,17 +12400,22 @@ def finish_thinking_skills_exam(
     )
 
     if not exam:
-        print("❌ Exam NOT FOUND for exam_id =", attempt.exam_id)
+        print("❌ ABORT: Exam not found or subject mismatch", {
+            "exam_id": attempt.exam_id,
+            "expected_subject": "thinking_skills"
+        })
         raise HTTPException(status_code=404, detail="Exam not found")
 
     questions = exam.questions or []
     total_questions = len(questions)
     question_map = {q["q_id"]: q for q in questions}
 
-    print("📊 Total questions in exam:", total_questions)
+    print("📊 Exam loaded:", {
+        "total_questions": total_questions
+    })
 
     # --------------------------------------------------
-    # 4️⃣ Update student responses (IDEMPOTENT)
+    # 4️⃣ Update responses (idempotent)
     # --------------------------------------------------
     correct = 0
     saved_responses = 0
@@ -12334,12 +12424,12 @@ def finish_thinking_skills_exam(
         try:
             q_id = int(q_id_str)
         except ValueError:
-            print("❌ Invalid q_id:", q_id_str)
+            print("⚠️ Skipping invalid q_id:", q_id_str)
             continue
 
         q = question_map.get(q_id)
         if not q:
-            print("⚠️ Question not found for q_id =", q_id)
+            print("⚠️ Question not found in exam JSON:", q_id)
             continue
 
         is_correct = selected == q.get("correct")
@@ -12356,7 +12446,10 @@ def finish_thinking_skills_exam(
         )
 
         if not response:
-            print("❌ Response row missing for q_id =", q_id)
+            print("❌ Response row missing (DATA INTEGRITY ISSUE):", {
+                "attempt_id": attempt.id,
+                "q_id": q_id
+            })
             continue
 
         response.selected_option = selected
@@ -12364,14 +12457,18 @@ def finish_thinking_skills_exam(
         response.is_correct = is_correct
         saved_responses += 1
 
-    print("📈 Responses updated:", saved_responses)
-    print("✅ Correct answers:", correct)
-
     wrong = saved_responses - correct
     accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
 
+    print("📈 Scoring summary:", {
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    })
+
     # --------------------------------------------------
-    # 5️⃣ Save result row (IDEMPOTENT)
+    # 5️⃣ Save result row (idempotent)
     # --------------------------------------------------
     existing_result = (
         db.query(StudentExamResultsThinkingSkills)
@@ -12381,8 +12478,12 @@ def finish_thinking_skills_exam(
         .first()
     )
 
-    if not existing_result:
-        print("💾 Saving new Thinking Skills result row")
+    if existing_result:
+        print("ℹ️ Result row already exists:", {
+            "result_id": existing_result.id
+        })
+    else:
+        print("💾 Creating result row for attempt:", attempt.id)
         db.add(
             StudentExamResultsThinkingSkills(
                 student_id=student.id,
@@ -12393,19 +12494,36 @@ def finish_thinking_skills_exam(
                 accuracy_percent=accuracy
             )
         )
-    else:
-        print("⚠️ Result already exists → idempotent skip")
 
     # --------------------------------------------------
-    # 6️⃣ Generate Admin Exam Report (CRITICAL FIX)
-    #     🔑 DO NOT depend on completed_at
+    # 6️⃣ ADMIN REPORT GENERATION (CRITICAL DIAGNOSTICS)
     # --------------------------------------------------
-    if not admin_report_exists(
+    print("🔎 Checking admin_exam_reports existence:", {
+        "exam_attempt_id": attempt.id,
+        "exam_type": "thinking_skills"
+    })
+
+    report_exists = admin_report_exists(
         db=db,
         exam_attempt_id=attempt.id,
         exam_type="thinking_skills"
-    ):
-        print("📘 Generating admin exam report (thinking_skills)")
+    )
+
+    if report_exists:
+        print("⚠️ Admin report already exists → generation skipped")
+    else:
+        print("🚨 Admin report DOES NOT EXIST → generating now")
+        print("🧠 Admin report input payload:", {
+            "student_internal_id": student.id,
+            "student_external_id": student.student_id,
+            "attempt_id": attempt.id,
+            "exam_type": "thinking_skills",
+            "accuracy": accuracy,
+            "correct": correct,
+            "wrong": wrong,
+            "total": total_questions
+        })
+
         generate_admin_exam_report(
             db=db,
             student=student,
@@ -12416,8 +12534,19 @@ def finish_thinking_skills_exam(
             wrong=wrong,
             total_questions=total_questions
         )
-    else:
-        print("⚠️ Admin report already exists → skip")
+
+        # 🔍 POST-CONDITION CHECK (THIS IS THE SMOKING GUN)
+        post_check = admin_report_exists(
+            db=db,
+            exam_attempt_id=attempt.id,
+            exam_type="thinking_skills"
+        )
+
+        if post_check:
+            print("✅ CONFIRMED: Admin exam report successfully created")
+        else:
+            print("🔥 CRITICAL FAILURE: Admin report generation FAILED")
+            print("🔥 INVESTIGATE generate_admin_exam_report IMMEDIATELY")
 
     # --------------------------------------------------
     # 7️⃣ Mark attempt completed (LAST STEP)
