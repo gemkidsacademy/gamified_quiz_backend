@@ -6597,18 +6597,26 @@ def start_exam_reading(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n📘 START-READING REQUEST:", req.dict())
+    print("\n================ START-READING ==================")
+    print("📘 Incoming request payload:", req.dict())
 
-    # 1️⃣ Resolve student (robust)
+    # 1️⃣ Resolve student
     student = (
         db.query(Student)
         .filter(func.lower(Student.student_id) == func.lower(req.student_id.strip()))
         .first()
     )
+
     if not student:
+        print("❌ Student NOT FOUND:", req.student_id)
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # 2️⃣ Latest reading attempt
+    print("✅ Student resolved:", {
+        "student_pk": student.id,
+        "student_id": student.student_id
+    })
+
+    # 2️⃣ Fetch latest attempt
     attempt = (
         db.query(StudentExamReading)
         .filter(StudentExamReading.student_id == student.id)
@@ -6616,12 +6624,25 @@ def start_exam_reading(
         .first()
     )
 
-    # 🚫 No reattempt allowed — but return attempt_id
+    if attempt:
+        print("🧪 Found existing attempt:", {
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "started_at": attempt.started_at,
+            "finished": attempt.finished
+        })
+    else:
+        print("🆕 No previous attempt found for student")
+
+    # 🚫 Already finished → frontend should load report
     if attempt and attempt.finished:
-        return {
+        payload = {
             "completed": True,
             "attempt_id": attempt.id
         }
+        print("🚫 Attempt already finished → returning:", payload)
+        print("================================================\n")
+        return payload
 
     # 3️⃣ Latest reading exam
     exam = (
@@ -6629,46 +6650,79 @@ def start_exam_reading(
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
+
     if not exam:
+        print("❌ No reading exam exists in DB")
         raise HTTPException(status_code=404, detail="Reading exam not found")
 
     duration_minutes = exam.exam_json.get("duration_minutes", 40)
+    print("📘 Active exam resolved:", {
+        "exam_id": exam.id,
+        "duration_minutes": duration_minutes
+    })
 
-    # 🔁 Resume attempt
+    # 🔁 Resume unfinished attempt
     if attempt and not attempt.finished:
         now = datetime.now(timezone.utc)
         started_at = attempt.started_at.replace(tzinfo=timezone.utc)
-        remaining = max(0, duration_minutes * 60 - int((now - started_at).total_seconds()))
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, duration_minutes * 60 - elapsed)
+
+        print("⏱ Resume attempt timing:", {
+            "attempt_id": attempt.id,
+            "elapsed_seconds": elapsed,
+            "remaining_seconds": remaining
+        })
 
         if remaining == 0:
             attempt.finished = True
             db.commit()
-            return {"completed": True}
+            payload = {
+                "completed": True,
+                "attempt_id": attempt.id
+            }
+            print("⌛ Time exhausted → marking finished:", payload)
+            print("================================================\n")
+            return payload
 
-        return {
+        payload = {
             "completed": False,
             "attempt_id": attempt.id,
             "exam_id": exam.id,
             "remaining_time": remaining
         }
 
-    # 🆕 New attempt
+        print("🔁 Resuming attempt → returning:", payload)
+        print("================================================\n")
+        return payload
+
+    # 🆕 Create new attempt
     new_attempt = StudentExamReading(
         student_id=student.id,
         exam_id=exam.id,
         started_at=datetime.now(timezone.utc),
         finished=False
     )
+
     db.add(new_attempt)
     db.commit()
     db.refresh(new_attempt)
 
-    return {
+    payload = {
         "completed": False,
         "attempt_id": new_attempt.id,
         "exam_id": exam.id,
         "remaining_time": duration_minutes * 60
     }
+
+    print("🆕 New attempt created:", {
+        "attempt_id": new_attempt.id,
+        "exam_id": exam.id
+    })
+    print("📤 Returning payload:", payload)
+    print("================================================\n")
+
+    return payload
 
 
 @app.get("/api/exams/reading-content/{exam_id}")
