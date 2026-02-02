@@ -5333,10 +5333,14 @@ def generate_thinking_skills_exam(
     # --------------------------------------------------
     quiz = (
         db.query(Quiz)
-        .filter(Quiz.subject == "thinking_skills")
+        .filter(
+            Quiz.subject == "thinking_skills",
+            Quiz.difficulty == difficulty
+        )
         .order_by(Quiz.id.desc())
         .first()
-    ) 
+    )
+ 
 
     if not quiz:
         raise HTTPException(
