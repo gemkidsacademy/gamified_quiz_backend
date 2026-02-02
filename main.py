@@ -6665,6 +6665,119 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise
 
+def auto_submit_reading_exam(session: StudentExamReading, db: Session):
+    """
+    Auto-submit reading exam on timeout.
+    Uses the SAME logic as manual submit, but with empty answers.
+    """
+    
+    print("🟡 AUTO-SUBMIT triggered for session:", session.id)
+    if session.finished and session.report_json:
+        print("⚠️ Auto-submit skipped — session already finalized")
+        return
+    existing_rows = (
+        db.query(StudentExamReportReading)
+        .filter(StudentExamReportReading.session_id == session.id)
+        .count()
+    )
+    
+    if existing_rows > 0:
+        print("⚠️ Auto-submit skipped — report rows already exist")
+        return
+
+
+    
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.id == session.exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        raise Exception("Exam data missing during auto-submit")
+
+    sections = exam.exam_json.get("sections", [])
+    TOPIC_LABELS = {
+        "main_idea": "Main Idea and Summary",
+        "main_idea_and_summary": "Main Idea and Summary",
+        "comparative_analysis": "Comparative Analysis",
+        "gapped_text": "Gapped Text",
+    }
+
+    topic_stats = {}
+    total = attempted = correct = incorrect = not_attempted = 0
+
+    for section in sections:
+        raw_topic = section.get("topic") or section.get("question_type")
+        topic = TOPIC_LABELS.get(raw_topic, "Other")
+        questions = section.get("questions", [])
+
+        topic_stats.setdefault(topic, {
+            "total": 0,
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "not_attempted": 0
+        })
+
+        for q in questions:
+            question_id = q.get("question_id")
+            correct_answer = q.get("correct_answer")
+
+            total += 1
+            not_attempted += 1
+
+            topic_stats[topic]["total"] += 1
+            topic_stats[topic]["not_attempted"] += 1
+
+            db.add(StudentExamReportReading(
+                student_id=session.student_id,
+                exam_id=session.exam_id,
+                session_id=session.id,
+                topic=topic,
+                question_id=question_id,
+                selected_answer=None,
+                correct_answer=correct_answer,
+                is_correct=False
+            ))
+    topics_report = []
+
+    for topic, stats in topic_stats.items():
+        topics_report.append({
+            "topic": topic,
+            "total": stats["total"],
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "accuracy": 0.0
+        })
+
+    report_json = {
+        "overall": {
+            "total_questions": total,
+            "attempted": attempted,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy": 0.0,
+            "score": 0.0,
+            "result": "Fail"
+        },
+        "topics": topics_report,
+        "has_sufficient_data": False,
+        "improvement_order": []
+    }
+
+    session.finished = True
+    session.completed_at = datetime.now(timezone.utc)
+    session.report_json = report_json
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
 
 @app.post("/api/exams/start-reading")
 def start_exam_reading(
@@ -6749,13 +6862,20 @@ def start_exam_reading(
         })
 
         if remaining == 0:
-            attempt.finished = True
-            db.commit()
+            print("⌛ Time expired — auto-submitting exam")
+        
+            if not attempt.finished:
+                auto_submit_reading_exam(
+                    session=attempt,
+                    db=db
+                )
+        
             payload = {
                 "completed": True,
                 "attempt_id": attempt.id
             }
-            print("⌛ Time exhausted → marking finished:", payload)
+        
+            print("🟢 Auto-submit complete → returning:", payload)
             print("================================================\n")
             return payload
 
