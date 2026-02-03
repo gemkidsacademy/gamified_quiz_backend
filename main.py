@@ -10531,15 +10531,13 @@ def parse_exam_block(block_text: str):
     def section(label: str) -> str:
         """
         Extract a labeled section safely.
-        METADATA is a key-value block and must not terminate on inner labels.
         """
         if label == "METADATA":
-            # Stop ONLY at the next top-level section
-            pattern = rf"{label}\s*:\s*(.*?)(?=\nREADING_MATERIAL\s*:|\Z)"
+            pattern = rf"{label}\s*:\s*(.*?)(?=\n^READING_MATERIAL\s*:|\Z)"
         else:
-            pattern = rf"{label}\s*:\s*(.*?)(?=\n[A-Z_]+\s*:|\Z)"
+            pattern = rf"{label}\s*:\s*(.*?)(?=\n^[A-Z_]+\s*:|\Z)"
     
-        match = re.search(pattern, block_text, re.S)
+        match = re.search(pattern, block_text, re.S | re.M)
         if not match:
             raise ValueError(f"Missing required section: {label}")
         return match.group(1).strip()
