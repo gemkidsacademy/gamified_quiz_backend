@@ -10534,7 +10534,8 @@ def parse_exam_block(block_text: str):
         METADATA is a key-value block and must not terminate on inner labels.
         """
         if label == "METADATA":
-            pattern = rf"{label}\s*:\s*(.*?)(?=\n\s*\n|\Z)"
+            # Stop ONLY at the next top-level section
+            pattern = rf"{label}\s*:\s*(.*?)(?=\nREADING_MATERIAL\s*:|\Z)"
         else:
             pattern = rf"{label}\s*:\s*(.*?)(?=\n[A-Z_]+\s*:|\Z)"
     
