@@ -10606,7 +10606,7 @@ def parse_exam_block(block_text: str):
         raise ValueError("Answer options must contain A–G")
 
     # --------------------------------------------------
-    # 4️⃣ QUESTIONS
+    # 4️⃣ QUESTIONS (PIPE FORMAT)
     # --------------------------------------------------
     questions_raw = section("QUESTIONS")
     
@@ -10614,17 +10614,14 @@ def parse_exam_block(block_text: str):
     
     for raw_line in questions_raw.splitlines():
         line = raw_line.strip()
-        if not line:
-            continue
     
-        # Ignore stray numbering like "6"
-        if "|" not in line:
+        # Ignore empty or junk lines (DOCX artifacts)
+        if not line or "|" not in line:
             continue
     
         m = re.match(
-            r"\d+\s*\|\s*paragraph\s*=\s*(\d+)\s*\|\s*correct_answer\s*=\s*([A-G])",
-            line,
-            re.I
+            r"\d+\s*\|\s*paragraph\s*=\s*(\d+)\s*\|\s*correct_answer\s*=\s*([A-Ga-g])",
+            line
         )
     
         if not m:
