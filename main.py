@@ -18,7 +18,7 @@ from docx.oxml.ns import qn
 import copy
 
 import pandas as pd
-import os
+import
 import random 
 import time
 from sendgrid.helpers.mail import Mail
@@ -10549,8 +10549,14 @@ def parse_exam_block(block_text: str):
         if ":" not in line:
             continue
         k, v = line.split(":", 1)
-        normalized_key = re.sub(r"[^a-z_]", "", k.lower())
+        normalized_key = (
+            re.sub(r"\s+", "", k)                 # remove ALL whitespace (incl. unicode)
+            .encode("ascii", "ignore")             # drop non-ascii junk
+            .decode()
+            .lower()
+        )
         metadata[normalized_key] = v.strip().strip('"')
+    print("🧪 Parsed METADATA keys:", list(metadata.keys()))
 
     required_meta = [
         "class",
