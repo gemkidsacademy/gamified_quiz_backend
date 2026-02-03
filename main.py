@@ -18,7 +18,7 @@ from docx.oxml.ns import qn
 import copy
 
 import pandas as pd
-
+import os
 import random 
 import time
 from sendgrid.helpers.mail import Mail
