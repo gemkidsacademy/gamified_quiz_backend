@@ -10606,35 +10606,36 @@ def parse_exam_block(block_text: str):
         raise ValueError("Answer options must contain A–G")
 
     # --------------------------------------------------
-    # 4️⃣ QUESTIONS (NEW FORMAT ✅)
+    # 4️⃣ QUESTIONS
     # --------------------------------------------------
     questions_raw = section("QUESTIONS")
-
+    
     questions = []
-    for line in questions_raw.splitlines():
-        line = line.strip()
-        if "|" not in line:
+    
+    for raw_line in questions_raw.splitlines():
+        line = raw_line.strip()
+        if not line:
             continue
-
-        parts = {}
-        for chunk in line.split("|"):
-            if "=" in chunk:
-                k, v = chunk.split("=", 1)
-                parts[k.strip()] = v.strip()
-
-        if "paragraph" not in parts or "correct_answer" not in parts:
-            raise ValueError(f"Invalid question line: {line}")
-
+    
+        # Expected format:
+        # 1 | paragraph=1 | correct_answer=F
+        m = re.match(
+            r"\d+\s*\|\s*paragraph\s*=\s*(\d+)\s*\|\s*correct_answer\s*=\s*([A-G])",
+            line,
+            re.I
+        )
+    
+        if not m:
+            raise ValueError(f"Invalid QUESTION line format: {line}")
+    
         questions.append({
-            "paragraph": int(parts["paragraph"]),
-            "correct_answer": parts["correct_answer"].upper()
+            "paragraph": int(m.group(1)),
+            "correct_answer": m.group(2).upper()
         })
-
+    
     if not questions:
         raise ValueError("No questions parsed")
 
-    if len(questions) != metadata_parsed["total_questions"]:
-        raise ValueError("Question count does not match TOTAL_QUESTIONS")
 
     # --------------------------------------------------
     # 5️⃣ FINAL SHAPE
