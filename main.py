@@ -10617,8 +10617,11 @@ def parse_exam_block(block_text: str):
         if not line:
             continue
     
-        # Expected format:
-        # 1 | paragraph=1 | correct_answer=F
+        # Only process lines that contain structured question data
+        if "|" not in line:
+            # Ignore stray numbering like "6"
+            continue
+    
         m = re.match(
             r"\d+\s*\|\s*paragraph\s*=\s*(\d+)\s*\|\s*correct_answer\s*=\s*([A-G])",
             line,
