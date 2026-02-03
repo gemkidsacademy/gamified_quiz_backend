@@ -10533,9 +10533,9 @@ def parse_exam_block(block_text: str):
         Extract a labeled section safely.
         """
         if label == "METADATA":
-            pattern = rf"{label}\s*:\s*(.*?)(?=\n^READING_MATERIAL\s*:|\Z)"
+            pattern = rf"{label}\s*:\s*(.*?)(?=\n^READING_MATERIAL\s*:|\n^=== EXAM END ===|\Z)"
         else:
-            pattern = rf"{label}\s*:\s*(.*?)(?=\n^[A-Z_]+\s*:|\Z)"
+            pattern = rf"{label}\s*:\s*(.*?)(?=\n^[A-Z_]+\s*:|\n^=== EXAM END ===|\Z)"
     
         match = re.search(pattern, block_text, re.S | re.M)
         if not match:
