@@ -10628,7 +10628,7 @@ def parse_exam_block(block_text: str):
         raise ValueError("Answer options must contain A–G")
 
     # --------------------------------------------------
-    # 4️⃣ QUESTIONS
+    # 4️⃣ QUESTIONS  (FORMAT-AGNOSTIC)
     # --------------------------------------------------
     questions_raw = section("QUESTIONS")
     
@@ -10636,35 +10636,35 @@ def parse_exam_block(block_text: str):
     current = None
     
     for raw_line in questions_raw.splitlines():
-        line = raw_line.strip()
+        line = raw_line.strip().lower()
     
-        # Match any dash variant before "paragraph"
-        m_paragraph = re.match(r"(?:[-–—‐•]|\u2022|\u00b7|\uf0b7)?\s*paragraph\s*:\s*(\d+)", line, re.I)
-
-        if m_paragraph:
+        if "paragraph" in line:
+            # extract number safely
+            m = re.search(r"paragraph\s*[:\-]?\s*(\d+)", line)
+            if not m:
+                continue
             if current is not None:
                 raise ValueError("Malformed QUESTIONS block (missing correct_answer)")
             current = {
-                "paragraph": int(m_paragraph.group(1))
+                "paragraph": int(m.group(1))
             }
             continue
     
-        # Match correct_answer line
-        m_answer = re.match(r"correct_answer\s*:\s*([A-Ga-g])", line)
-        if m_answer:
-            if current is None:
+        if "correct_answer" in line:
+            m = re.search(r"correct_answer\s*[:\-]?\s*([a-g])", line)
+            if not m or current is None:
                 raise ValueError("correct_answer without paragraph")
-            current["correct_answer"] = m_answer.group(1).upper()
+            current["correct_answer"] = m.group(1).upper()
             questions.append(current)
             current = None
             continue
     
-    # Final safety checks
     if current is not None:
         raise ValueError("Dangling question without correct_answer")
     
     if not questions:
         raise ValueError("No questions parsed")
+
 
     
     
