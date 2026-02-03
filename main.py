@@ -10605,27 +10605,54 @@ def parse_exam_block(block_text: str):
     if len(answer_options) != 7:
         raise ValueError("Answer options must contain A–G")
 
+    
     # --------------------------------------------------
-    # 4️⃣ QUESTIONS (PIPE FORMAT)
+    # 4️⃣ QUESTIONS (PIPE FORMAT — DETERMINISTIC)
     # --------------------------------------------------
     questions_raw = section("QUESTIONS")
     
+    print("\n🧪 RAW QUESTIONS SECTION (repr):")
+    print(repr(questions_raw))
+    print()
+    
     questions = []
     
-    for raw_line in questions_raw.splitlines():
-        line = raw_line.strip()
+    for idx, raw_line in enumerate(questions_raw.splitlines(), start=1):
+        print(f"🧪 Q-LINE {idx} (raw): {repr(raw_line)}")
     
-        # Ignore empty or junk lines (DOCX artifacts)
-        if not line or "|" not in line:
+        # Normalize DOCX / Unicode junk
+        line = (
+            raw_line
+            .strip()
+            .replace("│", "|")   # Unicode pipe
+            .replace("＝", "=")   # Unicode equals
+            .replace("\r", "")
+        )
+    
+        print(f"🧪 Q-LINE {idx} (normalized): {repr(line)}")
+    
+        if not line:
+            print("   ↳ skipped (empty)")
+            continue
+    
+        if "|" not in line:
+            print("   ↳ skipped (no pipe)")
             continue
     
         m = re.match(
-            r"\d+\s*\|\s*paragraph\s*=\s*(\d+)\s*\|\s*correct_answer\s*=\s*([A-Ga-g])",
-            line
+            r"""
+            ^\s*\d+\s*                # question index
+            \|\s*paragraph\s*=\s*(\d+) # paragraph number
+            \s*\|\s*correct_answer\s*=\s*([A-Ga-g])\s*$
+            """,
+            line,
+            re.VERBOSE
         )
     
         if not m:
             raise ValueError(f"Invalid QUESTION line format: {line}")
+    
+        print("   ✅ parsed")
     
         questions.append({
             "paragraph": int(m.group(1)),
