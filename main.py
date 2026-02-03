@@ -10617,9 +10617,8 @@ def parse_exam_block(block_text: str):
         if not line:
             continue
     
-        # Only process lines that contain structured question data
+        # Ignore stray numbering like "6"
         if "|" not in line:
-            # Ignore stray numbering like "6"
             continue
     
         m = re.match(
