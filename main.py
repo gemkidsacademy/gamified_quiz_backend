@@ -10639,7 +10639,8 @@ def parse_exam_block(block_text: str):
         line = raw_line.strip()
     
         # Match any dash variant before "paragraph"
-        m_paragraph = re.match(r"[-–—‐]\s*paragraph\s*:\s*(\d+)", line, re.I)
+        m_paragraph = re.match(r"(?:[-–—‐•]|\u2022|\u00b7|\uf0b7)?\s*paragraph\s*:\s*(\d+)", line, re.I)
+
         if m_paragraph:
             if current is not None:
                 raise ValueError("Malformed QUESTIONS block (missing correct_answer)")
