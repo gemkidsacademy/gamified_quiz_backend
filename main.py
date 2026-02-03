@@ -10522,25 +10522,27 @@ OUTPUT:
 
 
 
+import re
+
 def parse_exam_block(block_text: str):
     """
-    Deterministic parser for Exam Format v1.
+    Deterministic parser for Exam Format v2.
     The document is the single source of truth.
     """
 
+    # --------------------------------------------------
+    # Helper: extract section by label
+    # --------------------------------------------------
     def section(label: str) -> str:
-        """
-        Extract a labeled section safely.
-        """
         if label == "METADATA":
-            pattern = rf"{label}\s*:\s*(.*?)(?=\n^READING_MATERIAL\s*:|\n^=== EXAM END ===|\Z)"
+            pattern = rf"{label}\s*:\s*(.*?)(?=\nREADING_MATERIAL\s*:|\Z)"
         else:
-            pattern = rf"{label}\s*:\s*(.*?)(?=\n^[A-Z_]+\s*:|\n^=== EXAM END ===|\Z)"
-    
-        match = re.search(pattern, block_text, re.S | re.M)
-        if not match:
+            pattern = rf"{label}\s*:\s*(.*?)(?=\n[A-Z_]+\s*:|\Z)"
+
+        m = re.search(pattern, block_text, re.S)
+        if not m:
             raise ValueError(f"Missing required section: {label}")
-        return match.group(1).strip()
+        return m.group(1).strip()
 
     # --------------------------------------------------
     # 1️⃣ METADATA
@@ -10552,26 +10554,13 @@ def parse_exam_block(block_text: str):
         if ":" not in line:
             continue
         k, v = line.split(":", 1)
-        normalized_key = (
-            re.sub(r"\s+", "", k)                 # remove ALL whitespace (incl. unicode)
-            .encode("ascii", "ignore")             # drop non-ascii junk
-            .decode()
-            .lower()
-        )
-        metadata[normalized_key] = v.strip().strip('"')
-    print("🧪 Parsed METADATA keys:", list(metadata.keys()))
+        key = k.strip().lower()
+        metadata[key] = v.strip().strip('"')
 
-    required_meta = [
-        "class",
-        "subject",
-        "topic",
-        "difficulty",
-        "total_questions"
-    ]
-
-    for key in required_meta:
-        if key not in metadata:
-            raise ValueError(f"Missing METADATA field: {key}")
+    required_meta = ["class", "subject", "topic", "difficulty", "total_questions"]
+    for k in required_meta:
+        if k not in metadata:
+            raise ValueError(f"Missing METADATA field: {k}")
 
     metadata_parsed = {
         "class_name": metadata["class"],
@@ -10590,17 +10579,11 @@ def parse_exam_block(block_text: str):
 
     paragraphs = {}
     for line in paragraphs_raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
         if ":" not in line:
             continue
-
-        key, value = line.split(":", 1)
-        if not key.strip().isdigit():
-            continue
-
-        paragraphs[key.strip()] = value.strip()
+        k, v = line.split(":", 1)
+        if k.strip().isdigit():
+            paragraphs[k.strip()] = v.strip()
 
     if not paragraphs:
         raise ValueError("No paragraphs parsed")
@@ -10612,62 +10595,47 @@ def parse_exam_block(block_text: str):
 
     answer_options = {}
     for line in options_raw.splitlines():
-        line = line.strip()
-        if not line or "." not in line:
+        if "." not in line:
             continue
-
-        key, value = line.split(".", 1)
-        key = key.strip()
-
-        if key not in ["A", "B", "C", "D", "E", "F", "G"]:
-            continue
-
-        answer_options[key] = value.strip()
+        k, v = line.split(".", 1)
+        k = k.strip()
+        if k in ["A", "B", "C", "D", "E", "F", "G"]:
+            answer_options[k] = v.strip()
 
     if len(answer_options) != 7:
         raise ValueError("Answer options must contain A–G")
 
     # --------------------------------------------------
-    # 4️⃣ QUESTIONS  (FORMAT-AGNOSTIC)
+    # 4️⃣ QUESTIONS (NEW FORMAT ✅)
     # --------------------------------------------------
     questions_raw = section("QUESTIONS")
-    
+
     questions = []
-    current = None
-    
-    for raw_line in questions_raw.splitlines():
-        line = raw_line.strip().lower()
-    
-        if "paragraph" in line:
-            # extract number safely
-            m = re.search(r"paragraph\s*[:\-]?\s*(\d+)", line)
-            if not m:
-                continue
-            if current is not None:
-                raise ValueError("Malformed QUESTIONS block (missing correct_answer)")
-            current = {
-                "paragraph": int(m.group(1))
-            }
+    for line in questions_raw.splitlines():
+        line = line.strip()
+        if "|" not in line:
             continue
-    
-        if "correct_answer" in line:
-            m = re.search(r"correct_answer\s*[:\-]?\s*([a-g])", line)
-            if not m or current is None:
-                raise ValueError("correct_answer without paragraph")
-            current["correct_answer"] = m.group(1).upper()
-            questions.append(current)
-            current = None
-            continue
-    
-    if current is not None:
-        raise ValueError("Dangling question without correct_answer")
-    
+
+        parts = {}
+        for chunk in line.split("|"):
+            if "=" in chunk:
+                k, v = chunk.split("=", 1)
+                parts[k.strip()] = v.strip()
+
+        if "paragraph" not in parts or "correct_answer" not in parts:
+            raise ValueError(f"Invalid question line: {line}")
+
+        questions.append({
+            "paragraph": int(parts["paragraph"]),
+            "correct_answer": parts["correct_answer"].upper()
+        })
+
     if not questions:
         raise ValueError("No questions parsed")
 
+    if len(questions) != metadata_parsed["total_questions"]:
+        raise ValueError("Question count does not match TOTAL_QUESTIONS")
 
-    
-    
     # --------------------------------------------------
     # 5️⃣ FINAL SHAPE
     # --------------------------------------------------
@@ -10676,9 +10644,7 @@ def parse_exam_block(block_text: str):
         "reading_material": {
             "title": title,
             "instructions": [
-                line.strip()
-                for line in instructions.splitlines()
-                if line.strip()
+                l.strip() for l in instructions.splitlines() if l.strip()
             ],
             "paragraphs": paragraphs,
         },
