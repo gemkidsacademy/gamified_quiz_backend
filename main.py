@@ -10522,6 +10522,149 @@ OUTPUT:
 
 
 
+def parse_exam_block(block_text: str):
+    """
+    Deterministic parser for Exam Format v1.
+    The document is the single source of truth.
+    """
+
+    def section(label: str) -> str:
+        """
+        Extract a labeled section safely.
+        """
+        pattern = rf"{label}:\s*(.*?)(?=\n[A-Z_]+:|\Z)"
+        match = re.search(pattern, block_text, re.S)
+        if not match:
+            raise ValueError(f"Missing required section: {label}")
+        return match.group(1).strip()
+
+    # --------------------------------------------------
+    # 1️⃣ METADATA
+    # --------------------------------------------------
+    metadata_raw = section("METADATA")
+
+    metadata = {}
+    for line in metadata_raw.splitlines():
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        metadata[k.strip().lower()] = v.strip().strip('"')
+
+    required_meta = [
+        "class",
+        "subject",
+        "topic",
+        "difficulty",
+        "total_questions"
+    ]
+
+    for key in required_meta:
+        if key not in metadata:
+            raise ValueError(f"Missing METADATA field: {key}")
+
+    metadata_parsed = {
+        "class_name": metadata["class"],
+        "subject": metadata["subject"],
+        "topic": metadata["topic"],
+        "difficulty": metadata["difficulty"],
+        "total_questions": int(metadata["total_questions"]),
+    }
+
+    # --------------------------------------------------
+    # 2️⃣ READING MATERIAL
+    # --------------------------------------------------
+    instructions = section("INSTRUCTIONS")
+    title = section("TITLE")
+    paragraphs_raw = section("PARAGRAPHS")
+
+    paragraphs = {}
+    for line in paragraphs_raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if ":" not in line:
+            continue
+
+        key, value = line.split(":", 1)
+        if not key.strip().isdigit():
+            continue
+
+        paragraphs[key.strip()] = value.strip()
+
+    if not paragraphs:
+        raise ValueError("No paragraphs parsed")
+
+    # --------------------------------------------------
+    # 3️⃣ ANSWER OPTIONS
+    # --------------------------------------------------
+    options_raw = section("ANSWER_OPTIONS")
+
+    answer_options = {}
+    for line in options_raw.splitlines():
+        line = line.strip()
+        if not line or "." not in line:
+            continue
+
+        key, value = line.split(".", 1)
+        key = key.strip()
+
+        if key not in ["A", "B", "C", "D", "E", "F", "G"]:
+            continue
+
+        answer_options[key] = value.strip()
+
+    if len(answer_options) != 7:
+        raise ValueError("Answer options must contain A–G")
+
+    # --------------------------------------------------
+    # 4️⃣ QUESTIONS
+    # --------------------------------------------------
+    questions_raw = section("QUESTIONS")
+
+    questions = []
+    current = {}
+
+    for line in questions_raw.splitlines():
+        line = line.strip()
+
+        if line.startswith("- paragraph:"):
+            if current:
+                raise ValueError("Malformed QUESTIONS block")
+            current = {
+                "paragraph": int(line.split(":", 1)[1].strip())
+            }
+
+        elif line.startswith("correct_answer:"):
+            if not current:
+                raise ValueError("correct_answer without paragraph")
+            current["correct_answer"] = line.split(":", 1)[1].strip()
+            questions.append(current)
+            current = {}
+
+    if current:
+        raise ValueError("Dangling question without correct_answer")
+
+    if not questions:
+        raise ValueError("No questions parsed")
+
+    # --------------------------------------------------
+    # 5️⃣ FINAL SHAPE
+    # --------------------------------------------------
+    return {
+        "metadata": metadata_parsed,
+        "reading_material": {
+            "title": title,
+            "instructions": [
+                line.strip()
+                for line in instructions.splitlines()
+                if line.strip()
+            ],
+            "paragraphs": paragraphs,
+        },
+        "answer_options": answer_options,
+        "questions": questions,
+    }
+
 
 @app.post("/upload-word-reading-main-idea-ai")
 async def upload_word_reading_main_idea_ai(
@@ -10529,109 +10672,86 @@ async def upload_word_reading_main_idea_ai(
     db: Session = Depends(get_db)
 ):
     print("\n" + "=" * 70)
-    print("📄 START: MAIN IDEA & SUMMARY WORD UPLOAD (AI - DEBUG MODE)")
+    print("📄 START: MAIN IDEA & SUMMARY WORD UPLOAD")
     print("=" * 70)
 
     # --------------------------------------------------
     # 1️⃣ File validation
     # --------------------------------------------------
     print("📥 STEP 1: File validation")
-    print("   → Filename:", file.filename)
-    print("   → Content-Type:", file.content_type)
 
     if file.content_type != (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ):
-        print("❌ INVALID FILE TYPE")
         raise HTTPException(status_code=400, detail="File must be .docx")
 
     raw = await file.read()
-    print("✅ File read successfully | bytes:", len(raw))
+    print("✅ File read | bytes:", len(raw))
 
     # --------------------------------------------------
     # 2️⃣ Text extraction
     # --------------------------------------------------
-    print("\n📄 STEP 2: Extracting text from DOCX")
+    print("\n📄 STEP 2: Extracting text")
 
     try:
         full_text = extract_text_from_docx(raw)
     except Exception as e:
-        print("❌ DOCX TEXT EXTRACTION FAILED")
-        print("   → Exception:", str(e))
         raise HTTPException(status_code=500, detail="Failed to extract document text")
 
-    if not full_text:
-        print("❌ Extracted text is EMPTY")
-        raise HTTPException(status_code=400, detail="Empty document")
-
-    print("✅ Text extracted")
-    print("   → Character count:", len(full_text))
-
-    if len(full_text.strip()) < 300:
-        print("❌ Document too short")
-        raise HTTPException(status_code=400, detail="Invalid document")
+    if not full_text or len(full_text.strip()) < 300:
+        raise HTTPException(status_code=400, detail="Invalid or empty document")
 
     # --------------------------------------------------
-    # 3️⃣ Exam block detection
+    # 3️⃣ Detect exam blocks
     # --------------------------------------------------
     print("\n🧩 STEP 3: Detecting exam blocks")
 
     start_token = "=== EXAM START ==="
     end_token = "=== EXAM END ==="
 
-    parts = full_text.split(start_token)
-    print("   → START tokens found:", len(parts) - 1)
-
     blocks = []
-
-    for idx, part in enumerate(parts[1:], start=1):
-        print(f"   → Inspecting block candidate {idx}")
-
+    for part in full_text.split(start_token)[1:]:
         if end_token not in part:
-            print("     ⚠️ END token missing — skipped")
             continue
-
         block = part.split(end_token)[0].strip()
-        print("     → Block length:", len(block))
-
-        if len(block) < 500:
-            print("     ⚠️ Block too short — skipped")
-            continue
-
-        blocks.append(block)
-        print("     ✅ Block accepted")
+        if len(block) >= 500:
+            blocks.append(block)
 
     if not blocks:
-        print("❌ NO VALID EXAM BLOCKS FOUND")
         raise HTTPException(
             status_code=400,
-            detail="No exam blocks found. Missing EXAM START / EXAM END markers."
+            detail="No valid exam blocks found"
         )
 
-    print(f"✅ Total valid exam blocks: {len(blocks)}")
+    print("✅ Exam blocks found:", len(blocks))
     saved_ids = []
 
     # --------------------------------------------------
-    # 4️⃣ AI extraction prompt
+    # 4️⃣ AI validation prompt
     # --------------------------------------------------
-    print("\n🤖 STEP 4: Preparing AI extraction prompt")
-
     system_prompt = """
-You are an exam content extraction engine.
+You are an exam integrity validation engine.
 
-You MUST extract ONE COMPLETE MAIN IDEA & SUMMARY reading exam.
+The document is already structured and must be treated as the single source of truth.
 
-CRITICAL RULES (FAIL HARD):
-- DO NOT generate, infer, or rewrite content
-- Extract ONLY what exists in the document
-- reading_material MUST contain ALL paragraphs
-- answer_options MUST be shared and contain A–G
-- questions MUST match Total_Questions exactly
-- correct_answer MUST be one of A–G
-- If ANY required field is missing or empty, RETURN {}
+YOUR ROLE:
+- VERIFY the exam content only
+- DO NOT extract, rewrite, infer, summarise, or restructure anything
+- DO NOT create missing fields
+- DO NOT correct mistakes
 
-OUTPUT:
-- VALID JSON ONLY
+VALIDATION RULES (FAIL HARD):
+- Exactly ONE Main Idea & Summary reading exam must be present
+- Total number of questions MUST match Total_Questions
+- Each question MUST reference an existing paragraph
+- All answer options MUST be shared and include A–G only
+- Each correct_answer MUST be one of A–G
+- No required section may be missing or empty
+
+OUTPUT RULES:
+- Return ONLY valid JSON
+- If ALL checks pass, return: {"status": "ok"}
+- If ANY check fails, return: {}
 - No markdown
 - No explanations
 """
@@ -10641,9 +10761,9 @@ OUTPUT:
     # --------------------------------------------------
     for block_idx, block_text in enumerate(blocks, start=1):
         print("\n" + "-" * 70)
-        print(f"🔍 STEP 5: Processing block {block_idx}/{len(blocks)}")
-        print("   → Block length:", len(block_text))
+        print(f"🔍 Processing block {block_idx}/{len(blocks)}")
 
+        # ---------------- AI integrity validation ----------------
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -10657,89 +10777,68 @@ OUTPUT:
                 ]
             )
         except Exception as e:
-            print("❌ OpenAI API CALL FAILED")
-            print("   → Exception:", str(e))
-            continue
-
-        raw_output = response.choices[0].message.content.strip()
-        print("🧠 AI response length:", len(raw_output))
-
-        if not raw_output.startswith("{"):
-            print("❌ NON-JSON AI OUTPUT")
-            print("   → Preview:", raw_output[:200])
+            print("❌ AI call failed:", str(e))
             continue
 
         try:
-            parsed = json.loads(raw_output)
-            print("✅ JSON parsed successfully")
+            ai_result = json.loads(response.choices[0].message.content.strip())
+        except Exception:
+            print("❌ AI returned invalid JSON")
+            continue
+
+        if ai_result != {"status": "ok"}:
+            print("❌ AI integrity validation failed")
+            continue
+
+        print("✅ AI integrity validation passed")
+
+        # ---------------- Parse document ----------------
+        try:
+            parsed = parse_exam_block(block_text)
         except Exception as e:
-            print("❌ JSON PARSE FAILED")
-            print("   → Exception:", str(e))
+            print("❌ Document parsing failed:", str(e))
             continue
 
-        if not parsed:
-            print("⚠️ EMPTY JSON returned by AI")
+        meta = parsed["metadata"]
+        rm = parsed["reading_material"]
+        paragraphs = rm["paragraphs"]
+        questions = parsed["questions"]
+        opts = parsed["answer_options"]
+
+        # ---------------- Backend hard validation ----------------
+        print("🧪 Backend validation")
+
+        if len(paragraphs) != meta["total_questions"]:
+            print("❌ Paragraph count mismatch")
             continue
 
-        # --------------------------------------------------
-        # 6️⃣ Hard validation
-        # --------------------------------------------------
-        print("\n🧪 STEP 6: Validating extracted content")
-
-        rm = parsed.get("reading_material")
-
-        if isinstance(rm, dict):
-            paragraphs = rm.get("paragraphs", {})
-        elif isinstance(rm, str):
-            paragraphs = {"p1": rm}
-        elif isinstance(rm, list):
-            paragraphs = {f"p{i+1}": p for i, p in enumerate(rm) if isinstance(p, str)}
-        else:
-            print("❌ Unsupported reading_material type:", type(rm))
+        if len(questions) != meta["total_questions"]:
+            print("❌ Question count mismatch")
             continue
 
-        if not paragraphs:
-            print("❌ Missing paragraphs")
-            continue
-
-        print("   → Paragraphs found:", len(paragraphs))
-
-        opts = parsed.get("answer_options", {})
         required_opts = ["A", "B", "C", "D", "E", "F", "G"]
-
-        missing_opts = [k for k in required_opts if not opts.get(k)]
-        if missing_opts:
-            print("❌ Missing answer options:", missing_opts)
+        if any(k not in opts for k in required_opts):
+            print("❌ Missing answer options")
             continue
 
-        questions = parsed.get("questions", [])
-        print("   → Questions found:", len(questions))
-
-        if not questions:
-            print("❌ No questions extracted")
-            continue
-
-        invalid_q = False
-        for i, q in enumerate(questions, start=1):
-            if (
-                "paragraph" not in q
-                or "correct_answer" not in q
-                or q["correct_answer"] not in required_opts
-            ):
-                print(f"❌ Invalid question format at index {i}")
-                invalid_q = True
+        valid = True
+        for q in questions:
+            if str(q["paragraph"]) not in paragraphs:
+                valid = False
+                break
+            if q["correct_answer"] not in required_opts:
+                valid = False
                 break
 
-        if invalid_q:
+        if not valid:
+            print("❌ Question validation failed")
             continue
 
-        print("✅ Validation passed")
+        print("✅ Backend validation passed")
 
         # --------------------------------------------------
-        # 7️⃣ Enrich questions
+        # 6️⃣ Enrich questions
         # --------------------------------------------------
-        print("\n🧩 STEP 7: Enriching questions")
-
         enriched_questions = []
         for i, q in enumerate(questions, start=1):
             enriched_questions.append({
@@ -10750,52 +10849,45 @@ OUTPUT:
             })
 
         # --------------------------------------------------
-        # 8️⃣ Bundle (RENDER-SAFE)
+        # 7️⃣ Bundle
         # --------------------------------------------------
         bundle = {
             "question_type": "main_idea",
-            "topic": parsed.get("topic", "Main Idea and Summary"),
             "reading_material": rm,
             "answer_options": opts,
             "questions": enriched_questions
         }
 
-
         # --------------------------------------------------
-        # 9️⃣ Save to DB
+        # 8️⃣ Save to DB
         # --------------------------------------------------
-        print("\n💾 STEP 8: Saving exam to database")
-
         try:
             obj = QuestionReading(
-                class_name=parsed.get("class_name", "selective").lower(),
-                subject=parsed.get("subject", "Reading Comprehension"),
-                difficulty=parsed.get("difficulty", "hard").lower(),
-                topic=parsed.get("topic", "Main Idea and Summary"),
-                total_questions=len(enriched_questions),
+                class_name=meta["class_name"].lower(),
+                subject=meta["subject"],
+                difficulty=meta["difficulty"].lower(),
+                topic=meta["topic"],
+                total_questions=meta["total_questions"],
                 exam_bundle=bundle
             )
-
 
             db.add(obj)
             db.commit()
             db.refresh(obj)
 
             saved_ids.append(obj.id)
-            print(f"✅ Block {block_idx} saved | ID={obj.id}")
+            print(f"✅ Saved exam | ID={obj.id}")
 
         except Exception as e:
             db.rollback()
-            print("❌ DATABASE SAVE FAILED")
-            print("   → Exception:", str(e))
-            continue
+            print("❌ Database save failed:", str(e))
 
     # --------------------------------------------------
-    # 🔟 Final response
+    # 9️⃣ Final response
     # --------------------------------------------------
     print("\n" + "=" * 70)
     print("🎉 UPLOAD COMPLETE")
-    print("   → Total saved exams:", len(saved_ids))
+    print("   → Saved exams:", len(saved_ids))
     print("   → IDs:", saved_ids)
     print("=" * 70)
 
