@@ -10549,7 +10549,8 @@ def parse_exam_block(block_text: str):
         if ":" not in line:
             continue
         k, v = line.split(":", 1)
-        metadata[k.strip().lower()] = v.strip().strip('"')
+        normalized_key = re.sub(r"[^a-z_]", "", k.lower())
+        metadata[normalized_key] = v.strip().strip('"')
 
     required_meta = [
         "class",
