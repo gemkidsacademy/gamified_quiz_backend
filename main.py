@@ -10536,16 +10536,18 @@ def parse_exam_block(block_text: str):
     def section(label: str) -> str:
         """
         Extract a labeled section safely.
-        Matches ONLY full section headers (line-start anchored).
+        METADATA ends ONLY at READING_MATERIAL.
+        Other sections end at the next ALL-CAPS label.
         """
         if label == "METADATA":
-            pattern = rf"(?m)^{label}\s*:\s*(.*?)(?=^\w+\s*:|\Z)"
+            pattern = rf"(?ms)^METADATA\s*:\s*(.*?)(?=^READING_MATERIAL\s*:|\Z)"
         else:
-            pattern = rf"(?m)^{label}\s*:\s*(.*?)(?=^\w+\s*:|\Z)"
+            pattern = rf"(?ms)^{label}\s*:\s*(.*?)(?=^[A-Z_]+\s*:|\Z)"
     
-        match = re.search(pattern, block_text, re.S | re.M)
+        match = re.search(pattern, block_text)
         if not match:
             raise ValueError(f"Missing required section: {label}")
+    
         return match.group(1).strip()
 
     # --------------------------------------------------
