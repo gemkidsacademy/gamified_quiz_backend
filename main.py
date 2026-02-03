@@ -10531,8 +10531,9 @@ def parse_exam_block(block_text: str):
     def section(label: str) -> str:
         """
         Extract a labeled section safely.
+        Accepts both 'LABEL:' and 'LABEL :'
         """
-        pattern = rf"{label}:\s*(.*?)(?=\n[A-Z_]+:|\Z)"
+        pattern = rf"{label}\s*:\s*(.*?)(?=\n[A-Z_]+\s*:|\Z)"
         match = re.search(pattern, block_text, re.S)
         if not match:
             raise ValueError(f"Missing required section: {label}")
