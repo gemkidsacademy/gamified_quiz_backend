@@ -10633,33 +10633,42 @@ def parse_exam_block(block_text: str):
     # 4️⃣ QUESTIONS
     # --------------------------------------------------
     questions_raw = section("QUESTIONS")
-
+    
     questions = []
-    current = {}
-
-    for line in questions_raw.splitlines():
-        line = line.strip()
-
-        if line.startswith("- paragraph:"):
-            if current:
-                raise ValueError("Malformed QUESTIONS block")
+    current = None
+    
+    for raw_line in questions_raw.splitlines():
+        line = raw_line.strip()
+    
+        # Match any dash variant before "paragraph"
+        m_paragraph = re.match(r"[-–—‐]\s*paragraph\s*:\s*(\d+)", line, re.I)
+        if m_paragraph:
+            if current is not None:
+                raise ValueError("Malformed QUESTIONS block (missing correct_answer)")
             current = {
-                "paragraph": int(line.split(":", 1)[1].strip())
+                "paragraph": int(m_paragraph.group(1))
             }
-
-        elif line.startswith("correct_answer:"):
-            if not current:
+            continue
+    
+        # Match correct_answer line
+        m_answer = re.match(r"correct_answer\s*:\s*([A-Ga-g])", line)
+        if m_answer:
+            if current is None:
                 raise ValueError("correct_answer without paragraph")
-            current["correct_answer"] = line.split(":", 1)[1].strip()
+            current["correct_answer"] = m_answer.group(1).upper()
             questions.append(current)
-            current = {}
-
-    if current:
+            current = None
+            continue
+    
+    # Final safety checks
+    if current is not None:
         raise ValueError("Dangling question without correct_answer")
-
+    
     if not questions:
         raise ValueError("No questions parsed")
 
+    
+    
     # --------------------------------------------------
     # 5️⃣ FINAL SHAPE
     # --------------------------------------------------
