@@ -10252,6 +10252,276 @@ def detect_question_type(block_text: str) -> str | None:
 
     return None
 
+def parse_gapped_block(block_text: str, db: Session) -> list[int]:
+    import json
+
+    saved_ids: list[int] = []
+
+    print("🧠 [gapped_text] START parsing block")
+
+    system_prompt = """
+You are an exam content extraction engine.
+
+You MUST extract ONE COMPLETE GAPPED TEXT reading exam.
+
+The document contains a METADATA section with:
+- class_name
+- subject
+- topic
+- difficulty
+
+RULES (FAIL HARD):
+- reading_material.content MUST contain full passage
+- answer_options MUST include A–G
+- questions MUST be EXACTLY 6
+- correct_answer MUST be A–G
+- DO NOT infer or generate content
+- If ANY rule fails, RETURN {}
+
+OUTPUT:
+- VALID JSON ONLY
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
+            }
+        ]
+    )
+
+    raw_output = response.choices[0].message.content.strip()
+    if not raw_output.startswith("{"):
+        raise ValueError("AI returned non-JSON output")
+
+    parsed = json.loads(raw_output)
+    if not parsed:
+        raise ValueError("AI returned empty JSON")
+
+    rm = parsed.get("reading_material", {})
+    opts = parsed.get("answer_options", {})
+    questions = parsed.get("questions", [])
+
+    if not rm.get("content") or len(rm["content"].strip()) < 300:
+        raise ValueError("Invalid or missing reading material")
+
+    required_opts = ["A", "B", "C", "D", "E", "F", "G"]
+    if any(k not in opts for k in required_opts):
+        raise ValueError("Missing answer options")
+
+    if len(questions) != 6:
+        raise ValueError("Invalid gapped question count")
+
+    enriched_questions = []
+    for i, q in enumerate(questions, start=1):
+        enriched_questions.append({
+            "question_id": f"GT_Q{i}",
+            "gap_number": i,
+            "question_text": f"Gap {i}",
+            "correct_answer": q["correct_answer"]
+        })
+
+    bundle = {
+        "question_type": "gapped_text",
+        "topic": parsed["topic"],
+        "reading_material": rm,
+        "answer_options": opts,
+        "questions": enriched_questions
+    }
+
+    obj = QuestionReading(
+        class_name=parsed["class_name"].lower(),
+        subject=parsed["subject"],
+        difficulty=parsed["difficulty"].lower(),
+        topic=parsed["topic"],
+        total_questions=len(enriched_questions),
+        exam_bundle=bundle
+    )
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+
+    saved_ids.append(obj.id)
+
+    print(f"💾 Gapped text exam saved | ID={obj.id}")
+    return saved_ids
+
+def parse_literary_block(block_text: str, db: Session) -> list[int]:
+    import json
+
+    saved_ids: list[int] = []
+
+    print("🧠 [literary] START parsing block")
+
+    system_prompt = """
+You are an exam content extraction engine.
+
+You MUST extract ONE COMPLETE LITERARY reading exam.
+
+REQUIRED KEYS:
+- class_name
+- subject
+- topic
+- difficulty
+- total_questions
+- reading_material
+- questions
+
+Each question MUST contain:
+- question_text
+- answer_options (A–D)
+- correct_answer (A–D)
+
+FAIL HARD if any rule is violated.
+RETURN VALID JSON ONLY.
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
+            }
+        ]
+    )
+
+    raw_output = response.choices[0].message.content.strip()
+    if not raw_output.startswith("{"):
+        raise ValueError("AI returned non-JSON output")
+
+    parsed = json.loads(raw_output)
+    if not parsed:
+        raise ValueError("AI returned empty JSON")
+
+    reading_material = parsed["reading_material"]
+    questions = parsed["questions"]
+
+    if len(questions) != int(parsed["total_questions"]):
+        raise ValueError("Literary question count mismatch")
+
+    enriched_questions = []
+    for i, q in enumerate(questions, start=1):
+        enriched_questions.append({
+            "question_id": f"LIT_Q{i}",
+            "question_text": q["question_text"],
+            "answer_options": q["answer_options"],
+            "correct_answer": q["correct_answer"]
+        })
+
+    bundle = {
+        "question_type": "literary",
+        "passage_style": "literary",
+        "topic": parsed["topic"],
+        "reading_material": reading_material,
+        "questions": enriched_questions
+    }
+
+    obj = QuestionReading(
+        class_name=parsed["class_name"].lower(),
+        subject=parsed["subject"],
+        difficulty=parsed["difficulty"].lower(),
+        topic=parsed["topic"],
+        total_questions=len(enriched_questions),
+        exam_bundle=bundle
+    )
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+
+    saved_ids.append(obj.id)
+
+    print(f"💾 Literary exam saved | ID={obj.id}")
+    return saved_ids
+
+def parse_main_idea_block(block_text: str, db: Session) -> list[int]:
+    import json
+
+    saved_ids: list[int] = []
+
+    print("🧠 [main_idea] START parsing block")
+
+    system_prompt = """
+You are an exam integrity validation engine.
+
+The document is structured and must be treated as the source of truth.
+
+RULES:
+- Exactly ONE Main Idea & Summary exam
+- Questions MUST match Total_Questions
+- Each question references an existing paragraph
+- Answer options MUST be A–G
+- RETURN {"status":"ok"} if valid
+- Otherwise RETURN {}
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
+            }
+        ]
+    )
+
+    result = json.loads(response.choices[0].message.content.strip())
+    if result != {"status": "ok"}:
+        raise ValueError("Main idea validation failed")
+
+    parsed = parse_exam_block(block_text)
+
+    meta = parsed["metadata"]
+    rm = parsed["reading_material"]
+    paragraphs = rm["paragraphs"]
+    questions = parsed["questions"]
+    opts = parsed["answer_options"]
+
+    enriched_questions = []
+    for i, q in enumerate(questions, start=1):
+        enriched_questions.append({
+            "question_id": f"MI_Q{i}",
+            "paragraph": q["paragraph"],
+            "question_text": f"Paragraph {q['paragraph']}",
+            "correct_answer": q["correct_answer"]
+        })
+
+    bundle = {
+        "question_type": "main_idea",
+        "reading_material": rm,
+        "answer_options": opts,
+        "questions": enriched_questions
+    }
+
+    obj = QuestionReading(
+        class_name=meta["class_name"].lower(),
+        subject=meta["subject"],
+        difficulty=meta["difficulty"].lower(),
+        topic=meta["topic"],
+        total_questions=len(enriched_questions),
+        exam_bundle=bundle
+    )
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+
+    saved_ids.append(obj.id)
+
+    print(f"💾 Main idea exam saved | ID={obj.id}")
+    return saved_ids
+
+
 import uuid
 
 upload_id = str(uuid.uuid4())[:8]
