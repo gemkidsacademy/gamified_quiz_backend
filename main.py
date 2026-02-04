@@ -10240,7 +10240,11 @@ def split_exam_blocks(full_text: str) -> list[str]:
 
     return blocks
 
-
+def normalize_metadata(meta: dict) -> dict:
+    return {
+        k.lower().strip(): v.strip()
+        for k, v in meta.items()
+    }
 def detect_question_type(block_text: str) -> str | None:
     match = re.search(
         r"^\s*question_type\s*:\s*([a-z_]+)\s*$",
@@ -10254,28 +10258,23 @@ def detect_question_type(block_text: str) -> str | None:
 
 def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     import json
+    import re
 
     saved_ids: list[int] = []
 
     print("🧠 [gapped_text] START parsing block")
 
-    system_prompt = """
+    SYSTEM_PROMPT = """
 You are an exam content extraction engine.
 
 You MUST extract ONE COMPLETE GAPPED TEXT reading exam.
 
-The document contains a METADATA section with:
-- class_name
-- subject
-- topic
-- difficulty
-
-RULES (FAIL HARD):
-- reading_material.content MUST contain full passage
-- answer_options MUST include A–G
+CRITICAL RULES:
+- Extract ONLY what exists in the document
+- DO NOT infer or generate content
+- reading_material.content MUST be present
 - questions MUST be EXACTLY 6
 - correct_answer MUST be A–G
-- DO NOT infer or generate content
 - If ANY rule fails, RETURN {}
 
 OUTPUT:
@@ -10286,7 +10285,7 @@ OUTPUT:
         model="gpt-4o-mini",
         temperature=0,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
@@ -10294,42 +10293,55 @@ OUTPUT:
         ]
     )
 
-    raw_output = response.choices[0].message.content.strip()
-    if not raw_output.startswith("{"):
+    raw = response.choices[0].message.content.strip()
+    if not raw.startswith("{"):
         raise ValueError("AI returned non-JSON output")
 
-    parsed = json.loads(raw_output)
+    parsed = json.loads(raw)
     if not parsed:
         raise ValueError("AI returned empty JSON")
 
+    # -----------------------------
+    # Validate reading material
+    # -----------------------------
     rm = parsed.get("reading_material", {})
-    opts = parsed.get("answer_options", {})
-    questions = parsed.get("questions", [])
-
     if not rm.get("content") or len(rm["content"].strip()) < 300:
         raise ValueError("Invalid or missing reading material")
 
-    required_opts = ["A", "B", "C", "D", "E", "F", "G"]
-    if any(k not in opts for k in required_opts):
+    # -----------------------------
+    # Robust answer option detection
+    # -----------------------------
+    options = parsed.get("answer_options", {})
+    found_letters = {k.strip().upper() for k in options.keys()}
+
+    required = set("ABCDEFG")
+    if not required.issubset(found_letters):
         raise ValueError("Missing answer options")
 
+    # -----------------------------
+    # Validate questions
+    # -----------------------------
+    questions = parsed.get("questions", [])
     if len(questions) != 6:
         raise ValueError("Invalid gapped question count")
 
     enriched_questions = []
     for i, q in enumerate(questions, start=1):
+        ca = q.get("correct_answer")
+        if ca not in required:
+            raise ValueError(f"Invalid correct answer for gap {i}")
+
         enriched_questions.append({
             "question_id": f"GT_Q{i}",
             "gap_number": i,
             "question_text": f"Gap {i}",
-            "correct_answer": q["correct_answer"]
+            "correct_answer": ca
         })
 
     bundle = {
         "question_type": "gapped_text",
-        "topic": parsed["topic"],
         "reading_material": rm,
-        "answer_options": opts,
+        "answer_options": options,
         "questions": enriched_questions
     }
 
@@ -10347,8 +10359,8 @@ OUTPUT:
     db.refresh(obj)
 
     saved_ids.append(obj.id)
-
     print(f"💾 Gapped text exam saved | ID={obj.id}")
+
     return saved_ids
 
 def parse_literary_block(block_text: str, db: Session) -> list[int]:
@@ -10449,16 +10461,14 @@ def parse_main_idea_block(block_text: str, db: Session) -> list[int]:
 
     print("🧠 [main_idea] START parsing block")
 
-    system_prompt = """
+    SYSTEM_PROMPT = """
 You are an exam integrity validation engine.
 
-The document is structured and must be treated as the source of truth.
-
 RULES:
-- Exactly ONE Main Idea & Summary exam
+- Exactly ONE MainREADING exam
 - Questions MUST match Total_Questions
-- Each question references an existing paragraph
 - Answer options MUST be A–G
+- DO NOT infer content
 - RETURN {"status":"ok"} if valid
 - Otherwise RETURN {}
 """
@@ -10467,7 +10477,7 @@ RULES:
         model="gpt-4o-mini",
         temperature=0,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
@@ -10481,9 +10491,22 @@ RULES:
 
     parsed = parse_exam_block(block_text)
 
-    meta = parsed["metadata"]
+    # -----------------------------
+    # Normalize metadata keys
+    # -----------------------------
+    raw_meta = parsed.get("metadata", {})
+    meta = {k.lower().strip(): v for k, v in raw_meta.items()}
+
+    # Alias handling
+    if "class_name" in meta and "class" not in meta:
+        meta["class"] = meta["class_name"]
+
+    required = ["class", "subject", "difficulty", "topic"]
+    for r in required:
+        if r not in meta:
+            raise ValueError(f"Missing METADATA field: {r}")
+
     rm = parsed["reading_material"]
-    paragraphs = rm["paragraphs"]
     questions = parsed["questions"]
     opts = parsed["answer_options"]
 
@@ -10504,7 +10527,7 @@ RULES:
     }
 
     obj = QuestionReading(
-        class_name=meta["class_name"].lower(),
+        class_name=meta["class"].lower(),
         subject=meta["subject"],
         difficulty=meta["difficulty"].lower(),
         topic=meta["topic"],
@@ -10517,8 +10540,8 @@ RULES:
     db.refresh(obj)
 
     saved_ids.append(obj.id)
-
     print(f"💾 Main idea exam saved | ID={obj.id}")
+
     return saved_ids
 
 
