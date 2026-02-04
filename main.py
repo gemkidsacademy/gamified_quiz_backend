@@ -10528,115 +10528,59 @@ upload_id = str(uuid.uuid4())[:8]
 print(f"🆔 Upload ID: {upload_id}")
 
 def parse_comparative_block(block_text: str, db: Session) -> list[int]:
-    """
-    Parse ONE comparative analysis exam block and save it to DB.
-
-    This function is a refactor of upload_word_reading_comparative_ai:
-    - NO file handling
-    - NO EXAM START / END detection
-    - block_text is already isolated
-    """
-
-    import re
     import json
+    import re
 
     saved_ids: list[int] = []
 
-    print("🧠 [comparative] START parsing block")
-    print(f"   → Block length: {len(block_text)}")
+    print("🧠 [comparative_analysis] START parsing block")
 
     # --------------------------------------------------
-    # 1️⃣ Extract Total_Questions (STRICT)
-    # --------------------------------------------------
-    match = re.search(
-        r"^\s*Total_Questions\s*:\s*(\d+)\s*$",
-        block_text,
-        re.MULTILINE
-    )
-
-    if not match:
-        raise ValueError("Total_Questions missing in comparative block")
-
-    expected_q_count = int(match.group(1))
-
-    ALLOWED_QUESTION_COUNTS = {8, 10}
-    if expected_q_count not in ALLOWED_QUESTION_COUNTS:
-        raise ValueError(
-            f"Invalid Total_Questions={expected_q_count} "
-            f"(allowed: {ALLOWED_QUESTION_COUNTS})"
-        )
-
-    print(f"✅ Total_Questions detected: {expected_q_count}")
-
-    # --------------------------------------------------
-    # 2️⃣ Detect extract labels (AUTHORITATIVE)
-    # --------------------------------------------------
-    doc_extract_matches = re.findall(
-        r"^\s*Extract\s+([A-Z])\s*$",
-        block_text,
-        re.MULTILINE
-    )
-
-    extract_keys = sorted(dict.fromkeys(doc_extract_matches))
-
-    if len(extract_keys) < 2:
-        raise ValueError("Comparative exam must contain at least 2 extracts")
-
-    print(f"✅ Extracts detected: {extract_keys}")
-
-    # --------------------------------------------------
-    # 3️⃣ Determine MCQ vs extract-selection
+    # Detect MCQ vs Extract-selection comparative
     # --------------------------------------------------
     is_mcq_comparative = "ANSWER_OPTIONS:" in block_text
-    print(f"🔎 MCQ comparative: {is_mcq_comparative}")
+    print("   → MCQ mode:", is_mcq_comparative)
 
     # --------------------------------------------------
-    # 4️⃣ AI extraction prompt (UNCHANGED)
+    # AI extraction prompt (same contract as before)
     # --------------------------------------------------
     system_prompt = """
 You are an exam content extraction engine.
 
 You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
 
-The document contains a METADATA section with the following fields:
+REQUIRED ROOT KEYS:
 - class_name
 - subject
 - topic
 - difficulty
+- reading_material
+- questions
 
-You MUST extract these fields EXACTLY as written and include them
-as top-level keys in the JSON output.
+reading_material MUST contain:
+- extracts (A, B, C, ...)
 
-CRITICAL SCHEMA REQUIREMENTS (FAIL HARD):
+QUESTION RULES:
+IF MCQ-based:
+- Each question MUST have:
+  - question_text
+  - answer_options (A–D)
+  - correct_answer (A–D)
 
-{
-  "class_name": string,
-  "subject": string,
-  "topic": string,
-  "difficulty": string,
-  "reading_material": {
-    "extracts": {
-      "A": string,
-      "B": string
-    }
-  },
-  "questions": [...]
-}
+IF extract-selection:
+- Each question MUST have:
+  - correct_answer (extract label)
+- question_text MAY be omitted
 
-RULES:
-- Extract text MUST be preserved exactly
-- Extract labels MUST match document
-- questions MUST equal Total_Questions
+CRITICAL:
 - DO NOT infer or generate content
+- Extract ONLY what exists
 - If ANY rule is violated, RETURN {}
 
 OUTPUT:
 - VALID JSON ONLY
 """
 
-    # --------------------------------------------------
-    # 5️⃣ AI call
-    # --------------------------------------------------
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         temperature=0,
@@ -10650,90 +10594,103 @@ OUTPUT:
     )
 
     raw_output = response.choices[0].message.content.strip()
-
     if not raw_output.startswith("{"):
         raise ValueError("AI returned non-JSON output")
 
     parsed = json.loads(raw_output)
-
     if not parsed:
         raise ValueError("AI returned empty JSON")
 
-    print("✅ AI JSON parsed successfully")
-
     # --------------------------------------------------
-    # 6️⃣ Hard validation
+    # Validate reading material / extracts
     # --------------------------------------------------
     rm = parsed.get("reading_material", {})
     extracts = rm.get("extracts", {})
 
-    if sorted(extracts.keys()) != extract_keys:
-        raise ValueError(
-            f"Extract mismatch. Document={extract_keys}, AI={list(extracts.keys())}"
-        )
+    if not extracts or len(extracts) < 2:
+        raise ValueError("Comparative exam must contain at least 2 extracts")
 
-    for k in extract_keys:
-        if not extracts.get(k) or not extracts[k].strip():
-            raise ValueError(f"Extract {k} is empty")
+    extract_keys = sorted(extracts.keys())
+    print("   → Extracts found:", extract_keys)
 
+    # --------------------------------------------------
+    # Validate questions
+    # --------------------------------------------------
     questions = parsed.get("questions", [])
+    if not questions:
+        raise ValueError("No questions extracted")
 
-    if len(questions) != expected_q_count:
-        raise ValueError(
-            f"Question count mismatch: expected {expected_q_count}, got {len(questions)}"
-        )
+    print("   → Questions found:", len(questions))
 
-    # Question validation
     for idx, q in enumerate(questions, start=1):
-        if "question_text" not in q or "correct_answer" not in q:
-            raise ValueError(f"Question {idx} missing required fields")
 
+        # correct_answer is ALWAYS required
+        if "correct_answer" not in q or not q["correct_answer"]:
+            raise ValueError(f"Question {idx} missing correct_answer")
+
+        # MCQ-specific validation
         if is_mcq_comparative:
+            if "question_text" not in q or not q["question_text"].strip():
+                raise ValueError(f"Question {idx} missing question_text")
+
             opts = q.get("answer_options")
-            if not opts or set(opts.keys()) != {"A", "B", "C", "D"}:
-                raise ValueError(f"Invalid answer_options in question {idx}")
+            if not isinstance(opts, dict) or set(opts.keys()) != {"A", "B", "C", "D"}:
+                raise ValueError(f"Question {idx} has invalid answer_options")
 
             if q["correct_answer"] not in opts:
-                raise ValueError(f"Invalid correct_answer in question {idx}")
+                raise ValueError(
+                    f"Question {idx} correct_answer not in answer_options"
+                )
 
+        # Extract-selection validation
         else:
             if q["correct_answer"] not in extract_keys:
                 raise ValueError(
-                    f"Invalid extract reference in question {idx}: {q['correct_answer']}"
+                    f"Question {idx} has invalid extract answer: "
+                    f"{q['correct_answer']} (allowed: {extract_keys})"
                 )
 
-    print("✅ Comparative validation passed")
+    # --------------------------------------------------
+    # Enrich questions (UI-safe)
+    # --------------------------------------------------
+    enriched_questions = []
 
-    # --------------------------------------------------
-    # 7️⃣ Enrich bundle (RENDER SAFE)
-    # --------------------------------------------------
     for i, q in enumerate(questions, start=1):
-        q["question_id"] = f"CA_Q{i}"
+        enriched = {
+            "question_id": f"CA_Q{i}",
+            "correct_answer": q["correct_answer"]
+        }
 
-        if not is_mcq_comparative:
-            q["answer_options"] = {
+        if is_mcq_comparative:
+            enriched["question_text"] = q["question_text"].strip()
+            enriched["answer_options"] = q["answer_options"]
+        else:
+            enriched["question_text"] = f"Question {i}"
+            enriched["answer_options"] = {
                 k: f"Extract {k}" for k in extract_keys
             }
 
+        enriched_questions.append(enriched)
+
+    # --------------------------------------------------
+    # Build bundle
+    # --------------------------------------------------
     bundle = {
         "question_type": "comparative_analysis",
         "topic": parsed["topic"],
         "reading_material": rm,
-        "questions": questions
+        "questions": enriched_questions
     }
 
-    if is_mcq_comparative:
-        bundle["answer_options"] = questions[0]["answer_options"]
-
     # --------------------------------------------------
-    # 8️⃣ Save to DB (UNCHANGED STRUCTURE)
+    # Save to DB
     # --------------------------------------------------
     obj = QuestionReading(
         class_name=parsed["class_name"].lower(),
-        subject="reading_comprehension",
+        subject=parsed["subject"],
         difficulty=parsed["difficulty"].lower(),
         topic=parsed["topic"],
-        total_questions=len(questions),
+        total_questions=len(enriched_questions),
         exam_bundle=bundle
     )
 
@@ -10744,8 +10701,6 @@ OUTPUT:
     saved_ids.append(obj.id)
 
     print(f"💾 Comparative exam saved | ID={obj.id}")
-    print("🧠 [comparative] END parsing block")
-
     return saved_ids
 
 @app.post("/upload-word-reading-unified")
