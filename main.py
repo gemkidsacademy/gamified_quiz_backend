@@ -10639,6 +10639,11 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     import re
 
     print("🧠 [comparative_analysis] START parsing block")
+    print("🔎 RAW METADATA LINES:")
+    for line in block_text.splitlines():
+        if any(k in line.upper() for k in ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY"]):
+            print(repr(line))
+
      # 🔥 REQUIRED NORMALIZATION (THIS WAS MISSING)
     block_text = (
         block_text
