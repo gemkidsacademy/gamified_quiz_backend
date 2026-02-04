@@ -10691,6 +10691,13 @@ async def upload_word_reading_unified(
     print("=" * 80)
 
     # --------------------------------------------------
+    # Tracking containers (DEFINED ONCE)
+    # --------------------------------------------------
+    saved_ids = []
+    failed_blocks = []
+    progress = []
+
+    # --------------------------------------------------
     # 1️⃣ File validation
     # --------------------------------------------------
     print(f"📥 [{upload_id}] STEP 1: File validation")
@@ -10704,16 +10711,16 @@ async def upload_word_reading_unified(
         raise HTTPException(status_code=400, detail="File must be .docx")
 
     raw = await file.read()
-    print(f"✅ [{upload_id}] File read into memory | bytes={len(raw)}")
+    print(f"✅ [{upload_id}] File read | bytes={len(raw)}")
 
     # --------------------------------------------------
     # 2️⃣ Text extraction
     # --------------------------------------------------
-    print(f"\n📄 [{upload_id}] STEP 2: Extracting text from DOCX")
+    print(f"\n📄 [{upload_id}] STEP 2: Extracting text")
 
     try:
         full_text = extract_text_from_docx(raw)
-    except Exception as e:
+    except Exception:
         print(f"❌ [{upload_id}] DOCX extraction failed")
         traceback.print_exc()
         raise HTTPException(
@@ -10722,118 +10729,95 @@ async def upload_word_reading_unified(
         )
 
     if not full_text or len(full_text.strip()) < 300:
-        print(f"❌ [{upload_id}] Extracted text invalid or too short")
+        print(f"❌ [{upload_id}] Document too short or empty")
         raise HTTPException(
             status_code=400,
             detail="Invalid or empty document"
         )
 
-    print(
-        f"✅ [{upload_id}] Text extracted successfully | "
-        f"characters={len(full_text)}"
-    )
+    print(f"✅ [{upload_id}] Text extracted | chars={len(full_text)}")
 
     # --------------------------------------------------
     # 3️⃣ Split EXAM blocks
     # --------------------------------------------------
-    print(f"\n🧩 [{upload_id}] STEP 3: Detecting EXAM blocks")
+    print(f"\n🧩 [{upload_id}] STEP 3: Splitting EXAM blocks")
 
     blocks = split_exam_blocks(full_text)
-
-    print(f"   → [{upload_id}] Blocks detected: {len(blocks)}")
+    print(f"   → Blocks detected: {len(blocks)}")
 
     if not blocks:
-        print(f"❌ [{upload_id}] No valid EXAM blocks found")
         raise HTTPException(
             status_code=400,
             detail="No valid EXAM blocks found"
         )
 
-    saved_ids: list[int] = []
-    failed_blocks: list[dict] = []
-
     # --------------------------------------------------
-    # 4️⃣ Route and process each block
+    # 4️⃣ Process each block
     # --------------------------------------------------
     for idx, block in enumerate(blocks, start=1):
         print("\n" + "-" * 80)
         print(f"📦 [{upload_id}] Processing block {idx}/{len(blocks)}")
         print(f"   → Block length: {len(block)}")
-
-        print(
-            f"   → Block preview:\n"
-            f"{block[:300].replace(chr(10), ' ')}..."
-        )
+        print(f"   → Preview: {block[:200].replace(chr(10), ' ')}...")
 
         qtype = detect_question_type(block)
         print(f"   → Detected question_type: {qtype}")
 
+        progress.append({
+            "block": idx,
+            "status": "processing",
+            "question_type": qtype
+        })
+
         if not qtype:
-            print(f"❌ [{upload_id}] Block {idx} missing question_type")
             failed_blocks.append({
                 "block": idx,
+                "reason": "Missing question_type"
+            })
+            progress.append({
+                "block": idx,
+                "status": "failed",
                 "reason": "Missing question_type"
             })
             continue
 
         try:
-            print(
-                f"➡️ [{upload_id}] Routing block {idx} "
-                f"to '{qtype}' parser"
-            )
-
             before_count = len(saved_ids)
 
+            # -------- ROUTING (CORRECT & SAFE) --------
             if qtype == "comparative_analysis":
-                saved_ids.extend(
-                    parse_comparative_block(block, db)
-                )
+                ids = parse_comparative_block(block, db)
 
             elif qtype == "gapped_text":
-                saved_ids.extend(
-                    parse_gapped_block(block, db)
-                )
+                ids = parse_gapped_block(block, db)
 
             elif qtype == "main_idea":
-                saved_ids.extend(
-                    parse_main_idea_block(block, db)
-                )
+                ids = parse_main_idea_block(block, db)
 
             elif qtype == "literary":
-                saved_ids.extend(
-                    parse_literary_block(block, db)
-                )
+                ids = parse_literary_block(block, db)
 
             else:
-                print(
-                    f"❌ [{upload_id}] Unknown question_type: {qtype}"
-                )
-                failed_blocks.append({
-                    "block": idx,
-                    "reason": f"Unknown question_type: {qtype}"
-                })
-                continue
+                raise ValueError(f"Unknown question_type: {qtype}")
 
+            # -------- SAVE RESULTS --------
+            saved_ids.extend(ids)
             added = len(saved_ids) - before_count
 
-            if added == 0:
-                print(
-                    f"⚠️ [{upload_id}] Block {idx} "
-                    f"parsed but no exams were saved"
-                )
-            else:
-                print(
-                    f"✅ [{upload_id}] Block {idx} parsed successfully | "
-                    f"Saved exams: {added}"
-                )
+            progress.append({
+                "block": idx,
+                "status": "saved",
+                "exam_ids": ids
+            })
+
+            print(
+                f"✅ [{upload_id}] Block {idx} saved | "
+                f"New exams={added}"
+            )
 
         except Exception as e:
-            print(
-                f"❌ [{upload_id}] Block {idx} failed "
-                f"in '{qtype}' parser"
-            )
-            print(f"   → Exception type: {type(e).__name__}")
-            print(f"   → Message: {str(e)}")
+            print(f"❌ [{upload_id}] Block {idx} failed")
+            print(f"   → {type(e).__name__}: {str(e)}")
             traceback.print_exc()
 
             failed_blocks.append({
@@ -10842,13 +10826,19 @@ async def upload_word_reading_unified(
                 "reason": str(e)
             })
 
+            progress.append({
+                "block": idx,
+                "status": "failed",
+                "reason": str(e)
+            })
+
     # --------------------------------------------------
     # 5️⃣ Final response
     # --------------------------------------------------
     print("\n" + "=" * 80)
     print(
-        f"🏁 [{upload_id}] Upload complete | "
-        f"Total blocks={len(blocks)} | "
+        f"🏁 [{upload_id}] COMPLETE | "
+        f"Blocks={len(blocks)} | "
         f"Saved={len(saved_ids)} | "
         f"Failed={len(failed_blocks)}"
     )
@@ -10866,8 +10856,10 @@ async def upload_word_reading_unified(
         "upload_id": upload_id,
         "total_blocks": len(blocks),
         "saved_exam_ids": saved_ids,
-        "failed_blocks": failed_blocks
+        "failed_blocks": failed_blocks,
+        "progress": progress
     }
+
 
 @app.post("/upload-word-reading-literary-ai")
 async def upload_word_reading_literary_ai(
