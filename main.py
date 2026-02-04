@@ -10529,6 +10529,23 @@ print(f"🆔 Upload ID: {upload_id}")
 
 def parse_comparative_block(block_text: str, db: Session):
     print("🧠 parse_comparative_block() START")
+    COMPARATIVE_SYSTEM_PROMPT = """
+You are an exam content extraction engine.
+
+You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
+
+CRITICAL RULES:
+- DO NOT infer or generate missing data
+- Extract ONLY what exists in the document
+- Preserve wording exactly
+- If any required field is missing, RETURN {}
+
+OUTPUT:
+- VALID JSON ONLY
+- No markdown
+- No explanations
+"""
+
 
     # --------------------------------------------------
     # 1️⃣ Determine comparative subtype
