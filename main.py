@@ -2057,6 +2057,15 @@ def parse_question_text_v3(text: str):
     print("====== parse_question_text_v3 END ======\n")
 
     return data
+def normalize_doc_text(text: str) -> str:
+    return (
+        text
+        .replace("\xa0", " ")      # non-breaking spaces (Word’s favorite)
+        .replace("\u200b", "")     # zero-width spaces
+        .replace("\t", " ")        # tabs
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+    )
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
     # Wrap bytes in a file-like object
@@ -9903,6 +9912,7 @@ async def upload_word_reading_gapped_multi_ai(
 
     try:
         full_text = extract_text_from_docx(raw)
+        full_text = normalize_doc_text(full_text)
     except Exception as e:
         print("❌ DOCX TEXT EXTRACTION FAILED")
         print("   → Exception:", str(e))
@@ -10916,6 +10926,8 @@ async def upload_word_reading_unified(
 
     try:
         full_text = extract_text_from_docx(raw)
+        full_text = normalize_doc_text(full_text)
+     
     except Exception:
         print(f"❌ [{upload_id}] DOCX extraction failed")
         traceback.print_exc()
@@ -11089,6 +11101,7 @@ async def upload_word_reading_literary_ai(
 
     try:
         full_text = extract_text_from_docx(raw)
+        full_text = normalize_doc_text(full_text)
     except Exception as e:
         print("❌ DOCX TEXT EXTRACTION FAILED:", str(e))
         raise HTTPException(status_code=500, detail="Failed to extract document text")
@@ -11567,6 +11580,7 @@ async def upload_word_reading_main_idea_ai(
 
     try:
         full_text = extract_text_from_docx(raw)
+        full_text = normalize_doc_text(full_text)
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to extract document text")
 
@@ -11804,6 +11818,7 @@ async def upload_word_reading_comparative_ai(
 
     try:
         full_text = extract_text_from_docx(raw)
+        full_text = normalize_doc_text(full_text)
     except Exception as e:
         print("❌ DOCX TEXT EXTRACTION FAILED")
         print("   → Exception:", str(e))
