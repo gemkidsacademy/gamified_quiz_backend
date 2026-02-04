@@ -10267,7 +10267,7 @@ def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     # --------------------------------------------------
     # 1️⃣ DOCUMENT-AUTHORITATIVE METADATA
     # --------------------------------------------------
-    def extract_meta(label: str) -> str:
+    def extract_meta(label: str) -> str | None:
         match = re.search(
             rf"^\s*{label}\s*:\s*\"?(.*?)\"?\s*$",
             block_text,
@@ -10275,47 +10275,74 @@ def parse_gapped_block(block_text: str, db: Session) -> list[int]:
         )
         return match.group(1).strip() if match else None
 
-    class_name = extract_meta("class_name") or extract_meta("class")
+    class_name = extract_meta("class") or extract_meta("class_name")
     subject = extract_meta("subject")
     topic = extract_meta("topic")
     difficulty = extract_meta("difficulty")
 
     if not all([class_name, subject, topic, difficulty]):
-        raise ValueError("Missing required METADATA fields in document")
+        raise ValueError("Missing required METADATA fields")
 
     # --------------------------------------------------
     # 2️⃣ TOTAL QUESTIONS (STRICT)
     # --------------------------------------------------
     tq_match = re.search(
-        r"^\s*total_questions\s*:\s*(\d+)\s*$",
+        r"^\s*Total_Questions\s*:\s*(\d+)\s*$",
         block_text,
         re.MULTILINE | re.IGNORECASE
     )
 
     if not tq_match:
-        raise ValueError("total_questions missing in document")
+        raise ValueError("Total_Questions missing")
 
     expected_q_count = int(tq_match.group(1))
 
     if expected_q_count != 6:
-        raise ValueError("Gapped text must have exactly 6 questions")
+        raise ValueError("Gapped text must have exactly 6 gaps")
 
     # --------------------------------------------------
-    # 3️⃣ AI EXTRACTION (CONTENT ONLY)
+    # 3️⃣ AI EXTRACTION (STRICT CONTRACT)
     # --------------------------------------------------
     system_prompt = """
 You are an exam content extraction engine.
 
-Extract ONE COMPLETE GAPPED TEXT reading exam.
+You MUST extract ONE COMPLETE GAPPED TEXT reading exam.
+
+The JSON output MUST contain EXACTLY:
+
+{
+  "class_name": string,
+  "subject": string,
+  "topic": string,
+  "difficulty": string,
+  "reading_material": {
+    "content": string
+  },
+  "answer_options": {
+    "A": string,
+    "B": string,
+    "C": string,
+    "D": string,
+    "E": string,
+    "F": string,
+    "G": string
+  },
+  "questions": [
+    { "correct_answer": "A" }
+  ]
+}
 
 RULES:
-- Extract ONLY what exists
-- Preserve wording exactly
-- DO NOT infer or repair
-- If content is missing, RETURN {}
+- Extract ONLY what exists in the document
+- Preserve wording EXACTLY
+- questions MUST be exactly 6
+- correct_answer MUST be one of A–G
+- If ANY required field is missing or empty, RETURN {}
 
 OUTPUT:
 - VALID JSON ONLY
+- No markdown
+- No explanations
 """
 
     response = client.chat.completions.create(
@@ -10341,13 +10368,13 @@ OUTPUT:
         raise ValueError("AI returned empty JSON")
 
     # --------------------------------------------------
-    # 4️⃣ VALIDATE AGAINST DOCUMENT
+    # 4️⃣ HARD VALIDATION
     # --------------------------------------------------
     rm = parsed.get("reading_material", {})
     content = rm.get("content", "").strip()
 
     if len(content) < 300:
-        raise ValueError("Reading material too short or missing")
+        raise ValueError("Reading material missing or too short")
 
     opts = parsed.get("answer_options", {})
     required_opts = {"A", "B", "C", "D", "E", "F", "G"}
@@ -10379,7 +10406,7 @@ OUTPUT:
         })
 
     # --------------------------------------------------
-    # 6️⃣ FINAL BUNDLE (UNCHANGED SHAPE)
+    # 6️⃣ FINAL BUNDLE
     # --------------------------------------------------
     bundle = {
         "question_type": "gapped_text",
@@ -10390,7 +10417,7 @@ OUTPUT:
     }
 
     # --------------------------------------------------
-    # 7️⃣ SAVE TO DB
+    # 7️⃣ SAVE
     # --------------------------------------------------
     obj = QuestionReading(
         class_name=class_name.lower(),
