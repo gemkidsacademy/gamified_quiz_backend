@@ -6321,14 +6321,16 @@ def add_student_exam_module(
         "student_id": student.student_id,
         "password": plain_password
     }
-
+#here
 def generate_admin_exam_report_reading(
     db: Session,
     student: Student,
     exam_attempt: StudentExamReading,
-    overall_accuracy: float,
+    score_percent: float,
+    accuracy: float,
+    coverage: float,
     topic_stats: dict
-):
+): 
     """
     Generates an immutable admin report snapshot for a completed Reading exam.
     MUST NOT commit. Caller controls the transaction.
@@ -6337,15 +6339,20 @@ def generate_admin_exam_report_reading(
     # -------------------------------
     # 1️⃣ Determine readiness & guidance
     # -------------------------------
-    if overall_accuracy >= 80:
-        readiness_band = "Strong Selective Potential"
-        school_guidance = "Mid-tier Selective"
-    elif overall_accuracy >= 60:
-        readiness_band = "Borderline Selective"
-        school_guidance = "Selective Preparation Required"
-    else:
+    # Coverage guardrail (client concern)
+    if coverage < 60:
         readiness_band = "Not Yet Selective Ready"
-        school_guidance = "General Stream Recommended"
+        school_guidance = "Insufficient Exam Coverage"
+    else:
+        if score_percent >= 80:
+            readiness_band = "Strong Selective Potential"
+            school_guidance = "Mid-tier Selective"
+        elif score_percent >= 65:
+            readiness_band = "Borderline Selective"
+            school_guidance = "Selective Preparation Required"
+        else:
+            readiness_band = "Not Yet Selective Ready"
+            school_guidance = "General Stream Recommended"
 
     # -------------------------------
     # 2️⃣ Create admin report snapshot
@@ -6354,10 +6361,16 @@ def generate_admin_exam_report_reading(
         student_id=student.student_id,  # external ID (STRING)
         exam_attempt_id=exam_attempt.id,
         exam_type="reading",
-        overall_score=overall_accuracy,
+        overall_score=score_percent,
         readiness_band=readiness_band,
         school_guidance_level=school_guidance,
-        summary_notes=f"Reading accuracy: {overall_accuracy}%"
+        summary_notes=(
+            f"Score: {score_percent}%, "
+            f"Accuracy: {accuracy}%, "
+            f"Coverage: {coverage}%"
+        )
+
+
     )
 
     db.add(admin_report)
@@ -6398,9 +6411,9 @@ def generate_admin_exam_report_reading(
     # -------------------------------
     rule_applied = AdminReadinessRuleApplied(
         admin_report_id=admin_report.id,
-        rule_code="READING_ACCURACY",
-        rule_description="Reading accuracy used for readiness classification",
-        rule_result="passed" if overall_accuracy >= 60 else "failed"
+        rule_code="READING_SCORE_WITH_COVERAGE",
+        rule_description="Readiness based on total score with minimum coverage requirement",
+        rule_result="passed" if readiness_band != "Not Yet Selective Ready" else "failed"
     )
 
     db.add(rule_applied)
@@ -6597,8 +6610,9 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
             })
 
 
-        overall_accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
-        score_percent = overall_accuracy
+        accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+        coverage = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
+        score_percent = round((correct / total_questions) * 100, 2) if total_questions > 0 else 0.0
         result = "Pass" if score_percent >= 50 else "Fail"
 
         MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
@@ -6611,7 +6625,12 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
                 "correct": correct,
                 "incorrect": incorrect,
                 "not_attempted": not_attempted,
-                "accuracy": overall_accuracy,
+            
+                # diagnostics
+                "accuracy": accuracy,
+                "coverage": coverage,
+            
+                # ranking signal
                 "score": score_percent,
                 "result": result
             },
@@ -6644,12 +6663,14 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
             exam_type="reading"
         ):
             generate_admin_exam_report_reading(
-                db=db,
-                student=student,
-                exam_attempt=session,
-                overall_accuracy=overall_accuracy,
-                topic_stats=topic_stats
-            )
+               db=db,
+               student=student,
+               exam_attempt=session,
+               score_percent=score_percent,
+               accuracy=accuracy,
+               coverage=coverage,
+               topic_stats=topic_stats
+           )
             print("🟢 AdminExamReport created")
         else:
             print("⚠️ AdminExamReport already exists — skipping")
