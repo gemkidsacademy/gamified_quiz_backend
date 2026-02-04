@@ -10606,9 +10606,9 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     saved_ids: list[int] = []
 
     # --------------------------------------------------
-    # 1️⃣ DOCUMENT-AUTHORITATIVE METADATA EXTRACTION
+    # 1️⃣ DOCUMENT-AUTHORITATIVE METADATA
     # --------------------------------------------------
-    def extract_meta(label: str) -> str:
+    def extract_meta(label: str) -> str | None:
         match = re.search(
             rf"^\s*{label}\s*:\s*\"?(.*?)\"?\s*$",
             block_text,
@@ -10622,7 +10622,7 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     difficulty = extract_meta("difficulty")
 
     if not all([class_name, subject, topic, difficulty]):
-        raise ValueError("Missing required METADATA fields in document")
+        raise ValueError("Missing required METADATA fields")
 
     # --------------------------------------------------
     # 2️⃣ TOTAL QUESTIONS (STRICT)
@@ -10634,7 +10634,7 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     )
 
     if not tq_match:
-        raise ValueError("Total_Questions missing in document")
+        raise ValueError("Total_Questions missing")
 
     expected_q_count = int(tq_match.group(1))
 
@@ -10650,32 +10650,71 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     extract_keys = sorted(dict.fromkeys(extract_matches))
 
     if len(extract_keys) < 2:
-        raise ValueError("Comparative exam must contain at least 2 extracts")
+        raise ValueError("Comparative exam requires at least 2 extracts")
 
-    print("   → Extracts detected:", extract_keys)
+    print("   → Extracts:", extract_keys)
 
     # --------------------------------------------------
-    # 4️⃣ MCQ vs EXTRACT-SELECTION (DOCUMENT BASED)
+    # 4️⃣ SUBTYPE DETECTION (DOCUMENT BASED)
     # --------------------------------------------------
     is_mcq = "ANSWER_OPTIONS:" in block_text
-    print("   → Comparative subtype:", "MCQ" if is_mcq else "Extract-selection")
+    print("   → Subtype:", "MCQ" if is_mcq else "Extract-selection")
 
     # --------------------------------------------------
-    # 5️⃣ AI EXTRACTION (STRICT, NO AUTHORITY)
+    # 5️⃣ AI EXTRACTION (STRICT CONTRACT)
     # --------------------------------------------------
     system_prompt = """
 You are an exam content extraction engine.
 
-Extract ONE COMPLETE COMPARATIVE ANALYSIS exam.
+You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
+
+The document contains a METADATA section:
+- class_name
+- subject
+- topic
+- difficulty
+
+The JSON output MUST contain EXACTLY:
+
+{
+  "class_name": string,
+  "subject": string,
+  "topic": string,
+  "difficulty": string,
+  "reading_material": {
+    "extracts": {
+      "A": string,
+      "B": string
+    }
+  },
+  "questions": [...]
+}
 
 RULES:
-- Extract ONLY what exists
-- Preserve wording exactly
-- DO NOT infer or repair
-- If content is missing, RETURN {}
+- Extract ONLY what exists in the document
+- Preserve wording EXACTLY
+- DO NOT infer, repair, or generate content
+- If ANY required field is missing or invalid, RETURN {}
+
+QUESTION RULES:
+- questions count MUST match Total_Questions
+- EVERY question MUST contain:
+  - question_text
+  - correct_answer
+
+IF the document contains ANSWER_OPTIONS:
+- EVERY question MUST contain:
+  - answer_options (keys A,B,C,D)
+  - correct_answer must be one of A,B,C,D
+
+IF the document does NOT contain ANSWER_OPTIONS:
+- questions MUST NOT contain answer_options
+- correct_answer MUST be one of the extract labels
 
 OUTPUT:
 - VALID JSON ONLY
+- No markdown
+- No explanations
 """
 
     response = client.chat.completions.create(
@@ -10701,7 +10740,7 @@ OUTPUT:
         raise ValueError("AI returned empty JSON")
 
     # --------------------------------------------------
-    # 6️⃣ VALIDATE AGAINST DOCUMENT (NOT GPT)
+    # 6️⃣ VALIDATE AGAINST DOCUMENT (HARD)
     # --------------------------------------------------
     rm = parsed.get("reading_material", {})
     extracts = rm.get("extracts", {})
@@ -10723,51 +10762,54 @@ OUTPUT:
         )
 
     # --------------------------------------------------
-    # 7️⃣ QUESTION VALIDATION (FIXES YOUR ERROR)
+    # 7️⃣ QUESTION VALIDATION (SUBTYPE AWARE)
     # --------------------------------------------------
     for i, q in enumerate(questions, start=1):
+        if "question_text" not in q:
+            raise ValueError(f"Question {i} missing question_text")
+
         if "correct_answer" not in q:
             raise ValueError(f"Question {i} missing correct_answer")
 
         if is_mcq:
             opts = q.get("answer_options")
-
             if not opts:
-                raise ValueError(f"Question {i}: Missing answer options")
+                raise ValueError(f"Question {i} missing answer_options")
 
             if set(opts.keys()) != {"A", "B", "C", "D"}:
                 raise ValueError(
-                    f"Question {i}: Invalid MCQ option keys {list(opts.keys())}"
+                    f"Question {i} invalid option keys {list(opts.keys())}"
                 )
 
             if q["correct_answer"] not in opts:
                 raise ValueError(
-                    f"Question {i}: correct_answer not in answer_options"
+                    f"Question {i} correct_answer not in options"
                 )
         else:
+            if "answer_options" in q:
+                raise ValueError(
+                    f"Question {i} has answer_options in extract-selection exam"
+                )
+
             if q["correct_answer"] not in extract_keys:
                 raise ValueError(
-                    f"Question {i}: Invalid extract reference {q['correct_answer']}"
+                    f"Question {i} invalid extract reference {q['correct_answer']}"
                 )
 
     # --------------------------------------------------
-    # 8️⃣ ENRICH EXTRACT-SELECTION QUESTIONS (FRONTEND SAFE)
-    # --------------------------------------------------
-    if not is_mcq:
-        for q in questions:
-            q["answer_options"] = {
-                k: f"Extract {k}" for k in extract_keys
-            }
-
-    # --------------------------------------------------
-    # 9️⃣ BUILD FINAL BUNDLE (UNCHANGED FORMAT)
+    # 8️⃣ ENRICH FOR FRONTEND (SAFE)
     # --------------------------------------------------
     enriched_questions = []
 
     for i, q in enumerate(questions, start=1):
+        if not is_mcq:
+            q["answer_options"] = {
+                k: f"Extract {k}" for k in extract_keys
+            }
+
         enriched_questions.append({
             "question_id": f"CA_Q{i}",
-            "question_text": q.get("question_text", f"Question {i}"),
+            "question_text": q["question_text"],
             "answer_options": q["answer_options"],
             "correct_answer": q["correct_answer"]
         })
@@ -10783,7 +10825,7 @@ OUTPUT:
         bundle["answer_options"] = enriched_questions[0]["answer_options"]
 
     # --------------------------------------------------
-    # 🔟 SAVE TO DB (SAME ROW SHAPE AS BEFORE)
+    # 9️⃣ SAVE (UNCHANGED ROW SHAPE)
     # --------------------------------------------------
     obj = QuestionReading(
         class_name=class_name.lower(),
