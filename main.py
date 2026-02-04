@@ -10638,8 +10638,7 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     import json
     import re
 
-    print("🧠 [comparative_analysis] START parsing block")
-    print("🔎 RAW METADATA LINES:")
+    
     for line in block_text.splitlines():
         if any(k in line.upper() for k in ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY"]):
             print(repr(line))
@@ -10660,6 +10659,13 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
         "",
         block_text,
         flags=re.MULTILINE | re.IGNORECASE
+    )
+    # 🔥 RE-SPLIT COLLAPSED METADATA LINES
+    block_text = re.sub(
+        r'(CLASS|SUBJECT|TOPIC|DIFFICULTY)\s*:',
+        r'\n\1:',
+        block_text,
+        flags=re.IGNORECASE
     )
 
     saved_ids: list[int] = []
