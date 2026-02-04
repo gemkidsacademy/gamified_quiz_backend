@@ -10226,6 +10226,230 @@ OUTPUT:
         "failures": failure_reasons
     }
 
+def split_exam_blocks(full_text: str) -> list[str]:
+    start_token = "=== EXAM START ==="
+    end_token = "=== EXAM END ==="
+
+    blocks = []
+    for part in full_text.split(start_token)[1:]:
+        if end_token not in part:
+            continue
+        block = part.split(end_token)[0].strip()
+        if len(block) >= 300:
+            blocks.append(block)
+
+    return blocks
+
+
+def detect_question_type(block_text: str) -> str | None:
+    match = re.search(
+        r"^\s*question_type\s*:\s*([a-z_]+)\s*$",
+        block_text,
+        re.IGNORECASE | re.MULTILINE
+    )
+    if match:
+        return match.group(1).lower()
+
+    return None
+
+import uuid
+
+upload_id = str(uuid.uuid4())[:8]
+print(f"🆔 Upload ID: {upload_id}")
+
+@app.post("/upload-word-reading-unified")
+async def upload_word_reading_unified(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    import uuid
+    import traceback
+
+    upload_id = str(uuid.uuid4())[:8]
+
+    print("\n" + "=" * 80)
+    print(f"📄 START: UNIFIED READING WORD UPLOAD | ID={upload_id}")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # 1️⃣ File validation
+    # --------------------------------------------------
+    print(f"📥 [{upload_id}] STEP 1: File validation")
+    print(f"   → Filename: {file.filename}")
+    print(f"   → Content-Type: {file.content_type}")
+
+    if file.content_type != (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        print(f"❌ [{upload_id}] Invalid file type")
+        raise HTTPException(status_code=400, detail="File must be .docx")
+
+    raw = await file.read()
+    print(f"✅ [{upload_id}] File read into memory | bytes={len(raw)}")
+
+    # --------------------------------------------------
+    # 2️⃣ Text extraction
+    # --------------------------------------------------
+    print(f"\n📄 [{upload_id}] STEP 2: Extracting text from DOCX")
+
+    try:
+        full_text = extract_text_from_docx(raw)
+    except Exception as e:
+        print(f"❌ [{upload_id}] DOCX extraction failed")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to extract document text"
+        )
+
+    if not full_text or len(full_text.strip()) < 300:
+        print(f"❌ [{upload_id}] Extracted text invalid or too short")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or empty document"
+        )
+
+    print(
+        f"✅ [{upload_id}] Text extracted successfully | "
+        f"characters={len(full_text)}"
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Split EXAM blocks
+    # --------------------------------------------------
+    print(f"\n🧩 [{upload_id}] STEP 3: Detecting EXAM blocks")
+
+    blocks = split_exam_blocks(full_text)
+
+    print(f"   → [{upload_id}] Blocks detected: {len(blocks)}")
+
+    if not blocks:
+        print(f"❌ [{upload_id}] No valid EXAM blocks found")
+        raise HTTPException(
+            status_code=400,
+            detail="No valid EXAM blocks found"
+        )
+
+    saved_ids: list[int] = []
+    failed_blocks: list[dict] = []
+
+    # --------------------------------------------------
+    # 4️⃣ Route and process each block
+    # --------------------------------------------------
+    for idx, block in enumerate(blocks, start=1):
+        print("\n" + "-" * 80)
+        print(f"📦 [{upload_id}] Processing block {idx}/{len(blocks)}")
+        print(f"   → Block length: {len(block)}")
+
+        print(
+            f"   → Block preview:\n"
+            f"{block[:300].replace(chr(10), ' ')}..."
+        )
+
+        qtype = detect_question_type(block)
+        print(f"   → Detected question_type: {qtype}")
+
+        if not qtype:
+            print(f"❌ [{upload_id}] Block {idx} missing question_type")
+            failed_blocks.append({
+                "block": idx,
+                "reason": "Missing question_type"
+            })
+            continue
+
+        try:
+            print(
+                f"➡️ [{upload_id}] Routing block {idx} "
+                f"to '{qtype}' parser"
+            )
+
+            before_count = len(saved_ids)
+
+            if qtype == "comparative_analysis":
+                saved_ids.extend(
+                    parse_comparative_block(block, db)
+                )
+
+            elif qtype == "gapped_text":
+                saved_ids.extend(
+                    parse_gapped_block(block, db)
+                )
+
+            elif qtype == "main_idea":
+                saved_ids.extend(
+                    parse_main_idea_block(block, db)
+                )
+
+            elif qtype == "literary":
+                saved_ids.extend(
+                    parse_literary_block(block, db)
+                )
+
+            else:
+                print(
+                    f"❌ [{upload_id}] Unknown question_type: {qtype}"
+                )
+                failed_blocks.append({
+                    "block": idx,
+                    "reason": f"Unknown question_type: {qtype}"
+                })
+                continue
+
+            added = len(saved_ids) - before_count
+
+            if added == 0:
+                print(
+                    f"⚠️ [{upload_id}] Block {idx} "
+                    f"parsed but no exams were saved"
+                )
+            else:
+                print(
+                    f"✅ [{upload_id}] Block {idx} parsed successfully | "
+                    f"Saved exams: {added}"
+                )
+
+        except Exception as e:
+            print(
+                f"❌ [{upload_id}] Block {idx} failed "
+                f"in '{qtype}' parser"
+            )
+            print(f"   → Exception type: {type(e).__name__}")
+            print(f"   → Message: {str(e)}")
+            traceback.print_exc()
+
+            failed_blocks.append({
+                "block": idx,
+                "question_type": qtype,
+                "reason": str(e)
+            })
+
+    # --------------------------------------------------
+    # 5️⃣ Final response
+    # --------------------------------------------------
+    print("\n" + "=" * 80)
+    print(
+        f"🏁 [{upload_id}] Upload complete | "
+        f"Total blocks={len(blocks)} | "
+        f"Saved={len(saved_ids)} | "
+        f"Failed={len(failed_blocks)}"
+    )
+    print("=" * 80)
+
+    if not saved_ids:
+        status = "failed"
+    elif failed_blocks:
+        status = "partial_success"
+    else:
+        status = "success"
+
+    return {
+        "status": status,
+        "upload_id": upload_id,
+        "total_blocks": len(blocks),
+        "saved_exam_ids": saved_ids,
+        "failed_blocks": failed_blocks
+    }
+
 @app.post("/upload-word-reading-literary-ai")
 async def upload_word_reading_literary_ai(
     file: UploadFile = File(...),
