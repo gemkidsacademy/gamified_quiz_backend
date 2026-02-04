@@ -10639,6 +10639,23 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     import re
 
     print("🧠 [comparative_analysis] START parsing block")
+     # 🔥 REQUIRED NORMALIZATION (THIS WAS MISSING)
+    block_text = (
+        block_text
+        .replace("\xa0", " ")   # non-breaking spaces from Word
+        .replace("\u200b", "")  # zero-width spaces
+        .replace("\t", " ")     # tabs
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+    )
+
+    # 🔥 FLATTEN METADATA SECTION
+    block_text = re.sub(
+        r"^\s*METADATA\s*:\s*$",
+        "",
+        block_text,
+        flags=re.MULTILINE | re.IGNORECASE
+    )
 
     saved_ids: list[int] = []
 
