@@ -10260,22 +10260,59 @@ def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     import json
     import re
 
-    saved_ids: list[int] = []
-
     print("🧠 [gapped_text] START parsing block")
 
-    SYSTEM_PROMPT = """
+    saved_ids: list[int] = []
+
+    # --------------------------------------------------
+    # 1️⃣ DOCUMENT-AUTHORITATIVE METADATA
+    # --------------------------------------------------
+    def extract_meta(label: str) -> str:
+        match = re.search(
+            rf"^\s*{label}\s*:\s*\"?(.*?)\"?\s*$",
+            block_text,
+            re.MULTILINE | re.IGNORECASE
+        )
+        return match.group(1).strip() if match else None
+
+    class_name = extract_meta("class_name") or extract_meta("class")
+    subject = extract_meta("subject")
+    topic = extract_meta("topic")
+    difficulty = extract_meta("difficulty")
+
+    if not all([class_name, subject, topic, difficulty]):
+        raise ValueError("Missing required METADATA fields in document")
+
+    # --------------------------------------------------
+    # 2️⃣ TOTAL QUESTIONS (STRICT)
+    # --------------------------------------------------
+    tq_match = re.search(
+        r"^\s*total_questions\s*:\s*(\d+)\s*$",
+        block_text,
+        re.MULTILINE | re.IGNORECASE
+    )
+
+    if not tq_match:
+        raise ValueError("total_questions missing in document")
+
+    expected_q_count = int(tq_match.group(1))
+
+    if expected_q_count != 6:
+        raise ValueError("Gapped text must have exactly 6 questions")
+
+    # --------------------------------------------------
+    # 3️⃣ AI EXTRACTION (CONTENT ONLY)
+    # --------------------------------------------------
+    system_prompt = """
 You are an exam content extraction engine.
 
-You MUST extract ONE COMPLETE GAPPED TEXT reading exam.
+Extract ONE COMPLETE GAPPED TEXT reading exam.
 
-CRITICAL RULES:
-- Extract ONLY what exists in the document
-- DO NOT infer or generate content
-- reading_material.content MUST be present
-- questions MUST be EXACTLY 6
-- correct_answer MUST be A–G
-- If ANY rule fails, RETURN {}
+RULES:
+- Extract ONLY what exists
+- Preserve wording exactly
+- DO NOT infer or repair
+- If content is missing, RETURN {}
 
 OUTPUT:
 - VALID JSON ONLY
@@ -10285,7 +10322,7 @@ OUTPUT:
         model="gpt-4o-mini",
         temperature=0,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
@@ -10293,63 +10330,73 @@ OUTPUT:
         ]
     )
 
-    raw = response.choices[0].message.content.strip()
-    if not raw.startswith("{"):
+    raw_output = response.choices[0].message.content.strip()
+
+    if not raw_output.startswith("{"):
         raise ValueError("AI returned non-JSON output")
 
-    parsed = json.loads(raw)
+    parsed = json.loads(raw_output)
+
     if not parsed:
         raise ValueError("AI returned empty JSON")
 
-    # -----------------------------
-    # Validate reading material
-    # -----------------------------
+    # --------------------------------------------------
+    # 4️⃣ VALIDATE AGAINST DOCUMENT
+    # --------------------------------------------------
     rm = parsed.get("reading_material", {})
-    if not rm.get("content") or len(rm["content"].strip()) < 300:
-        raise ValueError("Invalid or missing reading material")
+    content = rm.get("content", "").strip()
 
-    # -----------------------------
-    # Robust answer option detection
-    # -----------------------------
-    options = parsed.get("answer_options", {})
-    found_letters = {k.strip().upper() for k in options.keys()}
+    if len(content) < 300:
+        raise ValueError("Reading material too short or missing")
 
-    required = set("ABCDEFG")
-    if not required.issubset(found_letters):
-        raise ValueError("Missing answer options")
+    opts = parsed.get("answer_options", {})
+    required_opts = {"A", "B", "C", "D", "E", "F", "G"}
 
-    # -----------------------------
-    # Validate questions
-    # -----------------------------
+    if set(opts.keys()) != required_opts:
+        raise ValueError("Answer options must include A–G exactly")
+
     questions = parsed.get("questions", [])
-    if len(questions) != 6:
-        raise ValueError("Invalid gapped question count")
 
+    if len(questions) != expected_q_count:
+        raise ValueError(
+            f"Question count mismatch: expected {expected_q_count}, got {len(questions)}"
+        )
+
+    for i, q in enumerate(questions, start=1):
+        if q.get("correct_answer") not in required_opts:
+            raise ValueError(f"Invalid correct_answer in question {i}")
+
+    # --------------------------------------------------
+    # 5️⃣ ENRICH QUESTIONS (FRONTEND SAFE)
+    # --------------------------------------------------
     enriched_questions = []
     for i, q in enumerate(questions, start=1):
-        ca = q.get("correct_answer")
-        if ca not in required:
-            raise ValueError(f"Invalid correct answer for gap {i}")
-
         enriched_questions.append({
             "question_id": f"GT_Q{i}",
             "gap_number": i,
             "question_text": f"Gap {i}",
-            "correct_answer": ca
+            "correct_answer": q["correct_answer"]
         })
 
+    # --------------------------------------------------
+    # 6️⃣ FINAL BUNDLE (UNCHANGED SHAPE)
+    # --------------------------------------------------
     bundle = {
         "question_type": "gapped_text",
+        "topic": topic,
         "reading_material": rm,
-        "answer_options": options,
+        "answer_options": opts,
         "questions": enriched_questions
     }
 
+    # --------------------------------------------------
+    # 7️⃣ SAVE TO DB
+    # --------------------------------------------------
     obj = QuestionReading(
-        class_name=parsed["class_name"].lower(),
-        subject=parsed["subject"],
-        difficulty=parsed["difficulty"].lower(),
-        topic=parsed["topic"],
+        class_name=class_name.lower(),
+        subject=subject,
+        difficulty=difficulty.lower(),
+        topic=topic,
         total_questions=len(enriched_questions),
         exam_bundle=bundle
     )
@@ -10359,8 +10406,8 @@ OUTPUT:
     db.refresh(obj)
 
     saved_ids.append(obj.id)
-    print(f"💾 Gapped text exam saved | ID={obj.id}")
 
+    print(f"✅ Gapped text exam saved | ID={obj.id}")
     return saved_ids
 
 def parse_literary_block(block_text: str, db: Session) -> list[int]:
@@ -10550,43 +10597,92 @@ import uuid
 upload_id = str(uuid.uuid4())[:8]
 print(f"🆔 Upload ID: {upload_id}")
 
-def parse_comparative_block(block_text: str, db: Session):
-    print("🧠 parse_comparative_block() START")
-    COMPARATIVE_SYSTEM_PROMPT = """
-You are an exam content extraction engine.
+def parse_comparative_block(block_text: str, db: Session) -> list[int]:
+    import json
+    import re
 
-You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
+    print("🧠 [comparative_analysis] START parsing block")
 
-CRITICAL RULES:
-- DO NOT infer or generate missing data
-- Extract ONLY what exists in the document
-- Preserve wording exactly
-- If any required field is missing, RETURN {}
-
-OUTPUT:
-- VALID JSON ONLY
-- No markdown
-- No explanations
-"""
-
+    saved_ids: list[int] = []
 
     # --------------------------------------------------
-    # 1️⃣ Determine comparative subtype
+    # 1️⃣ DOCUMENT-AUTHORITATIVE METADATA EXTRACTION
+    # --------------------------------------------------
+    def extract_meta(label: str) -> str:
+        match = re.search(
+            rf"^\s*{label}\s*:\s*\"?(.*?)\"?\s*$",
+            block_text,
+            re.MULTILINE | re.IGNORECASE
+        )
+        return match.group(1).strip() if match else None
+
+    class_name = extract_meta("class_name") or extract_meta("class")
+    subject = extract_meta("subject")
+    topic = extract_meta("topic")
+    difficulty = extract_meta("difficulty")
+
+    if not all([class_name, subject, topic, difficulty]):
+        raise ValueError("Missing required METADATA fields in document")
+
+    # --------------------------------------------------
+    # 2️⃣ TOTAL QUESTIONS (STRICT)
+    # --------------------------------------------------
+    tq_match = re.search(
+        r"^\s*Total_Questions\s*:\s*(\d+)\s*$",
+        block_text,
+        re.MULTILINE | re.IGNORECASE
+    )
+
+    if not tq_match:
+        raise ValueError("Total_Questions missing in document")
+
+    expected_q_count = int(tq_match.group(1))
+
+    # --------------------------------------------------
+    # 3️⃣ EXTRACT LABELS (AUTHORITATIVE)
+    # --------------------------------------------------
+    extract_matches = re.findall(
+        r"^\s*Extract\s+([A-Z])\s*$",
+        block_text,
+        re.MULTILINE
+    )
+
+    extract_keys = sorted(dict.fromkeys(extract_matches))
+
+    if len(extract_keys) < 2:
+        raise ValueError("Comparative exam must contain at least 2 extracts")
+
+    print("   → Extracts detected:", extract_keys)
+
+    # --------------------------------------------------
+    # 4️⃣ MCQ vs EXTRACT-SELECTION (DOCUMENT BASED)
     # --------------------------------------------------
     is_mcq = "ANSWER_OPTIONS:" in block_text
     print("   → Comparative subtype:", "MCQ" if is_mcq else "Extract-selection")
 
     # --------------------------------------------------
-    # 2️⃣ AI extraction
+    # 5️⃣ AI EXTRACTION (STRICT, NO AUTHORITY)
     # --------------------------------------------------
+    system_prompt = """
+You are an exam content extraction engine.
+
+Extract ONE COMPLETE COMPARATIVE ANALYSIS exam.
+
+RULES:
+- Extract ONLY what exists
+- Preserve wording exactly
+- DO NOT infer or repair
+- If content is missing, RETURN {}
+
+OUTPUT:
+- VALID JSON ONLY
+"""
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         temperature=0,
         messages=[
-            {
-                "role": "system",
-                "content": COMPARATIVE_SYSTEM_PROMPT  # your existing strict prompt
-            },
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"BEGIN_DOCUMENT\n{block_text}\nEND_DOCUMENT"
@@ -10595,6 +10691,7 @@ OUTPUT:
     )
 
     raw_output = response.choices[0].message.content.strip()
+
     if not raw_output.startswith("{"):
         raise ValueError("AI returned non-JSON output")
 
@@ -10604,108 +10701,96 @@ OUTPUT:
         raise ValueError("AI returned empty JSON")
 
     # --------------------------------------------------
-    # 3️⃣ Required root fields (STRICT)
+    # 6️⃣ VALIDATE AGAINST DOCUMENT (NOT GPT)
     # --------------------------------------------------
-    required_root = [
-        "class_name",
-        "subject",
-        "topic",
-        "difficulty",
-        "reading_material",
-        "questions"
-    ]
+    rm = parsed.get("reading_material", {})
+    extracts = rm.get("extracts", {})
 
-    for key in required_root:
-        if key not in parsed:
-            raise ValueError(f"Missing root field: {key}")
+    if sorted(extracts.keys()) != extract_keys:
+        raise ValueError(
+            f"Extract mismatch. Document={extract_keys}, GPT={list(extracts.keys())}"
+        )
 
-    # --------------------------------------------------
-    # 4️⃣ Extracts validation
-    # --------------------------------------------------
-    rm = parsed["reading_material"]
-    extracts = rm.get("extracts")
+    for k in extract_keys:
+        if not extracts[k] or not extracts[k].strip():
+            raise ValueError(f"Extract {k} is empty")
 
-    if not extracts or len(extracts) < 2:
-        raise ValueError("Comparative exam must contain at least 2 extracts")
+    questions = parsed.get("questions", [])
 
-    extract_keys = sorted(extracts.keys())
-    print("   → Extracts detected:", extract_keys)
+    if len(questions) != expected_q_count:
+        raise ValueError(
+            f"Question count mismatch: expected {expected_q_count}, got {len(questions)}"
+        )
 
     # --------------------------------------------------
-    # 5️⃣ Question validation (THIS FIXES YOUR ERROR)
+    # 7️⃣ QUESTION VALIDATION (FIXES YOUR ERROR)
     # --------------------------------------------------
-    questions = parsed["questions"]
-
-    if not questions:
-        raise ValueError("No questions extracted")
-
-    for idx, q in enumerate(questions, start=1):
-        print(f"   → Validating question {idx}")
-
-        # correct_answer is ALWAYS required
+    for i, q in enumerate(questions, start=1):
         if "correct_answer" not in q:
-            raise ValueError(f"Question {idx}: missing correct_answer")
+            raise ValueError(f"Question {i} missing correct_answer")
 
         if is_mcq:
-            # 🔒 MCQ comparative
             opts = q.get("answer_options")
+
             if not opts:
-                raise ValueError(f"Block {idx}: Missing answer options")
+                raise ValueError(f"Question {i}: Missing answer options")
 
             if set(opts.keys()) != {"A", "B", "C", "D"}:
                 raise ValueError(
-                    f"Question {idx}: Invalid answer option keys {list(opts.keys())}"
+                    f"Question {i}: Invalid MCQ option keys {list(opts.keys())}"
                 )
 
             if q["correct_answer"] not in opts:
                 raise ValueError(
-                    f"Question {idx}: correct_answer not in answer_options"
+                    f"Question {i}: correct_answer not in answer_options"
                 )
-
         else:
-            # 🔒 Extract-selection comparative
             if q["correct_answer"] not in extract_keys:
                 raise ValueError(
-                    f"Question {idx}: Invalid extract reference "
-                    f"({q['correct_answer']})"
+                    f"Question {i}: Invalid extract reference {q['correct_answer']}"
                 )
 
     # --------------------------------------------------
-    # 6️⃣ Enrich extract-selection questions (FRONTEND SAFE)
+    # 8️⃣ ENRICH EXTRACT-SELECTION QUESTIONS (FRONTEND SAFE)
     # --------------------------------------------------
     if not is_mcq:
         for q in questions:
             q["answer_options"] = {
-                key: f"Extract {key}" for key in extract_keys
+                k: f"Extract {k}" for k in extract_keys
             }
 
     # --------------------------------------------------
-    # 7️⃣ Build final exam bundle (UNCHANGED SHAPE)
+    # 9️⃣ BUILD FINAL BUNDLE (UNCHANGED FORMAT)
     # --------------------------------------------------
-    bundle = {
-        "question_type": "comparative_analysis",
-        "topic": parsed["topic"],
-        "reading_material": rm,
-        "questions": []
-    }
+    enriched_questions = []
 
     for i, q in enumerate(questions, start=1):
-        bundle["questions"].append({
+        enriched_questions.append({
             "question_id": f"CA_Q{i}",
             "question_text": q.get("question_text", f"Question {i}"),
             "answer_options": q["answer_options"],
             "correct_answer": q["correct_answer"]
         })
 
+    bundle = {
+        "question_type": "comparative_analysis",
+        "topic": topic,
+        "reading_material": rm,
+        "questions": enriched_questions
+    }
+
+    if is_mcq:
+        bundle["answer_options"] = enriched_questions[0]["answer_options"]
+
     # --------------------------------------------------
-    # 8️⃣ Save to DB (SAME TABLE, SAME FORMAT)
+    # 🔟 SAVE TO DB (SAME ROW SHAPE AS BEFORE)
     # --------------------------------------------------
     obj = QuestionReading(
-        class_name=parsed["class_name"].lower(),
-        subject=parsed["subject"],
-        difficulty=parsed["difficulty"].lower(),
-        topic=parsed["topic"],
-        total_questions=len(bundle["questions"]),
+        class_name=class_name.lower(),
+        subject=subject,
+        difficulty=difficulty.lower(),
+        topic=topic,
+        total_questions=len(enriched_questions),
         exam_bundle=bundle
     )
 
@@ -10713,8 +10798,10 @@ OUTPUT:
     db.commit()
     db.refresh(obj)
 
+    saved_ids.append(obj.id)
+
     print(f"✅ Comparative exam saved | ID={obj.id}")
-    return [obj.id]
+    return saved_ids
 
 @app.post("/upload-word-reading-unified")
 async def upload_word_reading_unified(
