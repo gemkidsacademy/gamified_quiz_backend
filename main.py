@@ -14658,7 +14658,7 @@ async def upload_word(
                     subject=q.get("subject"),
                     topic=q.get("topic"),
                     difficulty=q.get("difficulty"),
-                    question_type=q.get("question_type"),
+                    question_type=q.get("question_type") or "multi_image_diagram_mcq",
                     question_text=question_text,
                     question_blocks=filter_display_blocks(q["question_blocks"]),
                     options=q["options"],
