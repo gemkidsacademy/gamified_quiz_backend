@@ -14529,6 +14529,7 @@ async def upload_word(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
+    block_report = []
     request_id = str(uuid.uuid4())[:8]
     last_successful_qid = None
 
@@ -14545,7 +14546,6 @@ async def upload_word(
     }
 
     if file.content_type not in allowed:
-        print(f"[{request_id}] ❌ INVALID FILE TYPE")
         raise HTTPException(status_code=400, detail="Invalid file type.")
 
     # -----------------------------
@@ -14555,190 +14555,148 @@ async def upload_word(
         content = await file.read()
         doc = docx.Document(BytesIO(content))
         ordered_blocks = parse_docx_to_ordered_blocks(doc)
-
-        print(f"[{request_id}] 📄 Extracted ordered blocks: {len(ordered_blocks)}")
-
-    except Exception as e:
-        print(f"[{request_id}] ❌ DOCX READ ERROR: {repr(e)}")
+    except Exception:
         raise HTTPException(status_code=400, detail="Failed to read file.")
 
     # -----------------------------
     # Chunk by question
     # -----------------------------
     question_chunks = chunk_by_question(ordered_blocks)
-    print(f"[{request_id}] 📦 Total question chunks: {len(question_chunks)}")
 
-    all_questions = []
+    saved_count = 0
+    skipped_partial = 0
+    global_q_index = 1
 
-    # -----------------------------
-    # GPT parsing
-    # -----------------------------
+    # =========================================================
+    # PROCESS PER BLOCK (this is the key fix)
+    # =========================================================
     for block_idx, question_block in enumerate(question_chunks, start=1):
 
         if not looks_like_question(question_block):
-            print(
-                f"[{request_id}] ⏭ SKIP BLOCK {block_idx}/{len(question_chunks)} "
-                "(not a question)"
-            )
             continue
 
-        print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}/{len(question_chunks)}")
+        print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}")
 
         result = await parse_with_gpt({"blocks": question_block})
         questions = result.get("questions", [])
 
-        print(f"[{request_id}] 🧩 GPT returned {len(questions)} questions")
-
         if not questions:
-            print(f"[{request_id}] ⚠ GPT ZERO QUESTIONS — BLOCK CONTENT:")
-            for b in question_block:
-                print(f"    {repr(b)}")
+            block_report.append({
+                "block": block_idx,
+                "type": "unknown",
+                "status": "failed",
+                "details": "GPT returned zero questions"
+            })
+            continue
 
-        for qi, q in enumerate(questions, start=1):
-            q["question_blocks"] = question_block
-            print(
-                f"[{request_id}] 🔎 B{block_idx}-Q{qi} | "
-                f"class={q.get('class_name')} | topic={q.get('topic')}"
-            )
+        # -----------------------------
+        # Block-level METADATA validation
+        # -----------------------------
+        required_fields = ["class_name", "subject", "topic", "difficulty"]
+        missing_meta = [
+            f for f in required_fields if not questions[0].get(f)
+        ]
 
-        all_questions.extend(questions)
+        if missing_meta:
+            block_report.append({
+                "block": block_idx,
+                "type": questions[0].get("question_type", "unknown"),
+                "status": "failed",
+                "details": f"Missing METADATA field(s): {', '.join(missing_meta)}"
+            })
+            continue
 
-    print(f"\n[{request_id}] 📊 Total questions detected: {len(all_questions)}")
+        block_had_success = False
 
-    # -----------------------------
-    # Persist questions
-    # -----------------------------
-    saved_count = 0
-    skipped_partial = 0
+        # -----------------------------
+        # Persist questions of THIS block
+        # -----------------------------
+        try:
+            for q in questions:
+                qid = f"Q{global_q_index}"
+                global_q_index += 1
 
-    try:
-        for idx, q in enumerate(all_questions, start=1):
-            qid = f"Q{idx}"
-            print(f"\n[{request_id}] 🧪 PROCESSING {qid}")
+                missing = []
+                if not q.get("options"):
+                    missing.append("options")
+                if not q.get("correct_answer"):
+                    missing.append("correct_answer")
 
-            missing = []
-            if not q.get("question_blocks"):
-                missing.append("question_blocks")
-            if not q.get("options"):
-                missing.append("options")
-            if not q.get("correct_answer"):
-                missing.append("correct_answer")
-
-            if missing:
-                skipped_partial += 1
-                print(f"[{request_id}] ⚠ SKIP {qid} | missing={missing}")
-                continue
-
-            # -----------------------------
-            # Resolve images
-            # -----------------------------
-            for bi, block in enumerate(q["question_blocks"], start=1):
-                if block["type"] != "image":
+                if missing:
+                    skipped_partial += 1
                     continue
 
-                print(
-                    f"[{request_id}] 🖼️ {qid} | IMAGE BLOCK {bi} | RAW BLOCK = {block}"
-                )
+                q["question_blocks"] = question_block
 
-                raw_img_name = block.get("name") or block.get("src") or ""
-                print(
-                    f"[{request_id}] 🧪 {qid} | RAW IMG repr = {repr(raw_img_name)}"
-                )
+                # ---- resolve images ----
+                for block in q["question_blocks"]:
+                    if block["type"] != "image":
+                        continue
 
-                img_name = raw_img_name.strip().lower()
-                print(
-                    f"[{request_id}] 🧪 {qid} | NORMALIZED IMG repr = {repr(img_name)}"
-                )
-
-                if not img_name:
-                    print(f"[{request_id}] ❌ {qid} | EMPTY IMAGE NAME")
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"{qid}: Image block missing name/src"
+                    raw = (block.get("name") or block.get("src") or "").strip().lower()
+                    record = (
+                        db.query(UploadedImage)
+                        .filter(func.lower(func.trim(UploadedImage.original_name)) == raw)
+                        .first()
                     )
 
-                record = (
-                    db.query(UploadedImage)
-                    .filter(
-                        func.lower(func.trim(UploadedImage.original_name)) == img_name
-                    )
-                    .first()
+                    if not record:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"{qid}: Image '{raw}' not uploaded yet"
+                        )
+
+                    block.pop("name", None)
+                    block["src"] = record.gcs_url
+
+                question_text = "\n\n".join(
+                    b["content"] for b in q["question_blocks"] if b["type"] == "text"
                 )
 
-                if not record:
-                    print(f"[{request_id}] ❌ {qid} | IMAGE NOT FOUND IN DB")
-
-                    available = db.query(UploadedImage.original_name).all()
-                    print(f"[{request_id}] 📂 DB IMAGES:")
-                    for name, in available:
-                        print(f"    {repr(name)}")
-
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"{qid}: Image '{img_name}' not uploaded yet"
-                    )
-
-                print(
-                    f"[{request_id}] ✅ {qid} | IMAGE RESOLVED → {record.gcs_url}"
+                new_q = Question(
+                    class_name=q.get("class_name"),
+                    subject=q.get("subject"),
+                    topic=q.get("topic"),
+                    difficulty=q.get("difficulty"),
+                    question_type=q.get("question_type"),
+                    question_text=question_text,
+                    question_blocks=filter_display_blocks(q["question_blocks"]),
+                    options=q["options"],
+                    correct_answer=q["correct_answer"]
                 )
 
-                block.pop("name", None)
-                block["src"] = record.gcs_url
+                db.add(new_q)
+                db.commit()
+                db.refresh(new_q)
 
-            # -----------------------------
-            # Build question
-            # -----------------------------
-            question_text = "\n\n".join(
-                b["content"]
-                for b in q["question_blocks"]
-                if b["type"] == "text"
-            )
+                last_successful_qid = qid
+                saved_count += 1
+                block_had_success = True
 
-            resolved_options = {}
-            for key, value in q["options"].items():
-                resolved_options[key] = resolve_option_value(value, db)
+        except HTTPException:
+            raise
 
-            new_q = Question(
-                class_name=q.get("class_name"),
-                subject=q.get("subject"),
-                topic=q.get("topic"),
-                difficulty=q.get("difficulty"),
-                question_type="multi_image_diagram_mcq",
-                question_text=question_text,
-                question_blocks=filter_display_blocks(q["question_blocks"]),
-                options=resolved_options,
-                correct_answer=q.get("correct_answer")
-            )
-
-            db.add(new_q)
-            db.commit()
-            db.refresh(new_q)
-
-            last_successful_qid = qid
-            saved_count += 1
-
-            print(f"[{request_id}] 💾 SAVED {qid} | db_id={new_q.id}")
-
-    except HTTPException as e:
-        print(f"\n[{request_id}] 🚨 UPLOAD FAILED")
-        print(f"[{request_id}] 🚨 LAST SUCCESSFUL QUESTION: {last_successful_qid}")
-        print(f"[{request_id}] 🚨 ERROR DETAIL: {e.detail}")
-        raise
+        # -----------------------------
+        # ✅ BLOCK SUCCESS REPORT (THIS IS THE PLACE)
+        # -----------------------------
+        if block_had_success:
+            block_report.append({
+                "block": block_idx,
+                "type": questions[0].get("question_type", "unknown"),
+                "status": "success",
+                "details": "Saved successfully"
+            })
 
     # -----------------------------
-    # Final summary
+    # Final response
     # -----------------------------
-    print(
-        f"\n[{request_id}] 🏁 UPLOAD COMPLETE | "
-        f"saved={saved_count} | skipped_partial={skipped_partial}"
-    )
-    print(f"========== GPT-UPLOAD-WORD END [{request_id}] ==========\n")
-
     return {
         "status": "success",
-        "count": saved_count,
-        "skipped_partial": skipped_partial,
-        "message": f"{saved_count} questions added successfully"
+        "summary": {
+            "saved": saved_count,
+            "skipped_partial": skipped_partial
+        },
+        "blocks": block_report
     }
 
 
