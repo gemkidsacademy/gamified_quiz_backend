@@ -1188,7 +1188,8 @@ class QuestionNumeracyLC(Base):
     question_type = Column(
         Integer,
         nullable=False,
-        comment="Enum: 1=MCQ, 2=Short Answer"
+        comment="Enum: 1=MCQ(single), 2=MCQ(multi), 3=Numeric, 4=Text"
+
     )
 
     class_name = Column(String(50), nullable=False)
@@ -1212,7 +1213,8 @@ class QuestionNumeracyLC(Base):
     # MCQ options: {"A": "...", "B": "...", "C": "...", "D": "..."}
     options = Column(JSON, nullable=True)
 
-    correct_answer = Column(String(5), nullable=False)
+    correct_answer = Column(JSON, nullable=False)
+
 
     created_at = Column(
         DateTime(timezone=True),
@@ -1885,17 +1887,17 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
 
     SYSTEM_PROMPT = (
         "You are a deterministic exam-question parser.\n\n"
-
+    
         "INPUT CONTRACT:\n"
         "- You will receive ONLY plain text extracted from a question\n"
         "- The text may span multiple paragraphs\n"
         "- The text contains NO images and NO layout markers\n\n"
-
+    
         "CONTENT RULES:\n"
         "- Preserve wording exactly as given\n"
         "- Do NOT summarize, paraphrase, or omit content\n"
         "- Do NOT invent or infer missing information\n\n"
-
+    
         "STRUCTURE RULES:\n"
         "- Extract the following fields if present:\n"
         "  class_name\n"
@@ -1904,15 +1906,22 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
         "  subject\n"
         "  topic\n"
         "  difficulty\n"
-        "  options (A–D, only for MCQs)\n"
+        "  options (A–Z, for question_type 1 and 2)\n"
         "  correct_answer\n\n"
-
+    
+        "ANSWER FORMAT RULES:\n"
+        "- If question_type = 1:\n"
+        "  - correct_answer MUST be a single string (example: \"B\")\n"
+        "- If question_type = 2:\n"
+        "  - correct_answer MUST be an array of strings\n"
+        "  - Example: [\"B\", \"D\"]\n\n"
+    
         "OMISSION RULES:\n"
         "- If a required field is missing, OMIT the question entirely\n"
         "- Do NOT emit placeholders\n"
         "- Do NOT emit partial questions\n"
         "- An empty questions array is valid\n\n"
-
+    
         "OUTPUT RULES:\n"
         "- Return ONLY valid JSON matching the provided schema\n"
         "- Do NOT include commentary, markdown, or explanations"
@@ -15084,12 +15093,19 @@ async def upload_word_naplan(
                     continue
             
             elif qt == 2:
-                block_report.append({
-                    "block": block_idx,
-                    "status": "skipped",
-                    "details": "question_type=2 not yet supported",
-                })
-                continue
+                # Multi-select MCQ (images allowed)
+                if not q.get("options") or not q.get("correct_answer"):
+                    skipped_partial += 1
+                    continue
+            
+                if not isinstance(q["correct_answer"], list):
+                    block_report.append({
+                        "block": block_idx,
+                        "status": "failed",
+                        "details": "question_type=2 requires correct_answer as a list",
+                    })
+                    continue
+
 
             
             else:
@@ -15133,7 +15149,8 @@ async def upload_word_naplan(
             question_text = "\n\n".join(
                 b["content"] for b in q["question_blocks"] if b["type"] == "text"
             )
-            options = q.get("options") if qt == 1 else None
+            options = q.get("options") if qt in (1, 2) else None
+
 
             new_q = QuestionNumeracyLC(
                 question_type=qt,
