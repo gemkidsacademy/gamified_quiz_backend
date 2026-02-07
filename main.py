@@ -14496,41 +14496,25 @@ async def upload_image_folder(
 #     }
 
 def chunk_by_question(blocks):
-    """
-    Input:
-      blocks = [
-        {"type": "text", "content": "..."},
-        {"type": "image", "name": "..."},
-        ...
-      ]
-
-    Output:
-      [
-        [ block, block, block ],   # Question 1
-        [ block, block, block ],   # Question 2
-      ]
-    """
-
-    questions = []
+    chunks = []
     current = []
 
     for block in blocks:
-        # Detect question boundary
-        if (
-            block["type"] == "text"
-            and block["content"].strip() == "METADATA:"
-        ):
-            if current:
-                questions.append(current)
+        if block["type"] == "text":
+            text = block["content"].strip()
+
+            # Heuristic: question start
+            if text.lower().startswith(("q", "question")) and current:
+                chunks.append(current)
                 current = []
 
         current.append(block)
 
     if current:
-        questions.append(current)
+        chunks.append(current)
 
-    return questions
-
+    return chunks
+ 
 def extract_images_from_text(block: str) -> list[str]:
     images = []
     for line in block.splitlines():
@@ -14697,6 +14681,31 @@ def looks_like_question(blocks):
     )
 
 
+def extract_exam_block(ordered_blocks):
+    exam_blocks = []
+    inside_exam = False
+
+    for block in ordered_blocks:
+        if block["type"] == "text":
+            text = block["content"].strip()
+
+            if "=== EXAM START ===" in text:
+                inside_exam = True
+                continue
+
+            if "=== EXAM END ===" in text:
+                inside_exam = False
+                break
+
+        if inside_exam:
+            exam_blocks.append(block)
+
+    if not exam_blocks:
+        raise ValueError("No EXAM block found")
+
+    return exam_blocks
+
+ 
 #new upload-word code
 @app.post("/upload-word")
 async def upload_word(
@@ -14735,7 +14744,8 @@ async def upload_word(
     # -----------------------------
     # Chunk by question
     # -----------------------------
-    question_chunks = chunk_by_question(ordered_blocks)
+    exam_blocks = extract_exam_block(ordered_blocks)
+    question_chunks = chunk_by_question(exam_blocks)
 
     saved_count = 0
     skipped_partial = 0
