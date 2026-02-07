@@ -14746,9 +14746,7 @@ async def upload_word(
     # =========================================================
     for block_idx, question_block in enumerate(question_chunks, start=1):
 
-        if not looks_like_question(question_block):
-            continue
-
+        
         print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}")
 
         result = await parse_with_gpt({"blocks": question_block})
@@ -14872,6 +14870,43 @@ async def upload_word(
         },
         "blocks": block_report
     }
+def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
+    """
+    Groups ordered blocks into exam blocks using explicit markers:
+
+    === EXAM START ===
+    === EXAM END ===
+    """
+
+    exams = []
+    current_exam = []
+    in_exam = False
+
+    for block in blocks:
+        if block["type"] != "text":
+            if in_exam:
+                current_exam.append(block)
+            continue
+
+        text = block.get("content", "").strip()
+
+        if "=== EXAM START ===" in text:
+            in_exam = True
+            current_exam = []
+            continue
+
+        if "=== EXAM END ===" in text:
+            if in_exam and current_exam:
+                exams.append(current_exam)
+            current_exam = []
+            in_exam = False
+            continue
+
+        if in_exam:
+            current_exam.append(block)
+
+    return exams
+
 
 @app.post("/upload-word-naplan")
 async def upload_word_naplan(
@@ -14920,8 +14955,8 @@ async def upload_word_naplan(
     # --------------------------------------------------
     # Chunk into questions
     # --------------------------------------------------
-    question_chunks = chunk_by_question(ordered_blocks)
-    print(f"[{request_id}] 🔪 Chunked into {len(question_chunks)} question blocks")
+    exam_chunks = chunk_by_exam_markers(ordered_blocks)
+    print(f"[{request_id}] 🔪 Chunked into {len(exam_chunks)} exam blocks")
 
     saved_count = 0
     skipped_partial = 0
@@ -14930,8 +14965,7 @@ async def upload_word_naplan(
     # ==================================================
     # Process each block independently
     # ==================================================
-    for block_idx, question_block in enumerate(question_chunks, start=1):
-
+    for block_idx, question_block in enumerate(exam_chunks, start=1):
         print("\n" + "-" * 60)
         print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
         print(f"[{request_id}] 📄 Block elements: {len(question_block)}")
