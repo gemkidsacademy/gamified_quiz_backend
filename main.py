@@ -1203,8 +1203,7 @@ class QuestionNumeracyLC(Base):
 
     difficulty = Column(String(20), nullable=False)
 
-    question_type = Column(String(50), nullable=False)
-
+    
     question_text = Column(Text, nullable=True)
 
     # Ordered visual blocks (text + resolved images)
@@ -1732,6 +1731,30 @@ def serialize_blocks_for_gpt(blocks: list[dict]) -> str:
 
     return "\n\n".join(lines)
 
+def serialize_blocks_for_gpt_numeracy_LC(blocks: list[dict]) -> str:
+    """
+    Flattens ordered Numeracy / Language Conventions blocks into a
+    deterministic text representation for GPT parsing.
+
+    - Text blocks are emitted verbatim
+    - Image blocks are emitted as explicit placeholders
+    - Ordering is preserved exactly
+    """
+    lines = []
+
+    for block in blocks:
+        block_type = block.get("type")
+
+        if block_type == "text":
+            lines.append(block.get("content", ""))
+
+        elif block_type == "image":
+            # GPT must see image placeholders to preserve structure
+            image_ref = block.get("name") or block.get("src") or ""
+            lines.append(f"[IMAGE: {image_ref}]")
+
+    return "\n\n".join(lines)
+
 
 async def parse_with_gpt(payload: dict, retries: int = 2):
 
@@ -1838,6 +1861,118 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
 
         if attempt < retries:
             print(f"[GPT] Empty result, retry {attempt + 1}")
+            continue
+
+        return parsed
+
+async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
+    """
+    Deterministic GPT parser for NAPLAN Numeracy / Language Conventions.
+
+    GPT is responsible ONLY for semantic extraction:
+    - class_name
+    - question_type
+    - year
+    - subject
+    - topic
+    - difficulty
+    - options (if applicable)
+    - correct_answer
+
+    Visual order, images, and question_blocks are handled
+    entirely by the backend and MUST NOT be inferred by GPT.
+    """
+
+    SYSTEM_PROMPT = (
+        "You are a deterministic exam-question parser.\n\n"
+
+        "INPUT CONTRACT:\n"
+        "- You will receive ONLY plain text extracted from a question\n"
+        "- The text may span multiple paragraphs\n"
+        "- The text contains NO images and NO layout markers\n\n"
+
+        "CONTENT RULES:\n"
+        "- Preserve wording exactly as given\n"
+        "- Do NOT summarize, paraphrase, or omit content\n"
+        "- Do NOT invent or infer missing information\n\n"
+
+        "STRUCTURE RULES:\n"
+        "- Extract the following fields if present:\n"
+        "  class_name\n"
+        "  question_type (integer)\n"
+        "  year (integer)\n"
+        "  subject\n"
+        "  topic\n"
+        "  difficulty\n"
+        "  options (A–D, only for MCQs)\n"
+        "  correct_answer\n\n"
+
+        "OMISSION RULES:\n"
+        "- If a required field is missing, OMIT the question entirely\n"
+        "- Do NOT emit placeholders\n"
+        "- Do NOT emit partial questions\n"
+        "- An empty questions array is valid\n\n"
+
+        "OUTPUT RULES:\n"
+        "- Return ONLY valid JSON matching the provided schema\n"
+        "- Do NOT include commentary, markdown, or explanations"
+    )
+
+    for attempt in range(retries + 1):
+        serialized = serialize_blocks_for_gpt_numeracy_LC(payload["blocks"])
+
+        completion = await client_save_questions.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            top_p=1,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "QuestionList",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "questions": {
+                                "type": "array",
+                                "items": QuestionSchema,
+                            }
+                        },
+                        "required": ["questions"],
+                    },
+                },
+            },
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": serialized,  # MUST be a string
+                },
+            ],
+        )
+
+        raw = completion.choices[0].message.content
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            print(
+                f"[GPT-NAPLAN] Invalid JSON "
+                f"(attempt {attempt + 1}/{retries + 1}) | error={e}"
+            )
+            if attempt < retries:
+                continue
+            return {"questions": []}
+
+        questions = parsed.get("questions", [])
+
+        if questions:
+            return parsed
+
+        if attempt < retries:
+            print(f"[GPT-NAPLAN] Empty result, retry {attempt + 1}")
             continue
 
         return parsed
@@ -14810,7 +14945,7 @@ async def upload_word_naplan(
         # -----------------------------
         print(f"[{request_id}] 🤖 Sending block {block_idx} to GPT")
 
-        result = await parse_with_gpt({"blocks": question_block})
+        result = await parse_with_gpt_numeracy_lc({"blocks": question_block})
         questions = result.get("questions", [])
 
         print(f"[{request_id}] 🤖 GPT returned {len(questions)} question(s)")
@@ -14840,11 +14975,12 @@ async def upload_word_naplan(
         missing_meta = [
             f for f in required_fields if not questions[0].get(f)
         ]
-
+        
         if missing_meta:
             print(
                 f"[{request_id}] ❌ Block {block_idx} missing metadata: {missing_meta}"
             )
+        
             block_report.append({
                 "block": block_idx,
                 "status": "failed",
@@ -14885,10 +15021,13 @@ async def upload_word_naplan(
                     continue
             
             elif qt == 2:
-                # Short answer (future)
-                if not q.get("correct_answer"):
-                    skipped_partial += 1
-                    continue
+                block_report.append({
+                    "block": block_idx,
+                    "status": "skipped",
+                    "details": "question_type=2 not yet supported",
+                })
+                continue
+
             
             else:
                 block_report.append({
