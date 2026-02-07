@@ -1187,6 +1187,8 @@ class QuestionNumeracyLC(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     class_name = Column(String(50), nullable=False)
+    year = Column(Integer, nullable=False)
+
 
     # Must be either 'Numeracy' or 'Language Conventions'
     subject = Column(String(50), nullable=False)
@@ -1757,6 +1759,7 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
         "STRUCTURE RULES:\n"
         "- Extract the following fields if present:\n"
         "  class_name\n"
+        "  year\n"
         "  subject\n"
         "  topic\n"
         "  difficulty\n"
@@ -14817,7 +14820,7 @@ async def upload_word_naplan(
         # -----------------------------
         # Metadata validation
         # -----------------------------
-        required_fields = ["class_name", "subject", "topic", "difficulty"]
+        required_fields = ["class_name", "year", "subject", "topic", "difficulty"]
         missing_meta = [
             f for f in required_fields if not questions[0].get(f)
         ]
@@ -14896,6 +14899,7 @@ async def upload_word_naplan(
 
             new_q = QuestionNumeracyLC(
                 class_name=q.get("class_name"),
+                year=q.get("year"),
                 subject=subject,
                 topic=q.get("topic"),
                 difficulty=q.get("difficulty"),
