@@ -14707,6 +14707,7 @@ def extract_exam_block(ordered_blocks):
 
  
 #new upload-word code
+#new upload-word code
 @app.post("/upload-word")
 async def upload_word(
     file: UploadFile = File(...),
@@ -14744,8 +14745,7 @@ async def upload_word(
     # -----------------------------
     # Chunk by question
     # -----------------------------
-    exam_blocks = extract_exam_block(ordered_blocks)
-    question_chunks = chunk_by_question(exam_blocks)
+    question_chunks = chunk_by_question(ordered_blocks)
 
     saved_count = 0
     skipped_partial = 0
@@ -14756,7 +14756,9 @@ async def upload_word(
     # =========================================================
     for block_idx, question_block in enumerate(question_chunks, start=1):
 
-        
+        if not looks_like_question(question_block):
+            continue
+
         print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}")
 
         result = await parse_with_gpt({"blocks": question_block})
@@ -14880,6 +14882,7 @@ async def upload_word(
         },
         "blocks": block_report
     }
+
 def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
     """
     Groups ordered blocks into exam blocks using explicit markers:
