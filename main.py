@@ -14496,24 +14496,40 @@ async def upload_image_folder(
 #     }
 
 def chunk_by_question(blocks):
-    chunks = []
+    """
+    Input:
+      blocks = [
+        {"type": "text", "content": "..."},
+        {"type": "image", "name": "..."},
+        ...
+      ]
+
+    Output:
+      [
+        [ block, block, block ],   # Question 1
+        [ block, block, block ],   # Question 2
+      ]
+    """
+
+    questions = []
     current = []
 
     for block in blocks:
-        if block["type"] == "text":
-            text = block["content"].strip()
-
-            # Heuristic: question start
-            if text.lower().startswith(("q", "question")) and current:
-                chunks.append(current)
+        # Detect question boundary
+        if (
+            block["type"] == "text"
+            and block["content"].strip() == "METADATA:"
+        ):
+            if current:
+                questions.append(current)
                 current = []
 
         current.append(block)
 
     if current:
-        chunks.append(current)
+        questions.append(current)
 
-    return chunks
+    return questions
  
 def extract_images_from_text(block: str) -> list[str]:
     images = []
