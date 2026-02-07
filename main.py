@@ -1181,6 +1181,42 @@ class Quiz(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class QuestionNumeracyLC(Base):
+    __tablename__ = "questions_numeracy_lc"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String(50), nullable=False)
+
+    # Only NAPLAN subjects allowed (enforced at DB or app level)
+    subject = Column(String(50), nullable=False)
+    # Expected values:
+    # "Numeracy"
+    # "Language Conventions"
+
+    topic = Column(String(100), nullable=True)
+
+    difficulty = Column(String(20), nullable=False)
+
+    question_type = Column(String(50), nullable=False)
+    # e.g. "mcq", "diagram_mcq", "table_mcq"
+
+    question_text = Column(Text, nullable=True)
+
+    # Ordered visual blocks (text + resolved images)
+    question_blocks = Column(JSON, nullable=True)
+
+    # MCQ options
+    # e.g. {"A": "...", "B": "...", "C": "...", "D": "..."}
+    options = Column(JSON, nullable=True)
+
+    correct_answer = Column(String(5), nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
 
 class Question(Base):
     __tablename__ = "questions"
