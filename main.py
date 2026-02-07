@@ -1181,7 +1181,36 @@ class Quiz(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class QuestionNumeracyLC(Base):
+    __tablename__ = "questions_numeracy_lc"
 
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String(50), nullable=False)
+
+    # Must be either 'Numeracy' or 'Language Conventions'
+    subject = Column(String(50), nullable=False)
+
+    topic = Column(String(100), nullable=True)
+
+    difficulty = Column(String(20), nullable=False)
+
+    question_type = Column(String(50), nullable=False)
+
+    question_text = Column(Text, nullable=True)
+
+    # Ordered visual blocks (text + resolved images)
+    question_blocks = Column(JSON, nullable=True)
+
+    # MCQ options: {"A": "...", "B": "...", "C": "...", "D": "..."}
+    options = Column(JSON, nullable=True)
+
+    correct_answer = Column(String(5), nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 class Question(Base):
     __tablename__ = "questions"
 
