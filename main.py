@@ -1181,42 +1181,6 @@ class Quiz(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class QuestionNumeracyLC(Base):
-    __tablename__ = "questions_numeracy_lc"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    class_name = Column(String(50), nullable=False)
-
-    # Only NAPLAN subjects allowed (enforced at DB or app level)
-    subject = Column(String(50), nullable=False)
-    # Expected values:
-    # "Numeracy"
-    # "Language Conventions"
-
-    topic = Column(String(100), nullable=True)
-
-    difficulty = Column(String(20), nullable=False)
-
-    question_type = Column(String(50), nullable=False)
-    # e.g. "mcq", "diagram_mcq", "table_mcq"
-
-    question_text = Column(Text, nullable=True)
-
-    # Ordered visual blocks (text + resolved images)
-    question_blocks = Column(JSON, nullable=True)
-
-    # MCQ options
-    # e.g. {"A": "...", "B": "...", "C": "...", "D": "..."}
-    options = Column(JSON, nullable=True)
-
-    correct_answer = Column(String(5), nullable=False)
-
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now()
-    )
-
 
 class Question(Base):
     __tablename__ = "questions"
@@ -14735,6 +14699,220 @@ async def upload_word(
         "blocks": block_report
     }
 
+@app.post("/upload-word-naplan")
+async def upload_word_naplan(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    request_id = str(uuid.uuid4())[:8]
+    block_report = []
+
+    print("\n" + "=" * 70)
+    print(f"🚀 GPT-UPLOAD-NAPLAN START | request_id={request_id}")
+    print("=" * 70)
+    print(f"[{request_id}] 📄 Filename      : {file.filename}")
+    print(f"[{request_id}] 📄 Content-Type  : {file.content_type}")
+
+    # --------------------------------------------------
+    # Validate file type
+    # --------------------------------------------------
+    allowed_types = {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+    }
+
+    if file.content_type not in allowed_types:
+        print(f"[{request_id}] ❌ INVALID FILE TYPE")
+        raise HTTPException(status_code=400, detail="Invalid file type.")
+
+    print(f"[{request_id}] ✅ File type validated")
+
+    # --------------------------------------------------
+    # Load Word document
+    # --------------------------------------------------
+    try:
+        content = await file.read()
+        print(f"[{request_id}] 📦 File read into memory ({len(content)} bytes)")
+
+        doc = docx.Document(BytesIO(content))
+        ordered_blocks = parse_docx_to_ordered_blocks(doc)
+
+        print(f"[{request_id}] 🧩 Parsed ordered blocks: {len(ordered_blocks)}")
+
+    except Exception as e:
+        print(f"[{request_id}] ❌ DOCX PARSE FAILED | error={e}")
+        raise HTTPException(status_code=400, detail="Failed to read Word file.")
+
+    # --------------------------------------------------
+    # Chunk into questions
+    # --------------------------------------------------
+    question_chunks = chunk_by_question(ordered_blocks)
+    print(f"[{request_id}] 🔪 Chunked into {len(question_chunks)} question blocks")
+
+    saved_count = 0
+    skipped_partial = 0
+    global_q_index = 1
+
+    # ==================================================
+    # Process each block independently
+    # ==================================================
+    for block_idx, question_block in enumerate(question_chunks, start=1):
+
+        print("\n" + "-" * 60)
+        print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
+        print(f"[{request_id}] 📄 Block elements: {len(question_block)}")
+
+        if not looks_like_question(question_block):
+            print(f"[{request_id}] ⚠️ Block {block_idx} skipped (not a question)")
+            continue
+
+        # -----------------------------
+        # GPT parsing
+        # -----------------------------
+        print(f"[{request_id}] 🤖 Sending block {block_idx} to GPT")
+
+        result = await parse_with_gpt({"blocks": question_block})
+        questions = result.get("questions", [])
+
+        print(f"[{request_id}] 🤖 GPT returned {len(questions)} question(s)")
+
+        if not questions:
+            block_report.append({
+                "block": block_idx,
+                "status": "failed",
+                "details": "GPT returned zero valid questions",
+            })
+            print(f"[{request_id}] ❌ Block {block_idx} FAILED (empty GPT result)")
+            continue
+
+        # -----------------------------
+        # Metadata validation
+        # -----------------------------
+        required_fields = ["class_name", "subject", "topic", "difficulty"]
+        missing_meta = [
+            f for f in required_fields if not questions[0].get(f)
+        ]
+
+        if missing_meta:
+            print(
+                f"[{request_id}] ❌ Block {block_idx} missing metadata: {missing_meta}"
+            )
+            block_report.append({
+                "block": block_idx,
+                "status": "failed",
+                "details": f"Missing metadata: {', '.join(missing_meta)}",
+            })
+            continue
+
+        subject = questions[0].get("subject")
+        print(f"[{request_id}] 🏷️ Subject detected: {subject}")
+
+        if subject not in {"Numeracy", "Language Conventions"}:
+            print(f"[{request_id}] ❌ INVALID SUBJECT: {subject}")
+            block_report.append({
+                "block": block_idx,
+                "status": "failed",
+                "details": f"Invalid NAPLAN subject: {subject}",
+            })
+            continue
+
+        block_had_success = False
+
+        # -----------------------------
+        # Persist valid questions
+        # -----------------------------
+        for q in questions:
+            qid = f"NQ{global_q_index}"
+            global_q_index += 1
+
+            print(f"[{request_id}] ➕ Processing {qid}")
+
+            if not q.get("options") or not q.get("correct_answer"):
+                skipped_partial += 1
+                print(f"[{request_id}] ⚠️ {qid} skipped (missing options/answer)")
+                continue
+
+            q["question_blocks"] = question_block
+
+            # -----------------------------
+            # Resolve images
+            # -----------------------------
+            for block in q["question_blocks"]:
+                if block["type"] != "image":
+                    continue
+
+                raw = (block.get("name") or block.get("src") or "").strip().lower()
+                print(f"[{request_id}] 🖼️ Resolving image: '{raw}'")
+
+                record = (
+                    db.query(UploadedImage)
+                    .filter(func.lower(func.trim(UploadedImage.original_name)) == raw)
+                    .first()
+                )
+
+                if not record:
+                    print(f"[{request_id}] ❌ IMAGE NOT FOUND: {raw}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{qid}: Image '{raw}' not uploaded yet",
+                    )
+
+                block.pop("name", None)
+                block["src"] = record.gcs_url
+                print(f"[{request_id}] ✅ Image resolved → {record.gcs_url}")
+
+            question_text = "\n\n".join(
+                b["content"] for b in q["question_blocks"] if b["type"] == "text"
+            )
+
+            new_q = QuestionNumeracyLC(
+                class_name=q.get("class_name"),
+                subject=subject,
+                topic=q.get("topic"),
+                difficulty=q.get("difficulty"),
+                question_type=q.get("question_type") or "mcq",
+                question_text=question_text,
+                question_blocks=filter_display_blocks(q["question_blocks"]),
+                options=q["options"],
+                correct_answer=q["correct_answer"],
+            )
+
+            db.add(new_q)
+            db.commit()
+            db.refresh(new_q)
+
+            print(f"[{request_id}] ✅ {qid} SAVED (id={new_q.id})")
+
+            saved_count += 1
+            block_had_success = True
+
+        if block_had_success:
+            block_report.append({
+                "block": block_idx,
+                "status": "success",
+                "details": f"Saved to questions_numeracy_lc ({subject})",
+            })
+            print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS")
+        else:
+            print(f"[{request_id}] ⚠️ BLOCK {block_idx} had no savable questions")
+
+    # --------------------------------------------------
+    # Final response
+    # --------------------------------------------------
+    print("\n" + "=" * 70)
+    print(f"🏁 GPT-UPLOAD-NAPLAN END | request_id={request_id}")
+    print(f"📊 Saved questions     : {saved_count}")
+    print(f"📊 Skipped partial     : {skipped_partial}")
+    print("=" * 70)
+
+    return {
+        "status": "success",
+        "summary": {
+            "saved": saved_count,
+            "skipped_partial": skipped_partial,
+        },
+        "blocks": block_report,
+    }
 
 
 
