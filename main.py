@@ -1185,8 +1185,14 @@ class QuestionNumeracyLC(Base):
     __tablename__ = "questions_numeracy_lc"
 
     id = Column(Integer, primary_key=True, index=True)
+    question_type = Column(
+        Integer,
+        nullable=False,
+        comment="Enum: 1=MCQ, 2=Short Answer"
+    )
 
     class_name = Column(String(50), nullable=False)
+ 
     year = Column(Integer, nullable=False)
 
 
@@ -1759,6 +1765,7 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
         "STRUCTURE RULES:\n"
         "- Extract the following fields if present:\n"
         "  class_name\n"
+        "  question_type\n"
         "  year\n"
         "  subject\n"
         "  topic\n"
@@ -14820,7 +14827,16 @@ async def upload_word_naplan(
         # -----------------------------
         # Metadata validation
         # -----------------------------
-        required_fields = ["class_name", "year", "subject", "topic", "difficulty"]
+        required_fields = [
+            "class_name",
+            "question_type",
+            "year",
+            "subject",
+            "topic",
+            "difficulty",
+        ]
+
+
         missing_meta = [
             f for f in required_fields if not questions[0].get(f)
         ]
@@ -14853,16 +14869,35 @@ async def upload_word_naplan(
         # -----------------------------
         # Persist valid questions
         # -----------------------------
+        block_types = set()
         for q in questions:
             qid = f"NQ{global_q_index}"
             global_q_index += 1
 
             print(f"[{request_id}] ➕ Processing {qid}")
 
-            if not q.get("options") or not q.get("correct_answer"):
-                skipped_partial += 1
-                print(f"[{request_id}] ⚠️ {qid} skipped (missing options/answer)")
+            qt = q.get("question_type")
+            block_types.add(qt)
+            if qt == 1:
+                # MCQ (existing behavior)
+                if not q.get("options") or not q.get("correct_answer"):
+                    skipped_partial += 1
+                    continue
+            
+            elif qt == 2:
+                # Short answer (future)
+                if not q.get("correct_answer"):
+                    skipped_partial += 1
+                    continue
+            
+            else:
+                block_report.append({
+                    "block": block_idx,
+                    "status": "failed",
+                    "details": f"Unsupported question_type: {qt}"
+                })
                 continue
+
 
             q["question_blocks"] = question_block
 
@@ -14896,17 +14931,18 @@ async def upload_word_naplan(
             question_text = "\n\n".join(
                 b["content"] for b in q["question_blocks"] if b["type"] == "text"
             )
+            options = q.get("options") if qt == 1 else None
 
             new_q = QuestionNumeracyLC(
-                class_name=q.get("class_name"),
+                question_type=qt,
+                class_name=q.get("class_name"),                
                 year=q.get("year"),
                 subject=subject,
                 topic=q.get("topic"),
                 difficulty=q.get("difficulty"),
-                question_type=q.get("question_type") or "mcq",
                 question_text=question_text,
                 question_blocks=filter_display_blocks(q["question_blocks"]),
-                options=q["options"],
+                options=options,
                 correct_answer=q["correct_answer"],
             )
 
@@ -14918,12 +14954,12 @@ async def upload_word_naplan(
 
             saved_count += 1
             block_had_success = True
-
+        
         if block_had_success:
             block_report.append({
                 "block": block_idx,
                 "status": "success",
-                "details": f"Saved to questions_numeracy_lc ({subject})",
+                "details": f"Saved question_type(s): {sorted(block_types)}"
             })
             print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS")
         else:
