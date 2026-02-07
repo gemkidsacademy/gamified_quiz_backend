@@ -1738,26 +1738,86 @@ def serialize_blocks_for_gpt_numeracy_LC(blocks: list[dict]) -> str:
     Flattens ordered Numeracy / Language Conventions blocks into a
     deterministic text representation for GPT parsing.
 
-    - Text blocks are emitted verbatim
-    - Image blocks are emitted as explicit placeholders
-    - Ordering is preserved exactly
+    Responsibilities:
+    - Preserve ordering and wording
+    - Normalize legacy metadata keys
+    - Ensure question_type and year appear inside METADATA if present
+    - Emit image placeholders explicitly
     """
+
     lines = []
+
+    pending_question_type = None
+    inside_metadata = False
+    metadata_lines = []
+
+    def normalize_key(line: str) -> str:
+        # Normalize common legacy variants
+        replacements = {
+            r"^Question_Type\s*:": "question_type:",
+            r"^QUESTION_TYPE\s*:": "question_type:",
+            r"^Year\s*:": "year:",
+            r"^YEAR\s*:": "year:",
+            r"^CLASS\s*:": "class_name:",
+            r"^SUBJECT\s*:": "subject:",
+            r"^TOPIC\s*:": "topic:",
+            r"^DIFFICULTY\s*:": "difficulty:",
+        }
+
+        for pattern, replacement in replacements.items():
+            if re.match(pattern, line):
+                return re.sub(pattern, replacement, line)
+
+        return line
 
     for block in blocks:
         block_type = block.get("type")
 
         if block_type == "text":
-            lines.append(block.get("content", ""))
+            raw = block.get("content", "").strip()
+
+            # Capture question_type if it appears outside METADATA
+            if re.match(r"^question_type\s*:\s*\d+", raw, re.IGNORECASE):
+                pending_question_type = normalize_key(raw)
+                continue
+
+            # Detect METADATA start
+            if raw.upper() == "METADATA:":
+                inside_metadata = True
+                metadata_lines = []
+                continue
+
+            # Detect end of METADATA block
+            if inside_metadata and raw.endswith(":") and raw.upper() not in {
+                "METADATA:",
+            }:
+                # Inject pending question_type if needed
+                if pending_question_type:
+                    metadata_lines.insert(0, pending_question_type)
+                    pending_question_type = None
+
+                lines.append("METADATA:")
+                lines.extend(metadata_lines)
+                inside_metadata = False
+
+            if inside_metadata:
+                metadata_lines.append(normalize_key(raw))
+            else:
+                lines.append(raw)
 
         elif block_type == "image":
-            # GPT must see image placeholders to preserve structure
             image_ref = block.get("name") or block.get("src") or ""
             lines.append(f"[IMAGE: {image_ref}]")
 
-    return "\n\n".join(lines)
+    # If file ends while still inside METADATA
+    if inside_metadata:
+        if pending_question_type:
+            metadata_lines.insert(0, pending_question_type)
+        lines.append("METADATA:")
+        lines.extend(metadata_lines)
 
-
+    return "\n\n".join(line for line in lines if line)
+ 
 async def parse_with_gpt(payload: dict, retries: int = 2):
 
     """
