@@ -175,6 +175,20 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class NaplanTopicCreate(BaseModel):
+    name: str
+    ai: int
+    db: int
+    total: int
+
+class NaplanQuizCreate(BaseModel):
+    class_name: str
+    subject: str
+    year: int
+    difficulty: str
+    num_topics: int
+    total_questions: int
+    topics: List[NaplanTopicCreate]
 class ReviewQuestion(BaseModel):
     q_id: int
     blocks: List[Dict[str, Any]]
@@ -1169,6 +1183,20 @@ class QuizCreate(BaseModel):
 
 class Quiz(Base):
     __tablename__ = "quizzes"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+    topics = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Quiz_Naplan_Numeracy(Base):
+    __tablename__ = "quizzes_naplan_numeracy"
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -5912,6 +5940,68 @@ def generate_exam_mathematical_reasoning(
         "questions": questions
     }
 
+@app.post("/api/quizzes-naplan-numeracy")
+def create_naplan_numeracy_quiz(
+    quiz: NaplanQuizCreate,
+    db: Session = Depends(get_db),
+):
+    print("\n========== NAPLAN QUIZ CREATION START ==========")
+
+    print("🔍 Incoming payload:", quiz)
+
+    try:
+        quiz_dict = quiz.dict()
+        print("📦 Parsed quiz payload:", quiz_dict)
+    except Exception as e:
+        print("❌ Failed to parse payload:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail="Invalid quiz payload")
+
+    print("➡️ class_name:", quiz.class_name)
+    print("➡️ subject:", quiz.subject)
+    print("➡️ year:", quiz.year)
+    print("➡️ difficulty:", quiz.difficulty)
+    print("➡️ num_topics:", quiz.num_topics)
+    print("➡️ total_questions:", quiz.total_questions)
+
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(status_code=400, detail="topics must be a list")
+
+    print("📝 Topics:")
+    for i, t in enumerate(quiz.topics):
+        print(f"   └─ Topic {i + 1}: {t}")
+
+    try:
+        print("\n--- Creating quizzes_naplan_numeracy row ---")
+
+        new_quiz = QuizNaplanNumeracy(
+            class_name=quiz.class_name,
+            subject=quiz.subject,
+            year=quiz.year,
+            difficulty=quiz.difficulty,
+            num_topics=quiz.num_topics,
+            total_questions=quiz.total_questions,
+            topics=[t.dict() for t in quiz.topics],  # JSON column
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        print("✅ NAPLAN QUIZ CREATED:", new_quiz)
+        print("========== NAPLAN QUIZ CREATION COMPLETE ==========\n")
+
+        return {
+            "message": "NAPLAN Numeracy quiz created successfully",
+            "quiz_id": new_quiz.id,
+        }
+
+    except Exception as e:
+        print("\n❌ EXCEPTION DURING QUIZ CREATION ❌")
+        print("Error:", str(e))
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/quizzes/thinking-skills/difficulty")
 def get_thinking_skills_difficulty(db: Session = Depends(get_db)):
