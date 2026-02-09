@@ -570,7 +570,8 @@ class QuizNaplanNumeracy(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     class_name = Column(String, nullable=False)
-    subject = Column(String, nullable=False)  # always mathematical_reasoning
+    subject = Column(String, nullable=False)  
+    year = Column(Integer, nullable=False)
     difficulty = Column(String, nullable=False)
 
     num_topics = Column(Integer, nullable=False)
