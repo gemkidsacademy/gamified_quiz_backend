@@ -4575,6 +4575,23 @@ def fetch_classes(db: Session = Depends(get_db)):
     return {
         "classes": classes
     }
+ 
+@app.get("/api/topics-naplan-numeracy")
+def get_naplan_numeracy_topics(
+    year: int,
+    difficulty: str
+):
+    rows = (
+        db.query(Topic.name)
+        .filter(Topic.class_name == "naplan")
+        .filter(Topic.subject == "Numeracy")
+        .filter(Topic.year == year)
+        .filter(Topic.difficulty == difficulty)
+        .distinct()
+        .all()
+    )
+
+    return [{"name": r.name} for r in rows]
 
 
 @app.post("/generate-new-mr")
