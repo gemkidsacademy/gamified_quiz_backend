@@ -560,6 +560,7 @@ class QuizMathematicalReasoning(Base):
     difficulty = Column(String, nullable=False)
 
     num_topics = Column(Integer, nullable=False)
+    total_questions = Column(Integer, nullable=False)
 
     # Stores topic configs as JSON
     topics = Column(JSON, nullable=False)
