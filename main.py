@@ -564,6 +564,19 @@ class QuizMathematicalReasoning(Base):
     # Stores topic configs as JSON
     topics = Column(JSON, nullable=False)
  
+class QuizNaplanNumeracy(Base):
+    __tablename__ = "quiz_naplan_numeracy"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)  # always mathematical_reasoning
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+
+    # Stores topic configs as JSON
+    topics = Column(JSON, nullable=False)
 
 
 class UpdateStudentRequest(BaseModel):
@@ -1479,6 +1492,21 @@ class Exam(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class ExamNaplanNumeracy(Base):
+    __tablename__ = "exam_naplan_numeracy"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # just a number, NO foreign key
+    quiz_id = Column(Integer, nullable=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    questions = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class StudentExamAnswer(Base):
