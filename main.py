@@ -4578,9 +4578,9 @@ def fetch_classes(db: Session = Depends(get_db)):
  
 @app.get("/api/topics-naplan-numeracy")
 def get_naplan_numeracy_topics(
-    db: Session = Depends(get_db), 
     year: int,
-    difficulty: str
+    difficulty: str,
+    db: Session = Depends(get_db),
 ):
     rows = (
         db.query(Topic.name)
