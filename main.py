@@ -2640,6 +2640,19 @@ def get_naplan_question_bank(
     year: int = Query(...),
     db: Session = Depends(get_db),
 ):
+    # Normalize frontend subject → DB subject
+    SUBJECT_MAP = {
+        "numeracy": "Numeracy",
+        "language_conventions": "Language Conventions",
+    }
+
+    subject_db = SUBJECT_MAP.get(subject.lower())
+    if not subject_db:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid subject: {subject}",
+        )
+
     results = (
         db.query(
             QuestionNumeracyLC.difficulty,
@@ -2648,7 +2661,7 @@ def get_naplan_question_bank(
         )
         .filter(
             QuestionNumeracyLC.class_name == "naplan",
-            QuestionNumeracyLC.subject == subject,
+            QuestionNumeracyLC.subject == subject_db,
             QuestionNumeracyLC.year == year,
         )
         .group_by(
