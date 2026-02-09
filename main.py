@@ -2693,20 +2693,19 @@ def normalize_mr_questions_exam_review(raw_questions):
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
 
-@app.post("/naplan/numeracy/generate-exam/{quiz_id}")
+@app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
-    quiz_id: int,
     db: Session = Depends(get_db)
 ):
-    # 1. Load quiz config
+    # 1. Load the single quiz config (latest / only one)
     quiz = (
         db.query(QuizNaplanNumeracy)
-        .filter(QuizNaplanNumeracy.id == quiz_id)
+        .order_by(QuizNaplanNumeracy.id.desc())
         .first()
     )
 
     if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
+        raise HTTPException(status_code=404, detail="NAPLAN Numeracy quiz not found")
 
     assembled_questions = []
 
@@ -2761,7 +2760,7 @@ def generate_naplan_numeracy_exam(
 
     # 6. Persist exam
     exam = ExamNaplanNumeracy(
-        quiz_id=quiz.id,
+        quiz_id=quiz.id,  # stored for traceability only
         class_name=quiz.class_name,
         subject=quiz.subject,
         difficulty=quiz.difficulty,
@@ -2777,6 +2776,7 @@ def generate_naplan_numeracy_exam(
         "exam_id": exam.id,
         "total_questions": len(assembled_questions)
     }
+ 
 @app.get("/api/admin/question-bank/naplan")
 def get_naplan_question_bank(
     subject: str = Query(...),  # numeracy | language_conventions
