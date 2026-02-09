@@ -14764,17 +14764,14 @@ def resolve_option_value(value: str, db: Session) -> dict:
 
 
 def looks_like_question(blocks):
-    text = " ".join(
-        b["content"]
-        for b in blocks
-        if b.get("type") == "text" and b.get("content")
-    ).lower()
+    markers = {"question_text", "correct_answer", "question_type"}
 
-    return (
-        "question" in text
-        and "options" in text
-        and "correct_answer" in text
-    )
+    for b in blocks:
+        if b.get("type") == "text":
+            content = b.get("content", "").lower()
+            if any(m in content for m in markers):
+                return True
+    return False
 
 
 def extract_exam_block(ordered_blocks):
