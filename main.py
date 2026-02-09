@@ -4576,18 +4576,27 @@ def fetch_classes(db: Session = Depends(get_db)):
         "classes": classes
     }
  
-@app.get("/api/topics-naplan-numeracy")
-def get_naplan_numeracy_topics(
+@app.get("/api/topics-naplan")
+def get_naplan_topics(
+    subject: str,
     year: int,
     difficulty: str,
     db: Session = Depends(get_db),
 ):
+    # Normalize inputs
+    normalized_subject = (
+        subject.replace("_", " ").title()
+    )  # numeracy -> Numeracy
+       # language_conventions -> Language Conventions
+
+    normalized_difficulty = difficulty.capitalize()  # easy -> Easy
+
     topics = (
         db.query(Topic.name)
         .filter(Topic.class_name == "naplan")
-        .filter(Topic.subject == "Numeracy")
+        .filter(Topic.subject == normalized_subject)
         .filter(Topic.year == year)
-        .filter(Topic.difficulty == difficulty)
+        .filter(Topic.difficulty == normalized_difficulty)
         .distinct()
         .order_by(Topic.name.asc())
         .all()
