@@ -4575,7 +4575,8 @@ def fetch_classes(db: Session = Depends(get_db)):
     return {
         "classes": classes
     }
- 
+ from sqlalchemy import distinct, func
+
 @app.get("/api/topics-naplan")
 def get_naplan_topics(
     subject: str,
@@ -4587,7 +4588,7 @@ def get_naplan_topics(
 
     print(f"[INPUT] subject={subject}, year={year}, difficulty={difficulty}")
 
-    # Normalize inputs
+    # Normalize inputs (frontend-friendly → DB-friendly)
     normalized_subject = subject.replace("_", " ").title()
     normalized_difficulty = difficulty.capitalize()
 
@@ -4598,7 +4599,8 @@ def get_naplan_topics(
 
     rows = (
         db.query(distinct(QuestionNumeracyLC.topic))
-        .filter(QuestionNumeracyLC.class_name == "naplan")
+        # IMPORTANT: case-insensitive match for class_name
+        .filter(func.lower(QuestionNumeracyLC.class_name) == "naplan")
         .filter(QuestionNumeracyLC.subject == normalized_subject)
         .filter(QuestionNumeracyLC.year == year)
         .filter(QuestionNumeracyLC.difficulty == normalized_difficulty)
@@ -4610,11 +4612,12 @@ def get_naplan_topics(
     print(f"[QUERY RESULT] row_count={len(rows)}")
 
     for idx, (topic,) in enumerate(rows[:5]):
-        print(f"[ROW {idx+1}] topic={topic}")
+        print(f"[ROW {idx + 1}] topic={topic}")
 
     print("=== TOPICS-NAPLAN DEBUG END ===\n")
 
     return [{"name": topic} for (topic,) in rows]
+
 
 @app.post("/generate-new-mr")
 def generate_exam(
