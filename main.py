@@ -4575,7 +4575,6 @@ def fetch_classes(db: Session = Depends(get_db)):
     return {
         "classes": classes
     }
- from sqlalchemy import distinct, func
 
 @app.get("/api/topics-naplan")
 def get_naplan_topics(
