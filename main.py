@@ -2823,8 +2823,17 @@ def generate_naplan_numeracy_exam(
         )
 
     print("✅ Question count validated")
+     # 8. DELETE PREVIOUS EXAM(S)
+    print("🧹 Deleting existing NAPLAN Numeracy exams...")
 
-    # 8. Persist exam
+    deleted_count = (
+        db.query(ExamNaplanNumeracy)
+        .delete()
+    )
+
+    print(f"🗑️ Deleted {deleted_count} previous exam(s)")
+
+    # 9. Persist exam
     print("💾 Saving exam to exam_naplan_numeracy table...")
 
     exam = ExamNaplanNumeracy(
