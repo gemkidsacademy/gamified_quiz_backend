@@ -4583,9 +4583,18 @@ def get_naplan_topics(
     difficulty: str,
     db: Session = Depends(get_db),
 ):
+    print("\n=== TOPICS-NAPLAN DEBUG START ===")
+
+    print(f"[INPUT] subject={subject}, year={year}, difficulty={difficulty}")
+
     # Normalize inputs
     normalized_subject = subject.replace("_", " ").title()
     normalized_difficulty = difficulty.capitalize()
+
+    print(
+        f"[NORMALIZED] subject={normalized_subject}, "
+        f"difficulty={normalized_difficulty}"
+    )
 
     rows = (
         db.query(distinct(QuestionNumeracyLC.topic))
@@ -4598,8 +4607,14 @@ def get_naplan_topics(
         .all()
     )
 
-    return [{"name": topic} for (topic,) in rows]
+    print(f"[QUERY RESULT] row_count={len(rows)}")
 
+    for idx, (topic,) in enumerate(rows[:5]):
+        print(f"[ROW {idx+1}] topic={topic}")
+
+    print("=== TOPICS-NAPLAN DEBUG END ===\n")
+
+    return [{"name": topic} for (topic,) in rows]
 
 @app.post("/generate-new-mr")
 def generate_exam(
