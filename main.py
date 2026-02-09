@@ -2634,25 +2634,74 @@ def normalize_mr_questions_exam_review(raw_questions):
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
  
+from fastapi import Query, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
 @app.get("/api/admin/question-bank/naplan")
 def get_naplan_question_bank(
     subject: str = Query(...),  # numeracy | language_conventions
     year: int = Query(...),
     db: Session = Depends(get_db),
 ):
+    print("=== QUESTION BANK DEBUG START ===")
+    print(f"[INPUT] subject (raw): {subject}")
+    print(f"[INPUT] year: {year}")
+
     # Normalize frontend subject → DB subject
     SUBJECT_MAP = {
         "numeracy": "Numeracy",
         "language_conventions": "Language Conventions",
     }
 
-    subject_db = SUBJECT_MAP.get(subject.lower())
+    subject_key = subject.lower().strip()
+    subject_db = SUBJECT_MAP.get(subject_key)
+
+    print(f"[NORMALIZATION] subject_key: {subject_key}")
+    print(f"[NORMALIZATION] subject_db: {subject_db}")
+
     if not subject_db:
+        print("[ERROR] Invalid subject received from frontend")
         raise HTTPException(
             status_code=400,
             detail=f"Invalid subject: {subject}",
         )
 
+    # --------------------------------------------------
+    # DEBUG STEP 1: Check raw rows before grouping
+    # --------------------------------------------------
+    raw_rows = (
+        db.query(QuestionNumeracyLC)
+        .filter(
+            QuestionNumeracyLC.class_name == "naplan",
+            QuestionNumeracyLC.subject == subject_db,
+            QuestionNumeracyLC.year == year,
+        )
+        .all()
+    )
+
+    print(f"[RAW QUERY] total rows matching filters: {len(raw_rows)}")
+
+    if len(raw_rows) == 0:
+        print("[RAW QUERY] No rows found with these filters:")
+        print(f"  class_name = naplan")
+        print(f"  subject    = {subject_db}")
+        print(f"  year       = {year}")
+        print("=== QUESTION BANK DEBUG END (NO DATA) ===")
+        return []
+
+    # Optional: print a few sample rows
+    for i, row in enumerate(raw_rows[:5]):
+        print(
+            f"[RAW ROW {i}] "
+            f"id={row.id}, "
+            f"difficulty={row.difficulty}, "
+            f"topic={row.topic}"
+        )
+
+    # --------------------------------------------------
+    # DEBUG STEP 2: Aggregated query
+    # --------------------------------------------------
     results = (
         db.query(
             QuestionNumeracyLC.difficulty,
@@ -2675,6 +2724,18 @@ def get_naplan_question_bank(
         .all()
     )
 
+    print(f"[AGG QUERY] grouped rows returned: {len(results)}")
+
+    for i, r in enumerate(results):
+        print(
+            f"[AGG ROW {i}] "
+            f"difficulty={r.difficulty}, "
+            f"topic={r.topic}, "
+            f"total={r.total_questions}"
+        )
+
+    print("=== QUESTION BANK DEBUG END (SUCCESS) ===")
+
     return [
         {
             "difficulty": r.difficulty,
@@ -2683,6 +2744,7 @@ def get_naplan_question_bank(
         }
         for r in results
     ]
+
 @app.get("/api/exams/review-reading")
 def review_reading_exam(
     session_id: int = Query(..., description="Reading exam session ID"),
