@@ -2692,12 +2692,91 @@ def normalize_mr_questions_exam_review(raw_questions):
 
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
- 
 
-from fastapi import Query, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+@app.post("/naplan/numeracy/generate-exam/{quiz_id}")
+def generate_naplan_numeracy_exam(
+    quiz_id: int,
+    db: Session = Depends(get_db)
+):
+    # 1. Load quiz config
+    quiz = (
+        db.query(QuizNaplanNumeracy)
+        .filter(QuizNaplanNumeracy.id == quiz_id)
+        .first()
+    )
 
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    assembled_questions = []
+
+    # 2. Iterate topic rules
+    for topic_cfg in quiz.topics:
+        topic_name = topic_cfg.get("topic")
+        topic_count = topic_cfg.get("count")
+
+        if not topic_name or not topic_count:
+            continue
+
+        # 3. Fetch matching questions
+        questions = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.class_name == quiz.class_name,
+                QuestionNumeracyLC.subject == quiz.subject,
+                QuestionNumeracyLC.year == quiz.year,
+                QuestionNumeracyLC.difficulty == quiz.difficulty,
+                QuestionNumeracyLC.topic == topic_name
+            )
+            .all()
+        )
+
+        if len(questions) < topic_count:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough questions for topic '{topic_name}'"
+            )
+
+        # 4. Randomly sample
+        selected = random.sample(questions, topic_count)
+
+        for q in selected:
+            assembled_questions.append({
+                "id": q.id,
+                "question_type": q.question_type,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+                "question_text": q.question_text,
+                "question_blocks": q.question_blocks,
+                "options": q.options,
+                "correct_answer": q.correct_answer
+            })
+
+    # 5. Final sanity check
+    if len(assembled_questions) != quiz.total_questions:
+        raise HTTPException(
+            status_code=400,
+            detail="Generated question count does not match quiz total"
+        )
+
+    # 6. Persist exam
+    exam = ExamNaplanNumeracy(
+        quiz_id=quiz.id,
+        class_name=quiz.class_name,
+        subject=quiz.subject,
+        difficulty=quiz.difficulty,
+        questions=assembled_questions
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    return {
+        "message": "NAPLAN Numeracy exam generated successfully",
+        "exam_id": exam.id,
+        "total_questions": len(assembled_questions)
+    }
 @app.get("/api/admin/question-bank/naplan")
 def get_naplan_question_bank(
     subject: str = Query(...),  # numeracy | language_conventions
