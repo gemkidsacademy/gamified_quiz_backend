@@ -2692,13 +2692,14 @@ def normalize_mr_questions_exam_review(raw_questions):
 
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
+
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
     db: Session = Depends(get_db)
 ):
-    print("=== START: Generate NAPLAN Numeracy Exam ===")
+    print("\n=== START: Generate NAPLAN Numeracy Exam ===")
 
-    # 1. Load the single quiz config (latest / only one)
+    # 1. Load quiz config (single active quiz)
     quiz = (
         db.query(QuizNaplanNumeracy)
         .order_by(QuizNaplanNumeracy.id.desc())
@@ -2710,7 +2711,7 @@ def generate_naplan_numeracy_exam(
         raise HTTPException(status_code=404, detail="NAPLAN Numeracy quiz not found")
 
     print(
-        f"✅ Quiz loaded | id={quiz.id}, class={quiz.class_name}, "
+        f"✅ Quiz loaded | id={quiz.id}, "
         f"year={quiz.year}, difficulty={quiz.difficulty}"
     )
     print(f"📘 Topics config: {quiz.topics}")
@@ -2730,22 +2731,29 @@ def generate_naplan_numeracy_exam(
             print("⚠️ Skipping topic due to missing name or db count")
             continue
 
-        print(f"➡️ Topic: {topic_name} | DB questions required: {db_count}")
+        print(f"➡️ Topic: {topic_name}")
+        print(f"➡️ DB questions required: {db_count}")
 
-        # 3. Fetch matching questions
+        # 3. DEBUG: check topic-only match
+        topic_only_count = (
+            db.query(QuestionNumeracyLC)
+            .filter(QuestionNumeracyLC.topic == topic_name)
+            .count()
+        )
+        print(f"🔍 Topic-only match count: {topic_only_count}")
+
+        # 4. Fetch matching questions (CORRECT FILTERS)
         questions = (
             db.query(QuestionNumeracyLC)
             .filter(
-                QuestionNumeracyLC.class_name == quiz.class_name,
-                QuestionNumeracyLC.subject == quiz.subject,
+                QuestionNumeracyLC.topic == topic_name,
                 QuestionNumeracyLC.year == quiz.year,
-                QuestionNumeracyLC.difficulty == quiz.difficulty,
-                QuestionNumeracyLC.topic == topic_name
+                QuestionNumeracyLC.difficulty == quiz.difficulty
             )
             .all()
         )
 
-        print(f"🔎 Questions found for '{topic_name}': {len(questions)}")
+        print(f"🔎 Questions found after filters: {len(questions)}")
 
         if len(questions) < db_count:
             print(
@@ -2757,9 +2765,9 @@ def generate_naplan_numeracy_exam(
                 detail=f"Not enough questions for topic '{topic_name}'"
             )
 
-        # 4. Randomly sample DB questions
+        # 5. Random sampling
         selected = random.sample(questions, db_count)
-        print(f"🎯 Selected {len(selected)} questions for '{topic_name}'")
+        print(f"🎯 Selected {len(selected)} questions")
 
         for q in selected:
             assembled_questions.append({
@@ -2773,7 +2781,7 @@ def generate_naplan_numeracy_exam(
                 "correct_answer": q.correct_answer
             })
 
-    # 5. Final sanity check
+    # 6. Final sanity check
     print("\n=== FINAL CHECK ===")
     print(f"Total assembled questions: {len(assembled_questions)}")
 
@@ -2789,13 +2797,13 @@ def generate_naplan_numeracy_exam(
 
     print("✅ Question count validated")
 
-    # 6. Persist exam
+    # 7. Persist exam
     print("💾 Saving exam to exam_naplan_numeracy table...")
 
     exam = ExamNaplanNumeracy(
         quiz_id=quiz.id,  # traceability only
-        class_name=quiz.class_name,
-        subject=quiz.subject,
+        class_name="NAPLAN",
+        subject="Numeracy",
         difficulty=quiz.difficulty,
         questions=assembled_questions
     )
