@@ -1944,48 +1944,59 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
     Visual order, images, and question_blocks are handled
     entirely by the backend and MUST NOT be inferred by GPT.
     """
-
     SYSTEM_PROMPT = (
-        "You are a deterministic exam-question parser.\n\n"
+    "You are a deterministic exam-question parser.\n\n"
+
+    "INPUT CONTRACT:\n"
+    "- You will receive ONLY plain text extracted from a question\n"
+    "- The text may span multiple paragraphs\n"
+    "- The text contains NO images and NO layout markers\n\n"
+
+    "CONTENT RULES:\n"
+    "- Preserve wording exactly as given\n"
+    "- Do NOT summarize, paraphrase, or omit content\n"
+    "- Do NOT invent or infer missing information\n\n"
+
+    "STRUCTURE RULES:\n"
+    "- Extract the following fields if present:\n"
+    "  class_name\n"
+    "  question_type (integer)\n"
+    "  year (integer)\n"
+    "  subject\n"
+    "  topic\n"
+    "  difficulty\n"
+    "  options (A–Z, ONLY for question_type 1 and 2)\n"
+    "  correct_answer\n\n"
+
+    "ANSWER FORMAT RULES:\n"
+    "- If question_type = 1:\n"
+    "  - correct_answer MUST be a single string\n"
+    "  - Example: \"B\"\n\n"
+
+    "- If question_type = 2:\n"
+    "  - correct_answer MUST be an array of strings\n"
+    "  - Example: [\"B\", \"D\"]\n\n"
+
+    "- If question_type = 3:\n"
+    "  - correct_answer MUST be a single number or numeric string\n"
+    "  - Example: 23\n\n"
+
+    "- If question_type = 4:\n"
+    "  - correct_answer MUST be a single string\n"
+    "  - Example: \"stars\"\n\n"
+
+    "OMISSION RULES:\n"
+    "- If a required field is missing, OMIT the question entirely\n"
+    "- Do NOT emit placeholders\n"
+    "- Do NOT emit partial questions\n"
+    "- An empty questions array is valid\n\n"
+
+    "OUTPUT RULES:\n"
+    "- Return ONLY valid JSON matching the provided schema\n"
+    "- Do NOT include commentary, markdown, or explanations"
+)
+
     
-        "INPUT CONTRACT:\n"
-        "- You will receive ONLY plain text extracted from a question\n"
-        "- The text may span multiple paragraphs\n"
-        "- The text contains NO images and NO layout markers\n\n"
-    
-        "CONTENT RULES:\n"
-        "- Preserve wording exactly as given\n"
-        "- Do NOT summarize, paraphrase, or omit content\n"
-        "- Do NOT invent or infer missing information\n\n"
-    
-        "STRUCTURE RULES:\n"
-        "- Extract the following fields if present:\n"
-        "  class_name\n"
-        "  question_type (integer)\n"
-        "  year (integer)\n"
-        "  subject\n"
-        "  topic\n"
-        "  difficulty\n"
-        "  options (A–Z, for question_type 1 and 2)\n"
-        "  correct_answer\n\n"
-    
-        "ANSWER FORMAT RULES:\n"
-        "- If question_type = 1:\n"
-        "  - correct_answer MUST be a single string (example: \"B\")\n"
-        "- If question_type = 2:\n"
-        "  - correct_answer MUST be an array of strings\n"
-        "  - Example: [\"B\", \"D\"]\n\n"
-    
-        "OMISSION RULES:\n"
-        "- If a required field is missing, OMIT the question entirely\n"
-        "- Do NOT emit placeholders\n"
-        "- Do NOT emit partial questions\n"
-        "- An empty questions array is valid\n\n"
-    
-        "OUTPUT RULES:\n"
-        "- Return ONLY valid JSON matching the provided schema\n"
-        "- Do NOT include commentary, markdown, or explanations"
-    )
 
     for attempt in range(retries + 1):
         serialized = serialize_blocks_for_gpt_numeracy_LC(payload["blocks"])
@@ -15120,7 +15131,8 @@ async def upload_word_naplan(
             })
             continue
 
-        subject = questions[0].get("subject")
+        raw_subject = questions[0].get("subject", "").strip()
+        subject = raw_subject.title()
         print(f"[{request_id}] 🏷️ Subject detected: {subject}")
 
         if subject not in {"Numeracy", "Language Conventions"}:
@@ -15128,10 +15140,9 @@ async def upload_word_naplan(
             block_report.append({
                 "block": block_idx,
                 "status": "failed",
-                "details": f"Invalid NAPLAN subject: {subject}",
+                "details": f"Invalid NAPLAN subject: {raw_subject}",
             })
             continue
-
         block_had_success = False
 
         # -----------------------------
@@ -15147,13 +15158,13 @@ async def upload_word_naplan(
             qt = q.get("question_type")
             block_types.add(qt)
             if qt == 1:
-                # MCQ (existing behavior)
+                # MCQ
                 if not q.get("options") or not q.get("correct_answer"):
                     skipped_partial += 1
                     continue
             
             elif qt == 2:
-                # Multi-select MCQ (images allowed)
+                # Multi-select MCQ
                 if not q.get("options") or not q.get("correct_answer"):
                     skipped_partial += 1
                     continue
@@ -15165,16 +15176,40 @@ async def upload_word_naplan(
                         "details": "question_type=2 requires correct_answer as a list",
                     })
                     continue
-
-
+            
+            elif qt == 3:
+                # Numeric input
+                if q.get("correct_answer") is None:
+                    block_report.append({
+                        "block": block_idx,
+                        "status": "failed",
+                        "details": "question_type=3 requires correct_answer",
+                    })
+                    continue
+            
+                # Normalize numeric answers for storage
+                q["correct_answer"] = str(q["correct_answer"]).strip()
+            
+            elif qt == 4:
+                # Text input
+                if not q.get("correct_answer"):
+                    block_report.append({
+                        "block": block_idx,
+                        "status": "failed",
+                        "details": "question_type=4 requires correct_answer",
+                    })
+                    continue
+            
+                q["correct_answer"] = str(q["correct_answer"]).strip()
             
             else:
                 block_report.append({
                     "block": block_idx,
                     "status": "failed",
-                    "details": f"Unsupported question_type: {qt}"
+                    "details": f"Unsupported question_type: {qt}",
                 })
                 continue
+
 
 
             q["question_blocks"] = question_block
