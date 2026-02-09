@@ -2634,6 +2634,7 @@ def normalize_mr_questions_exam_review(raw_questions):
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
  
+
 from fastapi import Query, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -2644,11 +2645,13 @@ def get_naplan_question_bank(
     year: int = Query(...),
     db: Session = Depends(get_db),
 ):
-    print("=== QUESTION BANK DEBUG START ===")
+    print("\n=== QUESTION BANK DEBUG START ===")
     print(f"[INPUT] subject (raw): {subject}")
     print(f"[INPUT] year: {year}")
 
-    # Normalize frontend subject → DB subject
+    # -----------------------------
+    # Normalize subject (frontend → DB)
+    # -----------------------------
     SUBJECT_MAP = {
         "numeracy": "Numeracy",
         "language_conventions": "Language Conventions",
@@ -2661,36 +2664,36 @@ def get_naplan_question_bank(
     print(f"[NORMALIZATION] subject_db: {subject_db}")
 
     if not subject_db:
-        print("[ERROR] Invalid subject received from frontend")
+        print("[ERROR] Invalid subject received")
         raise HTTPException(
             status_code=400,
             detail=f"Invalid subject: {subject}",
         )
 
-    # --------------------------------------------------
-    # DEBUG STEP 1: Check raw rows before grouping
-    # --------------------------------------------------
+    # -----------------------------
+    # DEBUG STEP 1: Raw rows check
+    # (CASE-INSENSITIVE class_name)
+    # -----------------------------
     raw_rows = (
         db.query(QuestionNumeracyLC)
         .filter(
-            QuestionNumeracyLC.class_name == "naplan",
+            func.lower(QuestionNumeracyLC.class_name) == "naplan",
             QuestionNumeracyLC.subject == subject_db,
             QuestionNumeracyLC.year == year,
         )
         .all()
     )
 
-    print(f"[RAW QUERY] total rows matching filters: {len(raw_rows)}")
+    print(f"[RAW QUERY] rows found: {len(raw_rows)}")
 
-    if len(raw_rows) == 0:
-        print("[RAW QUERY] No rows found with these filters:")
-        print(f"  class_name = naplan")
-        print(f"  subject    = {subject_db}")
-        print(f"  year       = {year}")
-        print("=== QUESTION BANK DEBUG END (NO DATA) ===")
+    if not raw_rows:
+        print("[RAW QUERY] No rows matched filters:")
+        print("  class_name (ci) = naplan")
+        print(f"  subject         = {subject_db}")
+        print(f"  year            = {year}")
+        print("=== QUESTION BANK DEBUG END (NO DATA) ===\n")
         return []
 
-    # Optional: print a few sample rows
     for i, row in enumerate(raw_rows[:5]):
         print(
             f"[RAW ROW {i}] "
@@ -2699,26 +2702,27 @@ def get_naplan_question_bank(
             f"topic={row.topic}"
         )
 
-    # --------------------------------------------------
+    # -----------------------------
     # DEBUG STEP 2: Aggregated query
-    # --------------------------------------------------
+    # (NORMALIZE difficulty)
+    # -----------------------------
     results = (
         db.query(
-            QuestionNumeracyLC.difficulty,
+            func.lower(QuestionNumeracyLC.difficulty).label("difficulty"),
             QuestionNumeracyLC.topic,
             func.count(QuestionNumeracyLC.id).label("total_questions"),
         )
         .filter(
-            QuestionNumeracyLC.class_name == "naplan",
+            func.lower(QuestionNumeracyLC.class_name) == "naplan",
             QuestionNumeracyLC.subject == subject_db,
             QuestionNumeracyLC.year == year,
         )
         .group_by(
-            QuestionNumeracyLC.difficulty,
+            func.lower(QuestionNumeracyLC.difficulty),
             QuestionNumeracyLC.topic,
         )
         .order_by(
-            QuestionNumeracyLC.difficulty,
+            func.lower(QuestionNumeracyLC.difficulty),
             QuestionNumeracyLC.topic,
         )
         .all()
@@ -2734,16 +2738,17 @@ def get_naplan_question_bank(
             f"total={r.total_questions}"
         )
 
-    print("=== QUESTION BANK DEBUG END (SUCCESS) ===")
+    print("=== QUESTION BANK DEBUG END (SUCCESS) ===\n")
 
     return [
         {
-            "difficulty": r.difficulty,
+            "difficulty": r.difficulty,   # now "easy", "medium", etc.
             "topic": r.topic,
             "total_questions": r.total_questions,
         }
         for r in results
     ]
+
 
 @app.get("/api/exams/review-reading")
 def review_reading_exam(
