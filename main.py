@@ -4582,17 +4582,18 @@ def get_naplan_numeracy_topics(
     difficulty: str,
     db: Session = Depends(get_db),
 ):
-    rows = (
+    topics = (
         db.query(Topic.name)
         .filter(Topic.class_name == "naplan")
         .filter(Topic.subject == "Numeracy")
         .filter(Topic.year == year)
         .filter(Topic.difficulty == difficulty)
         .distinct()
+        .order_by(Topic.name.asc())
         .all()
     )
 
-    return [{"name": r.name} for r in rows]
+    return [{"name": name} for (name,) in topics]
 
 
 @app.post("/generate-new-mr")
