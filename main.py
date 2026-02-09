@@ -4584,25 +4584,21 @@ def get_naplan_topics(
     db: Session = Depends(get_db),
 ):
     # Normalize inputs
-    normalized_subject = (
-        subject.replace("_", " ").title()
-    )  # numeracy -> Numeracy
-       # language_conventions -> Language Conventions
+    normalized_subject = subject.replace("_", " ").title()
+    normalized_difficulty = difficulty.capitalize()
 
-    normalized_difficulty = difficulty.capitalize()  # easy -> Easy
-
-    topics = (
-        db.query(Topic.name)
-        .filter(Topic.class_name == "naplan")
-        .filter(Topic.subject == normalized_subject)
-        .filter(Topic.year == year)
-        .filter(Topic.difficulty == normalized_difficulty)
-        .distinct()
-        .order_by(Topic.name.asc())
+    rows = (
+        db.query(distinct(QuestionNumeracyLC.topic))
+        .filter(QuestionNumeracyLC.class_name == "naplan")
+        .filter(QuestionNumeracyLC.subject == normalized_subject)
+        .filter(QuestionNumeracyLC.year == year)
+        .filter(QuestionNumeracyLC.difficulty == normalized_difficulty)
+        .filter(QuestionNumeracyLC.topic.isnot(None))
+        .order_by(QuestionNumeracyLC.topic.asc())
         .all()
     )
 
-    return [{"name": name} for (name,) in topics]
+    return [{"name": topic} for (topic,) in rows]
 
 
 @app.post("/generate-new-mr")
