@@ -2633,6 +2633,43 @@ def normalize_mr_questions_exam_review(raw_questions):
 
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
+ 
+@app.get("/api/admin/question-bank/naplan")
+def get_naplan_question_bank(
+    subject: str = Query(...),  # numeracy | language_conventions
+    year: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    results = (
+        db.query(
+            QuestionNumeracyLC.difficulty,
+            QuestionNumeracyLC.topic,
+            func.count(QuestionNumeracyLC.id).label("total_questions"),
+        )
+        .filter(
+            QuestionNumeracyLC.class_name == "naplan",
+            QuestionNumeracyLC.subject == subject,
+            QuestionNumeracyLC.year == year,
+        )
+        .group_by(
+            QuestionNumeracyLC.difficulty,
+            QuestionNumeracyLC.topic,
+        )
+        .order_by(
+            QuestionNumeracyLC.difficulty,
+            QuestionNumeracyLC.topic,
+        )
+        .all()
+    )
+
+    return [
+        {
+            "difficulty": r.difficulty,
+            "topic": r.topic,
+            "total_questions": r.total_questions,
+        }
+        for r in results
+    ]
 @app.get("/api/exams/review-reading")
 def review_reading_exam(
     session_id: int = Query(..., description="Reading exam session ID"),
