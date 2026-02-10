@@ -2023,38 +2023,22 @@ def serialize_blocks_for_gpt_numeracy_LC(blocks: list[dict]) -> str:
  
 async def parse_with_gpt(payload: dict, retries: int = 2):
 
-    """
-    Deterministic GPT parser.
-    GPT is responsible ONLY for semantic extraction:
-    - class_name
-    - subject
-    - topic
-    - difficulty
-    - options
-    - correct_answer
-
-    Visual order, images, and question_blocks are handled
-    entirely by the backend and MUST NOT be inferred by GPT.
-    """
-
     SYSTEM_PROMPT = (
         "You are a deterministic exam-question parser.\n\n"
 
         "INPUT CONTRACT:\n"
-        "- You will receive ONLY plain text extracted from a question\n"
-        "- The text may span multiple paragraphs\n"
-        "- The text contains NO images and NO layout markers\n\n"
+        "- You will receive text representing EXACTLY ONE exam\n"
+        "- The exam contains AT MOST ONE question\n"
+        "- Metadata (class, subject, topic, difficulty) may appear before the question\n\n"
 
         "CONTENT RULES:\n"
-        "- Preserve wording exactly as given\n"
-        "- Do NOT summarize, paraphrase, or omit content\n"
-        "- Do NOT invent or infer missing information\n\n"
+        "- Preserve wording exactly\n"
+        "- Do NOT invent missing fields\n"
+        "- Do NOT merge multiple questions\n\n"
 
-        "STRUCTURE RULES:\n"
+        "EXTRACTION RULES:\n"
         "- Extract the following fields if present:\n"
         "  class_name\n"
-        "  question_type\n"
-        "  year\n"
         "  subject\n"
         "  topic\n"
         "  difficulty\n"
@@ -2062,47 +2046,44 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
         "  correct_answer\n\n"
 
         "OMISSION RULES:\n"
-        "- If a required field is missing, OMIT the question entirely\n"
-        "- Do NOT emit placeholders\n"
-        "- Do NOT emit partial questions\n"
-        "- An empty questions array is valid\n\n"
+        "- If options or correct_answer are missing, return null\n"
+        "- Do NOT emit partial objects\n\n"
 
         "OUTPUT RULES:\n"
-        "- Return ONLY valid JSON matching the provided schema\n"
-        "- Do NOT include commentary, markdown, or explanations"
+        "- Return ONLY valid JSON\n"
+        "- No markdown, no commentary\n"
+        "- Either return a single question object or null\n\n"
+
+        "OUTPUT FORMAT:\n"
+        "{ \"question\": { ... } } or { \"question\": null }"
     )
 
+    serialized = serialize_blocks_for_gpt(payload["blocks"])
+
     for attempt in range(retries + 1):
-        serialized = serialize_blocks_for_gpt(payload["blocks"])
         completion = await client_save_questions.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0,
-            top_p=1,
             response_format={
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "QuestionList",
+                    "name": "SingleQuestion",
                     "schema": {
                         "type": "object",
                         "properties": {
-                            "questions": {
-                                "type": "array",
-                                "items": QuestionSchema
+                            "question": {
+                                "type": ["object", "null"],
+                                "properties": QuestionSchema["properties"],
+                                "required": ["options", "correct_answer"]
                             }
                         },
-                        "required": ["questions"]
+                        "required": ["question"]
                     }
                 }
             },
             messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": serialized  # MUST be a string
-                }
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": serialized}
             ]
         )
 
@@ -2110,25 +2091,20 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
 
         try:
             parsed = json.loads(raw)
-        except json.JSONDecodeError as e:
-            print(
-                f"[GPT] Invalid JSON (attempt {attempt + 1}/{retries + 1}) | "
-                f"error={e}"
-            )
+        except json.JSONDecodeError:
             if attempt < retries:
                 continue
-            return {"questions": []}
+            return {"question": None}
 
-        questions = parsed.get("questions", [])
-
-        if questions:
+        if parsed.get("question"):
             return parsed
 
         if attempt < retries:
             print(f"[GPT] Empty result, retry {attempt + 1}")
             continue
 
-        return parsed
+        return {"question": None}
+
 
 async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
     """
