@@ -11435,23 +11435,29 @@ def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     topic = extract_meta("topic")
     difficulty = extract_meta("difficulty")
 
-    if not all([class_name, subject, topic, difficulty]):
-        raise ValueError("Missing required METADATA fields")
+    missing = []
+    if not class_name: missing.append("CLASS")
+    if not subject: missing.append("SUBJECT")
+    if not topic: missing.append("TOPIC")
+    if not difficulty: missing.append("DIFFICULTY")
+    
+    if missing:
+        raise ValueError(f"Missing METADATA fields: {', '.join(missing)}")
 
     # --------------------------------------------------
-    # 2️⃣ TOTAL QUESTIONS (STRICT)
+    # 2️⃣ TOTAL QUESTIONS (NORMALIZED)
     # --------------------------------------------------
     tq_match = re.search(
-        r"^\s*Total_Questions\s*:\s*(\d+)\s*$",
+        r"^\s*(TOTAL[_ ]?QUESTIONS|TOTALQUESTIONS)\s*:\s*(\d+)\s*$",
         block_text,
         re.MULTILINE | re.IGNORECASE
     )
-
+    
     if not tq_match:
-        raise ValueError("Total_Questions missing")
-
-    expected_q_count = int(tq_match.group(1))
-
+        raise ValueError("TOTAL_QUESTIONS missing")
+    
+    expected_q_count = int(tq_match.group(2))
+    
     if expected_q_count != 6:
         raise ValueError("Gapped text must have exactly 6 gaps")
 
