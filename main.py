@@ -15972,7 +15972,10 @@ async def upload_word(
         if not looks_like_question(question_block):
             continue
 
-        print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}")
+        print(
+            f"[{request_id}] 🧠 GPT BLOCK {block_idx} "
+            f"parsed {len(questions)} question(s)"
+        )
 
         try:
             result = await parse_with_gpt({"blocks": question_block})
