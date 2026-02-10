@@ -504,9 +504,24 @@ class StudentExamNaplanNumeracy(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
-    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    # -----------------------------
+    # Foreign keys
+    # -----------------------------
+    student_id = Column(
+        Integer,
+        ForeignKey("students.id"),
+        nullable=False
+    )
 
+    exam_id = Column(
+        Integer,
+        ForeignKey("exam_naplan_numeracy.id"),
+        nullable=False
+    )
+
+    # -----------------------------
+    # Timing
+    # -----------------------------
     started_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -518,18 +533,24 @@ class StudentExamNaplanNumeracy(Base):
         nullable=True
     )
 
-    duration_minutes = Column(Integer, nullable=False)
+    duration_minutes = Column(
+        Integer,
+        nullable=False
+    )
 
     # -----------------------------
-    # Relationships (optional but recommended)
+    # Relationships
     # -----------------------------
     student = relationship("Student")
-    exam = relationship("Exam")
+
+    exam = relationship("ExamNaplanNumeracy")
+
     responses = relationship(
-        "StudentExamResponseThinkingSkills",
+        "StudentExamResponseNaplanNumeracy",
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+
 
 
 class StudentExamResponseThinkingSkills(Base):
