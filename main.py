@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body 
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 import docx
 from datetime import date
 
