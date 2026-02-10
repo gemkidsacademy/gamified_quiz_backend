@@ -11417,7 +11417,7 @@ def extract_all_metadata(block_text: str) -> dict[str, str]:
 
     for line in block_text.splitlines():
         match = re.match(
-            r"^[^\S\r\n]*([^:]+)[^\S\r\n]*:[^\S\r\n]*\"?(.*?)\"?[^\S\r\n]*$",
+            r"^[^\S\r\n]*([^:：]+)[^\S\r\n]*[:：][^\S\r\n]*\"?(.*?)\"?[^\S\r\n]*$",
             line,
             re.IGNORECASE
         )
