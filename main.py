@@ -16109,14 +16109,19 @@ async def upload_word(
     # -----------------------------
     # Final response
     # -----------------------------
+    overall_status = "success"
+    if any(b["status"] == "failed" for b in block_report):
+        overall_status = "partial_success"
+
     return {
-        "status": "success",
+        "status": overall_status,
         "summary": {
             "saved": saved_count,
             "skipped_partial": skipped_partial
         },
         "blocks": block_report
     }
+
 
 def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
     """
