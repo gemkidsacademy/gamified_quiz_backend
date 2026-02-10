@@ -13920,7 +13920,7 @@ def start_naplan_numeracy_exam(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
-                q_id=q["q_id"],
+                q_id = q["id"],
                 topic=q.get("topic"),
                 selected_option=None,
                 correct_option=q.get("correct_answer"),
