@@ -15987,7 +15987,15 @@ def chunk_by_exam(blocks):
         exams.append(current)
 
     return exams
- 
+def count_question_markers(blocks):
+    count = 0
+    for block in blocks:
+        if block["type"] == "text":
+            text = block["content"].lower()
+            if text.strip().startswith("question "):
+                count += 1
+    return count
+
 #new upload-word code
 #new upload-word code
 @app.post("/upload-word")
@@ -16034,6 +16042,20 @@ async def upload_word(
     # PROCESS EACH EXAM (1 exam → 1 question max)
     # =================================================
     for exam_idx, exam_block in enumerate(exam_blocks, start=1):
+        question_count = count_question_markers(exam_block)
+
+        if question_count > 1:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "INVALID_EXAM_FORMAT",
+                    "message": (
+                        f"Exam {exam_idx} contains {question_count} questions. "
+                        "Expected exactly ONE question per exam. "
+                        "Please split questions into separate EXAM blocks."
+                    )
+                }
+            )
 
         # -----------------------------
         # GPT parse (expect ONE question)
