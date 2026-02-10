@@ -15964,16 +15964,27 @@ def extract_exam_block(ordered_blocks):
 def chunk_by_exam(blocks):
     exams = []
     current = []
+    inside_exam = False
 
     for block in blocks:
         if is_exam_start(block):
             current = []
-        elif is_exam_end(block):
-            if current:
+            inside_exam = True
+            continue
+
+        if is_exam_end(block):
+            if inside_exam and current:
                 exams.append(current)
             current = []
-        else:
+            inside_exam = False
+            continue
+
+        if inside_exam:
             current.append(block)
+
+    # Handle missing EXAM END at EOF
+    if inside_exam and current:
+        exams.append(current)
 
     return exams
  
