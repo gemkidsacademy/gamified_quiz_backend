@@ -11410,6 +11410,38 @@ def detect_question_type(block_text: str) -> str | None:
         return match.group(1).lower()
 
     return None
+def extract_all_metadata(block_text: str) -> dict[str, str]:
+    import re
+
+    metadata = {}
+
+    for line in block_text.splitlines():
+        match = re.match(
+            r"^[^\S\r\n]*([^:]+)[^\S\r\n]*:[^\S\r\n]*\"?(.*?)\"?[^\S\r\n]*$",
+            line,
+            re.IGNORECASE
+        )
+        if not match:
+            continue
+
+        raw_key = match.group(1)
+        value = match.group(2).strip()
+
+        # 🔑 NORMALIZE KEY
+        key = raw_key.strip().upper().replace(" ", "_")
+
+        KEY_ALIASES = {
+            "CLASS_NAME": "CLASS",
+            "TOTALQUESTIONS": "TOTAL_QUESTIONS",
+            "TOTAL_QUESTION": "TOTAL_QUESTIONS",
+        }
+
+        key = KEY_ALIASES.get(key, key)
+
+        metadata[key] = value
+
+    return metadata
+
 
 def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     import json
@@ -11431,10 +11463,12 @@ def parse_gapped_block(block_text: str, db: Session) -> list[int]:
         return match.group(1).strip() if match else None
 
 
-    class_name = extract_meta("class") or extract_meta("class_name")
-    subject = extract_meta("subject")
-    topic = extract_meta("topic")
-    difficulty = extract_meta("difficulty")
+    meta = extract_all_metadata(block_text)
+    
+    class_name = meta.get("CLASS")
+    subject = meta.get("SUBJECT")
+    topic = meta.get("TOPIC")
+    difficulty = meta.get("DIFFICULTY")
 
     missing = []
     if not class_name: missing.append("CLASS")
