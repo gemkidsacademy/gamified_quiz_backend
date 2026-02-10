@@ -13725,38 +13725,54 @@ def start_exam(
         "questions": normalize_questions(exam.questions),
         "remaining_time": 40 * 60
     }
-def normalize_naplan_numeracy_questions_live(raw_questions, db):
+ 
+def normalize_naplan_numeracy_questions_live(raw_questions):
+    """
+    Build EXAM-SAFE question DTOs.
+    No answers. No metadata. No parser artifacts.
+    """
+
     normalized = []
 
     for q in raw_questions or []:
-        fixed = dict(q)
+        # --- Determine answer type explicitly ---
+        if q.get("question_type") == 3:
+            answer_type = "NUMERIC_INPUT"
+        elif q.get("question_type") == 4:
+            answer_type = "TEXT_INPUT"
+        else:
+            answer_type = None
 
-        # ❌ Remove direct answers
-        fixed.pop("correct_answer", None)
-        fixed.pop("correct", None)
+        # --- Clean display blocks ---
+        blocks = q.get("question_blocks") or []
+        display_blocks = []
 
-        blocks = fixed.get("question_blocks") or fixed.get("blocks") or []
-
-        clean_blocks = []
         for block in blocks:
-            text = (block.get("content") or "").strip()
+            text = (block.get("content") or "").strip().lower()
 
-            # ❌ Remove answer leakage
-            if text.isdigit():
+            # Skip metadata / parser artifacts
+            if text.startswith("question_type"):
                 continue
-            if text.lower() in {"stars"}:
+            if text.startswith("year:"):
                 continue
-            if text.startswith("ANSWER_TYPE"):
+            if text.startswith("answer_type"):
+                continue
+            if text.startswith("correct_answer"):
                 continue
 
-            clean_blocks.append(block)
+            display_blocks.append(block)
 
-        fixed["question_blocks"] = clean_blocks
-
-        normalized.append(fixed)
+        normalized.append({
+            "q_id": q["id"],
+            "topic": q.get("topic"),
+            "difficulty": q.get("difficulty"),
+            "blocks": display_blocks,
+            "answer_type": answer_type,
+            "options": q.get("options")
+        })
 
     return normalized
-    
+   
 
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
@@ -13856,10 +13872,7 @@ def start_naplan_numeracy_exam(
                 detail="NAPLAN Numeracy exam not found"
             )
 
-        normalized_questions = normalize_naplan_numeracy_questions_live(
-            exam.questions or [],
-            db
-        )
+        normalized_questions = normalize_naplan_numeracy_questions_live(exam.questions or [])
 
 
         return {
@@ -13890,10 +13903,7 @@ def start_naplan_numeracy_exam(
             detail="NAPLAN Numeracy exam not found"
         )
 
-    normalized_questions = normalize_naplan_numeracy_questions_live(
-        exam.questions or [],
-        db
-    )
+    normalized_questions = normalize_naplan_numeracy_questions_live(exam.questions or [])
 
     new_attempt = StudentExamNaplanNumeracy(
         student_id=student.id,
@@ -13914,16 +13924,16 @@ def start_naplan_numeracy_exam(
     # --------------------------------------------------
     # Pre-create response rows
     # --------------------------------------------------
-    for q in normalized_questions:
+    for original_q in exam.questions or []:
         db.add(
             StudentExamResponseNaplanNumeracy(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
-                q_id = q["id"],
-                topic=q.get("topic"),
+                q_id=original_q["id"],
+                topic=original_q.get("topic"),
                 selected_option=None,
-                correct_option=q.get("correct_answer"),
+                correct_option=original_q.get("correct_answer"),
                 is_correct=None
             )
         )
