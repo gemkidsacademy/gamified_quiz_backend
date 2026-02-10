@@ -13877,7 +13877,7 @@ def start_naplan_numeracy_exam(
             .filter(
                 func.lower(ExamNaplanNumeracy.class_name) ==
                 func.lower(student.class_name),
-                ExamNaplanNumeracy.subject == "numeracy"
+                ExamNaplanNumeracy.subject == "Numeracy"
             )
             .order_by(ExamNaplanNumeracy.created_at.desc())
             .first()
