@@ -1527,6 +1527,21 @@ class ExamNaplanNumeracy(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class ExamNaplanLanguageConventions(Base):
+    __tablename__ = "exam_naplan_language_conventions"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # just a number, NO foreign key
+    quiz_id = Column(Integer, nullable=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    questions = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class StudentExamAnswer(Base):
     __tablename__ = "student_exam_answers"
@@ -2708,6 +2723,183 @@ def normalize_mr_questions_exam_review(raw_questions):
 
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
+
+@app.post("/naplan/language-conventions/generate-exam")
+def generate_naplan_language_conventions_exam(
+    db: Session = Depends(get_db)
+):
+    print("\n=== START: Generate NAPLAN Language Conventions Exam ===")
+
+    # 1. Load latest quiz config
+    quiz = (
+        db.query(QuizNaplanLanguageConventions)
+        .order_by(QuizNaplanLanguageConventions.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        print("❌ ERROR: No QuizNaplanLanguageConventions found")
+        raise HTTPException(
+            status_code=404,
+            detail="NAPLAN Language Conventions quiz not found"
+        )
+
+    normalized_difficulty = quiz.difficulty.strip().lower()
+
+    print(
+        f"✅ Quiz loaded | id={quiz.id}, "
+        f"year={quiz.year}, difficulty='{quiz.difficulty}' "
+        f"(normalized='{normalized_difficulty}')"
+    )
+    print(f"📘 Topics config: {quiz.topics}")
+    print(f"📌 Expected total questions: {quiz.total_questions}")
+
+    assembled_questions = []
+
+    # 2. Iterate topic configs
+    for idx, topic_cfg in enumerate(quiz.topics):
+        print(f"\n--- Processing topic {idx + 1} ---")
+        print(f"Raw topic config: {topic_cfg}")
+
+        topic_name = topic_cfg.get("name")
+        db_count = topic_cfg.get("db")
+
+        if not topic_name or not db_count:
+            print("⚠️ Skipping topic due to missing name or db count")
+            continue
+
+        print(f"➡️ Topic: {topic_name}")
+        print(f"➡️ Required DB questions: {db_count}")
+
+        # 3. Diagnostic: topic existence
+        topic_only_count = (
+            db.query(QuestionNumeracyLC)
+            .filter(QuestionNumeracyLC.topic == topic_name)
+            .count()
+        )
+        print(f"🔍 Topic-only match count: {topic_only_count}")
+
+        if topic_only_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No questions found for topic '{topic_name}'"
+            )
+
+        # 4. Difficulty-normalized query
+        questions = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.topic == topic_name,
+                func.lower(func.trim(QuestionNumeracyLC.difficulty))
+                == normalized_difficulty
+            )
+            .all()
+        )
+
+        print(
+            f"🔎 Questions after normalized difficulty filter "
+            f"('{normalized_difficulty}'): {len(questions)}"
+        )
+
+        # 5. Fallback if difficulty filter too strict
+        if len(questions) < db_count:
+            print(
+                "⚠️ WARNING: Not enough questions after difficulty filter. "
+                "Attempting topic-only fallback."
+            )
+
+            fallback_questions = (
+                db.query(QuestionNumeracyLC)
+                .filter(QuestionNumeracyLC.topic == topic_name)
+                .all()
+            )
+
+            print(
+                f"🔎 Questions after fallback (topic-only): "
+                f"{len(fallback_questions)}"
+            )
+
+            if len(fallback_questions) < db_count:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Not enough questions for topic '{topic_name}'. "
+                        f"Required={db_count}, Found={len(fallback_questions)}"
+                    )
+                )
+
+            questions = fallback_questions
+
+        # 6. Random sampling
+        selected = random.sample(questions, db_count)
+        print(f"🎯 Selected {len(selected)} questions for topic '{topic_name}'")
+
+        for q in selected:
+            assembled_questions.append({
+                "id": q.id,
+                "question_type": q.question_type,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+                "question_text": q.question_text,
+                "question_blocks": q.question_blocks,
+                "options": q.options,
+                "correct_answer": q.correct_answer,
+            })
+
+    # 7. Final validation
+    print("\n=== FINAL CHECK ===")
+    print(f"Total assembled questions: {len(assembled_questions)}")
+
+    if len(assembled_questions) != quiz.total_questions:
+        print(
+            f"❌ ERROR: Question count mismatch | "
+            f"Expected={quiz.total_questions}, "
+            f"Got={len(assembled_questions)}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Generated question count does not match quiz total"
+        )
+
+    print("✅ Question count validated")
+
+    # 8. Delete previous exams
+    print("🧹 Deleting existing NAPLAN Language Conventions exams...")
+
+    deleted_count = (
+        db.query(ExamNaplanLanguageConventions)
+        .delete()
+    )
+
+    print(f"🗑️ Deleted {deleted_count} previous exam(s)")
+
+    # 9. Persist exam
+    print("💾 Saving exam to exam_naplan_language_conventions table...")
+
+    exam = ExamNaplanLanguageConventions(
+        quiz_id=quiz.id,
+        class_name="NAPLAN",
+        subject="Language Conventions",
+        difficulty=quiz.difficulty,
+        questions=assembled_questions,
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print(
+        f"🎉 SUCCESS: Language Conventions exam generated | "
+        f"exam_id={exam.id}"
+    )
+    print("=== END: Generate NAPLAN Language Conventions Exam ===\n")
+
+    return {
+        "message": "NAPLAN Language Conventions exam generated successfully",
+        "exam_id": exam.id,
+        "total_questions": len(assembled_questions),
+    }
+
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
