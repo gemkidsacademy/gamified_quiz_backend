@@ -508,7 +508,7 @@ class StudentExamNaplanNumeracy(Base):
     # Foreign keys
     # -----------------------------
     student_id = Column(
-        Integer,
+        String,                    
         ForeignKey("students.id"),
         nullable=False
     )
