@@ -16040,10 +16040,15 @@ async def upload_word(
                     )
 
                     if not record:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"{qid}: Image '{raw}' not uploaded yet"
-                        )
+                        block_report.append({
+                            "block": block_idx,
+                            "type": questions[0].get("question_type", "unknown"),
+                            "status": "failed",
+                            "error_code": "IMAGE_NOT_UPLOADED",
+                            "details": f"Image '{raw}' is referenced but not uploaded"
+                        })
+                        block_had_success = False
+                        break
 
                     block.pop("name", None)
                     block["src"] = record.gcs_url
@@ -16072,8 +16077,15 @@ async def upload_word(
                 saved_count += 1
                 block_had_success = True
 
-        except HTTPException:
-            raise
+        except Exception as e:
+            block_report.append({
+                "block": block_idx,
+                "type": questions[0].get("question_type", "unknown"),
+                "status": "failed",
+                "error_code": "UNEXPECTED_ERROR",
+                "details": str(e)
+            })
+
 
         # -----------------------------
         # ✅ BLOCK SUCCESS REPORT (THIS IS THE PLACE)
