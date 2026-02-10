@@ -2745,6 +2745,7 @@ def generate_naplan_language_conventions_exam(
         )
 
     normalized_difficulty = quiz.difficulty.strip().lower()
+    normalized_subject = "language conventions"
 
     print(
         f"✅ Quiz loaded | id={quiz.id}, "
@@ -2771,51 +2772,66 @@ def generate_naplan_language_conventions_exam(
         print(f"➡️ Topic: {topic_name}")
         print(f"➡️ Required DB questions: {db_count}")
 
-        # 3. Diagnostic: topic existence
+        # 3. Diagnostic: strict topic + subject + year existence
         topic_only_count = (
             db.query(QuestionNumeracyLC)
-            .filter(QuestionNumeracyLC.topic == topic_name)
+            .filter(
+                QuestionNumeracyLC.topic == topic_name,
+                func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject,
+                QuestionNumeracyLC.year == quiz.year
+            )
             .count()
         )
-        print(f"🔍 Topic-only match count: {topic_only_count}")
+
+        print(
+            f"🔍 Topic+subject+year match count: {topic_only_count}"
+        )
 
         if topic_only_count == 0:
             raise HTTPException(
                 status_code=400,
-                detail=f"No questions found for topic '{topic_name}'"
+                detail=(
+                    f"No Language Conventions questions found for "
+                    f"topic '{topic_name}' (Year {quiz.year})"
+                )
             )
 
-        # 4. Difficulty-normalized query
+        # 4. Strict difficulty + subject + year query
         questions = (
             db.query(QuestionNumeracyLC)
             .filter(
                 QuestionNumeracyLC.topic == topic_name,
-                func.lower(func.trim(QuestionNumeracyLC.difficulty))
-                == normalized_difficulty
+                QuestionNumeracyLC.year == quiz.year,
+                func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject,
+                func.lower(func.trim(QuestionNumeracyLC.difficulty)) == normalized_difficulty
             )
             .all()
         )
 
         print(
-            f"🔎 Questions after normalized difficulty filter "
+            f"🔎 Questions after strict difficulty filter "
             f"('{normalized_difficulty}'): {len(questions)}"
         )
 
-        # 5. Fallback if difficulty filter too strict
+        # 5. Safe fallback (subject + year still enforced)
         if len(questions) < db_count:
             print(
                 "⚠️ WARNING: Not enough questions after difficulty filter. "
-                "Attempting topic-only fallback."
+                "Attempting subject+year fallback."
             )
 
             fallback_questions = (
                 db.query(QuestionNumeracyLC)
-                .filter(QuestionNumeracyLC.topic == topic_name)
+                .filter(
+                    QuestionNumeracyLC.topic == topic_name,
+                    QuestionNumeracyLC.year == quiz.year,
+                    func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
+                )
                 .all()
             )
 
             print(
-                f"🔎 Questions after fallback (topic-only): "
+                f"🔎 Questions after fallback (subject+year): "
                 f"{len(fallback_questions)}"
             )
 
@@ -2823,7 +2839,8 @@ def generate_naplan_language_conventions_exam(
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough questions for topic '{topic_name}'. "
+                        f"Not enough Language Conventions questions for topic "
+                        f"'{topic_name}' (Year {quiz.year}). "
                         f"Required={db_count}, Found={len(fallback_questions)}"
                     )
                 )
@@ -2899,6 +2916,7 @@ def generate_naplan_language_conventions_exam(
         "exam_id": exam.id,
         "total_questions": len(assembled_questions),
     }
+
 
 
 @app.post("/naplan/numeracy/generate-exam")
