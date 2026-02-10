@@ -13746,21 +13746,32 @@ def normalize_naplan_numeracy_questions_live(raw_questions):
         # --- Clean display blocks ---
         blocks = q.get("question_blocks") or []
         display_blocks = []
+        correct_answer = str(q.get("correct_answer")).strip()
 
         for block in blocks:
-            text = (block.get("content") or "").strip().lower()
-
-            # Skip metadata / parser artifacts
-            if text.startswith("question_type"):
+            content = (block.get("content") or "").strip()
+        
+            lowered = content.lower()
+        
+            # Skip metadata
+            if lowered.startswith("question_type"):
                 continue
-            if text.startswith("year:"):
+            if lowered.startswith("year:"):
                 continue
-            if text.startswith("answer_type"):
+            if lowered.startswith("answer_type"):
                 continue
-            if text.startswith("correct_answer"):
+            if lowered.startswith("correct_answer"):
                 continue
-
+        
+            # 🔥 Skip raw answer leakage
+            if content == correct_answer:
+                continue
+        
             display_blocks.append(block)
+
+        
+
+            
 
         normalized.append({
             "q_id": q["id"],
