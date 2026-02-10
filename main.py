@@ -15961,6 +15961,21 @@ def extract_exam_block(ordered_blocks):
 
     return exam_blocks
 
+def chunk_by_exam(blocks):
+    exams = []
+    current = []
+
+    for block in blocks:
+        if is_exam_start(block):
+            current = []
+        elif is_exam_end(block):
+            if current:
+                exams.append(current)
+            current = []
+        else:
+            current.append(block)
+
+    return exams
  
 #new upload-word code
 #new upload-word code
@@ -15970,219 +15985,196 @@ async def upload_word(
     db: Session = Depends(get_db)
 ):
     request_id = str(uuid.uuid4())[:8]
-    block_report = []
+    report = []
 
     print(f"\n========== GPT-UPLOAD-WORD START [{request_id}] ==========")
     print(f"[{request_id}] 📄 Incoming file: {file.filename}")
     print(f"[{request_id}] 📄 Content-Type: {file.content_type}")
 
-    # -----------------------------
+    # -------------------------------------------------
     # Validate file type
-    # -----------------------------
-    allowed = {
+    # -------------------------------------------------
+    allowed_types = {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "text/plain"
+        "text/plain",
     }
-    if file.content_type not in allowed:
-        raise HTTPException(status_code=400, detail="Invalid file type.")
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Invalid file type")
 
-    # -----------------------------
-    # Load DOCX
-    # -----------------------------
+    # -------------------------------------------------
+    # Load DOCX → ordered blocks
+    # -------------------------------------------------
     try:
         content = await file.read()
         doc = docx.Document(BytesIO(content))
         ordered_blocks = parse_docx_to_ordered_blocks(doc)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Failed to read file.")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Failed to read file")
 
-    # -----------------------------
-    # Chunk by question (source of truth)
-    # -----------------------------
-    question_chunks = chunk_by_question(ordered_blocks)
+    # -------------------------------------------------
+    # EXAM = SOURCE OF TRUTH
+    # -------------------------------------------------
+    exam_blocks = chunk_by_exam(ordered_blocks)
 
-    saved_count = 0
-    skipped_blocks = 0
+    saved = 0
+    skipped = 0
 
-    # =========================================================
-    # PROCESS BLOCKS (1 BLOCK = 1 QUESTION IN WORD DOC)
-    # =========================================================
-    for block_idx, question_block in enumerate(question_chunks, start=1):
-
-        if not looks_like_question(question_block):
-            continue
-
-        block_image_error_reported = False
-        block_saved_any = False
+    # =================================================
+    # PROCESS EACH EXAM (1 exam → 1 question max)
+    # =================================================
+    for exam_idx, exam_block in enumerate(exam_blocks, start=1):
 
         # -----------------------------
-        # GPT parse
+        # GPT parse (expect ONE question)
         # -----------------------------
         try:
-            result = await parse_with_gpt({"blocks": question_block})
-            questions = result.get("questions", [])
-
-            print(
-                f"[{request_id}] 🧠 GPT BLOCK {block_idx} "
-                f"parsed {len(questions)} question(s)"
-            )
+            result = await parse_with_gpt({"blocks": exam_block})
+            question = result.get("question")
         except Exception as e:
-            skipped_blocks += 1
-            block_report.append({
-                "block": block_idx,
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
                 "status": "failed",
                 "error_code": "GPT_ERROR",
                 "details": str(e)
             })
             continue
 
-        if not questions:
-            skipped_blocks += 1
-            block_report.append({
-                "block": block_idx,
+        if not question:
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
                 "status": "skipped",
-                "error_code": "NO_QUESTIONS_PARSED",
-                "details": "GPT returned zero questions"
+                "error_code": "NO_QUESTION_PARSED"
             })
             continue
 
-        # =====================================================
-        # PROCESS QUESTIONS RETURNED BY GPT
-        # =====================================================
-        for q in questions:
-
-            # -----------------------------
-            # Validate required fields
-            # -----------------------------
-            if not q.get("options") or not q.get("correct_answer"):
-                skipped_blocks += 1
-                block_report.append({
-                    "block": block_idx,
-                    "status": "skipped",
-                    "error_code": "INCOMPLETE_QUESTION",
-                    "details": "Missing options or correct answer"
-                })
-                break  # block-level failure
-
-            # -----------------------------
-            # Resolve images (BLOCK-LEVEL)
-            # -----------------------------
-            resolved_blocks = []
-            image_missing = None
-
-            for block in question_block:
-                if block["type"] != "image":
-                    resolved_blocks.append(block)
-                    continue
-
-                raw = (block.get("name") or block.get("src") or "").strip().lower()
-                record = (
-                    db.query(UploadedImage)
-                    .filter(func.lower(func.trim(UploadedImage.original_name)) == raw)
-                    .first()
-                )
-
-                if not record:
-                    image_missing = raw
-                    break
-
-                resolved_blocks.append({
-                    **block,
-                    "src": record.gcs_url
-                })
-
-            if image_missing:
-                skipped_blocks += 1
-                block_report.append({
-                    "block": block_idx,
-                    "status": "skipped",
-                    "error_code": "IMAGE_NOT_UPLOADED",
-                    "details": image_missing
-                })
-                block_image_error_reported = True
-                break  # stop processing this block completely
-
-            # -----------------------------
-            # Guard: must contain text
-            # -----------------------------
-            if not any(b["type"] == "text" for b in resolved_blocks):
-                skipped_blocks += 1
-                block_report.append({
-                    "block": block_idx,
-                    "status": "skipped",
-                    "error_code": "IMAGE_ONLY_BLOCK",
-                    "details": "Question contains no text"
-                })
-                break
-
-            # -----------------------------
-            # Save question
-            # -----------------------------
-            try:
-                question_text = "\n\n".join(
-                    b["content"] for b in resolved_blocks if b["type"] == "text"
-                )
-
-                new_q = Question(
-                    class_name=q.get("class_name"),
-                    subject=q.get("subject"),
-                    topic=q.get("topic"),
-                    difficulty=q.get("difficulty"),
-                    question_type=q.get("question_type") or "multi_image_diagram_mcq",
-                    question_text=question_text,
-                    question_blocks=filter_display_blocks(resolved_blocks),
-                    options=q["options"],
-                    correct_answer=q["correct_answer"]
-                )
-
-                db.add(new_q)
-                db.commit()
-                db.refresh(new_q)
-
-                saved_count += 1
-                block_saved_any = True
-
-                block_report.append({
-                    "block": block_idx,
-                    "question": f"Q{saved_count}",
-                    "status": "success"
-                })
-
-            except Exception as e:
-                skipped_blocks += 1
-                block_report.append({
-                    "block": block_idx,
-                    "status": "failed",
-                    "error_code": "DB_ERROR",
-                    "details": str(e)
-                })
-                break
+        if isinstance(question, list):
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
+                "status": "failed",
+                "error_code": "MULTIPLE_QUESTIONS_RETURNED"
+            })
+            continue
 
         # -----------------------------
-        # Block-level success marker
+        # Validate required fields
         # -----------------------------
-        if block_saved_any:
-            block_report.append({
-                "block": block_idx,
-                "status": "success",
-                "details": "Question saved"
+        if not question.get("options") or not question.get("correct_answer"):
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
+                "status": "skipped",
+                "error_code": "INCOMPLETE_QUESTION"
+            })
+            continue
+
+        # -----------------------------
+        # Resolve images (exam-level)
+        # -----------------------------
+        resolved_blocks = []
+        missing_image = None
+
+        for block in exam_block:
+            if block["type"] != "image":
+                resolved_blocks.append(block)
+                continue
+
+            raw_name = (block.get("name") or block.get("src") or "").strip().lower()
+
+            image_record = (
+                db.query(UploadedImage)
+                .filter(func.lower(func.trim(UploadedImage.original_name)) == raw_name)
+                .first()
+            )
+
+            if not image_record:
+                missing_image = raw_name
+                break
+
+            resolved_blocks.append({
+                **block,
+                "src": image_record.gcs_url
             })
 
-    # -----------------------------
-    # Final response (SOURCE OF TRUTH)
-    # -----------------------------
-    overall_status = "success" if skipped_blocks == 0 else "partial_success"
+        if missing_image:
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
+                "status": "skipped",
+                "error_code": "IMAGE_NOT_UPLOADED",
+                "details": missing_image
+            })
+            continue
+
+        # -----------------------------
+        # Guard: must contain text
+        # -----------------------------
+        if not any(b["type"] == "text" for b in resolved_blocks):
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
+                "status": "skipped",
+                "error_code": "IMAGE_ONLY_EXAM"
+            })
+            continue
+
+        # -----------------------------
+        # Save question
+        # -----------------------------
+        try:
+            question_text = "\n\n".join(
+                b["content"] for b in resolved_blocks if b["type"] == "text"
+            )
+
+            new_question = Question(
+                class_name=question.get("class_name"),
+                subject=question.get("subject"),
+                topic=question.get("topic"),
+                difficulty=question.get("difficulty"),
+                question_type=question.get("question_type") or "multi_image_diagram_mcq",
+                question_text=question_text,
+                question_blocks=filter_display_blocks(resolved_blocks),
+                options=question["options"],
+                correct_answer=question["correct_answer"]
+            )
+
+            db.add(new_question)
+            db.commit()
+            db.refresh(new_question)
+
+            saved += 1
+            report.append({
+                "exam": exam_idx,
+                "question": f"Q{saved}",
+                "status": "success"
+            })
+
+        except Exception as e:
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
+                "status": "failed",
+                "error_code": "DB_ERROR",
+                "details": str(e)
+            })
+
+    # -------------------------------------------------
+    # Final response
+    # -------------------------------------------------
+    overall_status = "success" if skipped == 0 else "partial_success"
 
     return {
         "status": overall_status,
         "summary": {
-            # Word document defines reality
-            "total_questions": len(question_chunks),
-            "saved": saved_count,
-            "skipped": skipped_blocks
+            "total_exams": len(exam_blocks),
+            "saved": saved,
+            "skipped": skipped
         },
-        "blocks": block_report
+        "exams": report
     }
+
 
 
 
