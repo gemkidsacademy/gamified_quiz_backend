@@ -16028,6 +16028,7 @@ async def upload_word(
                 q["question_blocks"] = question_block
 
                 # ---- resolve images ----
+                image_error = False
                 for block in q["question_blocks"]:
                     if block["type"] != "image":
                         continue
@@ -16048,10 +16049,13 @@ async def upload_word(
                             "details": f"Image '{raw}' is referenced but not uploaded"
                         })
                         block_had_success = False
+                        image_error = True
                         break
-
+                
                     block.pop("name", None)
                     block["src"] = record.gcs_url
+                if image_error:
+                    break  # breaks out of `for q in questions`
 
                 question_text = "\n\n".join(
                     b["content"] for b in q["question_blocks"] if b["type"] == "text"
@@ -16078,13 +16082,17 @@ async def upload_word(
                 block_had_success = True
 
         except Exception as e:
-            block_report.append({
-                "block": block_idx,
-                "type": questions[0].get("question_type", "unknown"),
-                "status": "failed",
-                "error_code": "UNEXPECTED_ERROR",
-                "details": str(e)
-            })
+            if not any(
+                r["block"] == block_idx and r["status"] == "failed"
+                for r in block_report
+            ):
+                block_report.append({
+                    "block": block_idx,
+                    "type": questions[0].get("question_type", "unknown"),
+                    "status": "failed",
+                    "error_code": "UNEXPECTED_ERROR",
+                    "details": str(e)
+                })
 
 
         # -----------------------------
