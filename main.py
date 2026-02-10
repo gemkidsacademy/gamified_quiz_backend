@@ -590,10 +590,11 @@ class StudentExamResponseNaplanNumeracy(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     student_id = Column(
-        Integer,
+        String,
         ForeignKey("students.id"),
         nullable=False
     )
+
 
     exam_id = Column(
         Integer,
