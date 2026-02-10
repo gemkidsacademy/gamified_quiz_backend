@@ -15929,7 +15929,7 @@ async def upload_word(
     db: Session = Depends(get_db)
 ):
     request_id = str(uuid.uuid4())[:8]
-    question_report = []
+    block_report = []
 
     print(f"\n========== GPT-UPLOAD-WORD START [{request_id}] ==========")
     print(f"[{request_id}] 📄 Incoming file: {file.filename}")
@@ -15956,117 +15956,125 @@ async def upload_word(
         raise HTTPException(status_code=400, detail="Failed to read file.")
 
     # -----------------------------
-    # Chunk by question blocks
+    # Chunk by question
     # -----------------------------
     question_chunks = chunk_by_question(ordered_blocks)
 
-    total_questions = 0
     saved_count = 0
     skipped_count = 0
-    failed_count = 0
+    global_q_index = 1
 
     # =========================================================
-    # PROCESS EACH BLOCK → EACH QUESTION
+    # PROCESS PER BLOCK → PER QUESTION (SAFE)
     # =========================================================
     for block_idx, question_block in enumerate(question_chunks, start=1):
 
         if not looks_like_question(question_block):
             continue
 
-        result = await parse_with_gpt({"blocks": question_block})
-        questions = result.get("questions", [])
+        print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}")
+
+        try:
+            result = await parse_with_gpt({"blocks": question_block})
+            questions = result.get("questions", [])
+        except Exception as e:
+            block_report.append({
+                "block": block_idx,
+                "status": "failed",
+                "error_code": "GPT_ERROR",
+                "details": str(e)
+            })
+            continue
 
         if not questions:
-            question_report.append({
+            block_report.append({
                 "block": block_idx,
                 "status": "skipped",
                 "error_code": "NO_QUESTIONS_PARSED",
                 "details": "GPT returned zero questions"
             })
-            skipped_count += 1
             continue
 
+        block_saved_any = False
+
         for q in questions:
-            total_questions += 1
-            question_number = total_questions
+            qid = f"Q{global_q_index}"
+            global_q_index += 1
 
+            # -----------------------------
+            # Validate question fields
+            # -----------------------------
+            missing = []
+            if not q.get("options"):
+                missing.append("options")
+            if not q.get("correct_answer"):
+                missing.append("correct_answer")
+
+            if missing:
+                skipped_count += 1
+                block_report.append({
+                    "block": block_idx,
+                    "question": qid,
+                    "status": "skipped",
+                    "error_code": "INCOMPLETE_QUESTION",
+                    "details": f"Missing: {', '.join(missing)}"
+                })
+                continue
+
+            # -----------------------------
+            # Resolve images (PER QUESTION)
+            # -----------------------------
+            image_missing = None
+            resolved_blocks = []
+
+            for block in question_block:
+                if block["type"] != "image":
+                    resolved_blocks.append(block)
+                    continue
+
+                raw = (block.get("name") or block.get("src") or "").strip().lower()
+                record = (
+                    db.query(UploadedImage)
+                    .filter(func.lower(func.trim(UploadedImage.original_name)) == raw)
+                    .first()
+                )
+
+                if not record:
+                    image_missing = raw
+                    break
+
+                resolved_blocks.append({
+                    **block,
+                    "src": record.gcs_url
+                })
+
+            if image_missing:
+                skipped_count += 1
+                block_report.append({
+                    "block": block_idx,
+                    "question": qid,
+                    "status": "skipped",
+                    "error_code": "IMAGE_NOT_UPLOADED",
+                    "details": image_missing
+                })
+                continue
+
+            # -----------------------------
+            # Save question
+            # -----------------------------
             try:
-                # -----------------------------
-                # Validate metadata
-                # -----------------------------
-                required_fields = ["class_name", "subject", "topic", "difficulty"]
-                missing_meta = [f for f in required_fields if not q.get(f)]
-
-                if missing_meta:
-                    question_report.append({
-                        "question": question_number,
-                        "status": "skipped",
-                        "error_code": "MISSING_METADATA",
-                        "details": f"Missing: {', '.join(missing_meta)}"
-                    })
-                    skipped_count += 1
-                    continue
-
-                # -----------------------------
-                # Validate options / answer
-                # -----------------------------
-                if not q.get("options") or not q.get("correct_answer"):
-                    question_report.append({
-                        "question": question_number,
-                        "status": "skipped",
-                        "error_code": "INCOMPLETE_QUESTION",
-                        "details": "Missing options or correct answer"
-                    })
-                    skipped_count += 1
-                    continue
-
-                # -----------------------------
-                # Resolve images (question-level)
-                # -----------------------------
-                image_missing = None
-                for block in question_block:
-                    if block["type"] != "image":
-                        continue
-
-                    raw = (block.get("name") or block.get("src") or "").strip().lower()
-                    record = (
-                        db.query(UploadedImage)
-                        .filter(func.lower(func.trim(UploadedImage.original_name)) == raw)
-                        .first()
-                    )
-
-                    if not record:
-                        image_missing = raw
-                        break
-
-                    block.pop("name", None)
-                    block["src"] = record.gcs_url
-
-                if image_missing:
-                    question_report.append({
-                        "question": question_number,
-                        "status": "skipped",
-                        "error_code": "IMAGE_NOT_UPLOADED",
-                        "details": image_missing
-                    })
-                    skipped_count += 1
-                    continue
-
-                # -----------------------------
-                # Persist question
-                # -----------------------------
                 question_text = "\n\n".join(
-                    b["content"] for b in question_block if b["type"] == "text"
+                    b["content"] for b in resolved_blocks if b["type"] == "text"
                 )
 
                 new_q = Question(
-                    class_name=q["class_name"],
-                    subject=q["subject"],
-                    topic=q["topic"],
-                    difficulty=q["difficulty"],
-                    question_type=q.get("question_type", "mcq"),
+                    class_name=q.get("class_name"),
+                    subject=q.get("subject"),
+                    topic=q.get("topic"),
+                    difficulty=q.get("difficulty"),
+                    question_type=q.get("question_type") or "multi_image_diagram_mcq",
                     question_text=question_text,
-                    question_blocks=filter_display_blocks(question_block),
+                    question_blocks=filter_display_blocks(resolved_blocks),
                     options=q["options"],
                     correct_answer=q["correct_answer"]
                 )
@@ -16075,38 +16083,46 @@ async def upload_word(
                 db.commit()
                 db.refresh(new_q)
 
-                question_report.append({
-                    "question": question_number,
-                    "status": "saved"
-                })
                 saved_count += 1
+                block_saved_any = True
 
             except Exception as e:
-                question_report.append({
-                    "question": question_number,
+                skipped_count += 1
+                block_report.append({
+                    "block": block_idx,
+                    "question": qid,
                     "status": "failed",
-                    "error_code": "UNEXPECTED_ERROR",
+                    "error_code": "DB_ERROR",
                     "details": str(e)
                 })
-                failed_count += 1
+
+        # -----------------------------
+        # Block-level success marker
+        # -----------------------------
+        if block_saved_any:
+            block_report.append({
+                "block": block_idx,
+                "status": "success",
+                "details": "One or more questions saved"
+            })
 
     # -----------------------------
     # Final response
     # -----------------------------
     overall_status = "success"
-    if skipped_count or failed_count:
+    if skipped_count > 0:
         overall_status = "partial_success"
 
     return {
         "status": overall_status,
         "summary": {
-            "total_questions": total_questions,
+            "total_questions": global_q_index - 1,
             "saved": saved_count,
-            "skipped": skipped_count,
-            "failed": failed_count
+            "skipped": skipped_count
         },
-        "questions": question_report
+        "blocks": block_report
     }
+
 
 
 def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
