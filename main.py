@@ -11424,11 +11424,12 @@ def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     # --------------------------------------------------
     def extract_meta(label: str) -> str | None:
         match = re.search(
-            rf"^\s*{label}\s*:\s*\"?(.*?)\"?\s*$",
+            rf"^[^\S\r\n]*{label}[^\S\r\n]*:[^\S\r\n]*\"?(.*?)\"?[^\S\r\n]*$",
             block_text,
             re.MULTILINE | re.IGNORECASE
         )
         return match.group(1).strip() if match else None
+
 
     class_name = extract_meta("class") or extract_meta("class_name")
     subject = extract_meta("subject")
@@ -15968,22 +15969,21 @@ async def upload_word(
 
     saved_count = 0
     skipped_count = 0
-    global_q_index = 1
 
     # =========================================================
-    # PROCESS PER BLOCK → PER QUESTION (SAFE)
+    # PROCESS BLOCKS
     # =========================================================
     for block_idx, question_block in enumerate(question_chunks, start=1):
 
         if not looks_like_question(question_block):
             continue
 
-        
-
+        # -----------------------------
+        # GPT parse
+        # -----------------------------
         try:
             result = await parse_with_gpt({"blocks": question_block})
             questions = result.get("questions", [])
-
             print(
                 f"[{request_id}] 🧠 GPT BLOCK {block_idx} "
                 f"parsed {len(questions)} question(s)"
@@ -16008,12 +16008,13 @@ async def upload_word(
 
         block_saved_any = False
 
+        # =====================================================
+        # PROCESS QUESTIONS IN BLOCK
+        # =====================================================
         for q in questions:
-            qid = f"Q{global_q_index}"
-            global_q_index += 1
 
             # -----------------------------
-            # Validate question fields
+            # Validate required fields
             # -----------------------------
             missing = []
             if not q.get("options"):
@@ -16025,7 +16026,6 @@ async def upload_word(
                 skipped_count += 1
                 block_report.append({
                     "block": block_idx,
-                    "question": qid,
                     "status": "skipped",
                     "error_code": "INCOMPLETE_QUESTION",
                     "details": f"Missing: {', '.join(missing)}"
@@ -16033,7 +16033,7 @@ async def upload_word(
                 continue
 
             # -----------------------------
-            # Resolve images (PER QUESTION)
+            # Resolve images
             # -----------------------------
             image_missing = None
             resolved_blocks = []
@@ -16063,12 +16063,29 @@ async def upload_word(
                 skipped_count += 1
                 block_report.append({
                     "block": block_idx,
-                    "question": qid,
                     "status": "skipped",
                     "error_code": "IMAGE_NOT_UPLOADED",
                     "details": image_missing
                 })
                 continue
+
+            # -----------------------------
+            # Guard: must contain text
+            # -----------------------------
+            if not any(b["type"] == "text" for b in resolved_blocks):
+                skipped_count += 1
+                block_report.append({
+                    "block": block_idx,
+                    "status": "skipped",
+                    "error_code": "IMAGE_ONLY_BLOCK",
+                    "details": "Question contains no text"
+                })
+                continue
+
+            # -----------------------------
+            # Assign REAL question number
+            # -----------------------------
+            qid = f"Q{saved_count + 1}"
 
             # -----------------------------
             # Save question
@@ -16097,6 +16114,12 @@ async def upload_word(
                 saved_count += 1
                 block_saved_any = True
 
+                block_report.append({
+                    "block": block_idx,
+                    "question": qid,
+                    "status": "success"
+                })
+
             except Exception as e:
                 skipped_count += 1
                 block_report.append({
@@ -16108,7 +16131,7 @@ async def upload_word(
                 })
 
         # -----------------------------
-        # Block-level success marker
+        # Block-level marker
         # -----------------------------
         if block_saved_any:
             block_report.append({
@@ -16120,19 +16143,18 @@ async def upload_word(
     # -----------------------------
     # Final response
     # -----------------------------
-    overall_status = "success"
-    if skipped_count > 0:
-        overall_status = "partial_success"
+    overall_status = "success" if skipped_count == 0 else "partial_success"
 
     return {
         "status": overall_status,
         "summary": {
-            "total_questions": global_q_index - 1,
+            "total_questions": saved_count + skipped_count,
             "saved": saved_count,
             "skipped": skipped_count
         },
         "blocks": block_report
     }
+
 
 
 
