@@ -15997,20 +15997,23 @@ async def upload_word(
         raise HTTPException(status_code=400, detail="Failed to read file.")
 
     # -----------------------------
-    # Chunk by question
+    # Chunk by question (source of truth)
     # -----------------------------
     question_chunks = chunk_by_question(ordered_blocks)
 
     saved_count = 0
-    skipped_count = 0
+    skipped_blocks = 0
 
     # =========================================================
-    # PROCESS BLOCKS
+    # PROCESS BLOCKS (1 BLOCK = 1 QUESTION IN WORD DOC)
     # =========================================================
     for block_idx, question_block in enumerate(question_chunks, start=1):
 
         if not looks_like_question(question_block):
             continue
+
+        block_image_error_reported = False
+        block_saved_any = False
 
         # -----------------------------
         # GPT parse
@@ -16018,11 +16021,13 @@ async def upload_word(
         try:
             result = await parse_with_gpt({"blocks": question_block})
             questions = result.get("questions", [])
+
             print(
                 f"[{request_id}] 🧠 GPT BLOCK {block_idx} "
                 f"parsed {len(questions)} question(s)"
             )
         except Exception as e:
+            skipped_blocks += 1
             block_report.append({
                 "block": block_idx,
                 "status": "failed",
@@ -16032,6 +16037,7 @@ async def upload_word(
             continue
 
         if not questions:
+            skipped_blocks += 1
             block_report.append({
                 "block": block_idx,
                 "status": "skipped",
@@ -16040,37 +16046,29 @@ async def upload_word(
             })
             continue
 
-        block_saved_any = False
-
         # =====================================================
-        # PROCESS QUESTIONS IN BLOCK
+        # PROCESS QUESTIONS RETURNED BY GPT
         # =====================================================
         for q in questions:
 
             # -----------------------------
             # Validate required fields
             # -----------------------------
-            missing = []
-            if not q.get("options"):
-                missing.append("options")
-            if not q.get("correct_answer"):
-                missing.append("correct_answer")
-
-            if missing:
-                skipped_count += 1
+            if not q.get("options") or not q.get("correct_answer"):
+                skipped_blocks += 1
                 block_report.append({
                     "block": block_idx,
                     "status": "skipped",
                     "error_code": "INCOMPLETE_QUESTION",
-                    "details": f"Missing: {', '.join(missing)}"
+                    "details": "Missing options or correct answer"
                 })
-                continue
+                break  # block-level failure
 
             # -----------------------------
-            # Resolve images
+            # Resolve images (BLOCK-LEVEL)
             # -----------------------------
-            image_missing = None
             resolved_blocks = []
+            image_missing = None
 
             for block in question_block:
                 if block["type"] != "image":
@@ -16094,32 +16092,28 @@ async def upload_word(
                 })
 
             if image_missing:
-                skipped_count += 1
+                skipped_blocks += 1
                 block_report.append({
                     "block": block_idx,
                     "status": "skipped",
                     "error_code": "IMAGE_NOT_UPLOADED",
                     "details": image_missing
                 })
-                continue
+                block_image_error_reported = True
+                break  # stop processing this block completely
 
             # -----------------------------
             # Guard: must contain text
             # -----------------------------
             if not any(b["type"] == "text" for b in resolved_blocks):
-                skipped_count += 1
+                skipped_blocks += 1
                 block_report.append({
                     "block": block_idx,
                     "status": "skipped",
                     "error_code": "IMAGE_ONLY_BLOCK",
                     "details": "Question contains no text"
                 })
-                continue
-
-            # -----------------------------
-            # Assign REAL question number
-            # -----------------------------
-            qid = f"Q{saved_count + 1}"
+                break
 
             # -----------------------------
             # Save question
@@ -16150,41 +16144,42 @@ async def upload_word(
 
                 block_report.append({
                     "block": block_idx,
-                    "question": qid,
+                    "question": f"Q{saved_count}",
                     "status": "success"
                 })
 
             except Exception as e:
-                skipped_count += 1
+                skipped_blocks += 1
                 block_report.append({
                     "block": block_idx,
-                    "question": qid,
                     "status": "failed",
                     "error_code": "DB_ERROR",
                     "details": str(e)
                 })
+                break
 
         # -----------------------------
-        # Block-level marker
+        # Block-level success marker
         # -----------------------------
         if block_saved_any:
             block_report.append({
                 "block": block_idx,
                 "status": "success",
-                "details": "One or more questions saved"
+                "details": "Question saved"
             })
 
     # -----------------------------
-    # Final response
+    # Final response (SOURCE OF TRUTH)
     # -----------------------------
-    overall_status = "success" if skipped_count == 0 else "partial_success"
+    overall_status = "success" if skipped_blocks == 0 else "partial_success"
 
     return {
         "status": overall_status,
         "summary": {
-            "total_questions": saved_count + skipped_count,
+            # Word document defines reality
+            "total_questions": len(question_chunks),
             "saved": saved_count,
-            "skipped": skipped_count
+            "skipped": skipped_blocks
         },
         "blocks": block_report
     }
