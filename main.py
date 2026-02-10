@@ -2919,13 +2919,14 @@ def generate_naplan_language_conventions_exam(
 
 
 
+
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
     db: Session = Depends(get_db)
 ):
     print("\n=== START: Generate NAPLAN Numeracy Exam ===")
 
-    # 1. Load quiz config (single active quiz)
+    # 1. Load latest quiz config
     quiz = (
         db.query(QuizNaplanNumeracy)
         .order_by(QuizNaplanNumeracy.id.desc())
@@ -2934,9 +2935,13 @@ def generate_naplan_numeracy_exam(
 
     if not quiz:
         print("❌ ERROR: No QuizNaplanNumeracy found")
-        raise HTTPException(status_code=404, detail="NAPLAN Numeracy quiz not found")
+        raise HTTPException(
+            status_code=404,
+            detail="NAPLAN Numeracy quiz not found"
+        )
 
     normalized_difficulty = quiz.difficulty.strip().lower()
+    normalized_subject = "numeracy"
 
     print(
         f"✅ Quiz loaded | id={quiz.id}, "
@@ -2963,55 +2968,75 @@ def generate_naplan_numeracy_exam(
         print(f"➡️ Topic: {topic_name}")
         print(f"➡️ Required DB questions: {db_count}")
 
-        # 3. Diagnostics: topic existence
+        # 3. Diagnostic: strict topic + subject + year existence
         topic_only_count = (
             db.query(QuestionNumeracyLC)
-            .filter(QuestionNumeracyLC.topic == topic_name)
+            .filter(
+                QuestionNumeracyLC.topic == topic_name,
+                QuestionNumeracyLC.year == quiz.year,
+                func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
+            )
             .count()
         )
-        print(f"🔍 Topic-only match count: {topic_only_count}")
+
+        print(
+            f"🔍 Topic+subject+year match count: {topic_only_count}"
+        )
 
         if topic_only_count == 0:
             raise HTTPException(
                 status_code=400,
-                detail=f"No questions found for topic '{topic_name}'"
+                detail=(
+                    f"No Numeracy questions found for topic "
+                    f"'{topic_name}' (Year {quiz.year})"
+                )
             )
 
-        # 4. Strict but normalized difficulty match
+        # 4. Strict difficulty + subject + year query
         questions = (
             db.query(QuestionNumeracyLC)
             .filter(
                 QuestionNumeracyLC.topic == topic_name,
+                QuestionNumeracyLC.year == quiz.year,
+                func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject,
                 func.lower(func.trim(QuestionNumeracyLC.difficulty)) == normalized_difficulty
             )
             .all()
         )
 
         print(
-            f"🔎 Questions after normalized difficulty filter "
+            f"🔎 Questions after strict difficulty filter "
             f"('{normalized_difficulty}'): {len(questions)}"
         )
 
-        # 5. Fallback if difficulty filter is too strict
+        # 5. Safe fallback (subject + year still enforced)
         if len(questions) < db_count:
             print(
                 "⚠️ WARNING: Not enough questions after difficulty filter. "
-                "Attempting topic-only fallback."
+                "Attempting subject+year fallback."
             )
 
             fallback_questions = (
                 db.query(QuestionNumeracyLC)
-                .filter(QuestionNumeracyLC.topic == topic_name)
+                .filter(
+                    QuestionNumeracyLC.topic == topic_name,
+                    QuestionNumeracyLC.year == quiz.year,
+                    func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
+                )
                 .all()
             )
 
-            print(f"🔎 Questions after fallback (topic-only): {len(fallback_questions)}")
+            print(
+                f"🔎 Questions after fallback (subject+year): "
+                f"{len(fallback_questions)}"
+            )
 
             if len(fallback_questions) < db_count:
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough questions for topic '{topic_name}'. "
+                        f"Not enough Numeracy questions for topic "
+                        f"'{topic_name}' (Year {quiz.year}). "
                         f"Required={db_count}, Found={len(fallback_questions)}"
                     )
                 )
@@ -3031,7 +3056,7 @@ def generate_naplan_numeracy_exam(
                 "question_text": q.question_text,
                 "question_blocks": q.question_blocks,
                 "options": q.options,
-                "correct_answer": q.correct_answer
+                "correct_answer": q.correct_answer,
             })
 
     # 7. Final validation
@@ -3041,7 +3066,8 @@ def generate_naplan_numeracy_exam(
     if len(assembled_questions) != quiz.total_questions:
         print(
             f"❌ ERROR: Question count mismatch | "
-            f"Expected={quiz.total_questions}, Got={len(assembled_questions)}"
+            f"Expected={quiz.total_questions}, "
+            f"Got={len(assembled_questions)}"
         )
         raise HTTPException(
             status_code=400,
@@ -3049,7 +3075,8 @@ def generate_naplan_numeracy_exam(
         )
 
     print("✅ Question count validated")
-     # 8. DELETE PREVIOUS EXAM(S)
+
+    # 8. Delete previous exams
     print("🧹 Deleting existing NAPLAN Numeracy exams...")
 
     deleted_count = (
@@ -3063,26 +3090,29 @@ def generate_naplan_numeracy_exam(
     print("💾 Saving exam to exam_naplan_numeracy table...")
 
     exam = ExamNaplanNumeracy(
-        quiz_id=quiz.id,          # traceability
+        quiz_id=quiz.id,
         class_name="NAPLAN",
         subject="Numeracy",
         difficulty=quiz.difficulty,
-        questions=assembled_questions
+        questions=assembled_questions,
     )
 
     db.add(exam)
     db.commit()
     db.refresh(exam)
 
-    print(f"🎉 SUCCESS: Exam generated | exam_id={exam.id}")
+    print(
+        f"🎉 SUCCESS: Numeracy exam generated | "
+        f"exam_id={exam.id}"
+    )
     print("=== END: Generate NAPLAN Numeracy Exam ===\n")
 
     return {
         "message": "NAPLAN Numeracy exam generated successfully",
         "exam_id": exam.id,
-        "total_questions": len(assembled_questions)
+        "total_questions": len(assembled_questions),
     }
- 
+
 @app.get("/api/admin/question-bank/naplan")
 def get_naplan_question_bank(
     subject: str = Query(...),  # numeracy | language_conventions
