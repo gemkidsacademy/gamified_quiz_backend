@@ -15960,6 +15960,24 @@ def extract_exam_block(ordered_blocks):
         raise ValueError("No EXAM block found")
 
     return exam_blocks
+EXAM_START_PATTERN = re.compile(r"^={3,}\s*exam\s+start\s*={3,}$", re.IGNORECASE)
+EXAM_END_PATTERN = re.compile(r"^={3,}\s*exam\s+end\s*={3,}$", re.IGNORECASE)
+
+
+def is_exam_start(block):
+    if block.get("type") != "text":
+        return False
+
+    text = block.get("content", "").strip()
+    return bool(EXAM_START_PATTERN.match(text))
+
+
+def is_exam_end(block):
+    if block.get("type") != "text":
+        return False
+
+    text = block.get("content", "").strip()
+    return bool(EXAM_END_PATTERN.match(text))
 
 def chunk_by_exam(blocks):
     exams = []
