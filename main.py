@@ -499,6 +499,39 @@ class StudentExamThinkingSkills(Base):
         cascade="all, delete-orphan"
     )
 
+class StudentExamNaplanNumeracy(Base):
+    __tablename__ = "student_exam_naplan_numeracy"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(Integer, nullable=False)
+
+    # -----------------------------
+    # Relationships (optional but recommended)
+    # -----------------------------
+    student = relationship("Student")
+    exam = relationship("Exam")
+    responses = relationship(
+        "StudentExamResponseThinkingSkills",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
+
+
 class StudentExamResponseThinkingSkills(Base):
     __tablename__ = "student_exam_response_thinking_skills"
 
@@ -529,6 +562,39 @@ class StudentExamResponseThinkingSkills(Base):
     )
     student = relationship("Student")
     exam = relationship("Exam")
+
+class StudentExamResponseNaplanNumeracy(Base):
+    __tablename__ = "student_exam_response_naplan_numeracy"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exam_naplan_numeracy.id"), nullable=False)
+
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_naplan_numeracy.id"),
+        nullable=False
+    )
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentExamNaplanNumeracy",
+        back_populates="responses"
+    )
+    student = relationship("Student")
+    exam = relationship("ExamNaplanNumeracy")
+
 
 
 class TopicConfigMathematicalReasoning(BaseModel):
@@ -13612,9 +13678,258 @@ def start_exam(
         "questions": normalize_questions(exam.questions),
         "remaining_time": 40 * 60
     }
+def normalize_naplan_numeracy_questions(raw_questions, db):
+    normalized = []
+
+    for q in raw_questions or []:
+        fixed = dict(q)
+
+        # -----------------------------
+        # Ensure q_id
+        # -----------------------------
+        fixed["q_id"] = fixed.get("q_id")
+
+        # -----------------------------
+        # Normalize OPTIONS
+        # -----------------------------
+        opts = fixed.get("options")
+        normalized_opts = {}
+
+        if isinstance(opts, dict):
+            normalized_opts = opts
+
+        elif isinstance(opts, list):
+            for idx, val in enumerate(opts):
+                key = chr(ord("A") + idx)
+                if isinstance(val, dict):
+                    normalized_opts[key] = val
+                else:
+                    normalized_opts[key] = {
+                        "type": "text",
+                        "content": str(val)
+                    }
+
+        fixed["options"] = normalized_opts
+
+        # -----------------------------
+        # Normalize CORRECT ANSWER
+        # -----------------------------
+        fixed["correct_answer"] = (
+            fixed.get("correct_answer")
+            or fixed.get("correct")
+        )
+
+        # -----------------------------
+        # Normalize IMAGES (if any)
+        # -----------------------------
+        blocks = fixed.get("blocks") or []
+
+        for block in blocks:
+            if block.get("type") != "image":
+                continue
+
+            src = block.get("src")
+            if not src or src.startswith("http"):
+                continue
+
+            record = (
+                db.query(UploadedImage)
+                .filter(
+                    func.lower(UploadedImage.original_name) ==
+                    src.strip().lower()
+                )
+                .first()
+            )
+
+            if record:
+                block["src"] = record.gcs_url
+
+        fixed["blocks"] = blocks
+
+        normalized.append(fixed)
+
+    return normalized
     
 
-    
+@app.post("/api/student/start-exam/naplan-numeracy")
+def start_naplan_numeracy_exam(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ START NAPLAN NUMERACY EXAM =================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found:", repr(req.student_id))
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch latest NAPLAN Numeracy attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanNumeracy)
+        .filter(StudentExamNaplanNumeracy.student_id == student.id)
+        .order_by(StudentExamNaplanNumeracy.started_at.desc())
+        .first()
+    )
+
+    MAX_DURATION = timedelta(minutes=40)
+    now = datetime.now(timezone.utc)
+
+    if attempt:
+        print(
+            "🔢 Existing NAPLAN Numeracy attempt found | "
+            f"attempt_id={attempt.id} | "
+            f"started_at={attempt.started_at} | "
+            f"completed_at={attempt.completed_at}"
+        )
+
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        expires_at = started_at + MAX_DURATION
+        elapsed = int((now - started_at).total_seconds())
+
+        print(
+            "⏱️ Timer evaluation | "
+            f"now={now} | "
+            f"expires_at={expires_at} | "
+            f"elapsed_seconds={elapsed}"
+        )
+
+        # ⛔ Expired attempt → auto-complete
+        if attempt.completed_at is None and now > expires_at:
+            attempt.completed_at = expires_at
+            db.commit()
+
+            print("➡️ Returning: completed=true (timeout)")
+            return {"completed": True}
+
+        # ✅ Already completed
+        if attempt.completed_at is not None:
+            print("➡️ Returning: completed=true (already completed)")
+            return {"completed": True}
+
+        # ▶ Resume active attempt
+        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+
+        exam = (
+            db.query(ExamNaplanNumeracy)
+            .filter(
+                func.lower(ExamNaplanNumeracy.class_name) ==
+                func.lower(student.class_name),
+                ExamNaplanNumeracy.subject == "numeracy"
+            )
+            .order_by(ExamNaplanNumeracy.created_at.desc())
+            .first()
+        )
+
+        if not exam:
+            raise HTTPException(
+                status_code=404,
+                detail="NAPLAN Numeracy exam not found"
+            )
+
+        normalized_questions = normalize_naplan_numeracy_questions(
+            exam.questions or [],
+            db
+        )
+
+        return {
+            "completed": False,
+            "questions": normalized_questions,
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 🆕 FIRST ATTEMPT
+    # --------------------------------------------------
+    print("🆕 No existing attempt → creating first NAPLAN Numeracy attempt")
+
+    exam = (
+        db.query(ExamNaplanNumeracy)
+        .filter(
+            func.lower(ExamNaplanNumeracy.class_name) ==
+            func.lower(student.class_name),
+            ExamNaplanNumeracy.subject == "numeracy"
+        )
+        .order_by(ExamNaplanNumeracy.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="NAPLAN Numeracy exam not found"
+        )
+
+    normalized_questions = normalize_naplan_numeracy_questions(
+        exam.questions or [],
+        db
+    )
+
+    new_attempt = StudentExamNaplanNumeracy(
+        student_id=student.id,
+        exam_id=exam.id,
+        started_at=now,
+        duration_minutes=40
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    print(
+        "🆕 New attempt created | "
+        f"attempt_id={new_attempt.id}"
+    )
+
+    # --------------------------------------------------
+    # Pre-create response rows
+    # --------------------------------------------------
+    for q in normalized_questions:
+        db.add(
+            StudentExamResponseNaplanNumeracy(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=new_attempt.id,
+                q_id=q["q_id"],
+                topic=q.get("topic"),
+                selected_option=None,
+                correct_option=q.get("correct_answer"),
+                is_correct=None
+            )
+        )
+
+    db.commit()
+
+    print("================ END START NAPLAN NUMERACY EXAM ================\n")
+
+    return {
+        "completed": False,
+        "questions": normalized_questions,
+        "remaining_time": new_attempt.duration_minutes * 60
+    }
+  
 # @app.post("/api/student/start-exam-thinkingskills")
 # def start_exam(
 #     req: StartExamRequest = Body(...),
