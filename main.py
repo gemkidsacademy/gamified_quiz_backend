@@ -589,7 +589,11 @@ class StudentExamResponseNaplanNumeracy(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
     exam_id = Column(Integer, ForeignKey("exam_naplan_numeracy.id"), nullable=False)
 
     exam_attempt_id = Column(
