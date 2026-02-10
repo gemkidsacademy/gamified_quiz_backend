@@ -177,10 +177,10 @@ otp_store = {}
 # ---------------------------
 class NaplanTopicCreate(BaseModel):
     name: str
-    ai: int
-    db: int
-    total: int
-
+    ai: Optional[int] = Field(default=0, ge=0)
+    db: int = Field(..., ge=0)
+    total: int = Field(..., ge=0)
+ 
 class NaplanQuizCreate(BaseModel):
     class_name: str
     subject: str
