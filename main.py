@@ -15928,9 +15928,8 @@ async def upload_word(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    block_report = []
     request_id = str(uuid.uuid4())[:8]
-    last_successful_qid = None
+    question_report = []
 
     print(f"\n========== GPT-UPLOAD-WORD START [{request_id}] ==========")
     print(f"[{request_id}] 📄 Incoming file: {file.filename}")
@@ -15943,7 +15942,6 @@ async def upload_word(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "text/plain"
     }
-
     if file.content_type not in allowed:
         raise HTTPException(status_code=400, detail="Invalid file type.")
 
@@ -15958,78 +15956,75 @@ async def upload_word(
         raise HTTPException(status_code=400, detail="Failed to read file.")
 
     # -----------------------------
-    # Chunk by question
+    # Chunk by question blocks
     # -----------------------------
     question_chunks = chunk_by_question(ordered_blocks)
 
+    total_questions = 0
     saved_count = 0
-    skipped_partial = 0
-    global_q_index = 1
+    skipped_count = 0
+    failed_count = 0
 
     # =========================================================
-    # PROCESS PER BLOCK (this is the key fix)
+    # PROCESS EACH BLOCK → EACH QUESTION
     # =========================================================
     for block_idx, question_block in enumerate(question_chunks, start=1):
 
         if not looks_like_question(question_block):
             continue
 
-        print(f"\n[{request_id}] ▶️ GPT BLOCK {block_idx}")
-
         result = await parse_with_gpt({"blocks": question_block})
         questions = result.get("questions", [])
 
         if not questions:
-            block_report.append({
+            question_report.append({
                 "block": block_idx,
-                "type": "unknown",
-                "status": "failed",
+                "status": "skipped",
+                "error_code": "NO_QUESTIONS_PARSED",
                 "details": "GPT returned zero questions"
             })
+            skipped_count += 1
             continue
 
-        # -----------------------------
-        # Block-level METADATA validation
-        # -----------------------------
-        required_fields = ["class_name", "subject", "topic", "difficulty"]
-        missing_meta = [
-            f for f in required_fields if not questions[0].get(f)
-        ]
+        for q in questions:
+            total_questions += 1
+            question_number = total_questions
 
-        if missing_meta:
-            block_report.append({
-                "block": block_idx,
-                "type": questions[0].get("question_type", "unknown"),
-                "status": "failed",
-                "details": f"Missing METADATA field(s): {', '.join(missing_meta)}"
-            })
-            continue
+            try:
+                # -----------------------------
+                # Validate metadata
+                # -----------------------------
+                required_fields = ["class_name", "subject", "topic", "difficulty"]
+                missing_meta = [f for f in required_fields if not q.get(f)]
 
-        block_had_success = False
-
-        # -----------------------------
-        # Persist questions of THIS block
-        # -----------------------------
-        try:
-            for q in questions:
-                qid = f"Q{global_q_index}"
-                global_q_index += 1
-
-                missing = []
-                if not q.get("options"):
-                    missing.append("options")
-                if not q.get("correct_answer"):
-                    missing.append("correct_answer")
-
-                if missing:
-                    skipped_partial += 1
+                if missing_meta:
+                    question_report.append({
+                        "question": question_number,
+                        "status": "skipped",
+                        "error_code": "MISSING_METADATA",
+                        "details": f"Missing: {', '.join(missing_meta)}"
+                    })
+                    skipped_count += 1
                     continue
 
-                q["question_blocks"] = question_block
+                # -----------------------------
+                # Validate options / answer
+                # -----------------------------
+                if not q.get("options") or not q.get("correct_answer"):
+                    question_report.append({
+                        "question": question_number,
+                        "status": "skipped",
+                        "error_code": "INCOMPLETE_QUESTION",
+                        "details": "Missing options or correct answer"
+                    })
+                    skipped_count += 1
+                    continue
 
-                # ---- resolve images ----
-                image_error = False
-                for block in q["question_blocks"]:
+                # -----------------------------
+                # Resolve images (question-level)
+                # -----------------------------
+                image_missing = None
+                for block in question_block:
                     if block["type"] != "image":
                         continue
 
@@ -16041,34 +16036,37 @@ async def upload_word(
                     )
 
                     if not record:
-                        block_report.append({
-                            "block": block_idx,
-                            "type": questions[0].get("question_type", "unknown"),
-                            "status": "failed",
-                            "error_code": "IMAGE_NOT_UPLOADED",
-                            "details": f"Image '{raw}' is referenced but not uploaded"
-                        })
-                        block_had_success = False
-                        image_error = True
+                        image_missing = raw
                         break
-                
+
                     block.pop("name", None)
                     block["src"] = record.gcs_url
-                if image_error:
-                    break  # breaks out of `for q in questions`
 
+                if image_missing:
+                    question_report.append({
+                        "question": question_number,
+                        "status": "skipped",
+                        "error_code": "IMAGE_NOT_UPLOADED",
+                        "details": image_missing
+                    })
+                    skipped_count += 1
+                    continue
+
+                # -----------------------------
+                # Persist question
+                # -----------------------------
                 question_text = "\n\n".join(
-                    b["content"] for b in q["question_blocks"] if b["type"] == "text"
+                    b["content"] for b in question_block if b["type"] == "text"
                 )
 
                 new_q = Question(
-                    class_name=q.get("class_name"),
-                    subject=q.get("subject"),
-                    topic=q.get("topic"),
-                    difficulty=q.get("difficulty"),
-                    question_type=q.get("question_type") or "multi_image_diagram_mcq",
+                    class_name=q["class_name"],
+                    subject=q["subject"],
+                    topic=q["topic"],
+                    difficulty=q["difficulty"],
+                    question_type=q.get("question_type", "mcq"),
                     question_text=question_text,
-                    question_blocks=filter_display_blocks(q["question_blocks"]),
+                    question_blocks=filter_display_blocks(question_block),
                     options=q["options"],
                     correct_answer=q["correct_answer"]
                 )
@@ -16077,49 +16075,37 @@ async def upload_word(
                 db.commit()
                 db.refresh(new_q)
 
-                last_successful_qid = qid
+                question_report.append({
+                    "question": question_number,
+                    "status": "saved"
+                })
                 saved_count += 1
-                block_had_success = True
 
-        except Exception as e:
-            if not any(
-                r["block"] == block_idx and r["status"] == "failed"
-                for r in block_report
-            ):
-                block_report.append({
-                    "block": block_idx,
-                    "type": questions[0].get("question_type", "unknown"),
+            except Exception as e:
+                question_report.append({
+                    "question": question_number,
                     "status": "failed",
                     "error_code": "UNEXPECTED_ERROR",
                     "details": str(e)
                 })
-
-
-        # -----------------------------
-        # ✅ BLOCK SUCCESS REPORT (THIS IS THE PLACE)
-        # -----------------------------
-        if block_had_success:
-            block_report.append({
-                "block": block_idx,
-                "type": questions[0].get("question_type", "unknown"),
-                "status": "success",
-                "details": "Saved successfully"
-            })
+                failed_count += 1
 
     # -----------------------------
     # Final response
     # -----------------------------
     overall_status = "success"
-    if any(b["status"] == "failed" for b in block_report):
+    if skipped_count or failed_count:
         overall_status = "partial_success"
 
     return {
         "status": overall_status,
         "summary": {
+            "total_questions": total_questions,
             "saved": saved_count,
-            "skipped_partial": skipped_partial
+            "skipped": skipped_count,
+            "failed": failed_count
         },
-        "blocks": block_report
+        "questions": question_report
     }
 
 
