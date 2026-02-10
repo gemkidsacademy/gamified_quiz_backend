@@ -13724,73 +13724,33 @@ def start_exam(
         "questions": normalize_questions(exam.questions),
         "remaining_time": 40 * 60
     }
-def normalize_naplan_numeracy_questions(raw_questions, db):
+def normalize_naplan_numeracy_questions_live(raw_questions, db):
     normalized = []
 
     for q in raw_questions or []:
         fixed = dict(q)
 
-        # -----------------------------
-        # Ensure q_id
-        # -----------------------------
-        fixed["q_id"] = fixed.get("q_id")
+        # ❌ Remove direct answers
+        fixed.pop("correct_answer", None)
+        fixed.pop("correct", None)
 
-        # -----------------------------
-        # Normalize OPTIONS
-        # -----------------------------
-        opts = fixed.get("options")
-        normalized_opts = {}
+        blocks = fixed.get("question_blocks") or fixed.get("blocks") or []
 
-        if isinstance(opts, dict):
-            normalized_opts = opts
-
-        elif isinstance(opts, list):
-            for idx, val in enumerate(opts):
-                key = chr(ord("A") + idx)
-                if isinstance(val, dict):
-                    normalized_opts[key] = val
-                else:
-                    normalized_opts[key] = {
-                        "type": "text",
-                        "content": str(val)
-                    }
-
-        fixed["options"] = normalized_opts
-
-        # -----------------------------
-        # Normalize CORRECT ANSWER
-        # -----------------------------
-        fixed["correct_answer"] = (
-            fixed.get("correct_answer")
-            or fixed.get("correct")
-        )
-
-        # -----------------------------
-        # Normalize IMAGES (if any)
-        # -----------------------------
-        blocks = fixed.get("blocks") or []
-
+        clean_blocks = []
         for block in blocks:
-            if block.get("type") != "image":
+            text = (block.get("content") or "").strip()
+
+            # ❌ Remove answer leakage
+            if text.isdigit():
+                continue
+            if text.lower() in {"stars"}:
+                continue
+            if text.startswith("ANSWER_TYPE"):
                 continue
 
-            src = block.get("src")
-            if not src or src.startswith("http"):
-                continue
+            clean_blocks.append(block)
 
-            record = (
-                db.query(UploadedImage)
-                .filter(
-                    func.lower(UploadedImage.original_name) ==
-                    src.strip().lower()
-                )
-                .first()
-            )
-
-            if record:
-                block["src"] = record.gcs_url
-
-        fixed["blocks"] = blocks
+        fixed["question_blocks"] = clean_blocks
 
         normalized.append(fixed)
 
@@ -13895,10 +13855,11 @@ def start_naplan_numeracy_exam(
                 detail="NAPLAN Numeracy exam not found"
             )
 
-        normalized_questions = normalize_naplan_numeracy_questions(
+        normalized_questions = normalize_naplan_numeracy_questions_live(
             exam.questions or [],
             db
         )
+
 
         return {
             "completed": False,
