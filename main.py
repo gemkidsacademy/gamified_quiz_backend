@@ -15972,14 +15972,16 @@ async def upload_word(
         if not looks_like_question(question_block):
             continue
 
-        print(
-            f"[{request_id}] 🧠 GPT BLOCK {block_idx} "
-            f"parsed {len(questions)} question(s)"
-        )
+        
 
         try:
             result = await parse_with_gpt({"blocks": question_block})
             questions = result.get("questions", [])
+
+            print(
+                f"[{request_id}] 🧠 GPT BLOCK {block_idx} "
+                f"parsed {len(questions)} question(s)"
+            )
         except Exception as e:
             block_report.append({
                 "block": block_idx,
