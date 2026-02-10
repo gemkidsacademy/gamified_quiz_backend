@@ -13890,7 +13890,7 @@ def start_naplan_numeracy_exam(
             detail="NAPLAN Numeracy exam not found"
         )
 
-    normalized_questions = normalize_naplan_numeracy_questions(
+    normalized_questions = normalize_naplan_numeracy_questions_live(
         exam.questions or [],
         db
     )
