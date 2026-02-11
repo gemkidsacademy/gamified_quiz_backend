@@ -3006,6 +3006,35 @@ def generate_naplan_language_conventions_exam(
         "total_questions": len(assembled_questions),
     }
 
+def clean_question_blocks(blocks):
+    if not blocks:
+        return []
+
+    cleaned = []
+
+    for block in blocks:
+        if block.get("type") != "text":
+            cleaned.append(block)
+            continue
+
+        content = (block.get("content") or "").strip()
+
+        # Skip metadata lines
+        if content.lower().startswith("question_type"):
+            continue
+        if content.lower().startswith("answer_type"):
+            continue
+
+        # Skip empty lines
+        if not content:
+            continue
+
+        cleaned.append({
+            "type": "text",
+            "content": content
+        })
+
+    return cleaned
 
 
 
@@ -3137,16 +3166,18 @@ def generate_naplan_numeracy_exam(
         print(f"🎯 Selected {len(selected)} questions for topic '{topic_name}'")
 
         for q in selected:
+            cleaned_blocks = clean_question_blocks(q.question_blocks)
+
             assembled_questions.append({
                 "id": q.id,
                 "question_type": q.question_type,
                 "topic": q.topic,
                 "difficulty": q.difficulty,
-                "question_text": q.question_text,
-                "question_blocks": q.question_blocks,
+                "question_blocks": cleaned_blocks,
                 "options": q.options,
                 "correct_answer": q.correct_answer,
             })
+
 
     # 7. Final validation
     print("\n=== FINAL CHECK ===")
