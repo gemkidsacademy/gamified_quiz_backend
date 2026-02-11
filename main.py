@@ -9402,7 +9402,7 @@ def normalize_naplan_language_conventions_questions_live(raw_questions):
 
     return normalized
 
-@app.post("/api/student/start-exam/naplan-language-conventions-new")
+@app.post("/api/student/start-exam/naplan-language-conventions")
 def start_naplan_language_conventions_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
