@@ -14003,7 +14003,12 @@ def start_naplan_numeracy_exam(
     # --------------------------------------------------
     # Pre-create response rows
     # --------------------------------------------------
+    
     for original_q in exam.questions or []:
+        correct_option = original_q["correct_answer"]
+
+        if not isinstance(correct_option, list):
+            correct_option = [correct_option]
         db.add(
             StudentExamResponseNaplanNumeracy(
                 student_id=student.id,
@@ -14012,7 +14017,7 @@ def start_naplan_numeracy_exam(
                 q_id=original_q["id"],
                 topic=original_q.get("topic"),
                 selected_option=None,
-                correct_option=original_q.get("correct_answer"),
+                correct_option=correct_option,
                 is_correct=None
             )
         )
