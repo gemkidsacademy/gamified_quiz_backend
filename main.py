@@ -1735,18 +1735,6 @@ class ExamNaplanLanguageConventions(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
-class StudentExamNaplanLanguageConventions(Base):
-    __tablename__ = "student_exam_naplan_language_conventions"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    student_id = Column(Integer, nullable=False)
-    exam_id = Column(Integer, nullable=False)
-
-    started_at = Column(DateTime(timezone=True), server_default=func.now())
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-
-    duration_minutes = Column(Integer, nullable=True)
 
 
 class StudentExamAnswer(Base):
