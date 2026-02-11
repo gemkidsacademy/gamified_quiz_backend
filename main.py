@@ -13795,33 +13795,18 @@ def start_exam(
     }
  
 def normalize_naplan_numeracy_questions_live(raw_questions):
-    """
-    Build EXAM-SAFE question DTOs.
-    No answers. No metadata. No parser artifacts.
-    """
-
     normalized = []
 
     for q in raw_questions or []:
-        # --- Determine answer type explicitly ---
-        if q.get("question_type") == 3:
-            answer_type = "NUMERIC_INPUT"
-        elif q.get("question_type") == 4:
-            answer_type = "TEXT_INPUT"
-        else:
-            answer_type = None
 
-        # --- Clean display blocks ---
         blocks = q.get("question_blocks") or []
-        display_blocks = []
         correct_answer = str(q.get("correct_answer")).strip()
+        display_blocks = []
 
         for block in blocks:
             content = (block.get("content") or "").strip()
-        
             lowered = content.lower()
-        
-            # Skip metadata
+
             if lowered.startswith("question_type"):
                 continue
             if lowered.startswith("year:"):
@@ -13830,27 +13815,23 @@ def normalize_naplan_numeracy_questions_live(raw_questions):
                 continue
             if lowered.startswith("correct_answer"):
                 continue
-        
-            # 🔥 Skip raw answer leakage
+
             if content == correct_answer:
                 continue
-        
+
             display_blocks.append(block)
 
-        
-
-            
-
         normalized.append({
-            "q_id": q["id"],
+            "id": q["id"],  # ← FIXED
+            "question_type": q.get("question_type"),  # ← FIXED
             "topic": q.get("topic"),
             "difficulty": q.get("difficulty"),
-            "blocks": display_blocks,
-            "answer_type": answer_type,
+            "question_blocks": display_blocks,  # ← FIXED
             "options": q.get("options")
         })
 
     return normalized
+
    
 
 @app.post("/api/student/start-exam/naplan-numeracy")
