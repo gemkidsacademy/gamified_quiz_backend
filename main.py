@@ -3053,17 +3053,29 @@ def generate_naplan_language_conventions_exam(
     print("✅ Question count validated")
 
     # 8. Delete previous exams
-    print("🧹 Deleting existing NAPLAN Language Conventions exams...")
+    print("🧹 Resetting NAPLAN Language Conventions data...")
 
-    deleted_count = (
+    # 1️⃣ Delete student responses
+    deleted_responses = (
+        db.query(StudentExamResponseNaplanLanguageConventions)
+        .delete()
+    )
+    print(f"🗑️ Deleted {deleted_responses} student response record(s)")
+    
+    # 2️⃣ Delete student attempts
+    deleted_attempts = (
+        db.query(StudentExamNaplanLanguageConventions)
+        .delete()
+    )
+    print(f"🗑️ Deleted {deleted_attempts} student attempt record(s)")
+    
+    # 3️⃣ Delete existing exams
+    deleted_exams = (
         db.query(ExamNaplanLanguageConventions)
         .delete()
     )
+    print(f"🗑️ Deleted {deleted_exams} previous exam record(s)")
 
-    print(f"🗑️ Deleted {deleted_count} previous exam(s)")
-
-    # 9. Persist exam
-    print("💾 Saving exam to exam_naplan_language_conventions table...")
 
     exam = ExamNaplanLanguageConventions(
         quiz_id=quiz.id,
