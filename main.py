@@ -3006,7 +3006,7 @@ def generate_naplan_language_conventions_exam(
         "total_questions": len(assembled_questions),
     }
 
-def clean_question_blocks(blocks):
+def clean_question_blocks(blocks, correct_answer):
     if not blocks:
         return []
 
@@ -3019,14 +3019,24 @@ def clean_question_blocks(blocks):
 
         content = (block.get("content") or "").strip()
 
-        # Skip metadata lines
-        if content.lower().startswith("question_type"):
-            continue
-        if content.lower().startswith("answer_type"):
+        if not content:
             continue
 
-        # Skip empty lines
-        if not content:
+        lower = content.lower()
+
+        if lower.startswith("question_type"):
+            continue
+
+        if lower.startswith("answer_type"):
+            continue
+
+        if lower.startswith("year:"):
+            continue
+
+        if lower.startswith("question_blocks"):
+            continue
+
+        if str(content).strip() == str(correct_answer).strip():
             continue
 
         cleaned.append({
@@ -3166,7 +3176,11 @@ def generate_naplan_numeracy_exam(
         print(f"🎯 Selected {len(selected)} questions for topic '{topic_name}'")
 
         for q in selected:
-            cleaned_blocks = clean_question_blocks(q.question_blocks)
+            cleaned_blocks = clean_question_blocks(
+                q.question_blocks,
+                q.correct_answer
+            )
+
 
             assembled_questions.append({
                 "id": q.id,
