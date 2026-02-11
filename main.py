@@ -3166,6 +3166,12 @@ def generate_naplan_numeracy_exam(
     print("✅ Question count validated")
 
     # 8. Delete previous exams
+    db.query(StudentExamResponseNaplanNumeracy).delete()
+    db.commit()
+    db.query(StudentExamNaplanNumeracy).delete()
+    db.commit()
+
+    
     print("🧹 Deleting existing NAPLAN Numeracy exams...")
 
     deleted_count = (
