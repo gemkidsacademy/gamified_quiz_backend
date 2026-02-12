@@ -13210,6 +13210,49 @@ def parse_common_sections(ctx):
         raise ValueError("READING_TOO_SHORT")
 
     return meta, reading, images
+def build_blocks(reading, images, db):
+    """
+    Builds renderer-ready question_blocks:
+    - Reading text
+    - Image blocks (resolved via UploadedImage)
+
+    Hard-fails if any referenced image is missing.
+    """
+
+    blocks = [
+        {
+            "type": "text",
+            "content": reading
+        }
+    ]
+
+    missing_image = None
+
+    for img in images:
+        record = (
+            db.query(UploadedImage)
+            .filter(func.lower(func.trim(UploadedImage.original_name)) == img)
+            .first()
+        )
+
+        if not record:
+            missing_image = img
+            break
+
+        blocks.append({
+            "type": "image",
+            "src": record.gcs_url
+        })
+
+    if missing_image:
+        raise ValueError(f"IMAGE_NOT_UPLOADED: {missing_image}")
+
+    return blocks
+def parse_year(meta):
+    try:
+        return int(meta["CLASS"].replace("Year", "").strip())
+    except Exception:
+        raise ValueError("INVALID_CLASS_YEAR")
 
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
