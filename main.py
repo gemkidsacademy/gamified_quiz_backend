@@ -1844,7 +1844,12 @@ app.add_middleware(
 # In-memory OTP storage
 # ---------------------------
 otp_dict = {}
-
+NAPLAN_READING_QUESTION_TYPES = {
+    1: "single_text_comprehension",
+    2: "comparative_analysis",
+    3: "multiple_texts",
+    4: "visual_literacy",
+}
 # ---------------------------
 # Quiz Generation
 # ---------------------------
