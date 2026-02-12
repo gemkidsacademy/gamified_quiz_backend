@@ -11823,11 +11823,12 @@ def normalize_metadata(meta: dict) -> dict:
         k.lower().strip(): v.strip()
         for k, v in meta.items()
     }
+
 def detect_question_type(block_text: str) -> str | None:
     import re
 
     match = re.search(
-        r"question_type\s*:\s*([a-z_]+)",
+        r"question_type\s*:\s*([a-z_]+)(?=\s*METADATA\s*:|$)",
         block_text,
         re.IGNORECASE
     )
@@ -11836,6 +11837,7 @@ def detect_question_type(block_text: str) -> str | None:
         return match.group(1).lower()
 
     return None
+
 
 def extract_all_metadata(block_text: str) -> dict[str, str]:
     import re
