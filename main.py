@@ -13139,6 +13139,77 @@ class MultiSelectMCQHandler(SingleMCQHandler):
     def validate(self, parsed):
         if len(parsed["correct"]) != 2:
             raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+def parse_common_sections(ctx):
+    """
+    Parses:
+    - METADATA
+    - Reading_Material
+    - IMAGES (inline or multiline)
+
+    Leaves ctx.ptr positioned at QUESTION_INSTRUCTION
+    """
+
+    # -------------------------------
+    # METADATA
+    # -------------------------------
+    if ctx.peek() != "METADATA:":
+        raise ValueError("MISSING_METADATA")
+
+    ctx.next()  # consume METADATA:
+
+    meta = {}
+    while ctx.peek() and ctx.peek() != "Reading_Material:":
+        line = ctx.next()
+        if ":" in line:
+            k, v = line.split(":", 1)
+            meta[k.strip()] = v.strip().strip('"')
+
+    required = ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY", "Total_Questions"]
+    if not all(k in meta for k in required):
+        raise ValueError("INCOMPLETE_METADATA")
+
+    # -------------------------------
+    # Reading Material
+    # -------------------------------
+    if ctx.next() != "Reading_Material:":
+        raise ValueError("MISSING_READING_MATERIAL")
+
+    reading_lines = []
+    images = []
+
+    while ctx.peek():
+        # IMAGES section
+        if ctx.peek().startswith("IMAGES"):
+            line = ctx.next()
+
+            # Inline IMAGES: a.png, b.png
+            if ":" in line:
+                _, rest = line.split(":", 1)
+                images.extend(
+                    [i.strip().lower() for i in rest.split(",") if i.strip()]
+                )
+
+            # Multiline image list
+            while ctx.peek() and not ctx.peek().startswith("QUESTION_"):
+                img = ctx.peek().strip().lower()
+                if img:
+                    images.append(ctx.next())
+                else:
+                    ctx.next()
+            continue
+
+        # Stop when questions start
+        if ctx.peek().startswith("QUESTION_"):
+            break
+
+        reading_lines.append(ctx.next())
+
+    reading = "\n".join(reading_lines).strip()
+
+    if len(reading) < 20:
+        raise ValueError("READING_TOO_SHORT")
+
+    return meta, reading, images
 
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
