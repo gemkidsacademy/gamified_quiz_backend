@@ -13391,7 +13391,7 @@ def parse_blank_answers(ctx):
         raise ValueError("EMPTY_CORRECT_ANSWER")
 
     return answers
- def parse_image_options(ctx):
+def parse_image_options(ctx):
     if ctx.next() != "IMAGE_OPTIONS:":
         raise ValueError("MISSING_IMAGE_OPTIONS")
 
