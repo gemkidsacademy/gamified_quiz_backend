@@ -11836,17 +11836,19 @@ def extract_all_metadata(block_text: str) -> dict[str, str]:
 
     metadata = {}
 
-    # Match KEY : VALUE anywhere in the text (line-agnostic)
+    # This pattern:
+    # - Finds KEY:
+    # - Captures VALUE
+    # - Stops when the NEXT KEY starts (even with no whitespace)
     pattern = re.compile(
-        r"([A-Za-z_ ]+)\s*[:：]\s*\"?([^\"]+?)\"?(?=\s+[A-Za-z_ ]+\s*[:：]|$)",
-        re.IGNORECASE
+        r"([A-Za-z_ ]+)\s*[:：]\s*\"?(.*?)\"?(?=[A-Za-z_ ]+\s*[:：]|$)",
+        re.IGNORECASE | re.DOTALL
     )
 
     for match in pattern.finditer(block_text):
         raw_key = match.group(1)
         value = match.group(2).strip()
 
-        # 🔑 NORMALIZE KEY
         key = raw_key.strip().upper().replace(" ", "_")
 
         KEY_ALIASES = {
