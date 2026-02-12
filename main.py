@@ -13026,9 +13026,8 @@ async def upload_word_naplan_reading(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    print("\n" + "=" * 70)
-    print("📘 START: NAPLAN READING WORD UPLOAD")
-    print("=" * 70)
+    request_id = str(uuid.uuid4())[:8]
+    print(f"\n========== NAPLAN READING UPLOAD [{request_id}] ==========")
 
     # --------------------------------------------------
     # 1️⃣ File validation
@@ -13038,206 +13037,201 @@ async def upload_word_naplan_reading(
     ):
         raise HTTPException(status_code=400, detail="File must be .docx")
 
-    try:
-        raw = await file.read()
-        full_text = normalize_doc_text(extract_text_from_docx(raw))
-    except Exception as e:
-        print("❌ DOCX extraction failed:", str(e))
-        raise HTTPException(status_code=500, detail="Failed to extract Word file")
+    raw = await file.read()
+    full_text = normalize_doc_text(extract_text_from_docx(raw))
 
     if not full_text or len(full_text.strip()) < 200:
         raise HTTPException(status_code=400, detail="Invalid document")
 
     # --------------------------------------------------
-    # 2️⃣ Detect exam blocks
+    # 2️⃣ Detect EXAM blocks
     # --------------------------------------------------
-    start_token = "=== EXAM START ==="
-    end_token = "=== EXAM END ==="
+    START = "=== EXAM START ==="
+    END = "=== EXAM END ==="
 
     blocks = []
-    for part in full_text.split(start_token)[1:]:
-        if end_token in part:
-            block = part.split(end_token)[0].strip()
-            if len(block) >= 300:
+    for part in full_text.split(START)[1:]:
+        if END in part:
+            block = part.split(END)[0].strip()
+            if len(block) >= 200:
                 blocks.append(block)
 
     if not blocks:
         raise HTTPException(
             status_code=400,
-            detail="No valid exam blocks found"
+            detail="No valid EXAM blocks found"
         )
 
     saved_ids = []
+    skipped = []
 
     # --------------------------------------------------
-    # 3️⃣ Process blocks
+    # 3️⃣ Process each EXAM
     # --------------------------------------------------
-    for block_idx, block in enumerate(blocks, start=1):
-        print(f"\n🔍 Processing block {block_idx}")
+    for exam_idx, block in enumerate(blocks, start=1):
+        print(f"[{request_id}] 🔍 Processing EXAM {exam_idx}")
 
-        # ---------- helpers ----------
-        def extract_value(label):
-            for line in block.splitlines():
-                if line.startswith(label):
-                    return line.split(":", 1)[1].strip().strip('"')
-            return None
+        lines = [l.rstrip() for l in block.splitlines()]
+        ptr = 0
 
-        # --------------------------------------------------
-        # 4️⃣ Metadata
-        # --------------------------------------------------
+        def next_line():
+            nonlocal ptr
+            if ptr >= len(lines):
+                return None
+            line = lines[ptr]
+            ptr += 1
+            return line
+
+        def peek():
+            return lines[ptr] if ptr < len(lines) else None
+
+        # ---------- question_type ----------
         try:
-            question_type = int(extract_value("question_type"))
+            qtype_line = next_line()
+            question_type = int(qtype_line.split(":", 1)[1].strip())
         except Exception:
-            print("❌ question_type missing or not integer")
+            skipped.append((exam_idx, "INVALID_QUESTION_TYPE"))
             continue
 
-        class_name = extract_value("CLASS")
-        subject = extract_value("SUBJECT")
-        topic = extract_value("TOPIC")
-        difficulty = extract_value("DIFFICULTY")
+        # ---------- METADATA ----------
+        meta = {}
+        while peek() and peek() != "Reading_Material:":
+            line = next_line()
+            if ":" in line:
+                k, v = line.split(":", 1)
+                meta[k.strip()] = v.strip().strip('"')
 
-        try:
-            total_questions = int(extract_value("Total_Questions"))
-        except Exception:
-            print("❌ Invalid Total_Questions")
+        required_meta = ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY", "Total_Questions"]
+        if not all(k in meta for k in required_meta):
+            skipped.append((exam_idx, "MISSING_METADATA"))
             continue
 
-        if not all([class_name, subject, topic, difficulty]):
-            print("❌ Missing required metadata")
+        total_questions = int(meta["Total_Questions"])
+        year = int(meta["CLASS"].replace("Year", "").strip())
+
+        # ---------- Reading Material ----------
+        if next_line() != "Reading_Material:":
+            skipped.append((exam_idx, "MISSING_READING_MATERIAL"))
             continue
 
-        year_match = re.search(r"\d+", class_name)
-        if not year_match:
-            print("❌ Invalid CLASS year:", class_name)
-            continue
+        reading_lines = []
+        images_declared = []
 
-        year = int(year_match.group())
+        while peek():
+            if peek() == "IMAGES:":
+                next_line()
+                while peek() and not peek().startswith("QUESTION_"):
+                    img = next_line().strip()
+                    if img:
+                        images_declared.append(img.lower())
+                continue
 
-        # --------------------------------------------------
-        # 5️⃣ Reading material + blocks
-        # --------------------------------------------------
-        if "Reading_Material:" not in block:
-            print("❌ Missing Reading_Material")
-            continue
-
-        reading_section = block.split("Reading_Material:", 1)[1]
-
-        if "QUESTION_INSTRUCTION:" not in reading_section:
-            print("❌ Missing QUESTION_INSTRUCTION")
-            continue
-
-        reading_material = reading_section.split(
-            "QUESTION_INSTRUCTION:", 1
-        )[0].strip()
-
-        if len(reading_material) < 100:
-            print("❌ Reading material too short")
-            continue
-
-        # ---------- TEXT_TITLE ----------
-        text_title = None
-        for line in reading_material.splitlines():
-            if line.startswith("TEXT_TITLE:"):
-                text_title = line.split(":", 1)[1].strip().strip('"')
+            if peek().startswith("QUESTION_"):
                 break
 
-        # ---------- Build reading_blocks ----------
-        reading_blocks = []
-        for line in reading_material.splitlines():
-            clean = line.strip()
-            if not clean:
-                continue
-            reading_blocks.append({
-                "type": "text",
-                "content": clean
+            reading_lines.append(next_line())
+
+        reading_material = "\n".join(reading_lines).strip()
+        if len(reading_material) < 50:
+            skipped.append((exam_idx, "READING_TOO_SHORT"))
+            continue
+
+        # ---------- QUESTION ----------
+        if next_line() != "QUESTION_INSTRUCTION:":
+            skipped.append((exam_idx, "MISSING_INSTRUCTION"))
+            continue
+
+        instruction = next_line()
+
+        if next_line() != "QUESTION_TEXT:":
+            skipped.append((exam_idx, "MISSING_QUESTION_TEXT"))
+            continue
+
+        question_text = next_line()
+
+        if next_line() != "ANSWER_OPTIONS:":
+            skipped.append((exam_idx, "MISSING_OPTIONS"))
+            continue
+
+        options = {}
+        while peek() and not peek().startswith("CORRECT_ANSWER"):
+            line = next_line()
+            if ":" in line:
+                k, v = line.split(":", 1)
+                options[k.strip()] = v.strip()
+
+        correct = next_line().split(":", 1)[1].strip().strip('"')
+
+        if len(options) != 4 or correct not in options:
+            skipped.append((exam_idx, "INVALID_OPTIONS"))
+            continue
+
+        # --------------------------------------------------
+        # 4️⃣ Resolve images (HARD FAIL)
+        # --------------------------------------------------
+        question_blocks = [
+            {"type": "text", "content": reading_material},
+            {"type": "text", "content": instruction},
+            {"type": "text", "content": question_text},
+        ]
+
+        for img in images_declared:
+            record = (
+                db.query(UploadedImage)
+                .filter(func.lower(func.trim(UploadedImage.original_name)) == img)
+                .first()
+            )
+
+            if not record:
+                skipped.append((exam_idx, f"IMAGE_NOT_UPLOADED: {img}"))
+                break
+
+            question_blocks.insert(1, {
+                "type": "image",
+                "src": record.gcs_url
             })
 
-        # --------------------------------------------------
-        # 6️⃣ Parse questions
-        # --------------------------------------------------
-        questions = []
+        else:
+            # --------------------------------------------------
+            # 5️⃣ Save question
+            # --------------------------------------------------
+            try:
+                obj = QuestionNaplanReading(
+                    class_name=meta["CLASS"].lower(),
+                    subject=meta["SUBJECT"].lower(),
+                    year=year,
+                    difficulty=meta["DIFFICULTY"].lower(),
+                    topic=meta["TOPIC"],
+                    question_type=question_type,
+                    total_questions=1,
+                    exam_bundle={
+                        "question_type": question_type,
+                        "topic": meta["TOPIC"],
+                        "question_blocks": question_blocks,
+                        "options": options,
+                        "correct_answer": correct
+                    }
+                )
 
-        for q_raw in reading_section.split("QUESTION_TEXT:")[1:]:
-            lines = [l.strip() for l in q_raw.splitlines() if l.strip()]
-            if not lines:
-                continue
+                db.add(obj)
+                db.commit()
+                db.refresh(obj)
 
-            question_text = re.sub(r"^\d+\.\s*", "", lines[0])
+                saved_ids.append(obj.id)
+                print(f"[{request_id}] ✅ Saved EXAM {exam_idx} | ID={obj.id}")
 
-            options = {}
-            correct = None
-
-            for line in lines[1:]:
-                if line.startswith(("A:", "B:", "C:", "D:")):
-                    k, v = line.split(":", 1)
-                    options[k] = v.strip()
-                elif line.startswith("CORRECT_ANSWER"):
-                    correct = line.split(":", 1)[1].strip().strip('"')
-
-            if (
-                question_text
-                and len(options) == 4
-                and correct in options
-            ):
-                questions.append({
-                    "question_id": f"Q{len(questions) + 1}",
-                    "question_text": question_text,
-                    "answer_options": options,
-                    "correct_answer": correct
-                })
-
-        if len(questions) != total_questions:
-            print(
-                f"❌ Question count mismatch: expected {total_questions}, got {len(questions)}"
-            )
-            continue
-
-        # --------------------------------------------------
-        # 7️⃣ Bundle (renderer-first)
-        # --------------------------------------------------
-        bundle = {
-            "question_type": question_type,
-            "topic": topic,
-            "text_title": text_title,
-            "reading_blocks": reading_blocks,   # ✅ NEW
-            "reading_material": reading_material,  # backward compatibility
-            "questions": questions
-        }
-
-        # --------------------------------------------------
-        # 8️⃣ Save
-        # --------------------------------------------------
-        try:
-            obj = QuestionNaplanReading(
-                class_name=class_name.lower(),
-                subject=subject.lower(),
-                year=year,
-                difficulty=difficulty.lower(),
-                topic=topic,
-                total_questions=total_questions,
-                question_type=question_type,
-                exam_bundle=bundle
-            )
-
-            db.add(obj)
-            db.commit()
-            db.refresh(obj)
-
-            saved_ids.append(obj.id)
-            print(f"✅ Saved | ID={obj.id}")
-
-        except Exception as e:
-            db.rollback()
-            print("❌ DB save failed:", str(e))
-            continue
+            except Exception as e:
+                db.rollback()
+                skipped.append((exam_idx, f"DB_ERROR: {str(e)}"))
 
     # --------------------------------------------------
-    # 9️⃣ Final response
+    # 6️⃣ Final response
     # --------------------------------------------------
     return {
-        "message": "NAPLAN Reading documents processed",
-        "saved_count": len(saved_ids),
-        "bundle_ids": saved_ids
+        "status": "success" if not skipped else "partial_success",
+        "saved": len(saved_ids),
+        "skipped": skipped,
+        "ids": saved_ids
     }
 
 
