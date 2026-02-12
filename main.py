@@ -11912,18 +11912,19 @@ def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     # 2️⃣ TOTAL QUESTIONS (NORMALIZED)
     # --------------------------------------------------
     tq_match = re.search(
-        r"^\s*(TOTAL[_ ]?QUESTIONS|TOTALQUESTIONS)\s*:\s*(\d+)\s*$",
+        r"TOTAL[_ ]?QUESTIONS\s*:\s*(\d+)",
         block_text,
-        re.MULTILINE | re.IGNORECASE
+        re.IGNORECASE
     )
     
     if not tq_match:
         raise ValueError("TOTAL_QUESTIONS missing")
     
-    expected_q_count = int(tq_match.group(2))
+    expected_q_count = int(tq_match.group(1))
     
     if expected_q_count != 6:
         raise ValueError("Gapped text must have exactly 6 gaps")
+
 
     # --------------------------------------------------
     # 3️⃣ AI EXTRACTION (STRICT CONTRACT)
