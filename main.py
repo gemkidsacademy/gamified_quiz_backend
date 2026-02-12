@@ -13139,6 +13139,54 @@ class MultiSelectMCQHandler(SingleMCQHandler):
     def validate(self, parsed):
         if len(parsed["correct"]) != 2:
             raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+
+
+@register
+class ImageMCQHandler(QuestionHandler):
+    question_type = 4
+
+    def parse(self, ctx):
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            stop_keys=["QUESTION_TEXT"]
+        )
+
+        question_text = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            stop_keys=["IMAGE_OPTIONS"]
+        )
+
+        image_options = parse_image_options(ctx)
+        correct = parse_correct_answers(ctx)
+
+        return {
+            "instruction": instruction,
+            "question_text": question_text,
+            "image_options": image_options,
+            "correct": correct
+        }
+
+    def validate(self, parsed):
+        if len(parsed["correct"]) != 1:
+            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+
+        if parsed["correct"][0] not in parsed["image_options"]:
+            raise ValueError("CORRECT_ANSWER_NOT_IN_IMAGE_OPTIONS")
+
+    def build_exam_bundle(self, parsed):
+        return {
+            "question_type": 4,
+            "question_blocks": [
+                {"type": "text", "content": parsed["instruction"]},
+                {"type": "text", "content": parsed["question_text"]}
+            ],
+            "image_options": parsed["image_options"],
+            "correct_answer": parsed["correct"]
+        }
+
+
 @register
 class GapFillHandler(QuestionHandler):
     question_type = 3
@@ -13343,6 +13391,44 @@ def parse_blank_answers(ctx):
         raise ValueError("EMPTY_CORRECT_ANSWER")
 
     return answers
+ def parse_image_options(ctx):
+    if ctx.next() != "IMAGE_OPTIONS:":
+        raise ValueError("MISSING_IMAGE_OPTIONS")
+
+    options = {}
+
+    while ctx.peek() and not ctx.peek().startswith("CORRECT_ANSWER"):
+        line = ctx.next()
+        if ":" in line:
+            k, v = line.split(":", 1)
+            options[k.strip()] = v.strip().lower()
+
+    if len(options) != 4:
+        raise ValueError("INVALID_IMAGE_OPTIONS")
+
+    return options
+
+def resolve_image_options(image_options, db):
+    resolved = {}
+    missing = None
+
+    for key, img in image_options.items():
+        record = (
+            db.query(UploadedImage)
+            .filter(func.lower(func.trim(UploadedImage.original_name)) == img)
+            .first()
+        )
+
+        if not record:
+            missing = img
+            break
+
+        resolved[key] = record.gcs_url
+
+    if missing:
+        raise ValueError(f"IMAGE_OPTION_NOT_UPLOADED: {missing}")
+
+    return resolved
 
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
@@ -13431,6 +13517,12 @@ async def upload_word_naplan_reading(
             question_blocks = build_blocks(reading, images, db)
 
             exam_bundle = handler.build_exam_bundle(parsed)
+            # Resolve image-based answer options (if any)
+            if "image_options" in exam_bundle:
+                exam_bundle["image_options"] = resolve_image_options(
+                    exam_bundle["image_options"], db
+                )
+
             exam_bundle["question_blocks"] = (
                 question_blocks + exam_bundle["question_blocks"]
             )
