@@ -13019,6 +13019,8 @@ OUTPUT:
         "bundle_ids": saved_ids
     }
 
+
+
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
     file: UploadFile = File(...),
@@ -13036,9 +13038,8 @@ async def upload_word_naplan_reading(
     ):
         raise HTTPException(status_code=400, detail="File must be .docx")
 
-    raw = await file.read()
-
     try:
+        raw = await file.read()
         full_text = normalize_doc_text(extract_text_from_docx(raw))
     except Exception as e:
         print("❌ DOCX extraction failed:", str(e))
@@ -13069,7 +13070,7 @@ async def upload_word_naplan_reading(
     saved_ids = []
 
     # --------------------------------------------------
-    # 3️⃣ Process each block
+    # 3️⃣ Process blocks
     # --------------------------------------------------
     for block_idx, block in enumerate(blocks, start=1):
         print(f"\n🔍 Processing block {block_idx}")
@@ -13090,8 +13091,6 @@ async def upload_word_naplan_reading(
             print("❌ question_type missing or not integer")
             continue
 
-        
-
         class_name = extract_value("CLASS")
         subject = extract_value("SUBJECT")
         topic = extract_value("TOPIC")
@@ -13107,7 +13106,6 @@ async def upload_word_naplan_reading(
             print("❌ Missing required metadata")
             continue
 
-        # ---------- robust year extraction ----------
         year_match = re.search(r"\d+", class_name)
         if not year_match:
             print("❌ Invalid CLASS year:", class_name)
@@ -13116,7 +13114,7 @@ async def upload_word_naplan_reading(
         year = int(year_match.group())
 
         # --------------------------------------------------
-        # 5️⃣ Reading material
+        # 5️⃣ Reading material + blocks
         # --------------------------------------------------
         if "Reading_Material:" not in block:
             print("❌ Missing Reading_Material")
@@ -13136,15 +13134,26 @@ async def upload_word_naplan_reading(
             print("❌ Reading material too short")
             continue
 
-        # ---------- extract TEXT_TITLE if present ----------
+        # ---------- TEXT_TITLE ----------
         text_title = None
         for line in reading_material.splitlines():
             if line.startswith("TEXT_TITLE:"):
                 text_title = line.split(":", 1)[1].strip().strip('"')
                 break
 
+        # ---------- Build reading_blocks ----------
+        reading_blocks = []
+        for line in reading_material.splitlines():
+            clean = line.strip()
+            if not clean:
+                continue
+            reading_blocks.append({
+                "type": "text",
+                "content": clean
+            })
+
         # --------------------------------------------------
-        # 6️⃣ Parse questions (generic & clean)
+        # 6️⃣ Parse questions
         # --------------------------------------------------
         questions = []
 
@@ -13153,9 +13162,7 @@ async def upload_word_naplan_reading(
             if not lines:
                 continue
 
-            # Strip leading numbering (e.g. "1. ")
-            raw_question = lines[0]
-            question_text = re.sub(r"^\d+\.\s*", "", raw_question)
+            question_text = re.sub(r"^\d+\.\s*", "", lines[0])
 
             options = {}
             correct = None
@@ -13173,6 +13180,7 @@ async def upload_word_naplan_reading(
                 and correct in options
             ):
                 questions.append({
+                    "question_id": f"Q{len(questions) + 1}",
                     "question_text": question_text,
                     "answer_options": options,
                     "correct_answer": correct
@@ -13185,24 +13193,19 @@ async def upload_word_naplan_reading(
             continue
 
         # --------------------------------------------------
-        # 7️⃣ Bundle (renderer-safe, extensible)
+        # 7️⃣ Bundle (renderer-first)
         # --------------------------------------------------
         bundle = {
-            "question_type": question_type,  # ✅ INT
+            "question_type": question_type,
             "topic": topic,
             "text_title": text_title,
-            "reading_material": reading_material,
-            "questions": [
-                {
-                    "question_id": f"Q{i+1}",
-                    **q
-                }
-                for i, q in enumerate(questions)
-            ]
+            "reading_blocks": reading_blocks,   # ✅ NEW
+            "reading_material": reading_material,  # backward compatibility
+            "questions": questions
         }
 
         # --------------------------------------------------
-        # 8️⃣ Save to DB
+        # 8️⃣ Save
         # --------------------------------------------------
         try:
             obj = QuestionNaplanReading(
@@ -13236,7 +13239,6 @@ async def upload_word_naplan_reading(
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
-
 
 
 import re
