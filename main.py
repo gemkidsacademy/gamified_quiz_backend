@@ -175,6 +175,7 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+
 class NaplanTopicCreate(BaseModel):
     name: str
     ai: Optional[int] = Field(default=0, ge=0)
@@ -1502,7 +1503,63 @@ class Question(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class QuestionNaplanReading(Base):
+    __tablename__ = "questions_naplan_reading"
 
+    id = Column(Integer, primary_key=True, index=True)
+
+    # -----------------------------
+    # Core metadata
+    # -----------------------------
+    class_name = Column(String(50), nullable=False)   # e.g. "year 3"
+    subject = Column(String(50), nullable=False)      # "reading"
+    year = Column(Integer, nullable=False)            # 3, 5
+    topic = Column(String(255), nullable=False)
+    difficulty = Column(String(20), nullable=False)   # easy | medium | hard
+
+    # -----------------------------
+    # Question type (ENUM INT)
+    # -----------------------------
+    question_type = Column(Integer, nullable=False)
+    # e.g.
+    # 1 = single_text_comprehension
+    # 2 = comparative_analysis
+    # 3 = multiple_texts
+    # 4 = visual_literacy
+
+    # -----------------------------
+    # Exam structure
+    # -----------------------------
+    total_questions = Column(Integer, nullable=False)
+
+    # -----------------------------
+    # Render-safe bundle
+    # -----------------------------
+    exam_bundle = Column(JSON, nullable=False)
+    """
+    {
+      "question_type": 1,
+      "topic": "...",
+      "text_title": "...",
+      "reading_material": "...",
+      "questions": [
+        {
+          "question_id": "Q1",
+          "question_text": "...",
+          "answer_options": { "A": "...", "B": "...", "C": "...", "D": "..." },
+          "correct_answer": "B"
+        }
+      ]
+    }
+    """
+
+    # -----------------------------
+    # Audit
+    # -----------------------------
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 class StudentLogin(BaseModel):
     student_id: str  # e.g., Gem001, Gem002
     password: str
@@ -12959,6 +13016,226 @@ OUTPUT:
 
     return {
         "message": "Literary Reading documents processed",
+        "saved_count": len(saved_ids),
+        "bundle_ids": saved_ids
+    }
+
+@app.post("/upload-word-naplan-reading")
+async def upload_word_naplan_reading(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 70)
+    print("📘 START: NAPLAN READING WORD UPLOAD")
+    print("=" * 70)
+
+    # --------------------------------------------------
+    # 1️⃣ File validation
+    # --------------------------------------------------
+    if file.content_type != (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        raise HTTPException(status_code=400, detail="File must be .docx")
+
+    raw = await file.read()
+
+    try:
+        full_text = normalize_doc_text(extract_text_from_docx(raw))
+    except Exception as e:
+        print("❌ DOCX extraction failed:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to extract Word file")
+
+    if not full_text or len(full_text.strip()) < 200:
+        raise HTTPException(status_code=400, detail="Invalid document")
+
+    # --------------------------------------------------
+    # 2️⃣ Detect exam blocks
+    # --------------------------------------------------
+    start_token = "=== EXAM START ==="
+    end_token = "=== EXAM END ==="
+
+    blocks = []
+    for part in full_text.split(start_token)[1:]:
+        if end_token in part:
+            block = part.split(end_token)[0].strip()
+            if len(block) >= 300:
+                blocks.append(block)
+
+    if not blocks:
+        raise HTTPException(
+            status_code=400,
+            detail="No valid exam blocks found"
+        )
+
+    saved_ids = []
+
+    # --------------------------------------------------
+    # 3️⃣ Process each block
+    # --------------------------------------------------
+    for block_idx, block in enumerate(blocks, start=1):
+        print(f"\n🔍 Processing block {block_idx}")
+
+        # ---------- helpers ----------
+        def extract_value(label):
+            for line in block.splitlines():
+                if line.startswith(label):
+                    return line.split(":", 1)[1].strip().strip('"')
+            return None
+
+        # --------------------------------------------------
+        # 4️⃣ Metadata
+        # --------------------------------------------------
+        try:
+            question_type = int(extract_value("question_type"))
+        except Exception:
+            print("❌ question_type missing or not integer")
+            continue
+
+        if question_type not in NAPLAN_READING_QUESTION_TYPES:
+            print("❌ Unknown question_type:", question_type)
+            continue
+
+        class_name = extract_value("CLASS")
+        subject = extract_value("SUBJECT")
+        topic = extract_value("TOPIC")
+        difficulty = extract_value("DIFFICULTY")
+
+        try:
+            total_questions = int(extract_value("Total_Questions"))
+        except Exception:
+            print("❌ Invalid Total_Questions")
+            continue
+
+        if not all([class_name, subject, topic, difficulty]):
+            print("❌ Missing required metadata")
+            continue
+
+        # ---------- robust year extraction ----------
+        year_match = re.search(r"\d+", class_name)
+        if not year_match:
+            print("❌ Invalid CLASS year:", class_name)
+            continue
+
+        year = int(year_match.group())
+
+        # --------------------------------------------------
+        # 5️⃣ Reading material
+        # --------------------------------------------------
+        if "Reading_Material:" not in block:
+            print("❌ Missing Reading_Material")
+            continue
+
+        reading_section = block.split("Reading_Material:", 1)[1]
+
+        if "QUESTION_INSTRUCTION:" not in reading_section:
+            print("❌ Missing QUESTION_INSTRUCTION")
+            continue
+
+        reading_material = reading_section.split(
+            "QUESTION_INSTRUCTION:", 1
+        )[0].strip()
+
+        if len(reading_material) < 100:
+            print("❌ Reading material too short")
+            continue
+
+        # ---------- extract TEXT_TITLE if present ----------
+        text_title = None
+        for line in reading_material.splitlines():
+            if line.startswith("TEXT_TITLE:"):
+                text_title = line.split(":", 1)[1].strip().strip('"')
+                break
+
+        # --------------------------------------------------
+        # 6️⃣ Parse questions (generic & clean)
+        # --------------------------------------------------
+        questions = []
+
+        for q_raw in reading_section.split("QUESTION_TEXT:")[1:]:
+            lines = [l.strip() for l in q_raw.splitlines() if l.strip()]
+            if not lines:
+                continue
+
+            # Strip leading numbering (e.g. "1. ")
+            raw_question = lines[0]
+            question_text = re.sub(r"^\d+\.\s*", "", raw_question)
+
+            options = {}
+            correct = None
+
+            for line in lines[1:]:
+                if line.startswith(("A:", "B:", "C:", "D:")):
+                    k, v = line.split(":", 1)
+                    options[k] = v.strip()
+                elif line.startswith("CORRECT_ANSWER"):
+                    correct = line.split(":", 1)[1].strip().strip('"')
+
+            if (
+                question_text
+                and len(options) == 4
+                and correct in options
+            ):
+                questions.append({
+                    "question_text": question_text,
+                    "answer_options": options,
+                    "correct_answer": correct
+                })
+
+        if len(questions) != total_questions:
+            print(
+                f"❌ Question count mismatch: expected {total_questions}, got {len(questions)}"
+            )
+            continue
+
+        # --------------------------------------------------
+        # 7️⃣ Bundle (renderer-safe, extensible)
+        # --------------------------------------------------
+        bundle = {
+            "question_type": question_type,  # ✅ INT
+            "topic": topic,
+            "text_title": text_title,
+            "reading_material": reading_material,
+            "questions": [
+                {
+                    "question_id": f"Q{i+1}",
+                    **q
+                }
+                for i, q in enumerate(questions)
+            ]
+        }
+
+        # --------------------------------------------------
+        # 8️⃣ Save to DB
+        # --------------------------------------------------
+        try:
+            obj = QuestionNaplanReading(
+                class_name=class_name.lower(),
+                subject=subject.lower(),
+                year=year,
+                difficulty=difficulty.lower(),
+                topic=topic,
+                total_questions=total_questions,
+                question_type=question_type,
+                exam_bundle=bundle
+            )
+
+            db.add(obj)
+            db.commit()
+            db.refresh(obj)
+
+            saved_ids.append(obj.id)
+            print(f"✅ Saved | ID={obj.id}")
+
+        except Exception as e:
+            db.rollback()
+            print("❌ DB save failed:", str(e))
+            continue
+
+    # --------------------------------------------------
+    # 9️⃣ Final response
+    # --------------------------------------------------
+    return {
+        "message": "NAPLAN Reading documents processed",
         "saved_count": len(saved_ids),
         "bundle_ids": saved_ids
     }
