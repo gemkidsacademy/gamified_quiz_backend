@@ -13027,24 +13027,34 @@ async def upload_word_naplan_reading(
     db: Session = Depends(get_db)
 ):
     request_id = str(uuid.uuid4())[:8]
-    print(f"\n========== NAPLAN READING UPLOAD [{request_id}] ==========")
+
+    print("\n" + "=" * 80)
+    print(f"📘 NAPLAN READING UPLOAD START [{request_id}]")
+    print("=" * 80)
 
     # --------------------------------------------------
     # 1️⃣ Validate file
     # --------------------------------------------------
+    print(f"[{request_id}] 📄 File received: {file.filename}")
+    print(f"[{request_id}] 📄 Content-Type: {file.content_type}")
+
     if file.content_type != (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ):
+        print(f"[{request_id}] ❌ Invalid file type")
         raise HTTPException(status_code=400, detail="File must be .docx")
 
     raw = await file.read()
     full_text = normalize_doc_text(extract_text_from_docx(raw))
 
+    print(f"[{request_id}] 📄 Extracted characters: {len(full_text)}")
+
     if not full_text or len(full_text.strip()) < 200:
+        print(f"[{request_id}] ❌ Document too short or empty")
         raise HTTPException(status_code=400, detail="Invalid document")
 
     # --------------------------------------------------
-    # 2️⃣ Split EXAM blocks
+    # 2️⃣ Detect EXAM blocks
     # --------------------------------------------------
     START = "=== EXAM START ==="
     END = "=== EXAM END ==="
@@ -13056,7 +13066,10 @@ async def upload_word_naplan_reading(
             if len(block) >= 200:
                 exam_blocks.append(block)
 
+    print(f"[{request_id}] 🧩 EXAM blocks found: {len(exam_blocks)}")
+
     if not exam_blocks:
+        print(f"[{request_id}] ❌ No valid EXAM blocks found")
         raise HTTPException(status_code=400, detail="No EXAM blocks found")
 
     saved_ids = []
@@ -13066,9 +13079,11 @@ async def upload_word_naplan_reading(
     # 3️⃣ Process each EXAM
     # --------------------------------------------------
     for exam_idx, block in enumerate(exam_blocks, start=1):
+        print("\n" + "-" * 70)
         print(f"[{request_id}] 🔍 Processing EXAM {exam_idx}")
+        print("-" * 70)
 
-        lines = [l.rstrip() for l in block.splitlines() if l.strip() != ""]
+        lines = [l.rstrip() for l in block.splitlines() if l.strip()]
         ptr = 0
 
         def peek():
@@ -13083,14 +13098,16 @@ async def upload_word_naplan_reading(
             return line
 
         # -------------------------------
-        # question_type (INT, safe)
+        # question_type
         # -------------------------------
         while peek() and not peek().startswith("question_type"):
             next_line()
 
         try:
             question_type = int(next_line().split(":", 1)[1].strip())
+            print(f"[{request_id}] ✅ question_type = {question_type}")
         except Exception:
+            print(f"[{request_id}] ❌ Invalid or missing question_type")
             skipped.append((exam_idx, "INVALID_QUESTION_TYPE"))
             continue
 
@@ -13107,8 +13124,11 @@ async def upload_word_naplan_reading(
                 k, v = line.split(":", 1)
                 meta[k.strip()] = v.strip().strip('"')
 
+        print(f"[{request_id}] 📘 METADATA parsed: {meta}")
+
         required = ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY", "Total_Questions"]
         if not all(k in meta for k in required):
+            print(f"[{request_id}] ❌ Missing METADATA fields")
             skipped.append((exam_idx, "MISSING_METADATA"))
             continue
 
@@ -13116,17 +13136,20 @@ async def upload_word_naplan_reading(
             total_questions = int(meta["Total_Questions"])
             year = int(meta["CLASS"].replace("Year", "").strip())
         except Exception:
+            print(f"[{request_id}] ❌ Invalid CLASS or Total_Questions")
             skipped.append((exam_idx, "INVALID_YEAR_OR_COUNT"))
             continue
 
         if total_questions != 1:
+            print(f"[{request_id}] ❌ Only 1 question supported, got {total_questions}")
             skipped.append((exam_idx, "ONLY_ONE_QUESTION_SUPPORTED"))
             continue
 
         # -------------------------------
-        # Reading Material
+        # Reading Material + Images
         # -------------------------------
         if next_line() != "Reading_Material:":
+            print(f"[{request_id}] ❌ Missing Reading_Material")
             skipped.append((exam_idx, "MISSING_READING_MATERIAL"))
             continue
 
@@ -13136,19 +13159,19 @@ async def upload_word_naplan_reading(
         while peek():
             if peek().startswith("IMAGES"):
                 line = next_line()
+                print(f"[{request_id}] 🖼️ IMAGES line: {line}")
 
-                # Inline: IMAGES: file.png
                 if ":" in line:
                     _, rest = line.split(":", 1)
                     images_declared.extend(
                         [i.strip().lower() for i in rest.split(",") if i.strip()]
                     )
 
-                # Multiline
                 while peek() and not peek().startswith("QUESTION_"):
                     img = next_line().strip().lower()
                     if img:
                         images_declared.append(img)
+
                 continue
 
             if peek().startswith("QUESTION_"):
@@ -13157,7 +13180,11 @@ async def upload_word_naplan_reading(
             reading_lines.append(next_line())
 
         reading_material = "\n".join(reading_lines).strip()
+        print(f"[{request_id}] 📖 Reading length: {len(reading_material)}")
+        print(f"[{request_id}] 🖼️ Images declared: {images_declared}")
+
         if len(reading_material) < 50:
+            print(f"[{request_id}] ❌ Reading too short")
             skipped.append((exam_idx, "READING_TOO_SHORT"))
             continue
 
@@ -13165,18 +13192,21 @@ async def upload_word_naplan_reading(
         # Question
         # -------------------------------
         if next_line() != "QUESTION_INSTRUCTION:":
+            print(f"[{request_id}] ❌ Missing QUESTION_INSTRUCTION")
             skipped.append((exam_idx, "MISSING_INSTRUCTION"))
             continue
 
         instruction = next_line()
 
         if next_line() != "QUESTION_TEXT:":
+            print(f"[{request_id}] ❌ Missing QUESTION_TEXT")
             skipped.append((exam_idx, "MISSING_QUESTION_TEXT"))
             continue
 
         question_text = next_line()
 
         if next_line() != "ANSWER_OPTIONS:":
+            print(f"[{request_id}] ❌ Missing ANSWER_OPTIONS")
             skipped.append((exam_idx, "MISSING_OPTIONS"))
             continue
 
@@ -13190,10 +13220,12 @@ async def upload_word_naplan_reading(
         try:
             correct = next_line().split(":", 1)[1].strip().strip('"')
         except Exception:
+            print(f"[{request_id}] ❌ Missing CORRECT_ANSWER")
             skipped.append((exam_idx, "MISSING_CORRECT_ANSWER"))
             continue
 
         if len(options) != 4 or correct not in options:
+            print(f"[{request_id}] ❌ Invalid options or correct answer")
             skipped.append((exam_idx, "INVALID_OPTIONS"))
             continue
 
@@ -13213,10 +13245,13 @@ async def upload_word_naplan_reading(
                 .filter(func.lower(func.trim(UploadedImage.original_name)) == img)
                 .first()
             )
+
             if not record:
+                print(f"[{request_id}] ❌ Image NOT FOUND: {img}")
                 missing_image = img
                 break
 
+            print(f"[{request_id}] ✅ Image resolved: {img}")
             question_blocks.append({
                 "type": "image",
                 "src": record.gcs_url
@@ -13252,15 +13287,32 @@ async def upload_word_naplan_reading(
             db.refresh(obj)
 
             saved_ids.append(obj.id)
-            print(f"[{request_id}] ✅ Saved EXAM {exam_idx} | ID={obj.id}")
+            print(f"[{request_id}] 💾 SAVED exam {exam_idx} | ID={obj.id}")
 
         except Exception as e:
             db.rollback()
+            print(f"[{request_id}] ❌ DB ERROR: {str(e)}")
             skipped.append((exam_idx, f"DB_ERROR: {str(e)}"))
 
     # --------------------------------------------------
-    # Final response
+    # 4️⃣ Final decision
     # --------------------------------------------------
+    print("\n" + "=" * 80)
+    print(f"[{request_id}] 📊 Upload summary")
+    print(f"[{request_id}] ✅ Saved: {len(saved_ids)}")
+    print(f"[{request_id}] ❌ Skipped: {len(skipped)}")
+    print(f"[{request_id}] Details: {skipped}")
+    print("=" * 80)
+
+    if not saved_ids:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "NO_EXAMS_SAVED",
+                "skipped": skipped
+            }
+        )
+
     return {
         "status": "success" if not skipped else "partial_success",
         "saved": len(saved_ids),
