@@ -12253,64 +12253,44 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     import json
     import re
 
-    
-    for line in block_text.splitlines():
-        if any(k in line.upper() for k in ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY"]):
-            print(repr(line))
-
-     # 🔥 REQUIRED NORMALIZATION (THIS WAS MISSING)
+    # --------------------------------------------------
+    # 0️⃣ NORMALIZE WORD ARTIFACTS (SAFE, NON-DESTRUCTIVE)
+    # --------------------------------------------------
     block_text = (
         block_text
-        .replace("\xa0", " ")   # non-breaking spaces from Word
-        .replace("\u200b", "")  # zero-width spaces
-        .replace("\t", " ")     # tabs
-        .replace("\r\n", "\n")
-        .replace("\r", "\n")
-    )
-
-    # 🔥 FLATTEN METADATA SECTION
-    block_text = re.sub(
-        r"^\s*METADATA\s*:\s*$",
-        "",
-        block_text,
-        flags=re.MULTILINE | re.IGNORECASE
-    )
-    # 🔥 RE-SPLIT COLLAPSED METADATA LINES
-    block_text = re.sub(
-        r'(CLASS|SUBJECT|TOPIC|DIFFICULTY)\s*:',
-        r'\n\1:',
-        block_text,
-        flags=re.IGNORECASE
+        .replace("\xa0", " ")
+        .replace("\u200b", "")
+        .replace("\t", " ")
     )
 
     saved_ids: list[int] = []
 
     # --------------------------------------------------
-    # 1️⃣ DOCUMENT-AUTHORITATIVE METADATA
+    # 1️⃣ METADATA (SEMANTIC, LAYOUT-AGNOSTIC)
     # --------------------------------------------------
-    def extract_meta(label: str) -> str | None:
+    def extract_meta(key: str) -> str | None:
         match = re.search(
-            rf"^\s*{label}\s*:\s*\"?(.*?)\"?\s*$",
+            rf"{key}\s*:\s*\"?(.*?)\"?(?=\s+[A-Z_]+\s*:|$)",
             block_text,
-            re.MULTILINE | re.IGNORECASE
+            re.IGNORECASE
         )
         return match.group(1).strip() if match else None
 
-    class_name = extract_meta("class_name") or extract_meta("class")
-    subject = extract_meta("subject")
-    topic = extract_meta("topic")
-    difficulty = extract_meta("difficulty")
+    class_name = extract_meta("CLASS_NAME") or extract_meta("CLASS")
+    subject = extract_meta("SUBJECT")
+    topic = extract_meta("TOPIC")
+    difficulty = extract_meta("DIFFICULTY")
 
     if not all([class_name, subject, topic, difficulty]):
         raise ValueError("Missing required METADATA fields")
 
     # --------------------------------------------------
-    # 2️⃣ TOTAL QUESTIONS (STRICT)
+    # 2️⃣ TOTAL QUESTIONS (SEMANTIC)
     # --------------------------------------------------
     tq_match = re.search(
-        r"^\s*Total_Questions\s*:\s*(\d+)\s*$",
+        r"TOTAL[_ ]?QUESTIONS\s*:\s*(\d+)",
         block_text,
-        re.MULTILINE | re.IGNORECASE
+        re.IGNORECASE
     )
 
     if not tq_match:
@@ -12319,12 +12299,11 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     expected_q_count = int(tq_match.group(1))
 
     # --------------------------------------------------
-    # 3️⃣ EXTRACT LABELS (AUTHORITATIVE)
+    # 3️⃣ EXTRACT LABELS (DOCUMENT-AUTHORITATIVE)
     # --------------------------------------------------
     extract_matches = re.findall(
-        r"^\s*Extract\s+([A-Z])\s*$",
-        block_text,
-        re.MULTILINE
+        r"\bExtract\s+([A-Z])\b",
+        block_text
     )
 
     extract_keys = sorted(dict.fromkeys(extract_matches))
@@ -12335,7 +12314,7 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     print("   → Extracts:", extract_keys)
 
     # --------------------------------------------------
-    # 4️⃣ SUBTYPE DETECTION (DOCUMENT BASED)
+    # 4️⃣ SUBTYPE DETECTION
     # --------------------------------------------------
     is_mcq = "ANSWER_OPTIONS:" in block_text
     print("   → Subtype:", "MCQ" if is_mcq else "Extract-selection")
@@ -12348,7 +12327,7 @@ You are an exam content extraction engine.
 
 You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
 
-The document contains a METADATA section:
+The document contains:
 - class_name
 - subject
 - topic
@@ -12362,39 +12341,30 @@ The JSON output MUST contain EXACTLY:
   "topic": string,
   "difficulty": string,
   "reading_material": {
-    "extracts": {
-      "A": string,
-      "B": string
-    }
+    "extracts": { "A": string, "B": string }
   },
   "questions": [...]
 }
 
 RULES:
-- Extract ONLY what exists in the document
+- Extract ONLY what exists
 - Preserve wording EXACTLY
-- DO NOT infer, repair, or generate content
-- If ANY required field is missing or invalid, RETURN {}
+- DO NOT infer or generate content
+- If ANY required field is missing, RETURN {}
 
 QUESTION RULES:
 - questions count MUST match Total_Questions
-- EVERY question MUST contain:
-  - question_text
-  - correct_answer
+- EVERY question MUST have question_text and correct_answer
 
-IF the document contains ANSWER_OPTIONS:
-- EVERY question MUST contain:
-  - answer_options (keys A,B,C,D)
-  - correct_answer must be one of A,B,C,D
+IF ANSWER_OPTIONS exist:
+- answer_options required
+- correct_answer must be one of A,B,C,D
 
-IF the document does NOT contain ANSWER_OPTIONS:
-- questions MUST NOT contain answer_options
-- correct_answer MUST be one of the extract labels
+IF NOT:
+- correct_answer must reference an extract letter
 
 OUTPUT:
 - VALID JSON ONLY
-- No markdown
-- No explanations
 """
 
     response = client.chat.completions.create(
@@ -12420,7 +12390,7 @@ OUTPUT:
         raise ValueError("AI returned empty JSON")
 
     # --------------------------------------------------
-    # 6️⃣ VALIDATE AGAINST DOCUMENT (HARD)
+    # 6️⃣ HARD VALIDATION AGAINST DOCUMENT
     # --------------------------------------------------
     rm = parsed.get("reading_material", {})
     extracts = rm.get("extracts", {})
@@ -12430,10 +12400,6 @@ OUTPUT:
             f"Extract mismatch. Document={extract_keys}, GPT={list(extracts.keys())}"
         )
 
-    for k in extract_keys:
-        if not extracts[k] or not extracts[k].strip():
-            raise ValueError(f"Extract {k} is empty")
-
     questions = parsed.get("questions", [])
 
     if len(questions) != expected_q_count:
@@ -12442,7 +12408,7 @@ OUTPUT:
         )
 
     # --------------------------------------------------
-    # 7️⃣ QUESTION VALIDATION (SUBTYPE AWARE)
+    # 7️⃣ QUESTION VALIDATION
     # --------------------------------------------------
     for i, q in enumerate(questions, start=1):
         if "question_text" not in q:
@@ -12453,31 +12419,19 @@ OUTPUT:
 
         if is_mcq:
             opts = q.get("answer_options")
-            if not opts:
-                raise ValueError(f"Question {i} missing answer_options")
-
-            if set(opts.keys()) != {"A", "B", "C", "D"}:
-                raise ValueError(
-                    f"Question {i} invalid option keys {list(opts.keys())}"
-                )
+            if not opts or set(opts.keys()) != {"A", "B", "C", "D"}:
+                raise ValueError(f"Question {i} invalid answer_options")
 
             if q["correct_answer"] not in opts:
-                raise ValueError(
-                    f"Question {i} correct_answer not in options"
-                )
+                raise ValueError(f"Question {i} correct_answer not in options")
         else:
-            if "answer_options" in q:
-                raise ValueError(
-                    f"Question {i} has answer_options in extract-selection exam"
-                )
-
             if q["correct_answer"] not in extract_keys:
                 raise ValueError(
                     f"Question {i} invalid extract reference {q['correct_answer']}"
                 )
 
     # --------------------------------------------------
-    # 8️⃣ ENRICH FOR FRONTEND (SAFE)
+    # 8️⃣ ENRICH FOR FRONTEND
     # --------------------------------------------------
     enriched_questions = []
 
@@ -12505,7 +12459,7 @@ OUTPUT:
         bundle["answer_options"] = enriched_questions[0]["answer_options"]
 
     # --------------------------------------------------
-    # 9️⃣ SAVE (UNCHANGED ROW SHAPE)
+    # 9️⃣ SAVE
     # --------------------------------------------------
     obj = QuestionReading(
         class_name=class_name.lower(),
