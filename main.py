@@ -11830,20 +11830,19 @@ def detect_question_type(block_text: str) -> str | None:
         return match.group(1).lower()
 
     return None
+
 def extract_all_metadata(block_text: str) -> dict[str, str]:
     import re
 
     metadata = {}
 
-    for line in block_text.splitlines():
-        match = re.match(
-            r"^[^\S\r\n]*([^:：]+)[^\S\r\n]*[:：][^\S\r\n]*\"?(.*?)\"?[^\S\r\n]*$",
-            line,
-            re.IGNORECASE
-        )
-        if not match:
-            continue
+    # Match KEY : VALUE anywhere in the text (line-agnostic)
+    pattern = re.compile(
+        r"([A-Za-z_ ]+)\s*[:：]\s*\"?([^\"]+?)\"?(?=\s+[A-Za-z_ ]+\s*[:：]|$)",
+        re.IGNORECASE
+    )
 
+    for match in pattern.finditer(block_text):
         raw_key = match.group(1)
         value = match.group(2).strip()
 
