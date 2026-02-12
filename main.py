@@ -13242,6 +13242,59 @@ class TrueFalseHandler(QuestionHandler):
             ],
             "correct_answer": parsed["correct"]
         }
+@register
+class SingleGapHandler(QuestionHandler):
+    question_type = 6
+
+    def parse(self, ctx):
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            stop_keys=["QUESTION_TEXT"]
+        )
+
+        question_text = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            stop_keys=["WORD_OPTIONS"]
+        )
+
+        options = parse_word_options(ctx)
+        correct = parse_correct_answers(ctx)
+
+        return {
+            "instruction": instruction,
+            "question_text": question_text,
+            "options": options,
+            "correct": correct
+        }
+
+    def validate(self, parsed):
+        # Must contain exactly one blank
+        if parsed["question_text"].count("[BLANK]") != 1:
+            raise ValueError("INVALID_BLANK_COUNT")
+
+        # Exactly one correct answer
+        if len(parsed["correct"]) != 1:
+            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+
+        # Correct answer must exist in options
+        if parsed["correct"][0] not in parsed["options"]:
+            raise ValueError("CORRECT_ANSWER_NOT_IN_OPTIONS")
+
+    def build_exam_bundle(self, parsed):
+        return {
+            "question_type": 6,
+            "question_blocks": [
+                { "type": "text", "content": parsed["instruction"] },
+                {
+                    "type": "single_gap",
+                    "content": parsed["question_text"],
+                    "options": parsed["options"]
+                }
+            ],
+            "correct_answer": parsed["correct"]
+        }
 
 @register
 class GapFillHandler(QuestionHandler):
@@ -13523,6 +13576,22 @@ def parse_true_false_answers(ctx):
 
     return answers
 
+def parse_word_options(ctx):
+    if ctx.next() != "WORD_OPTIONS:":
+        raise ValueError("MISSING_WORD_OPTIONS")
+
+    options = {}
+
+    while ctx.peek() and not ctx.peek().startswith("CORRECT_ANSWER"):
+        line = ctx.next()
+        if ":" in line:
+            k, v = line.split(":", 1)
+            options[k.strip()] = v.strip()
+
+    if len(options) < 2:
+        raise ValueError("INVALID_WORD_OPTIONS")
+
+    return options
 
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
