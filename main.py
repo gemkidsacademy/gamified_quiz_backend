@@ -13074,13 +13074,31 @@ def parse_correct_answers(ctx):
 
     answers = []
 
+    # Inline: CORRECT_ANSWER: A
     if ":" in line:
         _, v = line.split(":", 1)
-        if v.strip():
-            answers.append(v.strip().strip('"'))
+        v = v.strip().strip('"')
+        if v:
+            answers.append(v)
 
-    while ctx.peek() and ctx.peek().startswith("-"):
-        answers.append(ctx.next().replace("-", "").strip().strip('"'))
+    # Multiline formats
+    while ctx.peek() and not ctx.peek().startswith(("QUESTION_", "WORD_BANK", "IMAGE_OPTIONS")):
+        val = ctx.peek().strip()
+
+        # Dash format: - A
+        if val.startswith("-"):
+            answers.append(ctx.next().replace("-", "").strip().strip('"'))
+            continue
+
+        # Bare value format: A
+        if len(val) == 1 and val.isalpha():
+            answers.append(ctx.next().strip())
+            continue
+
+        break
+
+    if not answers:
+        raise ValueError("EMPTY_CORRECT_ANSWER")
 
     return answers
 
