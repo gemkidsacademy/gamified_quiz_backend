@@ -13188,6 +13188,7 @@ async def upload_word_naplan_reading(
             skipped.append((exam_idx, "READING_TOO_SHORT"))
             continue
 
+        
         # -------------------------------
         # Question
         # -------------------------------
@@ -13195,27 +13196,24 @@ async def upload_word_naplan_reading(
             print(f"[{request_id}] ❌ Missing QUESTION_INSTRUCTION")
             skipped.append((exam_idx, "MISSING_INSTRUCTION"))
             continue
-
-        instruction = next_line()
-
+        
+        instruction_lines = []
+        while peek() and not peek().startswith("QUESTION_TEXT:"):
+            instruction_lines.append(next_line())
+        
+        instruction = " ".join(instruction_lines).strip()
+        
         if next_line() != "QUESTION_TEXT:":
             print(f"[{request_id}] ❌ Missing QUESTION_TEXT")
             skipped.append((exam_idx, "MISSING_QUESTION_TEXT"))
             continue
+        
+        question_lines = []
+        while peek() and not peek().startswith("ANSWER_OPTIONS:"):
+            question_lines.append(next_line())
+        
+        question_text = " ".join(question_lines).strip()
 
-        question_text = next_line()
-
-        if next_line() != "ANSWER_OPTIONS:":
-            print(f"[{request_id}] ❌ Missing ANSWER_OPTIONS")
-            skipped.append((exam_idx, "MISSING_OPTIONS"))
-            continue
-
-        options = {}
-        while peek() and not peek().startswith("CORRECT_ANSWER"):
-            line = next_line()
-            if ":" in line:
-                k, v = line.split(":", 1)
-                options[k.strip()] = v.strip()
 
         # -------------------------------
         # CORRECT ANSWER (single or multi)
