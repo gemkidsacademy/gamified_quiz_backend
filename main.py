@@ -13139,6 +13139,64 @@ class MultiSelectMCQHandler(SingleMCQHandler):
     def validate(self, parsed):
         if len(parsed["correct"]) != 2:
             raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+@register
+class GapFillHandler(QuestionHandler):
+    question_type = 3
+
+    def parse(self, ctx):
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            stop_keys=["QUESTION_TEXT"]
+        )
+
+        question_text = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            stop_keys=["WORD_BANK"]
+        )
+
+        word_bank = parse_word_bank(ctx)
+        correct = parse_blank_answers(ctx)
+
+        return {
+            "instruction": instruction,
+            "question_text": question_text,
+            "word_bank": word_bank,
+            "correct": correct
+        }
+
+    def validate(self, parsed):
+        # 1️⃣ Blanks must exist
+        blanks = re.findall(r"\[BLANK_\d+\]", parsed["question_text"])
+        if not blanks:
+            raise ValueError("NO_BLANKS_FOUND")
+
+        # 2️⃣ Every blank must have an answer
+        for blank in blanks:
+            key = blank.replace("[", "").replace("]", "")
+            if key not in parsed["correct"]:
+                raise ValueError(f"MISSING_ANSWER_FOR_{key}")
+
+        # 3️⃣ Answers must exist in word bank
+        for ans in parsed["correct"].values():
+            if ans not in parsed["word_bank"]:
+                raise ValueError("ANSWER_NOT_IN_WORD_BANK")
+
+    def build_exam_bundle(self, parsed):
+        return {
+            "question_type": 3,
+            "question_blocks": [
+                {"type": "text", "content": parsed["instruction"]},
+                {
+                    "type": "gap_fill",
+                    "content": parsed["question_text"],
+                    "word_bank": parsed["word_bank"]
+                }
+            ],
+            "correct_answer": parsed["correct"]
+        }
+
 def parse_common_sections(ctx):
     """
     Parses:
@@ -13253,6 +13311,38 @@ def parse_year(meta):
         return int(meta["CLASS"].replace("Year", "").strip())
     except Exception:
         raise ValueError("INVALID_CLASS_YEAR")
+def parse_word_bank(ctx):
+    if ctx.next() != "WORD_BANK:":
+        raise ValueError("MISSING_WORD_BANK")
+
+    bank = {}
+
+    while ctx.peek() and not ctx.peek().startswith("CORRECT_ANSWER"):
+        line = ctx.next()
+        if ":" in line:
+            k, v = line.split(":", 1)
+            bank[k.strip()] = v.strip()
+
+    if not bank:
+        raise ValueError("EMPTY_WORD_BANK")
+
+    return bank
+
+def parse_blank_answers(ctx):
+    line = ctx.next()
+    if not line.startswith("CORRECT_ANSWER"):
+        raise ValueError("MISSING_CORRECT_ANSWER")
+
+    answers = {}
+
+    while ctx.peek() and ":" in ctx.peek():
+        blank, val = ctx.next().split(":", 1)
+        answers[blank.strip()] = val.strip().strip('"')
+
+    if not answers:
+        raise ValueError("EMPTY_CORRECT_ANSWER")
+
+    return answers
 
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
