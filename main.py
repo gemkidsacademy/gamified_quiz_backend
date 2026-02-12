@@ -13021,6 +13021,7 @@ OUTPUT:
 
 
 
+
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
     file: UploadFile = File(...),
@@ -13171,7 +13172,6 @@ async def upload_word_naplan_reading(
                     img = next_line().strip().lower()
                     if img:
                         images_declared.append(img)
-
                 continue
 
             if peek().startswith("QUESTION_"):
@@ -13217,16 +13217,46 @@ async def upload_word_naplan_reading(
                 k, v = line.split(":", 1)
                 options[k.strip()] = v.strip()
 
-        try:
-            correct = next_line().split(":", 1)[1].strip().strip('"')
-        except Exception:
+        # -------------------------------
+        # CORRECT ANSWER (single or multi)
+        # -------------------------------
+        correct_answers = []
+
+        line = next_line()
+        if not line.startswith("CORRECT_ANSWER"):
             print(f"[{request_id}] ❌ Missing CORRECT_ANSWER")
             skipped.append((exam_idx, "MISSING_CORRECT_ANSWER"))
             continue
 
-        if len(options) != 4 or correct not in options:
-            print(f"[{request_id}] ❌ Invalid options or correct answer")
+        if ":" in line:
+            _, value = line.split(":", 1)
+            value = value.strip().strip('"')
+            if value:
+                correct_answers.append(value)
+
+        while peek() and peek().startswith("-"):
+            ans = next_line().replace("-", "").strip().strip('"')
+            if ans:
+                correct_answers.append(ans)
+
+        if len(options) != 4:
+            print(f"[{request_id}] ❌ Invalid number of options")
             skipped.append((exam_idx, "INVALID_OPTIONS"))
+            continue
+
+        if question_type == 1 and len(correct_answers) != 1:
+            print(f"[{request_id}] ❌ MCQ must have exactly 1 correct answer")
+            skipped.append((exam_idx, "INVALID_CORRECT_ANSWER_COUNT"))
+            continue
+
+        if question_type == 2 and len(correct_answers) != 2:
+            print(f"[{request_id}] ❌ Multi-select must have exactly 2 correct answers")
+            skipped.append((exam_idx, "INVALID_CORRECT_ANSWER_COUNT"))
+            continue
+
+        if any(a not in options for a in correct_answers):
+            print(f"[{request_id}] ❌ Correct answer not in options")
+            skipped.append((exam_idx, "INVALID_CORRECT_ANSWER"))
             continue
 
         # -------------------------------
@@ -13278,7 +13308,7 @@ async def upload_word_naplan_reading(
                     "topic": meta["TOPIC"],
                     "question_blocks": question_blocks,
                     "options": options,
-                    "correct_answer": correct
+                    "correct_answer": correct_answers
                 }
             )
 
@@ -13319,7 +13349,6 @@ async def upload_word_naplan_reading(
         "skipped": skipped,
         "ids": saved_ids
     }
-
 
 
 import re
