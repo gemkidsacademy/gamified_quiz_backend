@@ -13204,6 +13204,44 @@ class ImageMCQHandler(QuestionHandler):
             "correct_answer": parsed["correct"]
         }
 
+@register
+class TrueFalseHandler(QuestionHandler):
+    question_type = 5
+
+    def parse(self, ctx):
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            stop_keys=["STATEMENTS"]
+        )
+
+        statements = parse_statements(ctx)
+        correct = parse_true_false_answers(ctx)
+
+        return {
+            "instruction": instruction,
+            "statements": statements,
+            "correct": correct
+        }
+
+    def validate(self, parsed):
+        # Every statement must have an answer
+        for key in parsed["statements"]:
+            if key not in parsed["correct"]:
+                raise ValueError(f"MISSING_ANSWER_FOR_STATEMENT_{key}")
+
+    def build_exam_bundle(self, parsed):
+        return {
+            "question_type": 5,
+            "question_blocks": [
+                { "type": "text", "content": parsed["instruction"] },
+                {
+                    "type": "true_false",
+                    "statements": parsed["statements"]
+                }
+            ],
+            "correct_answer": parsed["correct"]
+        }
 
 @register
 class GapFillHandler(QuestionHandler):
@@ -13447,6 +13485,44 @@ def resolve_image_options(image_options, db):
         raise ValueError(f"IMAGE_OPTION_NOT_UPLOADED: {missing}")
 
     return resolved
+def parse_statements(ctx):
+    if ctx.next() != "STATEMENTS:":
+        raise ValueError("MISSING_STATEMENTS")
+
+    statements = {}
+
+    while ctx.peek() and not ctx.peek().startswith("CORRECT_ANSWER"):
+        line = ctx.next()
+        if ":" in line:
+            k, v = line.split(":", 1)
+            statements[k.strip()] = v.strip()
+
+    if not statements:
+        raise ValueError("EMPTY_STATEMENTS")
+
+    return statements
+ 
+def parse_true_false_answers(ctx):
+    line = ctx.next()
+    if not line.startswith("CORRECT_ANSWER"):
+        raise ValueError("MISSING_CORRECT_ANSWER")
+
+    answers = {}
+
+    while ctx.peek() and ":" in ctx.peek():
+        k, v = ctx.next().split(":", 1)
+        val = v.strip().lower()
+
+        if val not in ("true", "false"):
+            raise ValueError("INVALID_TRUE_FALSE_VALUE")
+
+        answers[k.strip()] = (val == "true")
+
+    if not answers:
+        raise ValueError("EMPTY_CORRECT_ANSWER")
+
+    return answers
+
 
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
