@@ -11802,14 +11802,17 @@ OUTPUT:
     }
 
 def split_exam_blocks(full_text: str) -> list[str]:
-    start_token = "=== EXAM START ==="
-    end_token = "=== EXAM END ==="
+    import re
 
     blocks = []
-    for part in full_text.split(start_token)[1:]:
-        if end_token not in part:
-            continue
-        block = part.split(end_token)[0].strip()
+
+    pattern = re.compile(
+        r"===\s*EXAM\s*START\s*===(.*?)===\s*EXAM\s*END\s*===",
+        re.IGNORECASE | re.DOTALL
+    )
+
+    for match in pattern.finditer(full_text):
+        block = match.group(1).strip()
         if len(block) >= 300:
             blocks.append(block)
 
@@ -11821,11 +11824,14 @@ def normalize_metadata(meta: dict) -> dict:
         for k, v in meta.items()
     }
 def detect_question_type(block_text: str) -> str | None:
+    import re
+
     match = re.search(
-        r"^\s*question_type\s*:\s*([a-z_]+)\s*$",
+        r"question_type\s*:\s*([a-z_]+)",
         block_text,
-        re.IGNORECASE | re.MULTILINE
+        re.IGNORECASE
     )
+
     if match:
         return match.group(1).lower()
 
