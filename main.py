@@ -13019,8 +13019,126 @@ OUTPUT:
         "bundle_ids": saved_ids
     }
 
+# ================================
+# Question Type Registry
+# ================================
+
+class QuestionHandler:
+    question_type: int
+
+    def parse(self, ctx):
+        raise NotImplementedError
+
+    def validate(self, parsed):
+        raise NotImplementedError
+
+    def build_exam_bundle(self, parsed):
+        raise NotImplementedError
 
 
+QUESTION_HANDLERS = {}
+def register(handler_cls):
+    QUESTION_HANDLERS[handler_cls.question_type] = handler_cls()
+    return handler_cls
+
+def parse_block(ctx, start_key, stop_keys):
+    if ctx.next() != f"{start_key}:":
+        raise ValueError(f"MISSING_{start_key}")
+
+    lines = []
+    while ctx.peek() and not any(ctx.peek().startswith(k) for k in stop_keys):
+        lines.append(ctx.next())
+
+    return " ".join(lines).strip()
+
+
+def parse_options(ctx):
+    if ctx.next() != "ANSWER_OPTIONS:":
+        raise ValueError("MISSING_OPTIONS")
+
+    options = {}
+    while ctx.peek() and not ctx.peek().startswith("CORRECT_ANSWER"):
+        k, v = ctx.next().split(":", 1)
+        options[k.strip()] = v.strip()
+
+    if len(options) != 4:
+        raise ValueError("INVALID_OPTIONS")
+
+    return options
+
+
+def parse_correct_answers(ctx):
+    line = ctx.next()
+    if not line.startswith("CORRECT_ANSWER"):
+        raise ValueError("MISSING_CORRECT_ANSWER")
+
+    answers = []
+
+    if ":" in line:
+        _, v = line.split(":", 1)
+        if v.strip():
+            answers.append(v.strip().strip('"'))
+
+    while ctx.peek() and ctx.peek().startswith("-"):
+        answers.append(ctx.next().replace("-", "").strip().strip('"'))
+
+    return answers
+
+class ParseContext:
+    def __init__(self, lines):
+        self.lines = lines
+        self.ptr = 0
+
+    def peek(self):
+        return self.lines[self.ptr] if self.ptr < len(self.lines) else None
+
+    def next(self):
+        if self.ptr >= len(self.lines):
+            return None
+        val = self.lines[self.ptr]
+        self.ptr += 1
+        return val
+
+
+@register
+class SingleMCQHandler(QuestionHandler):
+    question_type = 1
+
+    def parse(self, ctx):
+        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["QUESTION_TEXT"])
+        question = parse_block(ctx, "QUESTION_TEXT", ["ANSWER_OPTIONS"])
+        options = parse_options(ctx)
+        correct = parse_correct_answers(ctx)
+
+        return {
+            "instruction": instruction,
+            "question": question,
+            "options": options,
+            "correct": correct
+        }
+
+    def validate(self, parsed):
+        if len(parsed["correct"]) != 1:
+            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+
+    def build_exam_bundle(self, parsed):
+        return {
+            "question_type": 1,
+            "question_blocks": [
+                {"type": "text", "content": parsed["instruction"]},
+                {"type": "text", "content": parsed["question"]}
+            ],
+            "options": parsed["options"],
+            "correct_answer": parsed["correct"]
+        }
+
+@register
+class MultiSelectMCQHandler(SingleMCQHandler):
+    question_type = 2
+
+    def validate(self, parsed):
+        if len(parsed["correct"]) != 2:
+            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
 
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
@@ -13034,280 +13152,104 @@ async def upload_word_naplan_reading(
     print("=" * 80)
 
     # --------------------------------------------------
-    # 1️⃣ Validate file
+    # 1️⃣ Read + normalize document
     # --------------------------------------------------
-    print(f"[{request_id}] 📄 File received: {file.filename}")
-    print(f"[{request_id}] 📄 Content-Type: {file.content_type}")
-
-    if file.content_type != (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ):
-        print(f"[{request_id}] ❌ Invalid file type")
-        raise HTTPException(status_code=400, detail="File must be .docx")
-
     raw = await file.read()
-    full_text = normalize_doc_text(extract_text_from_docx(raw))
+    text = normalize_doc_text(extract_text_from_docx(raw))
 
-    print(f"[{request_id}] 📄 Extracted characters: {len(full_text)}")
+    print(f"[{request_id}] 📄 Extracted characters: {len(text)}")
 
-    if not full_text or len(full_text.strip()) < 200:
-        print(f"[{request_id}] ❌ Document too short or empty")
-        raise HTTPException(status_code=400, detail="Invalid document")
-
-    # --------------------------------------------------
-    # 2️⃣ Detect EXAM blocks
-    # --------------------------------------------------
-    START = "=== EXAM START ==="
-    END = "=== EXAM END ==="
-
-    exam_blocks = []
-    for part in full_text.split(START)[1:]:
-        if END in part:
-            block = part.split(END)[0].strip()
-            if len(block) >= 200:
-                exam_blocks.append(block)
-
-    print(f"[{request_id}] 🧩 EXAM blocks found: {len(exam_blocks)}")
-
-    if not exam_blocks:
-        print(f"[{request_id}] ❌ No valid EXAM blocks found")
-        raise HTTPException(status_code=400, detail="No EXAM blocks found")
+    exam_blocks = split_exam_blocks(text)
+    print(f"[{request_id}] 🧩 EXAM blocks detected: {len(exam_blocks)}")
 
     saved_ids = []
     skipped = []
 
     # --------------------------------------------------
-    # 3️⃣ Process each EXAM
+    # 2️⃣ Process each EXAM
     # --------------------------------------------------
-    for exam_idx, block in enumerate(exam_blocks, start=1):
+    for idx, block in enumerate(exam_blocks, start=1):
         print("\n" + "-" * 70)
-        print(f"[{request_id}] 🔍 Processing EXAM {exam_idx}")
+        print(f"[{request_id}] 🔍 Processing EXAM {idx}")
         print("-" * 70)
 
-        lines = [l.rstrip() for l in block.splitlines() if l.strip()]
-        ptr = 0
-
-        def peek():
-            return lines[ptr] if ptr < len(lines) else None
-
-        def next_line():
-            nonlocal ptr
-            if ptr >= len(lines):
-                return None
-            line = lines[ptr]
-            ptr += 1
-            return line
-
-        # -------------------------------
-        # question_type
-        # -------------------------------
-        while peek() and not peek().startswith("question_type"):
-            next_line()
-
         try:
-            question_type = int(next_line().split(":", 1)[1].strip())
-            print(f"[{request_id}] ✅ question_type = {question_type}")
-        except Exception:
-            print(f"[{request_id}] ❌ Invalid or missing question_type")
-            skipped.append((exam_idx, "INVALID_QUESTION_TYPE"))
-            continue
+            lines = [l.rstrip() for l in block.splitlines() if l.strip()]
+            print(f"[{request_id}] 📄 Lines after cleanup: {len(lines)}")
 
-        # -------------------------------
-        # METADATA
-        # -------------------------------
-        if peek() == "METADATA:":
-            next_line()
+            ctx = ParseContext(lines)
 
-        meta = {}
-        while peek() and peek() != "Reading_Material:":
-            line = next_line()
-            if ":" in line:
-                k, v = line.split(":", 1)
-                meta[k.strip()] = v.strip().strip('"')
+            # -------------------------------
+            # question_type
+            # -------------------------------
+            while ctx.peek() and not ctx.peek().startswith("question_type"):
+                ctx.next()
 
-        print(f"[{request_id}] 📘 METADATA parsed: {meta}")
+            qt_line = ctx.next()
+            if not qt_line:
+                raise ValueError("MISSING_QUESTION_TYPE")
 
-        required = ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY", "Total_Questions"]
-        if not all(k in meta for k in required):
-            print(f"[{request_id}] ❌ Missing METADATA fields")
-            skipped.append((exam_idx, "MISSING_METADATA"))
-            continue
+            qt = int(qt_line.split(":", 1)[1].strip())
+            print(f"[{request_id}] ✅ question_type = {qt}")
 
-        try:
-            total_questions = int(meta["Total_Questions"])
-            year = int(meta["CLASS"].replace("Year", "").strip())
-        except Exception:
-            print(f"[{request_id}] ❌ Invalid CLASS or Total_Questions")
-            skipped.append((exam_idx, "INVALID_YEAR_OR_COUNT"))
-            continue
+            handler = QUESTION_HANDLERS.get(qt)
+            if not handler:
+                raise ValueError(f"UNSUPPORTED_QUESTION_TYPE: {qt}")
 
-        if total_questions != 1:
-            print(f"[{request_id}] ❌ Only 1 question supported, got {total_questions}")
-            skipped.append((exam_idx, "ONLY_ONE_QUESTION_SUPPORTED"))
-            continue
+            print(f"[{request_id}] 🧠 Handler resolved: {handler.__class__.__name__}")
 
-        # -------------------------------
-        # Reading Material + Images
-        # -------------------------------
-        if next_line() != "Reading_Material:":
-            print(f"[{request_id}] ❌ Missing Reading_Material")
-            skipped.append((exam_idx, "MISSING_READING_MATERIAL"))
-            continue
+            # -------------------------------
+            # Common sections
+            # -------------------------------
+            print(f"[{request_id}] 📘 Parsing METADATA / Reading / Images")
+            meta, reading, images = parse_common_sections(ctx)
 
-        reading_lines = []
-        images_declared = []
+            print(f"[{request_id}] 📘 METADATA: {meta}")
+            print(f"[{request_id}] 📖 Reading length: {len(reading)}")
+            print(f"[{request_id}] 🖼️ Images declared: {images}")
 
-        while peek():
-            if peek().startswith("IMAGES"):
-                line = next_line()
-                print(f"[{request_id}] 🖼️ IMAGES line: {line}")
+            # -------------------------------
+            # Question-type parsing
+            # -------------------------------
+            print(f"[{request_id}] 🧩 Parsing question blocks")
+            parsed = handler.parse(ctx)
 
-                if ":" in line:
-                    _, rest = line.split(":", 1)
-                    images_declared.extend(
-                        [i.strip().lower() for i in rest.split(",") if i.strip()]
-                    )
+            print(f"[{request_id}] 🧪 Parsed structure keys: {list(parsed.keys())}")
 
-                while peek() and not peek().startswith("QUESTION_"):
-                    img = next_line().strip().lower()
-                    if img:
-                        images_declared.append(img)
-                continue
+            print(f"[{request_id}] 🛂 Validating question")
+            handler.validate(parsed)
+            print(f"[{request_id}] ✅ Validation passed")
 
-            if peek().startswith("QUESTION_"):
-                break
+            # -------------------------------
+            # Build renderer blocks
+            # -------------------------------
+            print(f"[{request_id}] 🧱 Resolving images + building blocks")
+            question_blocks = build_blocks(reading, images, db)
 
-            reading_lines.append(next_line())
-
-        reading_material = "\n".join(reading_lines).strip()
-        print(f"[{request_id}] 📖 Reading length: {len(reading_material)}")
-        print(f"[{request_id}] 🖼️ Images declared: {images_declared}")
-
-        if len(reading_material) < 50:
-            print(f"[{request_id}] ❌ Reading too short")
-            skipped.append((exam_idx, "READING_TOO_SHORT"))
-            continue
-
-        
-        # -------------------------------
-        # Question
-        # -------------------------------
-        if next_line() != "QUESTION_INSTRUCTION:":
-            print(f"[{request_id}] ❌ Missing QUESTION_INSTRUCTION")
-            skipped.append((exam_idx, "MISSING_INSTRUCTION"))
-            continue
-        
-        instruction_lines = []
-        while peek() and not peek().startswith("QUESTION_TEXT:"):
-            instruction_lines.append(next_line())
-        
-        instruction = " ".join(instruction_lines).strip()
-        
-        if next_line() != "QUESTION_TEXT:":
-            print(f"[{request_id}] ❌ Missing QUESTION_TEXT")
-            skipped.append((exam_idx, "MISSING_QUESTION_TEXT"))
-            continue
-        
-        question_lines = []
-        while peek() and not peek().startswith("ANSWER_OPTIONS:"):
-            question_lines.append(next_line())
-        
-        question_text = " ".join(question_lines).strip()
-
-
-        # -------------------------------
-        # CORRECT ANSWER (single or multi)
-        # -------------------------------
-        correct_answers = []
-
-        line = next_line()
-        if not line.startswith("CORRECT_ANSWER"):
-            print(f"[{request_id}] ❌ Missing CORRECT_ANSWER")
-            skipped.append((exam_idx, "MISSING_CORRECT_ANSWER"))
-            continue
-
-        if ":" in line:
-            _, value = line.split(":", 1)
-            value = value.strip().strip('"')
-            if value:
-                correct_answers.append(value)
-
-        while peek() and peek().startswith("-"):
-            ans = next_line().replace("-", "").strip().strip('"')
-            if ans:
-                correct_answers.append(ans)
-
-        if len(options) != 4:
-            print(f"[{request_id}] ❌ Invalid number of options")
-            skipped.append((exam_idx, "INVALID_OPTIONS"))
-            continue
-
-        if question_type == 1 and len(correct_answers) != 1:
-            print(f"[{request_id}] ❌ MCQ must have exactly 1 correct answer")
-            skipped.append((exam_idx, "INVALID_CORRECT_ANSWER_COUNT"))
-            continue
-
-        if question_type == 2 and len(correct_answers) != 2:
-            print(f"[{request_id}] ❌ Multi-select must have exactly 2 correct answers")
-            skipped.append((exam_idx, "INVALID_CORRECT_ANSWER_COUNT"))
-            continue
-
-        if any(a not in options for a in correct_answers):
-            print(f"[{request_id}] ❌ Correct answer not in options")
-            skipped.append((exam_idx, "INVALID_CORRECT_ANSWER"))
-            continue
-
-        # -------------------------------
-        # Resolve images (HARD FAIL)
-        # -------------------------------
-        question_blocks = [
-            {"type": "text", "content": reading_material},
-            {"type": "text", "content": instruction},
-            {"type": "text", "content": question_text},
-        ]
-
-        missing_image = None
-        for img in images_declared:
-            record = (
-                db.query(UploadedImage)
-                .filter(func.lower(func.trim(UploadedImage.original_name)) == img)
-                .first()
+            exam_bundle = handler.build_exam_bundle(parsed)
+            exam_bundle["question_blocks"] = (
+                question_blocks + exam_bundle["question_blocks"]
             )
 
-            if not record:
-                print(f"[{request_id}] ❌ Image NOT FOUND: {img}")
-                missing_image = img
-                break
+            print(
+                f"[{request_id}] 📦 Exam bundle ready | "
+                f"blocks={len(exam_bundle['question_blocks'])}, "
+                f"options={len(exam_bundle.get('options', {}))}, "
+                f"correct={exam_bundle.get('correct_answer')}"
+            )
 
-            print(f"[{request_id}] ✅ Image resolved: {img}")
-            question_blocks.append({
-                "type": "image",
-                "src": record.gcs_url
-            })
-
-        if missing_image:
-            skipped.append((exam_idx, f"IMAGE_NOT_UPLOADED: {missing_image}"))
-            continue
-
-        # -------------------------------
-        # Save
-        # -------------------------------
-        try:
+            # -------------------------------
+            # Save to DB
+            # -------------------------------
             obj = QuestionNaplanReading(
                 class_name=meta["CLASS"].lower(),
                 subject=meta["SUBJECT"].lower(),
-                year=year,
+                year=parse_year(meta),
                 difficulty=meta["DIFFICULTY"].lower(),
                 topic=meta["TOPIC"],
-                question_type=question_type,
+                question_type=qt,
                 total_questions=1,
-                exam_bundle={
-                    "question_type": question_type,
-                    "topic": meta["TOPIC"],
-                    "question_blocks": question_blocks,
-                    "options": options,
-                    "correct_answer": correct_answers
-                }
+                exam_bundle=exam_bundle
             )
 
             db.add(obj)
@@ -13315,15 +13257,27 @@ async def upload_word_naplan_reading(
             db.refresh(obj)
 
             saved_ids.append(obj.id)
-            print(f"[{request_id}] 💾 SAVED exam {exam_idx} | ID={obj.id}")
+            print(f"[{request_id}] 💾 SAVED EXAM {idx} | ID={obj.id}")
 
         except Exception as e:
             db.rollback()
-            print(f"[{request_id}] ❌ DB ERROR: {str(e)}")
-            skipped.append((exam_idx, f"DB_ERROR: {str(e)}"))
+            error_msg = str(e)
+
+            print(f"[{request_id}] ❌ FAILED EXAM {idx}")
+            print(f"[{request_id}] ❌ Reason: {error_msg}")
+
+            # Pointer visibility (very useful)
+            if "ctx" in locals():
+                print(
+                    f"[{request_id}] 🧭 Parser state | "
+                    f"ptr={ctx.ptr}, "
+                    f"current_line={ctx.peek()}"
+                )
+
+            skipped.append((idx, error_msg))
 
     # --------------------------------------------------
-    # 4️⃣ Final decision
+    # 3️⃣ Final decision
     # --------------------------------------------------
     print("\n" + "=" * 80)
     print(f"[{request_id}] 📊 Upload summary")
