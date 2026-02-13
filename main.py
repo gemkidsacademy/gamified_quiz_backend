@@ -17814,6 +17814,102 @@ def log_end(request_id, summary):
     print(f"📊 Skipped partial : {summary.skipped_partial}")
     print("=" * 70)
 
+def validate_question_by_type(qt: int, q: dict):
+    """
+    Validates a question payload based on question_type.
+
+    Raises ValueError if validation fails.
+    """
+
+    if qt == 1:
+        # Single-choice MCQ
+        if not q.get("options"):
+            raise ValueError("question_type=1 requires options")
+
+        if not q.get("correct_answer"):
+            raise ValueError("question_type=1 requires correct_answer")
+
+        if not isinstance(q["correct_answer"], str):
+            raise ValueError("question_type=1 correct_answer must be a string")
+
+    elif qt == 2:
+        # Multi-select MCQ
+        if not q.get("options"):
+            raise ValueError("question_type=2 requires options")
+
+        if not q.get("correct_answer"):
+            raise ValueError("question_type=2 requires correct_answer")
+
+        if not isinstance(q["correct_answer"], list):
+            raise ValueError(
+                "question_type=2 correct_answer must be a list"
+            )
+
+        if not all(isinstance(a, str) for a in q["correct_answer"]):
+            raise ValueError(
+                "question_type=2 correct_answer list must contain strings only"
+            )
+
+    elif qt == 3:
+        # Numeric input
+        if q.get("correct_answer") is None:
+            raise ValueError("question_type=3 requires correct_answer")
+
+    elif qt == 4:
+        # Text input
+        if not q.get("correct_answer"):
+            raise ValueError("question_type=4 requires correct_answer")
+
+        if not isinstance(q["correct_answer"], str):
+            raise ValueError(
+                "question_type=4 correct_answer must be a string"
+            )
+
+    else:
+        raise ValueError(f"Unsupported question_type: {qt}")
+def resolve_images(q: dict, db: Session, request_id: str):
+    """
+    Resolves image blocks in q["question_blocks"] by mapping
+    original image names to stored GCS URLs.
+
+    Mutates q["question_blocks"] in place.
+    """
+
+    blocks = q.get("question_blocks", [])
+
+    for block in blocks:
+        if block.get("type") != "image":
+            continue
+
+        raw_name = (
+            block.get("name")
+            or block.get("src")
+            or ""
+        ).strip().lower()
+
+        print(f"[{request_id}] 🖼️ Resolving image: '{raw_name}'")
+
+        record = (
+            db.query(UploadedImage)
+            .filter(
+                func.lower(func.trim(UploadedImage.original_name))
+                == raw_name
+            )
+            .first()
+        )
+
+        if not record:
+            raise ValueError(
+                f"Image '{raw_name}' not uploaded yet"
+            )
+
+        # Replace image reference
+        block.pop("name", None)
+        block["src"] = record.gcs_url
+
+        print(
+            f"[{request_id}] ✅ Image resolved → {record.gcs_url}"
+        )
 
 @app.post("/upload-word-naplan")
 async def upload_word_naplan(
