@@ -2637,68 +2637,48 @@ def normalize_doc_text(text: str) -> str:
         .replace("\r", "\n")
     )
 
-#def extract_text_from_docx(file_bytes: bytes) -> str:
- #   # Wrap bytes in a file-like object
-  #  file_obj = BytesIO(file_bytes)
-
-   # result = mammoth.extract_raw_text(file_obj)
-    #return result.value
- 
 def extract_text_from_docx(file_bytes: bytes) -> str:
-    """
-    Extract raw text from a DOCX file using Mammoth, then
-    repair common structural breakages caused by DOCX → text
-    flattening (e.g. collapsed section boundaries).
+    # Wrap bytes in a file-like object
+    file_obj = BytesIO(file_bytes)
 
-    This function is intentionally conservative because it is
-    shared across multiple ingestion endpoints.
+    result = mammoth.extract_raw_text(file_obj)
+    return result.value
+ 
+def extract_comparative_text_from_docx(file_bytes: bytes) -> str:
+    """
+    Extract text from a DOCX exam paper while preserving
+    structural boundaries (paragraphs, headings, sections).
+
+    This helper is INTENTIONALLY separate from extract_text_from_docx
+    to avoid impacting other endpoints.
     """
     from io import BytesIO
+    from docx import Document
+
+    doc = Document(BytesIO(file_bytes))
+    lines: list[str] = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        # Preserve paragraph breaks explicitly
+        if text:
+            lines.append(text)
+        else:
+            # Keep blank lines to preserve structure
+            lines.append("")
+
+    # Join with newline, then normalize excessive blanks
+    full_text = "\n".join(lines)
+
+    # Normalize line endings
+    full_text = full_text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Collapse 3+ blank lines → max 2
     import re
-    import mammoth
+    full_text = re.sub(r"\n{3,}", "\n\n", full_text)
 
-    # -------------------------------
-    # 1️⃣ Raw extraction (unchanged)
-    # -------------------------------
-    file_obj = BytesIO(file_bytes)
-    result = mammoth.extract_raw_text(file_obj)
-    text = result.value or ""
-
-    # -------------------------------
-    # 2️⃣ Basic normalization (safe)
-    # -------------------------------
-    text = text.replace("\r\n", "\n")
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
-    # -------------------------------
-    # 3️⃣ Structural repairs (CRITICAL)
-    # -------------------------------
-
-    # Ensure question_type and METADATA are separated
-    text = re.sub(
-        r"(question_type:\s*[a-z_]+)\s*(METADATA:)",
-        r"\1\n\n\2",
-        text,
-        flags=re.IGNORECASE
-    )
-
-    # Ensure METADATA header and first key are separated
-    text = re.sub(
-        r"(METADATA:)\s*(CLASS:)",
-        r"\1\n\2",
-        text,
-        flags=re.IGNORECASE
-    )
-
-    # Ensure DIFFICULTY and Total_Questions are on separate lines
-    text = re.sub(
-        r"(DIFFICULTY:\s*\"?[A-Za-z ]+\"?)\s*(Total_Questions:)",
-        r"\1\n\2",
-        text,
-        flags=re.IGNORECASE
-    )
-
-    return text
+    return full_text
 
 def parse_exam_with_openai(extracted_text: str, question_type: str):
 
@@ -12639,7 +12619,7 @@ async def upload_word_reading_unified(
     print(f"\n📄 [{upload_id}] STEP 2: Extracting text")
 
     try:
-        full_text = extract_text_from_docx(raw)
+        full_text = extract_comparative_text_from_docx(raw)
         full_text = normalize_doc_text(full_text)
      
     except Exception:
