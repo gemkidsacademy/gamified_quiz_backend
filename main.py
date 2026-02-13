@@ -6531,15 +6531,12 @@ def generate_thinking_skills_exam(
     # --------------------------------------------------
     # 1️⃣ Fetch latest Thinking Skills quiz (difficulty optional)
     # --------------------------------------------------
-    difficulty = payload.get("difficulty")
     
     query = db.query(Quiz).filter(
         Quiz.subject == "thinking_skills"
     )
     
-    if difficulty:
-        difficulty = difficulty.strip().lower()
-        query = query.filter(Quiz.difficulty == difficulty)
+    
     
     quiz = query.order_by(Quiz.id.desc()).first()
     
