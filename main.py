@@ -2645,21 +2645,36 @@ def normalize_doc_text(text: str) -> str:
     #return result.value
  
 def extract_text_from_docx(file_bytes: bytes) -> str:
+    """
+    Extract raw text from a DOCX file using Mammoth, then
+    repair common structural breakages caused by DOCX → text
+    flattening (e.g. collapsed section boundaries).
+
+    This function is intentionally conservative because it is
+    shared across multiple ingestion endpoints.
+    """
     from io import BytesIO
     import re
     import mammoth
 
+    # -------------------------------
+    # 1️⃣ Raw extraction (unchanged)
+    # -------------------------------
     file_obj = BytesIO(file_bytes)
     result = mammoth.extract_raw_text(file_obj)
     text = result.value or ""
 
-    # Normalize line endings
+    # -------------------------------
+    # 2️⃣ Basic normalization (safe)
+    # -------------------------------
     text = text.replace("\r\n", "\n")
-
-    # Collapse excessive blank lines (but preserve structure)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
-    # 🔧 CRITICAL STRUCTURAL REPAIR
+    # -------------------------------
+    # 3️⃣ Structural repairs (CRITICAL)
+    # -------------------------------
+
+    # Ensure question_type and METADATA are separated
     text = re.sub(
         r"(question_type:\s*[a-z_]+)\s*(METADATA:)",
         r"\1\n\n\2",
@@ -2667,13 +2682,15 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
         flags=re.IGNORECASE
     )
 
+    # Ensure METADATA header and first key are separated
     text = re.sub(
-        r"(METADATA:)(\s*)(CLASS:)",
-        r"\1\n\3",
+        r"(METADATA:)\s*(CLASS:)",
+        r"\1\n\2",
         text,
         flags=re.IGNORECASE
     )
 
+    # Ensure DIFFICULTY and Total_Questions are on separate lines
     text = re.sub(
         r"(DIFFICULTY:\s*\"?[A-Za-z ]+\"?)\s*(Total_Questions:)",
         r"\1\n\2",
