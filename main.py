@@ -6485,13 +6485,14 @@ def sanitize_question_blocks(blocks):
 
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
-    payload: dict = Body(...),
+    payload: Optional[dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
+    
     """
     Generate a Thinking Skills exam based on difficulty only.
     """
-
+    payload = payload or {}
     # --------------------------------------------------
     # 0️⃣ Clear previous Thinking Skills exams
     # --------------------------------------------------
