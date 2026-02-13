@@ -12412,10 +12412,10 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     expected_q_count = int(tq_match.group(1))
 
     # --------------------------------------------------
-    # 3️⃣ EXTRACT LABELS (HEADER-BASED, ROBUST)
+    # 3️⃣ EXTRACT LABELS (SEMANTIC, ROBUST)
     # --------------------------------------------------
     extract_header_pattern = re.compile(
-        r"^\s*Extract\s+([A-Z])\s*$",
+        r"^\s*Extract\s+([A-Z])\b",
         re.IGNORECASE | re.MULTILINE
     )
     
@@ -12428,6 +12428,7 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
         raise ValueError("Comparative exam requires at least 2 extracts")
     
     print("   → Extracts:", extract_keys)
+
 
     # --------------------------------------------------
     # 4️⃣ SUBTYPE DETECTION
