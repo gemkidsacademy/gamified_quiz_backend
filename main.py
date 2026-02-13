@@ -6492,6 +6492,16 @@ def generate_thinking_skills_exam(
     """
     Generate a Thinking Skills exam based on difficulty only.
     """
+    print("DATABASE URL:", db.bind.url)
+    print("QUIZ COUNT:", db.query(Quiz).count())
+    print("QUIZZES:", db.query(Quiz.id, Quiz.subject, Quiz.difficulty).all())
+    result = db.execute(text("select current_schema()")).scalar()
+    print("SCHEMA:", result)
+    
+    result = db.execute(text("select count(*) from quizzes")).scalar()
+    print("RAW QUIZ COUNT:", result)
+
+
     payload = payload or {}
     # --------------------------------------------------
     # 0️⃣ Clear previous Thinking Skills exams
