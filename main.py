@@ -2637,12 +2637,51 @@ def normalize_doc_text(text: str) -> str:
         .replace("\r", "\n")
     )
 
-def extract_text_from_docx(file_bytes: bytes) -> str:
-    # Wrap bytes in a file-like object
-    file_obj = BytesIO(file_bytes)
+#def extract_text_from_docx(file_bytes: bytes) -> str:
+ #   # Wrap bytes in a file-like object
+  #  file_obj = BytesIO(file_bytes)
 
+   # result = mammoth.extract_raw_text(file_obj)
+    #return result.value
+ 
+def extract_text_from_docx(file_bytes: bytes) -> str:
+    from io import BytesIO
+    import re
+    import mammoth
+
+    file_obj = BytesIO(file_bytes)
     result = mammoth.extract_raw_text(file_obj)
-    return result.value
+    text = result.value or ""
+
+    # Normalize line endings
+    text = text.replace("\r\n", "\n")
+
+    # Collapse excessive blank lines (but preserve structure)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # 🔧 CRITICAL STRUCTURAL REPAIR
+    text = re.sub(
+        r"(question_type:\s*[a-z_]+)\s*(METADATA:)",
+        r"\1\n\n\2",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r"(METADATA:)(\s*)(CLASS:)",
+        r"\1\n\3",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r"(DIFFICULTY:\s*\"?[A-Za-z ]+\"?)\s*(Total_Questions:)",
+        r"\1\n\2",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    return text
 
 def parse_exam_with_openai(extracted_text: str, question_type: str):
 
