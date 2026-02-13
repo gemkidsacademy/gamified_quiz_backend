@@ -17645,7 +17645,7 @@ async def parse_questions_with_gpt_naplan_numeracy_lc(
 
     return questions
 
-await def process_exam_block(
+async def process_exam_block(
     block_idx: int,
     question_block: list,
     db: Session,
