@@ -6492,14 +6492,7 @@ def generate_thinking_skills_exam(
     Generate a Thinking Skills exam based on difficulty only.
     """
 
-    difficulty = payload.get("difficulty")
-
-    if not difficulty:
-        raise HTTPException(
-            status_code=400,
-            detail="Difficulty is required to generate the exam"
-        )
-     # --------------------------------------------------
+    # --------------------------------------------------
     # 0️⃣ Clear previous Thinking Skills exams
     # --------------------------------------------------
     # 1️⃣ Delete student exams for thinking skills
@@ -6523,21 +6516,25 @@ def generate_thinking_skills_exam(
     # --------------------------------------------------
     # 1️⃣ Fetch latest Thinking Skills quiz for difficulty
     # --------------------------------------------------
-    quiz = (
-        db.query(Quiz)
-        .filter(
-            Quiz.subject == "thinking_skills",
-            Quiz.difficulty == difficulty
-        )
-        .order_by(Quiz.id.desc())
-        .first()
+    # --------------------------------------------------
+    # 1️⃣ Fetch latest Thinking Skills quiz (difficulty optional)
+    # --------------------------------------------------
+    difficulty = payload.get("difficulty")
+    
+    query = db.query(Quiz).filter(
+        Quiz.subject == "thinking_skills"
     )
- 
-
+    
+    if difficulty:
+        difficulty = difficulty.strip().lower()
+        query = query.filter(Quiz.difficulty == difficulty)
+    
+    quiz = query.order_by(Quiz.id.desc()).first()
+    
     if not quiz:
         raise HTTPException(
             status_code=404,
-            detail="No Thinking Skills quiz found for the given difficulty"
+            detail="No Thinking Skills quiz found in database"
         )
 
     # --------------------------------------------------
