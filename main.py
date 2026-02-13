@@ -3847,6 +3847,51 @@ def get_exam_review_mathematical_reasoning(
         "exam_attempt_id": exam_attempt_id,
         "questions": review_questions
     }
+def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
+    """
+    Ensures every option value is a dictionary so it matches
+    the FastAPI / Pydantic response model.
+
+    Supported outputs:
+    - text options
+    - image options
+    """
+
+    normalized = {}
+
+    if not isinstance(raw_options, dict):
+        return normalized
+
+    for key, value in raw_options.items():
+        # Case 1: already normalized
+        if isinstance(value, dict):
+            normalized[key] = value
+            continue
+
+        # Case 2: string value (text or image filename)
+        if isinstance(value, str):
+            lower = value.lower()
+
+            if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                normalized[key] = {
+                    "type": "image",
+                    "value": value
+                }
+            else:
+                normalized[key] = {
+                    "type": "text",
+                    "value": value
+                }
+            continue
+
+        # Case 3: numbers or unexpected types
+        normalized[key] = {
+            "type": "text",
+            "value": str(value)
+        }
+
+    return normalized
+
 @app.get(
     "/api/student/exam-review/thinking-skills",
     response_model=ExamReviewResponse
@@ -4012,13 +4057,18 @@ def get_exam_review_thinking_skills(
     for q in normalized:
         r = response_map.get(q["q_id"])
     
+        normalized_options = normalize_options_thinking_skills_review(
+            q.get("options", {})
+        )
+    
         review_questions.append({
             "q_id": q["q_id"],
             "blocks": q.get("blocks", []),
-            "options": q.get("options", {}),
+            "options": normalized_options,   # ✅ now always Dict[str, Dict]
             "student_answer": r.selected_option if r else None,
             "correct_answer": r.correct_option if r else None,
         })
+
 
     print(f"✅ Review questions prepared: {len(review_questions)}")
 
