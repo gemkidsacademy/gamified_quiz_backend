@@ -12412,18 +12412,21 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     expected_q_count = int(tq_match.group(1))
 
     # --------------------------------------------------
-    # 3️⃣ EXTRACT LABELS (DOCUMENT-AUTHORITATIVE)
+    # 3️⃣ EXTRACT LABELS (HEADER-BASED, ROBUST)
     # --------------------------------------------------
-    extract_matches = re.findall(
-        r"\bExtract\s+([A-Z])\b",
-        block_text
+    extract_header_pattern = re.compile(
+        r"^\s*Extract\s+([A-Z])\s*$",
+        re.IGNORECASE | re.MULTILINE
     )
-
-    extract_keys = sorted(dict.fromkeys(extract_matches))
-
+    
+    extract_keys = extract_header_pattern.findall(block_text)
+    
+    # Preserve document order + dedupe
+    extract_keys = list(dict.fromkeys(extract_keys))
+    
     if len(extract_keys) < 2:
         raise ValueError("Comparative exam requires at least 2 extracts")
-
+    
     print("   → Extracts:", extract_keys)
 
     # --------------------------------------------------
