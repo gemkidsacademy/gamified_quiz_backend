@@ -17582,7 +17582,70 @@ def parse_docx_blocks(content: bytes, request_id):
     except Exception as e:
         print(f"[{request_id}] ❌ DOCX PARSE FAILED: {e}")
         raise HTTPException(400, "Failed to read Word file")
-def process_exam_block(
+
+async def parse_questions_with_gpt_naplan_numeracy_lc(
+    question_block: list,
+    request_id: str
+):
+    """
+    Thin adapter around `parse_with_gpt_numeracy_lc`.
+
+    Responsibilities:
+    - Logging
+    - Payload shaping
+    - Basic input/output validation
+
+    Must NOT:
+    - Modify GPT behavior
+    - Infer missing data
+    - Transform question semantics
+    """
+
+    print(f"[{request_id}] 🤖 GPT-NAPLAN-NUMERACY-LC parse START")
+
+    # --------------------------------------------------
+    # Defensive input checks
+    # --------------------------------------------------
+    if not isinstance(question_block, list):
+        raise ValueError(
+            "question_block must be a list of parsed document blocks"
+        )
+
+    print(
+        f"[{request_id}] 🤖 Incoming blocks = {len(question_block)} | "
+        f"preview = {str(question_block[:1])[:120]}"
+    )
+
+    # --------------------------------------------------
+    # Call existing GPT parser (DO NOT MODIFY)
+    # --------------------------------------------------
+    result = await parse_with_gpt_numeracy_lc({
+        "blocks": question_block
+    })
+
+    if not isinstance(result, dict):
+        raise ValueError("GPT parser returned non-dict result")
+
+    questions = result.get("questions", [])
+
+    # --------------------------------------------------
+    # Defensive output checks + logging
+    # --------------------------------------------------
+    print(
+        f"[{request_id}] 🤖 GPT-NAPLAN-NUMERACY-LC parse END | "
+        f"questions_returned = {len(questions)}"
+    )
+
+    if questions:
+        print(
+            f"[{request_id}] 🧠 First question preview | "
+            f"type={questions[0].get('question_type')} | "
+            f"keys={list(questions[0].keys())}"
+        )
+
+    return questions
+
+await def process_exam_block(
     block_idx: int,
     question_block: list,
     db: Session,
@@ -17591,16 +17654,60 @@ def process_exam_block(
 ):
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
+    print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
 
+    # --------------------------------------------------
+    # Quick structural sanity check
+    # --------------------------------------------------
     if not looks_like_question(question_block):
-        print(f"[{request_id}] ⚠️ Block skipped (not a question)")
+        print(f"[{request_id}] ⚠️ Block {block_idx} skipped (not a question)")
         return
 
     try:
-        questions = parse_questions_with_gpt(question_block, request_id)
-        meta = validate_common_metadata(questions, block_idx, request_id)
+        # --------------------------------------------------
+        # GPT parsing (ASYNC – critical)
+        # --------------------------------------------------
+        print(f"[{request_id}] 🤖 Calling GPT parser for block {block_idx}")
 
-        for q in questions:
+        questions = await parse_questions_with_gpt_naplan_numeracy_lc(
+            question_block=question_block,
+            request_id=request_id
+        )
+
+
+        print(
+            f"[{request_id}] 🤖 GPT returned "
+            f"{len(questions)} question(s) for block {block_idx}"
+        )
+
+        if not questions:
+            raise ValueError("GPT returned zero valid questions")
+
+        # --------------------------------------------------
+        # Metadata validation
+        # --------------------------------------------------
+        print(f"[{request_id}] 🛂 Validating metadata for block {block_idx}")
+
+        meta = validate_common_metadata(
+            questions=questions,
+            block_idx=block_idx,
+            request_id=request_id
+        )
+
+        print(
+            f"[{request_id}] 🏷️ Metadata validated | "
+            f"subject={meta.get('subject')}"
+        )
+
+        # --------------------------------------------------
+        # Persist each question
+        # --------------------------------------------------
+        for i, q in enumerate(questions, start=1):
+            print(
+                f"[{request_id}] ➕ Persisting question {i}/"
+                f"{len(questions)} (type={q.get('question_type')})"
+            )
+
             persist_question(
                 q=q,
                 question_block=question_block,
@@ -17611,11 +17718,25 @@ def process_exam_block(
                 block_idx=block_idx
             )
 
+        # --------------------------------------------------
+        # Mark block success
+        # --------------------------------------------------
         summary.block_success(block_idx, questions)
+        print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS")
 
     except Exception as e:
-        summary.block_failure(block_idx, str(e))
-        print(f"[{request_id}] ❌ BLOCK {block_idx} FAILED: {e}")
+        # --------------------------------------------------
+        # Block-level failure (isolated)
+        # --------------------------------------------------
+        error_msg = str(e)
+
+        print(
+            f"[{request_id}] ❌ BLOCK {block_idx} FAILED | "
+            f"error={error_msg}"
+        )
+
+        summary.block_failure(block_idx, error_msg)
+
 
 def validate_common_metadata(questions, block_idx, request_id):
     required = [
@@ -17834,7 +17955,6 @@ async def upload_word_naplan(
     )
 
     return response
-
 
 
 
