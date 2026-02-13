@@ -17287,6 +17287,61 @@ async def upload_word(
                 "error_code": "IMAGE_ONLY_EXAM"
             })
             continue
+        # -----------------------------
+        # Guard: question length sanity
+        # -----------------------------
+        MIN_QUESTION_CHARS = 20
+        MAX_QUESTION_CHARS = 2000
+        
+        question_text_length = sum(
+            len(b["content"])
+            for b in resolved_blocks
+            if b["type"] == "text"
+        )
+        
+        if question_text_length < MIN_QUESTION_CHARS:
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
+                "status": "skipped",
+                "error_code": "QUESTION_TOO_SHORT",
+                "details": f"{question_text_length} chars"
+            })
+            continue
+        
+        if question_text_length > MAX_QUESTION_CHARS:
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
+                "status": "skipped",
+                "error_code": "QUESTION_TOO_LONG",
+                "details": f"{question_text_length} chars"
+            })
+            continue
+
+        FORBIDDEN_TOKENS = [
+            "=== EXAM START ===",
+            "=== EXAM END ===",
+        ]
+        exam_marker_found = False
+
+        for b in resolved_blocks:
+            if b["type"] == "text":
+                for token in FORBIDDEN_TOKENS:
+                    if token in b["content"]:
+                        exam_marker_found = True
+                        break
+            if exam_marker_found:
+                break
+        
+        if exam_marker_found:
+            skipped += 1
+            report.append({
+                "exam": exam_idx,
+                "status": "skipped",
+                "error_code": "EXAM_MARKER_IN_QUESTION"
+            })
+            continue
 
         # -----------------------------
         # Save question
