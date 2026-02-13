@@ -6497,9 +6497,10 @@ def generate_thinking_skills_exam(
     # --------------------------------------------------
     # 1️⃣ Delete student exams for thinking skills
     # ✅ STEP 1: delete dependent StudentExam rows (SAFE)
-    exam_ids_subq = db.query(Exam.id).filter(
+    exam_ids_subq = select(Exam.id).where(
         Exam.subject == "thinking_skills"
-    ).subquery()
+    )
+
     
     db.query(StudentExam).filter(
         StudentExam.exam_id.in_(exam_ids_subq)
