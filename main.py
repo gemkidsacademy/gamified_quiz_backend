@@ -175,6 +175,36 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class UploadSummary:
+    def __init__(self):
+        self.saved = 0
+        self.skipped_partial = 0
+        self.blocks = []
+
+    def block_success(self, block_idx, questions):
+        self.blocks.append({
+            "block": block_idx,
+            "status": "success",
+            "details": f"Saved {len(questions)} question(s)"
+        })
+
+    def block_failure(self, block_idx, reason):
+        self.blocks.append({
+            "block": block_idx,
+            "status": "failed",
+            "details": reason
+        })
+
+    def response(self):
+        return {
+            "status": "success" if self.saved > 0 else "failed",
+            "summary": {
+                "saved": self.saved,
+                "skipped_partial": self.skipped_partial,
+            },
+            "blocks": self.blocks,
+        }
+
 
 class NaplanTopicCreate(BaseModel):
     name: str
