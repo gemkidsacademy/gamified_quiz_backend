@@ -18012,13 +18012,14 @@ async def upload_word_naplan(
                 f"(block_idx={idx})"
             )
 
-            process_exam_block(
+            await process_exam_block(
                 block_idx=idx,
                 question_block=block,
                 db=db,
                 request_id=request_id,
                 summary=summary
             )
+
 
             print(
                 f"[{request_id}] ✅ process_exam_block COMPLETE "
