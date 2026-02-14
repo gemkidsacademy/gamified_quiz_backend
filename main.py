@@ -18883,19 +18883,31 @@ def process_visual_counting_exam(
         f"[{request_id}] 🖼️ TYPE 6 detected | "
         f"processing visual counting question"
     )
+    print(f"[{request_id}] 🔥 VC STEP 1: entered process_visual_counting_exam")
 
     # --------------------------------------------------
     # 1. Parse NON-option, NON-answer block content only
     # --------------------------------------------------
+    print(f"[{request_id}] 🔥 VC STEP 2: parsing visual counting block")
     parsed = parse_visual_counting_block(question_block)
+
+    print(
+        f"[{request_id}] 🔥 VC STEP 2a: parsed base fields | "
+        f"keys={list(parsed.keys())}"
+    )
 
     # 🚨 DO NOT validate here
 
     # --------------------------------------------------
-    # 2. Force DOCX-level extraction
+    # 2. Force DOCX-level extraction (OPTIONS)
     # --------------------------------------------------
-    print(f"[{request_id}] 🔍 VC: extracting OPTIONS from DOCX")
+    print(f"[{request_id}] 🔥 VC STEP 3: extracting OPTIONS from DOCX")
     raw_options = vc_extract_options_from_docx(summary.file_bytes)
+
+    print(
+        f"[{request_id}] 🔥 VC STEP 3a: raw options extracted | "
+        f"count={len(raw_options)} | raw={raw_options}"
+    )
 
     parsed["OPTIONS"] = vc_resolve_option_images(
         raw_options,
@@ -18903,30 +18915,51 @@ def process_visual_counting_exam(
         request_id=request_id,
     )
 
+    print(
+        f"[{request_id}] 🔥 VC STEP 3b: resolved option images | "
+        f"count={len(parsed['OPTIONS'])} | options={parsed['OPTIONS']}"
+    )
 
-    print(f"[{request_id}] 🔍 VC: extracting CORRECT_ANSWER from DOCX")
+    # --------------------------------------------------
+    # 3. Extract CORRECT_ANSWER
+    # --------------------------------------------------
+    print(f"[{request_id}] 🔥 VC STEP 4: extracting CORRECT_ANSWER from DOCX")
     parsed["CORRECT_ANSWER"] = vc_extract_correct_answer_from_docx(
         summary.file_bytes
     )
 
     print(
-        f"[{request_id}] 🔍 VC: options recovered | "
-        f"count={len(parsed['OPTIONS'])}"
+        f"[{request_id}] 🔥 VC STEP 4a: correct answer extracted | "
+        f"value={parsed['CORRECT_ANSWER']}"
     )
 
     # --------------------------------------------------
-    # 3. Validate (single gatekeeper)
+    # 4. Validate (single gatekeeper)
     # --------------------------------------------------
+    print(f"[{request_id}] 🔥 VC STEP 5: validating visual counting block")
     vc_validate_block(parsed)
 
+    print(f"[{request_id}] 🔥 VC STEP 5a: validation PASSED")
+
     # --------------------------------------------------
-    # 4. Persist
+    # 5. Persist
     # --------------------------------------------------
-    persist_visual_counting_question(
+    print(f"[{request_id}] 🔥 VC STEP 6: persisting visual counting question")
+    question_id = persist_visual_counting_question(
         block=parsed,
         db=db,
         request_id=request_id,
         summary=summary,
+    )
+
+    print(
+        f"[{request_id}] 🔥 VC STEP 6a: persistence complete | "
+        f"question_id={question_id}"
+    )
+
+    summary.block_success(block_idx, [question_id])
+    print(
+        f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (VISUAL COUNTING)"
     )
 
 
