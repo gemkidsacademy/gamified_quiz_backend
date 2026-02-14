@@ -17737,13 +17737,19 @@ async def process_exam_block(
         for i, q in enumerate(questions, start=1):
             answer_type = q.get("answer_type")
 
-            question_type = ANSWER_TYPE_TO_QUESTION_TYPE.get(answer_type)
-
+            if answer_type:
+                question_type = ANSWER_TYPE_TO_QUESTION_TYPE.get(answer_type)
+            else:
+                # Legacy fallback (types 1–4)
+                question_type = q.get("question_type")
             if not question_type:
-                raise ValueError(
-                    f"Unsupported ANSWER_TYPE '{answer_type}' "
-                    f"in block {block_idx}"
-                )
+            raise ValueError(
+                f"Unable to determine question_type "
+                f"(answer_type={answer_type}) in block {block_idx}"
+            )
+            if question_type == 5 and not answer_type:
+                raise ValueError("CLOZE_DROPDOWN requires answer_type")
+
 
             # Type-specific validation
             if question_type == 4:
@@ -17812,12 +17818,12 @@ def validate_cloze_dropdown(q: dict):
 def validate_common_metadata(questions, block_idx, request_id):
     required = [
         "class_name",
-        "answer_type",
         "year",
         "subject",
         "topic",
         "difficulty",
     ]
+
 
 
     missing = [f for f in required if not questions[0].get(f)]
