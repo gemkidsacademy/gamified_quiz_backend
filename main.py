@@ -18433,24 +18433,53 @@ def vc_extract_image_options(block):
         raise ValueError("VC: No options detected")
 
     return options
+def normalize_text(text: str) -> str:
+    if not text:
+        return ""
+
+    # Normalize unicode (fix smart chars, mixed forms)
+    text = unicodedata.normalize("NFKC", text)
+
+    # Replace non-breaking spaces
+    text = text.replace("\u00A0", " ")
+
+    # Collapse whitespace
+    text = re.sub(r"\s+", " ", text)
 
 def vc_extract_correct_answer(block):
+    expecting_value = False
+
     for item in block:
         if item.get("type") != "text":
             continue
 
         raw = item.get("text") or item.get("content") or ""
-        text = raw.strip()
+        text = normalize_text(raw)
 
+        if not text:
+            continue
+
+        # Case 1: label and value on same line
         if text.startswith("CORRECT_ANSWER:"):
-            answer = text.split(":", 1)[1].strip()
+            value = normalize_text(text.split(":", 1)[1])
 
-            if answer not in {"A", "B", "C", "D"}:
+            if value:
+                if value not in {"A", "B", "C", "D"}:
+                    raise ValueError(
+                        f"VC: Invalid CORRECT_ANSWER '{value}'"
+                    )
+                return value
+
+            expecting_value = True
+            continue
+
+        # Case 2: value on next line
+        if expecting_value:
+            if text not in {"A", "B", "C", "D"}:
                 raise ValueError(
-                    f"VC: Invalid CORRECT_ANSWER '{answer}'"
+                    f"VC: Invalid CORRECT_ANSWER '{text}'"
                 )
-
-            return answer
+            return text
 
     raise ValueError("VC: CORRECT_ANSWER not found")
 
