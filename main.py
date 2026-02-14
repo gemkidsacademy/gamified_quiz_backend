@@ -18928,7 +18928,7 @@ async def process_exam_block(
             correct_answer=correct_answer,
         )
 
-        summary["saved"] += 1
+        summary.block_success(block_idx, [])
         return  # 🚨 DO NOT FALL THROUGH
 
  
