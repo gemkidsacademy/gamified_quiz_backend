@@ -18345,6 +18345,12 @@ def validate_cloze_deterministic(q: dict):
         )
 
 def is_visual_counting_exam(block):
+    """
+    Detects Visual Counting (Type 6) exams.
+
+    We intentionally use loose matching here because DOCX text
+    may contain extra spaces, line breaks, or formatting noise.
+    """
     for item in block:
         if not isinstance(item, dict):
             continue
@@ -18352,14 +18358,14 @@ def is_visual_counting_exam(block):
         if item.get("type") != "text":
             continue
 
-        text = item.get("text") or item.get("content") or ""
+        text = (item.get("content") or item.get("text") or "")
         text = text.strip().lower()
 
-        if text == "question_type: 6":
+        # Robust detection
+        if "question_type" in text and "6" in text:
             return True
 
     return False
-
 def vc_extract_question_text(block):
     collecting = False
     lines = []
