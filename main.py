@@ -18410,8 +18410,12 @@ def normalize_text(text: str) -> str:
 
 
 def vc_extract_image_options(block):
-    options = []
-    in_options = False
+    """
+    Extract exactly one image option for each label A–D
+    for Visual Counting (Type 6), regardless of document order.
+    """
+
+    options = {}
 
     for item in block:
         raw = item.get("text") or item.get("content") or ""
@@ -18420,32 +18424,37 @@ def vc_extract_image_options(block):
         if not text:
             continue
 
-        # Enter OPTIONS section
-        if text.startswith("options:"):
-            in_options = True
+        # Match lines like:
+        # A: image_8.png
+        # B. image_12.png
+        match = re.match(
+            r"^([A-D])\s*[:\.]\s*(image_[\w\-.]+)",
+            text,
+            flags=re.IGNORECASE
+        )
+        if not match:
             continue
 
-        if not in_options:
-            continue
+        label = match.group(1).upper()
 
-        # Match A–D options only
-        match = re.match(r"^([A-D])\s*[:\.]\s*(.+)$", text)
-        if match:
-            options.append({
-                "label": match.group(1),
+        # Keep first occurrence only
+        if label not in options:
+            options[label] = {
+                "label": label,
                 "image_ref": match.group(2),
-            })
+            }
 
-            # 🔒 HARD STOP: Visual Counting has exactly 4 options
-            if len(options) == 4:
-                break
+        # 🔒 Hard stop: Visual Counting has exactly 4 options
+        if len(options) == 4:
+            break
 
     if len(options) != 4:
         raise ValueError(
             f"VC: Expected 4 options, found {len(options)}"
         )
 
-    return options
+    # Return options in deterministic A–D order
+    return [options[k] for k in ["A", "B", "C", "D"]]
 
 def normalize_text(text: str) -> str:
     if not text:
