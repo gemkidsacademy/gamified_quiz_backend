@@ -17995,24 +17995,38 @@ def validate_question_by_type(qt: int, q: dict):
     """
     Validates a question payload based on question_type.
 
-    Raises ValueError if validation fails.
+    NOTE:
+    - Types 1 & 2 (MCQs) are lenient for legacy data
+    - Type 5 (CLOZE_DROPDOWN) is strict
     """
 
+    # --------------------------------------------------
+    # Type 1: Single-choice MCQ (lenient for legacy)
+    # --------------------------------------------------
     if qt == 1:
-        # Single-choice MCQ
-        if not q.get("options"):
-            raise ValueError("question_type=1 requires options")
+        options = q.get("options") or {}
+        if not options:
+            print(
+                "⚠️ Legacy MCQ_SINGLE without options allowed"
+            )
 
         if not q.get("correct_answer"):
             raise ValueError("question_type=1 requires correct_answer")
 
         if not isinstance(q["correct_answer"], str):
-            raise ValueError("question_type=1 correct_answer must be a string")
+            raise ValueError(
+                "question_type=1 correct_answer must be a string"
+            )
 
+    # --------------------------------------------------
+    # Type 2: Multi-select MCQ (lenient for legacy)
+    # --------------------------------------------------
     elif qt == 2:
-        # Multi-select MCQ
-        if not q.get("options"):
-            raise ValueError("question_type=2 requires options")
+        options = q.get("options") or {}
+        if not options:
+            print(
+                "⚠️ Legacy MCQ_MULTI without options allowed"
+            )
 
         if not q.get("correct_answer"):
             raise ValueError("question_type=2 requires correct_answer")
@@ -18027,13 +18041,17 @@ def validate_question_by_type(qt: int, q: dict):
                 "question_type=2 correct_answer list must contain strings only"
             )
 
+    # --------------------------------------------------
+    # Type 3: Numeric input (strict)
+    # --------------------------------------------------
     elif qt == 3:
-        # Numeric input
         if q.get("correct_answer") is None:
             raise ValueError("question_type=3 requires correct_answer")
 
+    # --------------------------------------------------
+    # Type 4: Text input (strict)
+    # --------------------------------------------------
     elif qt == 4:
-        # Text input
         if not q.get("correct_answer"):
             raise ValueError("question_type=4 requires correct_answer")
 
@@ -18042,8 +18060,31 @@ def validate_question_by_type(qt: int, q: dict):
                 "question_type=4 correct_answer must be a string"
             )
 
+    # --------------------------------------------------
+    # Type 5: CLOZE_DROPDOWN (STRICT)
+    # --------------------------------------------------
+    elif qt == 5:
+        if not q.get("cloze_text"):
+            raise ValueError("question_type=5 requires cloze_text")
+
+        if "{{dropdown}}" not in q["cloze_text"]:
+            raise ValueError(
+                "question_type=5 cloze_text must contain {{dropdown}}"
+            )
+
+        options = q.get("options") or []
+        if not options:
+            raise ValueError("question_type=5 requires options")
+
+        if not q.get("correct_answer"):
+            raise ValueError("question_type=5 requires correct_answer")
+
+    # --------------------------------------------------
+    # Unsupported
+    # --------------------------------------------------
     else:
         raise ValueError(f"Unsupported question_type: {qt}")
+
 def resolve_images(q: dict, db: Session, request_id: str):
     """
     Resolves image blocks in q["question_blocks"] by mapping
