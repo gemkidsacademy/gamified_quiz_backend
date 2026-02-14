@@ -2187,6 +2187,42 @@ def serialize_blocks_for_gpt_numeracy_LC(blocks: list[dict]) -> str:
         lines.extend(metadata_lines)
 
     return "\n\n".join(line for line in lines if line)
+def serialize_blocks_for_gpt_cloze(blocks: list[dict]) -> str:
+    """
+    Serializes CLOZE (question_type 5) blocks into a deterministic,
+    lossless text format for GPT or backend parsing.
+
+    This serializer is:
+    - CLOZE-specific
+    - Order-preserving
+    - Non-normalizing
+    - Non-destructive
+
+    It intentionally preserves:
+    - METADATA
+    - QUESTION_TEXT
+    - CLOZE
+    - OPTIONS
+    - CORRECT_ANSWER
+    """
+
+    lines = []
+
+    for block in blocks:
+        block_type = block.get("type")
+
+        if block_type == "text":
+            content = block.get("content", "").strip()
+            if content:
+                lines.append(content)
+
+        elif block_type == "image":
+            image_ref = block.get("name") or block.get("src") or ""
+            lines.append(f"[IMAGE: {image_ref}]")
+
+    serialized = "\n\n".join(lines)
+
+    return serialized
  
 async def parse_with_gpt(payload: dict, retries: int = 2):
 
@@ -13899,7 +13935,8 @@ FORMAT RULES
     blocks = payload.get("blocks", [])
     print(f"🤖 [CLOZE] Incoming blocks count = {len(blocks)}")
 
-    serialized = serialize_blocks_for_gpt_numeracy_LC(blocks)
+    serialized = serialize_blocks_for_gpt_cloze(blocks)
+
     print(
         "🤖 [CLOZE] Serialized payload preview:\n"
         f"{serialized[:400]}"
