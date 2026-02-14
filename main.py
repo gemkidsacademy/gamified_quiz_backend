@@ -18386,21 +18386,23 @@ def vc_extract_question_text(block):
 
     return " ".join(lines)
 
+import re
+
 def vc_extract_image_options(block):
     options = []
 
     for item in block:
-        if item.get("type") != "text":
-            continue
-
         raw = item.get("text") or item.get("content") or ""
         text = raw.strip()
+
+        if not text:
+            continue
 
         match = re.match(r"^([A-D]):", text)
         if match:
             options.append({
                 "label": match.group(1),
-                "image_url": None,  # image resolved at render time
+                "image_url": None,  # images handled at render time
             })
 
     if not options:
