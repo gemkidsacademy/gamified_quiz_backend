@@ -17707,7 +17707,6 @@ async def process_exam_block(
             request_id=request_id
         )
 
-
         print(
             f"[{request_id}] 🤖 GPT returned "
             f"{len(questions)} question(s) for block {block_idx}"
@@ -17739,27 +17738,29 @@ async def process_exam_block(
             answer_type = q.get("answer_type")
 
             question_type = ANSWER_TYPE_TO_QUESTION_TYPE.get(answer_type)
-             if question_type == 4:
-                 validate_text_input(q)
-         
-             elif question_type == 5:
-                 validate_cloze_dropdown(q)
-            
+
             if not question_type:
                 raise ValueError(
                     f"Unsupported ANSWER_TYPE '{answer_type}' "
                     f"in block {block_idx}"
                 )
-            
+
+            # Type-specific validation
+            if question_type == 4:
+                validate_text_input(q)
+
+            elif question_type == 5:
+                validate_cloze_dropdown(q)
+
             print(
                 f"[{request_id}] ➕ Persisting question {i}/"
-                f"{len(questions)} (type={question_type}, answer_type={answer_type})"
+                f"{len(questions)} "
+                f"(type={question_type}, answer_type={answer_type})"
             )
-
 
             persist_question(
                 q=q,
-                question_type=question_type,  # 👈 PASS EXPLICIT TYPE
+                question_type=question_type,  # backend-owned
                 question_block=question_block,
                 meta=meta,
                 db=db,
@@ -17767,7 +17768,6 @@ async def process_exam_block(
                 summary=summary,
                 block_idx=block_idx
             )
-
 
         # --------------------------------------------------
         # Mark block success
