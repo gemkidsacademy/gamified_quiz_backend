@@ -18665,27 +18665,122 @@ def persist_visual_counting_question(
         f"[{request_id}] ✅ VC Question persisted successfully | "
         f"question_id={question.id}"
     )
+from docx import Document
+from io import BytesIO
+import unicodedata
+import re
+
+
+def vc_normalize_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    text = text.replace("\u00a0", " ")
+    text = text.replace("\u200b", "")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def vc_extract_options_from_docx(content: bytes) -> list[dict]:
+    """
+    Type 6 ONLY.
+    Extracts OPTIONS (A/B/C/D) directly from the Word document,
+    bypassing parse_docx_to_ordered_blocks entirely.
+    """
+
+    doc = Document(BytesIO(content))
+
+    options = []
+    in_options = False
+
+    for para in doc.paragraphs:
+        raw = para.text or ""
+        text = vc_normalize_text(raw)
+
+        if not text:
+            continue
+
+        # Detect OPTIONS section start
+        if text.upper() == "OPTIONS:":
+            in_options = True
+            continue
+
+        # Stop if another section begins
+        if in_options and text.endswith(":") and text.upper() not in {"A:", "B:", "C:", "D:"}:
+            break
+
+        if in_options:
+            match = re.match(r"^([A-D])\s*:\s*(.+)?$", text)
+            if match:
+                options.append({
+                    "label": match.group(1),
+                    "image_ref": match.group(2),  # may be None
+                })
+
+    if not options:
+        raise ValueError("VC: OPTIONS section not found in Word document")
+
+    if len(options) != 4:
+        raise ValueError(
+            f"VC: Expected 4 options, found {len(options)}"
+        )
+
+    return options
 
 def process_visual_counting_exam(
     block_idx,
     question_block,
+    *,
+    file_bytes: bytes,
     db,
     request_id,
     summary,
 ):
     print(
         f"[{request_id}] 🖼️ TYPE 6 detected | "
-        f"processing visual counting question"
+        f"processing visual counting question (block {block_idx})"
     )
 
+    # --------------------------------------------------
+    # 1. Parse block-level structure (text + metadata)
+    # --------------------------------------------------
     parsed = parse_visual_counting_block(question_block)
-    validate_visual_counting_block(parsed)
 
+    print(
+        f"[{request_id}] 🔍 VC: block parsed | "
+        f"keys={list(parsed.keys())}"
+    )
+
+    # --------------------------------------------------
+    # 2. Override OPTIONS using Word-level extraction
+    #    (bypasses ordered_blocks limitations)
+    # --------------------------------------------------
+    parsed["OPTIONS"] = vc_extract_options_from_docx(file_bytes)
+
+    print(
+        f"[{request_id}] 🔍 VC: options recovered from DOCX | "
+        f"count={len(parsed['OPTIONS'])}"
+    )
+
+    # --------------------------------------------------
+    # 3. Validate (single gatekeeper)
+    # --------------------------------------------------
+    vc_validate_block(parsed)
+
+    print(
+        f"[{request_id}] ✅ VC: validation passed"
+    )
+
+    # --------------------------------------------------
+    # 4. Persist to database
+    # --------------------------------------------------
     persist_visual_counting_question(
         block=parsed,
         db=db,
         request_id=request_id,
         summary=summary,
+    )
+
+    print(
+        f"[{request_id}] 💾 VC: question persisted successfully"
     )
 
 async def process_exam_block(
