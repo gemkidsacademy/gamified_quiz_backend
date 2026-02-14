@@ -18681,7 +18681,7 @@ def normalize_text(text: str) -> str:
 def vc_extract_options_from_docx(content: bytes) -> list[dict]:
     from docx import Document
     from io import BytesIO
-
+    print("🔥🔥🔥 HIT vc_extract_options_from_docx FROM helpers/vc_options.py 🔥🔥🔥")
     doc = Document(BytesIO(content))
 
     print("\n🧾 VC DOCX FULL DUMP START")
