@@ -13741,22 +13741,94 @@ def handle_cloze_question(
     summary,
     block_idx
 ):
-    print(f"[{request_id}] 🧩 [CLOZE] Normalizing answer_type")
+    print(
+        f"[{request_id}] 🧩 [CLOZE] handle_cloze_question START | "
+        f"block={block_idx}"
+    )
 
-    # 👇 Backend owns this, not GPT
-    q["answer_type"] = "CLOZE_DROPDOWN"
+    print(
+        f"[{request_id}] 🧩 [CLOZE] Question keys = "
+        f"{list(q.keys())}"
+    )
+
+    # --------------------------------------------------
+    # Normalize answer_type (backend-owned)
+    # --------------------------------------------------
+    if not q.get("answer_type"):
+        print(
+            f"[{request_id}] 🧩 [CLOZE] Normalizing answer_type"
+        )
+        q["answer_type"] = "CLOZE_DROPDOWN"
+
+    print(
+        f"[{request_id}] 🧩 [CLOZE] answer_type = "
+        f"{q.get('answer_type')}"
+    )
+
+    # --------------------------------------------------
+    # Normalize options
+    # GPT may return options as list or dict
+    # --------------------------------------------------
+    options = q.get("options")
+
+    if isinstance(options, list):
+        print(
+            f"[{request_id}] 🧩 [CLOZE] Normalizing options list → dict"
+        )
+        q["options"] = {
+            chr(65 + i): opt for i, opt in enumerate(options)
+        }
+
+    elif isinstance(options, dict):
+        print(
+            f"[{request_id}] 🧩 [CLOZE] Options already a dict | "
+            f"keys={list(options.keys())}"
+        )
+
+    else:
+        raise ValueError("CLOZE requires options dictionary")
+
+    # --------------------------------------------------
+    # Debug cloze payload
+    # --------------------------------------------------
+    print(
+        f"[{request_id}] 🧩 [CLOZE] cloze_text preview = "
+        f"{q.get('cloze_text')}"
+    )
+    print(
+        f"[{request_id}] 🧩 [CLOZE] options keys = "
+        f"{list(q.get('options', {}).keys())}"
+    )
+    print(
+        f"[{request_id}] 🧩 [CLOZE] correct_answer = "
+        f"{q.get('correct_answer')}"
+    )
+
+    # --------------------------------------------------
+    # Validate CLOZE payload (STRICT)
+    # --------------------------------------------------
+    print(
+        f"[{request_id}] 🛂 [CLOZE] Validating CLOZE payload"
+    )
 
     validate_cloze_dropdown(q)
 
+    # --------------------------------------------------
+    # Persist question
+    # --------------------------------------------------
     persist_question(
         q=q,
-        question_type=5,
+        question_type=5,  # Explicit CLOZE type
         question_block=question_block,
         meta=meta,
         db=db,
         request_id=request_id,
         summary=summary,
         block_idx=block_idx
+    )
+
+    print(
+        f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
     )
 
 async def parse_with_gpt_cloze(payload: dict, retries: int = 2):
