@@ -18943,7 +18943,9 @@ async def process_exam_block(
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
 
-    
+    # 🔒 Determine question_type ONCE
+    detected_type = detect_question_type(block_text or question_block)
+
     # ==================================================
     # 🖼️ TYPE 6 — VISUAL COUNTING (SEALED)
     # ==================================================
@@ -19040,6 +19042,7 @@ async def process_exam_block(
             print(
                 f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
             )
+            return
     
         except Exception as e:
             error_msg = str(e)
