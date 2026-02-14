@@ -13704,26 +13704,34 @@ def parse_word_options(ctx):
 
     return options
 def is_cloze_question(blocks: list) -> bool:
-    has_cloze = False
-    has_dropdown_token = False
-    has_options = False
-
     for b in blocks:
-        if b.get("type") != "text":
-            continue
+        if b.get("type") == "text":
+            content = b.get("content", "").lower()
 
-        content = b.get("content", "").lower()
+            # Explicit declaration
+            if "question_type: 5" in content:
+                return True
 
-        if "cloze:" in content:
-            has_cloze = True
+            # Structural detection
+            if "cloze:" in content and "{{dropdown}}" in content:
+                return True
 
-        if "{{dropdown}}" in content:
-            has_dropdown_token = True
+    return False
+def is_cloze_question(blocks: list) -> bool:
+    for b in blocks:
+        if b.get("type") == "text":
+            content = b.get("content", "").lower()
 
-        if content.strip().startswith("options:"):
-            has_options = True
+            # Explicit declaration
+            if "question_type: 5" in content or "question_type:5" in content:
+                return True
 
-    return has_cloze and has_dropdown_token and has_options
+            # Structural detection
+            if "cloze:" in content and "{{dropdown}}" in content:
+                return True
+
+    return False
+
 def handle_cloze_question(
     q,
     question_block,
