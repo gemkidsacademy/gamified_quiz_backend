@@ -13767,6 +13767,31 @@ def is_cloze_question(blocks: list) -> bool:
                 return True
 
     return False
+def extract_cloze_options_from_blocks(block_elements):
+    options = {}
+    in_options = False
+
+    for el in block_elements:
+        text = el.get("content", "").strip()
+
+        if text.upper().startswith("OPTIONS"):
+            in_options = True
+            continue
+
+        if in_options:
+            if ":" not in text:
+                break
+
+            key, value = text.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+
+            if len(key) == 1 and key.isupper():
+                options[key] = value
+            else:
+                break
+
+    return options
 
 def handle_cloze_question(
     q,
@@ -13852,6 +13877,28 @@ def handle_cloze_question(
     print(
         f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
     )
+ClozeQuestionSchema = {
+    "type": "object",
+    "properties": {
+        "class_name": {"type": "string"},
+        "year": {"type": "integer"},
+        "subject": {"type": "string"},
+        "topic": {"type": "string"},
+        "difficulty": {"type": "string"},
+        "cloze_text": {"type": "string"},
+        "correct_answer": {"type": "string"},
+        "answer_type": {
+            "type": "string",
+            "enum": ["CLOZE_DROPDOWN"],
+        },
+    },
+    "required": [
+        "cloze_text",
+        "correct_answer",
+        "answer_type",
+    ],
+    "additionalProperties": False,
+}
 
 async def parse_with_gpt_cloze(payload: dict, retries: int = 2):
     """
@@ -13884,7 +13931,6 @@ CLOZE RULES (CRITICAL)
 - Do NOT rewrite, rephrase, or normalize the CLOZE text.
 - If the CLOZE text does NOT contain {{dropdown}}, OMIT the question.
 
-=====================================
 FIELD EXTRACTION RULES
 =====================================
 Extract the following fields EXACTLY if present:
@@ -13895,8 +13941,11 @@ Extract the following fields EXACTLY if present:
 - topic
 - difficulty
 - cloze_text        ← from CLOZE section ONLY
-- options           ← from OPTIONS section ONLY
 - correct_answer    ← single option label (e.g. "B")
+
+IMPORTANT:
+- The OPTIONS section is handled by the backend parser.
+- You MUST NOT extract or emit an "options" field.
 
 =====================================
 OUTPUT RULES
@@ -13943,7 +13992,7 @@ FORMAT RULES
                         "properties": {
                             "questions": {
                                 "type": "array",
-                                "items": QuestionSchema,
+                                "items": ClozeQuestionSchema,
                             }
                         },
                         "required": ["questions"],
@@ -18085,31 +18134,51 @@ async def process_exam_block(
         return
 
     # ==================================================
-    # 🔀 CLOZE BRANCH (QUESTION TYPE 5 ONLY)
+    # 🧩 CLOZE BRANCH (QUESTION TYPE 5 ONLY)
     # ==================================================
     if is_cloze_question(question_block):
         print(
-            f"[{request_id}] 🧩 Detected CLOZE question "
-            f"in block {block_idx}"
+            f"[{request_id}] 🧩 CLOZE detected | block={block_idx}"
         )
-
+    
         try:
+            # ----------------------------------------------
+            # Parse CLOZE metadata + cloze_text via GPT
+            # (OPTIONS are NOT handled by GPT)
+            # ----------------------------------------------
             questions = await parse_with_gpt_cloze(
                 {"blocks": question_block}
             )
-
+    
             if not questions:
                 raise ValueError(
-                    "CLOZE parser returned zero questions"
+                    "CLOZE parser returned no questions"
                 )
-
+    
+            # ----------------------------------------------
+            # Validate shared metadata (class, year, etc.)
+            # ----------------------------------------------
             meta = validate_common_metadata(
                 questions=questions,
                 block_idx=block_idx,
-                request_id=request_id
+                request_id=request_id,
             )
-
+            document_options = extract_cloze_options_from_blocks(
+                question_block
+            )
+            
+            if not document_options:
+                raise ValueError(
+                    "No CLOZE options found in document"
+                )
+    
+            # ----------------------------------------------
+            # Process each CLOZE question
+            # ----------------------------------------------
             for q in questions:
+                q["options"] = document_options
+                q["options_source"] = "document"
+            
                 handle_cloze_question(
                     q=q,
                     question_block=question_block,
@@ -18117,23 +18186,27 @@ async def process_exam_block(
                     db=db,
                     request_id=request_id,
                     summary=summary,
-                    block_idx=block_idx
+                    block_idx=block_idx,
                 )
 
+    
             summary.block_success(block_idx, questions)
+    
             print(
                 f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
             )
-
+    
         except Exception as e:
             error_msg = str(e)
+    
             print(
                 f"[{request_id}] ❌ BLOCK {block_idx} FAILED (CLOZE) | "
                 f"error={error_msg}"
             )
+    
             summary.block_failure(block_idx, error_msg)
-
-        # 🚨 IMPORTANT: do NOT fall through
+    
+        # 🚨 IMPORTANT: CLOZE must never fall through
         return
 
     # ==================================================
