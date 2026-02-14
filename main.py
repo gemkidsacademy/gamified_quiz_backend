@@ -18199,18 +18199,63 @@ def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
 
     return exams
 
-async def read_and_validate_file(file, request_id) -> bytes:
-    allowed = {
+#async def read_and_validate_file(file, request_id) -> bytes:
+ ##      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+   #     "text/plain",
+    #}
+
+    #if file.content_type not in allowed:
+     #   raise HTTPException(400, "Invalid file type")
+
+    #content = await file.read()
+    #print(f"[{request_id}] 📦 File read ({len(content)} bytes)")
+    #return content
+
+
+async def read_and_validate_file(file: UploadFile, request_id: str) -> dict:
+    """
+    Reads and validates an uploaded exam file.
+
+    Supports:
+    - .docx (Word)
+    - .txt   (Notepad / plain text)
+
+    Returns:
+    {
+        "content": bytes,
+        "content_type": str
+    }
+    """
+
+    allowed_types = {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "text/plain",
     }
 
-    if file.content_type not in allowed:
-        raise HTTPException(400, "Invalid file type")
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Only .docx or .txt files are allowed."
+        )
 
     content = await file.read()
-    print(f"[{request_id}] 📦 File read ({len(content)} bytes)")
-    return content
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded file is empty."
+        )
+
+    print(
+        f"[{request_id}] 📦 File read | "
+        f"bytes={len(content)} | "
+        f"type={file.content_type}"
+    )
+
+    return {
+        "content": content,
+        "content_type": file.content_type,
+    }
 
 def is_cloze_exam_document(doc):
     for p in doc.paragraphs:
