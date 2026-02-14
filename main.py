@@ -18937,6 +18937,23 @@ def process_visual_counting_exam(
         summary=summary,
     )
 
+
+def debug_detect_question_types(question_block):
+    types = set()
+
+    for item in question_block:
+        if not isinstance(item, dict):
+            continue
+
+        text = (item.get("content") or "").lower()
+        if "question_type" in text:
+            parts = text.replace(":", " ").split()
+            for p in parts:
+                if p.isdigit():
+                    types.add(p)
+
+    return types
+
 async def process_exam_block(
     block_idx: int,
     question_block: list,
@@ -18947,6 +18964,10 @@ async def process_exam_block(
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
+    detected_types = debug_detect_question_types(question_block)
+    print(
+        f"[{request_id}] 🧪 Block {block_idx} detected question_types = {detected_types}"
+    )
     validate_single_question_type(question_block)
 
     # 🔒 Determine question_type ONCE
