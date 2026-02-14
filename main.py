@@ -18679,7 +18679,31 @@ def normalize_text(text: str) -> str:
 
 
 def vc_extract_options_from_docx(content: bytes) -> list[dict]:
+    from docx import Document
+    from io import BytesIO
+
     doc = Document(BytesIO(content))
+
+    print("\n🧾 VC DOCX FULL DUMP START")
+
+    print("➡️ PARAGRAPHS:")
+    for i, p in enumerate(doc.paragraphs):
+        print(f"  [P{i}] {repr(p.text)}")
+
+    print("\n➡️ TABLES:")
+    for ti, table in enumerate(doc.tables):
+        print(f"  TABLE {ti}:")
+        for ri, row in enumerate(table.rows):
+            for ci, cell in enumerate(row.cells):
+                for pi, p in enumerate(cell.paragraphs):
+                    print(
+                        f"    [T{ti} R{ri} C{ci} P{pi}] {repr(p.text)}"
+                    )
+
+    print("🧾 VC DOCX FULL DUMP END\n")
+
+    # ⛔ TEMPORARILY stop here
+    raise RuntimeError("STOP AFTER DOCX DUMP")
     options = []
 
     def try_parse_line(text: str):
