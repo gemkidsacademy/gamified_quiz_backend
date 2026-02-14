@@ -13768,31 +13768,91 @@ def is_cloze_question(blocks: list) -> bool:
 
     return False
 def extract_cloze_options_from_blocks(block_elements):
+    """
+    Extract CLOZE OPTIONS from a Word-derived block list.
+
+    Supports:
+    - OPTIONS appearing in a single collapsed text block
+    - OPTIONS split across multiple blocks
+    - Option formats: A: text | A. text | A) text
+
+    Fails safely by returning {} if no valid options found.
+    """
+
     options = {}
     in_options = False
 
-    for el in block_elements:
-        text = el.get("content", "").strip()
+    print("🔎 [CLOZE DEBUG] Starting options extraction")
 
-        if text.upper().startswith("OPTIONS"):
-            in_options = True
+    for idx, el in enumerate(block_elements):
+        raw = el.get("content")
+
+        print(
+            f"🔎 [CLOZE DEBUG] Block {idx} | "
+            f"type={el.get('type')} | "
+            f"content={repr(raw)}"
+        )
+
+        if not isinstance(raw, str):
             continue
 
-        if in_options:
-            if ":" not in text:
-                break
+        # Word often collapses multiple lines into one block
+        lines = [
+            line.strip()
+            for line in raw.splitlines()
+            if line.strip()
+        ]
 
-            key, value = text.split(":", 1)
-            key = key.strip()
-            value = value.strip()
+        for line in lines:
+            upper = line.upper()
 
-            if len(key) == 1 and key.isupper():
-                options[key] = value
-            else:
-                break
+            print(
+                f"🔎 [CLOZE DEBUG] Line={repr(line)} | "
+                f"in_options={in_options}"
+            )
+
+            # --------------------------------------------------
+            # Detect start of OPTIONS section
+            # --------------------------------------------------
+            if upper == "OPTIONS:":
+                in_options = True
+                print("✅ [CLOZE DEBUG] OPTIONS section detected")
+                continue
+
+            # --------------------------------------------------
+            # Parse option lines once inside OPTIONS
+            # --------------------------------------------------
+            if in_options:
+                match = re.match(
+                    r"^([A-Z])[\:\.\)]\s*(.+)$",
+                    line
+                )
+
+                if match:
+                    key, value = match.groups()
+                    options[key] = value.strip()
+
+                    print(
+                        f"✅ [CLOZE DEBUG] Parsed option "
+                        f"{key}: {value.strip()}"
+                    )
+                    continue
+
+                # --------------------------------------------------
+                # Stop parsing when OPTIONS section ends
+                # --------------------------------------------------
+                if options:
+                    print(
+                        "🛑 [CLOZE DEBUG] End of OPTIONS section"
+                    )
+                    return options
+
+    if not options:
+        print(
+            "❌ [CLOZE DEBUG] No CLOZE options found"
+        )
 
     return options
-
 def handle_cloze_question(
     q,
     question_block,
