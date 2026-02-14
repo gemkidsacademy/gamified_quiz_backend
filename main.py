@@ -18750,57 +18750,32 @@ def process_visual_counting_exam(
     request_id,
     summary,
 ):
-    print(
-        f"[{request_id}] 🖼️ TYPE 6 detected | "
-        f"processing visual counting question (block {block_idx})"
-    )
+    print(f"[{request_id}] 🖼️ TYPE 6 detected | processing visual counting question")
 
-    # --------------------------------------------------
-    # 1. Parse block-level structure (text + metadata)
-    # --------------------------------------------------
+    # 1. Parse NON-option content only
     parsed = parse_visual_counting_block(question_block)
+
+    # 🚨 DO NOT validate here
+
+    # 2. Force OPTIONS from DOCX
     parsed["OPTIONS"] = vc_extract_options_from_docx(
         summary.file_bytes
     )
 
-
     print(
-        f"[{request_id}] 🔍 VC: block parsed | "
-        f"keys={list(parsed.keys())}"
-    )
-
-    # --------------------------------------------------
-    # 2. Override OPTIONS using Word-level extraction
-    #    (bypasses ordered_blocks limitations)
-    # --------------------------------------------------
-    parsed["OPTIONS"] = vc_extract_options_from_docx(file_bytes)
-
-    print(
-        f"[{request_id}] 🔍 VC: options recovered from DOCX | "
+        f"[{request_id}] 🔍 VC: options recovered | "
         f"count={len(parsed['OPTIONS'])}"
     )
 
-    # --------------------------------------------------
-    # 3. Validate (single gatekeeper)
-    # --------------------------------------------------
+    # 3. Now validate
     vc_validate_block(parsed)
 
-    print(
-        f"[{request_id}] ✅ VC: validation passed"
-    )
-
-    # --------------------------------------------------
-    # 4. Persist to database
-    # --------------------------------------------------
+    # 4. Persist
     persist_visual_counting_question(
         block=parsed,
         db=db,
         request_id=request_id,
         summary=summary,
-    )
-
-    print(
-        f"[{request_id}] 💾 VC: question persisted successfully"
     )
 
 async def process_exam_block(
