@@ -18687,6 +18687,10 @@ def vc_extract_options_from_docx(content: bytes) -> list[dict]:
     """
 
     doc = Document(BytesIO(content))
+    print("🧾 VC DOCX PARAGRAPH DUMP START")
+    for i, para in enumerate(doc.paragraphs):
+        print(f"  [{i}] {repr(para.text)}")
+    print("🧾 VC DOCX PARAGRAPH DUMP END")
 
     options = []
     in_options = False
