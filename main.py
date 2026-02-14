@@ -18893,6 +18893,27 @@ def vc_extract_options_from_block(question_block):
         )
 
     return options
+def vc_extract_correct_answer_from_block(question_block):
+    """
+    Extracts correct answer for Visual Counting (Type 6)
+    from the already-isolated exam block.
+    """
+
+    for item in question_block:
+        if not isinstance(item, dict):
+            continue
+
+        text = (item.get("content") or "").strip()
+
+        if text.upper().startswith("CORRECT_ANSWER"):
+            # Move to next non-empty line
+            continue
+
+        # Match single-letter answer (A–D)
+        if text in {"A", "B", "C", "D"}:
+            return text
+
+    raise ValueError("VC: CORRECT_ANSWER not found in block")
 
 def process_visual_counting_exam(
     block_idx,
