@@ -18746,8 +18746,7 @@ def vc_extract_options_from_docx(content: bytes) -> list[dict]:
 
     print("🧾 VC DOCX FULL DUMP END\n")
 
-    # ⛔ TEMPORARILY stop here
-    raise RuntimeError("STOP AFTER DOCX DUMP")
+    
     options = []
 
     def try_parse_line(text: str):
