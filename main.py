@@ -18368,7 +18368,8 @@ def vc_extract_question_text(block):
         if item.get("type") != "text":
             continue
 
-        text = item.get("text", "").strip()
+        raw = item.get("text") or item.get("content") or ""
+        text = raw.strip()
 
         if text == "QUESTION_TEXT:":
             collecting = True
@@ -18384,6 +18385,7 @@ def vc_extract_question_text(block):
         raise ValueError("VC: QUESTION_TEXT section not found or empty")
 
     return " ".join(lines)
+
 def vc_extract_image_options(block):
     options = []
     current_label = None
@@ -18392,7 +18394,8 @@ def vc_extract_image_options(block):
         item_type = item.get("type")
 
         if item_type == "text":
-            text = item.get("text", "").strip()
+            raw = item.get("text") or item.get("content") or ""
+            text = raw.strip()
 
             match = re.match(r"^([A-D]):$", text)
             if match:
@@ -18417,12 +18420,14 @@ def vc_extract_image_options(block):
         raise ValueError("VC: No image options detected")
 
     return options
+
 def vc_extract_correct_answer(block):
     for item in block:
         if item.get("type") != "text":
             continue
 
-        text = item.get("text", "").strip()
+        raw = item.get("text") or item.get("content") or ""
+        text = raw.strip()
 
         if text.startswith("CORRECT_ANSWER:"):
             answer = text.split(":", 1)[1].strip()
@@ -18435,6 +18440,7 @@ def vc_extract_correct_answer(block):
             return answer
 
     raise ValueError("VC: CORRECT_ANSWER not found")
+
 def vc_extract_metadata(block):
     metadata = {}
     collecting = False
@@ -18443,7 +18449,8 @@ def vc_extract_metadata(block):
         if item.get("type") != "text":
             continue
 
-        text = item.get("text", "").strip()
+        raw = item.get("text") or item.get("content") or ""
+        text = raw.strip()
 
         if text == "METADATA:":
             collecting = True
@@ -18461,6 +18468,7 @@ def vc_extract_metadata(block):
         raise ValueError("VC: METADATA section not found")
 
     return metadata
+
 def vc_validate_block(parsed):
     """
     Validation gatekeeper for VISUAL_COUNTING (Type 6).
