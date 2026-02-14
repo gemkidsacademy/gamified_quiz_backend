@@ -2294,45 +2294,60 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
     "You are a deterministic exam-question parser.\n\n"
 
     "INPUT CONTRACT:\n"
-    "- You will receive ONLY plain text extracted from a question\n"
-    "- The text may span multiple paragraphs\n"
-    "- The text contains NO images and NO layout markers\n\n"
+    "- You will receive ordered blocks extracted from an exam question\n"
+    "- Each block has a `type` field (e.g. text, cloze, options)\n"
+    "- Do NOT assume visual layout beyond block order\n\n"
 
     "CONTENT RULES:\n"
     "- Preserve wording exactly as given\n"
     "- Do NOT summarize, paraphrase, or omit content\n"
     "- Do NOT invent or infer missing information\n\n"
 
+    "SUPPORTED QUESTION TYPES:\n"
+    "1. MCQ_SINGLE\n"
+    "2. MCQ_MULTI\n"
+    "3. NUMERIC_INPUT\n"
+    "4. TEXT_INPUT\n"
+    "5. CLOZE_DROPDOWN\n\n"
+
+    "TYPE DETECTION RULES:\n"
+    "- If blocks contain a `cloze` block followed by an `options` block:\n"
+    "  - Treat this as CLOZE_DROPDOWN\n"
+    "  - Set answer_type = \"CLOZE_DROPDOWN\"\n"
+    "  - Extract cloze_text from the cloze block content\n"
+    "  - Extract options from the options block\n\n"
+
     "STRUCTURE RULES:\n"
     "- Extract the following fields if present:\n"
     "  class_name\n"
-    "  question_type (integer)\n"
     "  year (integer)\n"
     "  subject\n"
     "  topic\n"
     "  difficulty\n"
-    "  options (A–Z, ONLY for question_type 1 and 2)\n"
+    "  answer_type (string)\n"
+    "  options (ONLY if applicable)\n"
     "  correct_answer\n\n"
 
     "ANSWER FORMAT RULES:\n"
-    "- If question_type = 1:\n"
-    "  - correct_answer MUST be a single string\n"
-    "  - Example: \"B\"\n\n"
+    "- MCQ_SINGLE:\n"
+    "  - correct_answer MUST be a single string (e.g. \"B\")\n\n"
 
-    "- If question_type = 2:\n"
-    "  - correct_answer MUST be an array of strings\n"
-    "  - Example: [\"B\", \"D\"]\n\n"
+    "- MCQ_MULTI:\n"
+    "  - correct_answer MUST be an array of strings\n\n"
 
-    "- If question_type = 3:\n"
-    "  - correct_answer MUST be a single number or numeric string\n"
-    "  - Example: 23\n\n"
+    "- NUMERIC_INPUT:\n"
+    "  - correct_answer MUST be a number or numeric string\n\n"
 
-    "- If question_type = 4:\n"
-    "  - correct_answer MUST be a single string\n"
-    "  - Example: \"stars\"\n\n"
+    "- TEXT_INPUT:\n"
+    "  - correct_answer MUST be a single string\n\n"
+
+    "- CLOZE_DROPDOWN:\n"
+    "  - cloze_text MUST contain {{dropdown}}\n"
+    "  - options MUST be provided\n"
+    "  - correct_answer MUST be a single option label\n\n"
 
     "OMISSION RULES:\n"
-    "- If a required field is missing, OMIT the question entirely\n"
+    "- If required fields are missing, OMIT the question entirely\n"
     "- Do NOT emit placeholders\n"
     "- Do NOT emit partial questions\n"
     "- An empty questions array is valid\n\n"
@@ -2341,6 +2356,7 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
     "- Return ONLY valid JSON matching the provided schema\n"
     "- Do NOT include commentary, markdown, or explanations"
 )
+
 
     
 
