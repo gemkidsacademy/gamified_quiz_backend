@@ -18163,13 +18163,6 @@ async def upload_word(
 
 
 def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
-    """
-    Groups ordered blocks into exam blocks using explicit markers:
-
-    === EXAM START ===
-    === EXAM END ===
-    """
-
     exams = []
     current_exam = []
     in_exam = False
@@ -18180,31 +18173,30 @@ def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
                 current_exam.append(block)
             continue
 
-        text = block.get("content", "").strip()
+        raw = block.get("content", "")
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
 
-        if "=== EXAM START ===" in text:
-            if in_exam:
-                raise ValueError(
-                    "Invalid document structure: nested EXAM START detected"
-                )
-            in_exam = True
-            current_exam = []
-            continue
+        for text in lines:
+            if text == "=== EXAM START ===":
+                if in_exam:
+                    raise ValueError("Nested EXAM START detected")
+                in_exam = True
+                current_exam = []
+                continue
 
-        if "=== EXAM END ===" in text:
-            if in_exam and current_exam:
+            if text == "=== EXAM END ===":
+                if not in_exam:
+                    raise ValueError("EXAM END without EXAM START")
                 exams.append(current_exam)
-            current_exam = []
-            in_exam = False
-            continue
+                current_exam = []
+                in_exam = False
+                continue
 
-        if in_exam:
-            current_exam.append(block)
+            if in_exam:
+                current_exam.append({"type": "text", "content": text})
 
     if in_exam:
-        raise ValueError(
-            "Invalid document structure: missing EXAM END"
-        )
+        raise ValueError("Missing EXAM END")
 
     return exams
 
