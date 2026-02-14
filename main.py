@@ -13733,7 +13733,52 @@ def handle_cloze_question(
     summary,
     block_idx
 ):
+    print(
+        f"[{request_id}] 🧩 [CLOZE] handle_cloze_question START | "
+        f"block={block_idx}"
+    )
+
+    print(
+        f"[{request_id}] 🧩 [CLOZE] Question keys = "
+        f"{list(q.keys())}"
+    )
+
+    print(
+        f"[{request_id}] 🧩 [CLOZE] answer_type = "
+        f"{q.get('answer_type')}"
+    )
+
+    print(
+        f"[{request_id}] 🧩 [CLOZE] cloze_text preview = "
+        f"{str(q.get('cloze_text'))[:120]}"
+    )
+
+    print(
+        f"[{request_id}] 🧩 [CLOZE] options keys = "
+        f"{list((q.get('options') or {}).keys())}"
+    )
+
+    print(
+        f"[{request_id}] 🧩 [CLOZE] correct_answer = "
+        f"{q.get('correct_answer')}"
+    )
+
+    # --------------------------------------------------
+    # Validation
+    # --------------------------------------------------
+    print(f"[{request_id}] 🛂 [CLOZE] Validating CLOZE payload")
+
     validate_cloze_dropdown(q)
+
+    print(f"[{request_id}] ✅ [CLOZE] Validation passed")
+
+    # --------------------------------------------------
+    # Persistence
+    # --------------------------------------------------
+    print(
+        f"[{request_id}] 💾 [CLOZE] Persisting CLOZE question | "
+        f"question_type=5"
+    )
 
     persist_question(
         q=q,
@@ -13744,6 +13789,10 @@ def handle_cloze_question(
         request_id=request_id,
         summary=summary,
         block_idx=block_idx
+    )
+
+    print(
+        f"[{request_id}] ✅ [CLOZE] Question persisted successfully"
     )
 
 async def parse_with_gpt_cloze(payload: dict, retries: int = 2):
@@ -13782,8 +13831,19 @@ OUTPUT RULES:
 - Do NOT include commentary
 """
 
+    print("🤖 [CLOZE] parse_with_gpt_cloze START")
+
+    blocks = payload.get("blocks", [])
+    print(f"🤖 [CLOZE] Incoming blocks count = {len(blocks)}")
+
+    serialized = serialize_blocks_for_gpt_numeracy_LC(blocks)
+    print(
+        "🤖 [CLOZE] Serialized payload preview:\n"
+        f"{serialized[:400]}"
+    )
+
     for attempt in range(retries + 1):
-        serialized = serialize_blocks_for_gpt_numeracy_LC(payload["blocks"])
+        print(f"🤖 [CLOZE] GPT attempt {attempt + 1}/{retries + 1}")
 
         completion = await client_save_questions.chat.completions.create(
             model="gpt-4o-mini",
@@ -13811,21 +13871,44 @@ OUTPUT RULES:
         )
 
         raw = completion.choices[0].message.content
+        print(
+            "🤖 [CLOZE] Raw GPT response preview:\n"
+            f"{raw[:400]}"
+        )
 
         try:
             parsed = json.loads(raw)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            print(
+                f"❌ [CLOZE] JSON decode failed on attempt {attempt + 1} | "
+                f"error={e}"
+            )
             if attempt < retries:
+                print("🔁 [CLOZE] Retrying…")
                 continue
+            print("🚫 [CLOZE] Exhausted retries, returning empty questions")
             return {"questions": []}
 
-        if parsed.get("questions"):
+        questions = parsed.get("questions", [])
+        print(
+            f"🤖 [CLOZE] Parsed questions count = {len(questions)}"
+        )
+
+        if questions:
+            print(
+                "🧠 [CLOZE] First question keys = "
+                f"{list(questions[0].keys())}"
+            )
+            print("✅ [CLOZE] parse_with_gpt_cloze SUCCESS")
             return parsed
 
         if attempt < retries:
+            print("⚠️ [CLOZE] Empty questions, retrying…")
             continue
 
+        print("🚫 [CLOZE] Empty questions after all retries")
         return parsed
+
 
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
@@ -18002,6 +18085,11 @@ async def process_exam_block(
                 raise ValueError(
                     "CLOZE question routed to legacy pipeline"
                 )
+            print(
+                f"[{request_id}] 🔎 DEBUG q.correct_answer = "
+                f"{q.get('correct_answer')} "
+                f"(type={type(q.get('correct_answer'))})"
+            )
 
             validate_question_by_type(question_type, q)
 
