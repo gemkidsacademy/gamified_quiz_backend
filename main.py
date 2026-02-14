@@ -11251,10 +11251,14 @@ def generate_exam_reading(
 
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
-
+    print("🧹 Resetting previous reading exam attempts")
+    db.query(StudentExamReportReading).delete(synchronize_session=False)
+    db.query(StudentExamReading).delete(synchronize_session=False)
     db.query(GeneratedExamReading).delete(synchronize_session=False)
+    
     db.commit()
-
+    
+    print("🧼 All reading exam attempts cleared")
     # --------------------------------------------------
     # 1️⃣ LOAD CONFIG
     # --------------------------------------------------
