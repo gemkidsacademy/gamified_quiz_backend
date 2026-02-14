@@ -18388,43 +18388,23 @@ def vc_extract_question_text(block):
 
 def vc_extract_image_options(block):
     options = []
-    current_label = None
 
     for item in block:
-        item_type = item.get("type")
+        if item.get("type") != "text":
+            continue
 
-        # -----------------------------
-        # Detect option label (A:, B:, etc.)
-        # -----------------------------
-        if item_type == "text":
-            raw = item.get("text") or item.get("content") or ""
-            text = raw.strip()
+        raw = item.get("text") or item.get("content") or ""
+        text = raw.strip()
 
-            match = re.match(r"^([A-D]):", text)
-            if match:
-                current_label = match.group(1)
-                continue
-
-        # -----------------------------
-        # Attach next image to last label
-        # -----------------------------
-        if item_type == "image" and current_label:
-            image_url = item.get("image_url")
-
-            if not image_url:
-                raise ValueError(
-                    f"VC: Image missing for option {current_label}"
-                )
-
+        match = re.match(r"^([A-D]):", text)
+        if match:
             options.append({
-                "label": current_label,
-                "image_url": image_url,
+                "label": match.group(1),
+                "image_url": None,  # image resolved at render time
             })
 
-            current_label = None  # reset after pairing
-
     if not options:
-        raise ValueError("VC: No image options detected")
+        raise ValueError("VC: No options detected")
 
     return options
 
