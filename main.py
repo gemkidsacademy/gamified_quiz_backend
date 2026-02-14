@@ -18344,7 +18344,328 @@ def validate_cloze_deterministic(q: dict):
             f"Correct answer '{correct}' not in options {list(options.keys())}"
         )
 
- 
+def is_visual_counting_exam(block: list) -> bool:
+    for item in block:
+        if (
+            isinstance(item, dict)
+            and item.get("type") == "text"
+            and "question_type: 6" in item.get("text", "")
+        ):
+            return True
+    return False
+def vc_extract_question_text(block):
+    collecting = False
+    lines = []
+
+    for item in block:
+        if item.get("type") != "text":
+            continue
+
+        text = item.get("text", "").strip()
+
+        if text == "QUESTION_TEXT:":
+            collecting = True
+            continue
+
+        if collecting:
+            if text == "OPTIONS:":
+                break
+            if text:
+                lines.append(text)
+
+    if not lines:
+        raise ValueError("VC: QUESTION_TEXT section not found or empty")
+
+    return " ".join(lines)
+def vc_extract_image_options(block):
+    options = []
+    current_label = None
+
+    for item in block:
+        item_type = item.get("type")
+
+        if item_type == "text":
+            text = item.get("text", "").strip()
+
+            match = re.match(r"^([A-D]):$", text)
+            if match:
+                current_label = match.group(1)
+
+        elif item_type == "image" and current_label:
+            image_url = item.get("image_url")
+
+            if not image_url:
+                raise ValueError(
+                    f"VC: Image missing for option {current_label}"
+                )
+
+            options.append({
+                "label": current_label,
+                "image_url": image_url,
+            })
+
+            current_label = None  # reset after pairing
+
+    if not options:
+        raise ValueError("VC: No image options detected")
+
+    return options
+def vc_extract_correct_answer(block):
+    for item in block:
+        if item.get("type") != "text":
+            continue
+
+        text = item.get("text", "").strip()
+
+        if text.startswith("CORRECT_ANSWER:"):
+            answer = text.split(":", 1)[1].strip()
+
+            if answer not in {"A", "B", "C", "D"}:
+                raise ValueError(
+                    f"VC: Invalid CORRECT_ANSWER '{answer}'"
+                )
+
+            return answer
+
+    raise ValueError("VC: CORRECT_ANSWER not found")
+def vc_extract_metadata(block):
+    metadata = {}
+    collecting = False
+
+    for item in block:
+        if item.get("type") != "text":
+            continue
+
+        text = item.get("text", "").strip()
+
+        if text == "METADATA:":
+            collecting = True
+            continue
+
+        if collecting:
+            if text == "QUESTION_TEXT:":
+                break
+
+            if ":" in text:
+                key, value = text.split(":", 1)
+                metadata[key.strip()] = value.strip().strip('"')
+
+    if not metadata:
+        raise ValueError("VC: METADATA section not found")
+
+    return metadata
+def vc_validate_block(parsed):
+    """
+    Validation gatekeeper for VISUAL_COUNTING (Type 6).
+
+    This function must be called AFTER parse_visual_counting_block()
+    and BEFORE persist_visual_counting_question().
+
+    It enforces structural correctness only.
+    No image understanding. No counting. No AI.
+    """
+
+    # --------------------------------------------------
+    # Required top-level keys
+    # --------------------------------------------------
+    required_keys = {
+        "QUESTION_TEXT",
+        "OPTIONS",
+        "CORRECT_ANSWER",
+        "METADATA",
+    }
+
+    missing = required_keys - parsed.keys()
+    if missing:
+        raise ValueError(
+            f"VC: Missing required keys: {sorted(missing)}"
+        )
+
+    # --------------------------------------------------
+    # QUESTION_TEXT
+    # --------------------------------------------------
+    question_text = parsed["QUESTION_TEXT"]
+    if not isinstance(question_text, str) or not question_text.strip():
+        raise ValueError("VC: QUESTION_TEXT must be a non-empty string")
+
+    # --------------------------------------------------
+    # OPTIONS
+    # --------------------------------------------------
+    options = parsed["OPTIONS"]
+
+    if not isinstance(options, list):
+        raise ValueError("VC: OPTIONS must be a list")
+
+    if len(options) != 4:
+        raise ValueError(
+            f"VC: VISUAL_COUNTING requires exactly 4 options "
+            f"(found {len(options)})"
+        )
+
+    labels_seen = set()
+
+    for opt in options:
+        if not isinstance(opt, dict):
+            raise ValueError("VC: Each option must be a dict")
+
+        label = opt.get("label")
+        image_url = opt.get("image_url")
+
+        if label not in {"A", "B", "C", "D"}:
+            raise ValueError(
+                f"VC: Invalid option label '{label}'"
+            )
+
+        if label in labels_seen:
+            raise ValueError(
+                f"VC: Duplicate option label '{label}'"
+            )
+
+        labels_seen.add(label)
+
+        if not isinstance(image_url, str) or not image_url.strip():
+            raise ValueError(
+                f"VC: Option {label} must have a valid image_url"
+            )
+
+    # --------------------------------------------------
+    # CORRECT_ANSWER
+    # --------------------------------------------------
+    correct = parsed["CORRECT_ANSWER"]
+
+    if correct not in labels_seen:
+        raise ValueError(
+            f"VC: CORRECT_ANSWER '{correct}' "
+            f"does not match any option label"
+        )
+
+    # --------------------------------------------------
+    # METADATA
+    # --------------------------------------------------
+    metadata = parsed["METADATA"]
+
+    if not isinstance(metadata, dict):
+        raise ValueError("VC: METADATA must be a dict")
+
+    required_metadata_fields = {
+        "CLASS",
+        "Year",
+        "SUBJECT",
+        "TOPIC",
+        "DIFFICULTY",
+    }
+
+    missing_meta = required_metadata_fields - metadata.keys()
+    if missing_meta:
+        raise ValueError(
+            f"VC: Missing METADATA fields: {sorted(missing_meta)}"
+        )
+
+    # --------------------------------------------------
+    # Passed
+    # --------------------------------------------------
+    return True
+
+
+def parse_visual_counting_block(block):
+    return {
+        "QUESTION_TEXT": vc_extract_question_text(block),
+        "OPTIONS": vc_extract_image_options(block),
+        "CORRECT_ANSWER": vc_extract_correct_answer(block),
+        "METADATA": vc_extract_metadata(block),
+    }
+def persist_visual_counting_question(
+    block,
+    db,
+    request_id,
+    summary,
+):
+    """
+    Persist a VISUAL_COUNTING (Type 6) question and its image options.
+
+    Assumes:
+    - block has already been validated by vc_validate_block
+    - image_url is already resolved and safe to store
+    """
+
+    # --------------------------------------------------
+    # Create Question row
+    # --------------------------------------------------
+    question = Question(
+        question_type=6,
+        answer_type="VISUAL_COUNTING_MCQ",
+        question_text=block["QUESTION_TEXT"],
+        class_=block["METADATA"]["CLASS"],
+        year=int(block["METADATA"]["Year"]),
+        subject=block["METADATA"]["SUBJECT"],
+        topic=block["METADATA"]["TOPIC"],
+        difficulty=block["METADATA"]["DIFFICULTY"],
+    )
+
+    db.add(question)
+    db.flush()  # get question.id without committing
+
+    print(
+        f"[{request_id}] 💾 VC Question created | "
+        f"question_id={question.id}"
+    )
+
+    # --------------------------------------------------
+    # Create Options
+    # --------------------------------------------------
+    correct_label = block["CORRECT_ANSWER"]
+
+    for opt in block["OPTIONS"]:
+        option = QuestionOption(
+            question_id=question.id,
+            option_label=opt["label"],
+            option_text=None,                # visual-only
+            option_image_url=opt["image_url"],
+            is_correct=(opt["label"] == correct_label),
+        )
+
+        db.add(option)
+
+        print(
+            f"[{request_id}] 🖼️ VC Option saved | "
+            f"label={opt['label']} "
+            f"is_correct={opt['label'] == correct_label}"
+        )
+
+    # --------------------------------------------------
+    # Commit transaction
+    # --------------------------------------------------
+    db.commit()
+
+    summary.saved += 1
+
+    print(
+        f"[{request_id}] ✅ VC Question persisted successfully | "
+        f"question_id={question.id}"
+    )
+
+def process_visual_counting_exam(
+    block_idx,
+    question_block,
+    db,
+    request_id,
+    summary,
+):
+    print(
+        f"[{request_id}] 🖼️ TYPE 6 detected | "
+        f"processing visual counting question"
+    )
+
+    parsed = parse_visual_counting_block(question_block)
+    validate_visual_counting_block(parsed)
+
+    persist_visual_counting_question(
+        block=parsed,
+        db=db,
+        request_id=request_id,
+        summary=summary,
+    )
+
 async def process_exam_block(
     block_idx: int,
     question_block: list,
@@ -18355,6 +18676,19 @@ async def process_exam_block(
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
+    if is_visual_counting_exam(question_block):
+        print(
+            f"[{request_id}] 🖼️ TYPE 6 detected | "
+            f"processing visual counting question"
+        )
+        process_visual_counting_exam(
+            block_idx=block_idx,
+            question_block=question_block,
+            db=db,
+            request_id=request_id,
+            summary=summary,
+        )
+        return  # 🚨 DO NOT FALL THROUGH
 
     # --------------------------------------------------
     # Quick structural sanity check
