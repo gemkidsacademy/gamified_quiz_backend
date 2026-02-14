@@ -18895,8 +18895,19 @@ async def process_exam_block(
     # ==================================================
     # 🔤 TYPE 7 — WORD_SELECTION (DETERMINISTIC)
     # ==================================================
-    elif is_word_selection_exam(block_text):
-
+    elif is_word_selection_exam(
+    "\n".join(
+        item["content"]
+        for item in question_block
+            if isinstance(item, dict) and "content" in item
+        )
+    ):
+        block_text = "\n".join(
+            item["content"]
+            for item in question_block
+            if isinstance(item, dict) and "content" in item
+        )
+    
         metadata = ws_extract_metadata(block_text)
         question_text = ws_extract_question_text(block_text)
         sentence = ws_extract_sentence(block_text)
