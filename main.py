@@ -19628,6 +19628,23 @@ def ws_extract_correct_answer(block: str) -> str | None:
     answer = text.strip()
     return answer if answer else None
 
+def validate_single_question_type(exam_block):
+    found = set()
+
+    for item in exam_block:
+        if item.get("type") != "text":
+            continue
+
+        text = (item.get("content") or "").lower()
+
+        if "question_type:" in text:
+            # extract the number crudely but safely
+            found.add(text.strip())
+
+    if len(found) > 1:
+        raise ValueError(
+            f"Invalid exam block: multiple question_type declarations found: {found}"
+        )
 
 
 
@@ -19730,6 +19747,7 @@ async def upload_word_naplan(
             # --------------------------------------------------
             # 🧩 CLOZE exam → full exam block
             # --------------------------------------------------
+            validate_single_question_type(block)
             if is_cloze_exam(block):
                 print(
                     f"[{request_id}] 🧩 CLOZE exam detected | "
