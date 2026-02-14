@@ -13741,52 +13741,12 @@ def handle_cloze_question(
     summary,
     block_idx
 ):
-    print(
-        f"[{request_id}] 🧩 [CLOZE] handle_cloze_question START | "
-        f"block={block_idx}"
-    )
+    print(f"[{request_id}] 🧩 [CLOZE] Normalizing answer_type")
 
-    print(
-        f"[{request_id}] 🧩 [CLOZE] Question keys = "
-        f"{list(q.keys())}"
-    )
-
-    print(
-        f"[{request_id}] 🧩 [CLOZE] answer_type = "
-        f"{q.get('answer_type')}"
-    )
-
-    print(
-        f"[{request_id}] 🧩 [CLOZE] cloze_text preview = "
-        f"{str(q.get('cloze_text'))[:120]}"
-    )
-
-    print(
-        f"[{request_id}] 🧩 [CLOZE] options keys = "
-        f"{list((q.get('options') or {}).keys())}"
-    )
-
-    print(
-        f"[{request_id}] 🧩 [CLOZE] correct_answer = "
-        f"{q.get('correct_answer')}"
-    )
-
-    # --------------------------------------------------
-    # Validation
-    # --------------------------------------------------
-    print(f"[{request_id}] 🛂 [CLOZE] Validating CLOZE payload")
+    # 👇 Backend owns this, not GPT
+    q["answer_type"] = "CLOZE_DROPDOWN"
 
     validate_cloze_dropdown(q)
-
-    print(f"[{request_id}] ✅ [CLOZE] Validation passed")
-
-    # --------------------------------------------------
-    # Persistence
-    # --------------------------------------------------
-    print(
-        f"[{request_id}] 💾 [CLOZE] Persisting CLOZE question | "
-        f"question_type=5"
-    )
 
     persist_question(
         q=q,
@@ -13797,10 +13757,6 @@ def handle_cloze_question(
         request_id=request_id,
         summary=summary,
         block_idx=block_idx
-    )
-
-    print(
-        f"[{request_id}] ✅ [CLOZE] Question persisted successfully"
     )
 
 async def parse_with_gpt_cloze(payload: dict, retries: int = 2):
