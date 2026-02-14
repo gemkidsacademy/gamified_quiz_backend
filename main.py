@@ -18411,12 +18411,25 @@ def normalize_text(text: str) -> str:
 
 def vc_extract_image_options(block):
     options = []
+    in_options = False
 
     for item in block:
         raw = item.get("text") or item.get("content") or ""
         text = normalize_text(raw)
 
         if not text:
+            continue
+
+        # Enter OPTIONS section
+        if text.startswith("OPTIONS:"):
+            in_options = True
+            continue
+
+        # Exit OPTIONS section
+        if in_options and text.startswith("ANSWER_TYPE:"):
+            break
+
+        if not in_options:
             continue
 
         # DEBUG (keep this for now)
@@ -18432,7 +18445,13 @@ def vc_extract_image_options(block):
     if not options:
         raise ValueError("VC: No options detected")
 
+    if len(options) != 4:
+        raise ValueError(
+            f"VC: Expected 4 options, found {len(options)}"
+        )
+
     return options
+
 def normalize_text(text: str) -> str:
     if not text:
         return ""
