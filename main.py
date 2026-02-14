@@ -18647,68 +18647,56 @@ def persist_visual_counting_question(
     summary,
 ):
     """
-    Persist a VISUAL_COUNTING (Type 6) question and its image options.
+    Persist a VISUAL_COUNTING (Type 6) question.
 
     Assumes:
     - block has already been validated by vc_validate_block
-    - image_url is already resolved and safe to store
+    - OPTIONS contain resolved image_url values
     """
+
+    # --------------------------------------------------
+    # Build options map: {"A": url, "B": url, ...}
+    # --------------------------------------------------
+    options_map = {
+        opt["label"]: opt["image_url"]
+        for opt in block["OPTIONS"]
+    }
 
     # --------------------------------------------------
     # Create Question row
     # --------------------------------------------------
-    question = Question(
+    question = QuestionNumeracyLC(
         question_type=6,
-        answer_type="VISUAL_COUNTING_MCQ",
-        question_text=block["QUESTION_TEXT"],
-        class_=block["METADATA"]["CLASS"],
+        class_name=block["METADATA"]["CLASS"],
         year=int(block["METADATA"]["Year"]),
         subject=block["METADATA"]["SUBJECT"],
-        topic=block["METADATA"]["TOPIC"],
+        topic=block["METADATA"].get("TOPIC"),
         difficulty=block["METADATA"]["DIFFICULTY"],
+
+        question_text=block["QUESTION_TEXT"],
+
+        # Optional but useful for rendering/debugging
+        question_blocks=block.get("QUESTION_BLOCKS"),
+
+        options=options_map,
+
+        # Stored as JSON for consistency across question types
+        correct_answer={
+            "value": block["CORRECT_ANSWER"]
+        },
     )
 
     db.add(question)
-    db.flush()  # get question.id without committing
-
-    print(
-        f"[{request_id}] 💾 VC Question created | "
-        f"question_id={question.id}"
-    )
-
-    # --------------------------------------------------
-    # Create Options
-    # --------------------------------------------------
-    correct_label = block["CORRECT_ANSWER"]
-
-    for opt in block["OPTIONS"]:
-        option = QuestionOption(
-            question_id=question.id,
-            option_label=opt["label"],
-            option_text=None,                # visual-only
-            option_image_url=opt["image_url"],
-            is_correct=(opt["label"] == correct_label),
-        )
-
-        db.add(option)
-
-        print(
-            f"[{request_id}] 🖼️ VC Option saved | "
-            f"label={opt['label']} "
-            f"is_correct={opt['label'] == correct_label}"
-        )
-
-    # --------------------------------------------------
-    # Commit transaction
-    # --------------------------------------------------
     db.commit()
+    db.refresh(question)
 
     summary.saved += 1
 
     print(
-        f"[{request_id}] ✅ VC Question persisted successfully | "
-        f"question_id={question.id}"
+        f"[{request_id}] 💾 VC: Question saved successfully | "
+        f"id={question.id}"
     )
+
 from docx import Document
 from io import BytesIO
 import re
