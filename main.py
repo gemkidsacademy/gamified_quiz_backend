@@ -18873,8 +18873,7 @@ async def process_exam_block(
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
 
-    block_text = "\n".join(question_block)
-
+    
     # ==================================================
     # 🖼️ TYPE 6 — VISUAL COUNTING (SEALED)
     # ==================================================
