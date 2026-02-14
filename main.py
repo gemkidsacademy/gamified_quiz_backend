@@ -18393,15 +18393,22 @@ def vc_extract_image_options(block):
     for item in block:
         item_type = item.get("type")
 
+        # -----------------------------
+        # Detect option label (A:, B:, etc.)
+        # -----------------------------
         if item_type == "text":
             raw = item.get("text") or item.get("content") or ""
             text = raw.strip()
 
-            match = re.match(r"^([A-D]):$", text)
+            match = re.match(r"^([A-D]):", text)
             if match:
                 current_label = match.group(1)
+                continue
 
-        elif item_type == "image" and current_label:
+        # -----------------------------
+        # Attach next image to last label
+        # -----------------------------
+        if item_type == "image" and current_label:
             image_url = item.get("image_url")
 
             if not image_url:
