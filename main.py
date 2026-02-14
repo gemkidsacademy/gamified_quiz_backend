@@ -18871,6 +18871,28 @@ def vc_resolve_option_images(
         )
 
     return resolved
+def vc_extract_options_from_block(question_block):
+    options = []
+
+    for item in question_block:
+        if not isinstance(item, dict):
+            continue
+
+        text = (item.get("content") or "").strip()
+
+        match = re.match(r"^([A-D])\s*[:.]\s*(.+)$", text)
+        if match:
+            options.append({
+                "label": match.group(1),
+                "image_ref": match.group(2),
+            })
+
+    if len(options) != 4:
+        raise ValueError(
+            f"VC: Expected 4 options, found {len(options)}"
+        )
+
+    return options
 
 def process_visual_counting_exam(
     block_idx,
@@ -18902,7 +18924,7 @@ def process_visual_counting_exam(
     # 2. Force DOCX-level extraction (OPTIONS)
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 3: extracting OPTIONS from DOCX")
-    raw_options = vc_extract_options_from_docx(summary.file_bytes)
+    raw_options = vc_extract_options_from_block(question_block)
 
     print(
         f"[{request_id}] 🔥 VC STEP 3a: raw options extracted | "
@@ -18924,9 +18946,7 @@ def process_visual_counting_exam(
     # 3. Extract CORRECT_ANSWER
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 4: extracting CORRECT_ANSWER from DOCX")
-    parsed["CORRECT_ANSWER"] = vc_extract_correct_answer_from_docx(
-        summary.file_bytes
-    )
+    parsed["CORRECT_ANSWER"] = vc_extract_correct_answer_from_block(question_block)
 
     print(
         f"[{request_id}] 🔥 VC STEP 4a: correct answer extracted | "
