@@ -17179,7 +17179,15 @@ def resolve_option_value(value: str, db: Session) -> dict:
 
 
 def looks_like_question(blocks):
-    markers = {"question_text", "correct_answer", "question_type"}
+    markers = {
+        "question_text",
+        "correct_answer",
+        "question_type",
+        "answer_type",
+        "cloze",
+        "options",
+    }
+
 
     for b in blocks:
         if b.get("type") == "text":
@@ -17654,12 +17662,22 @@ async def parse_questions_with_gpt_naplan_numeracy_lc(
     if questions:
         print(
             f"[{request_id}] 🧠 First question preview | "
-            f"type={questions[0].get('question_type')} | "
+            f"answer_type={questions[0].get('answer_type')} | "
             f"keys={list(questions[0].keys())}"
         )
 
+
     return questions
 
+ANSWER_TYPE_TO_QUESTION_TYPE = {
+    "MCQ_SINGLE": 1,
+    "MCQ_MULTI": 2,
+    "NUMERIC_INPUT": 3,
+    "TEXT_INPUT": 4,
+    "CLOZE_DROPDOWN": 5,   # 👈 NEW
+}
+
+ 
 async def process_exam_block(
     block_idx: int,
     question_block: list,
@@ -17718,13 +17736,30 @@ async def process_exam_block(
         # Persist each question
         # --------------------------------------------------
         for i, q in enumerate(questions, start=1):
+            answer_type = q.get("answer_type")
+
+            question_type = ANSWER_TYPE_TO_QUESTION_TYPE.get(answer_type)
+             if question_type == 4:
+                 validate_text_input(q)
+         
+             elif question_type == 5:
+                 validate_cloze_dropdown(q)
+            
+            if not question_type:
+                raise ValueError(
+                    f"Unsupported ANSWER_TYPE '{answer_type}' "
+                    f"in block {block_idx}"
+                )
+            
             print(
                 f"[{request_id}] ➕ Persisting question {i}/"
-                f"{len(questions)} (type={q.get('question_type')})"
+                f"{len(questions)} (type={question_type}, answer_type={answer_type})"
             )
+
 
             persist_question(
                 q=q,
+                question_type=question_type,  # 👈 PASS EXPLICIT TYPE
                 question_block=question_block,
                 meta=meta,
                 db=db,
@@ -17732,6 +17767,7 @@ async def process_exam_block(
                 summary=summary,
                 block_idx=block_idx
             )
+
 
         # --------------------------------------------------
         # Mark block success
@@ -17752,16 +17788,37 @@ async def process_exam_block(
 
         summary.block_failure(block_idx, error_msg)
 
+def validate_cloze_dropdown(q: dict):
+    cloze_text = q.get("cloze_text")
+    options = q.get("options")
+    correct = q.get("correct_answer")
+
+    if not cloze_text:
+        raise ValueError("CLOZE_DROPDOWN missing cloze_text")
+
+    if "{{dropdown}}" not in cloze_text:
+        raise ValueError("CLOZE_DROPDOWN missing {{dropdown}} placeholder")
+
+    if not options or len(options) < 2:
+        raise ValueError("CLOZE_DROPDOWN requires at least 2 options")
+
+    option_ids = {opt.get("id") for opt in options}
+
+    if correct not in option_ids:
+        raise ValueError(
+            "CLOZE_DROPDOWN correct_answer does not match any option id"
+        )
 
 def validate_common_metadata(questions, block_idx, request_id):
     required = [
         "class_name",
-        "question_type",
+        "answer_type",
         "year",
         "subject",
         "topic",
         "difficulty",
     ]
+
 
     missing = [f for f in required if not questions[0].get(f)]
     if missing:
@@ -17774,6 +17831,7 @@ def validate_common_metadata(questions, block_idx, request_id):
     return {"subject": subject}
 def persist_question(
     q,
+    question_type,   # 👈 ADD THIS
     question_block,
     meta,
     db,
@@ -17781,17 +17839,21 @@ def persist_question(
     summary,
     block_idx
 ):
-    qt = q["question_type"]
-    validate_question_by_type(qt, q)
+    
+    validate_question_by_type(question_type, q)
 
     resolve_images(q, db, request_id)
 
-    question_text = "\n\n".join(
-        b["content"] for b in question_block if b["type"] == "text"
-    )
+    if question_type == 5:
+        question_text = q.get("cloze_text")
+    else:
+        question_text = "\n\n".join(
+            b["content"] for b in question_block if b["type"] == "text"
+        )
+
 
     obj = QuestionNumeracyLC(
-        question_type=qt,
+        question_type=question_type,
         class_name=q["class_name"],
         year=q["year"],
         subject=meta["subject"],
