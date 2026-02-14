@@ -18387,22 +18387,40 @@ def vc_extract_question_text(block):
     return " ".join(lines)
 
 import re
+import unicodedata
+
+def normalize_text(text: str) -> str:
+    # Normalize unicode (fix full-width chars, etc.)
+    text = unicodedata.normalize("NFKC", text)
+
+    # Remove zero-width / non-breaking spaces
+    text = text.replace("\u00a0", " ")
+    text = text.replace("\u200b", "")
+
+    # Collapse whitespace
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
 
 def vc_extract_image_options(block):
     options = []
 
     for item in block:
         raw = item.get("text") or item.get("content") or ""
-        text = raw.strip()
+        text = normalize_text(raw)
 
         if not text:
             continue
 
-        match = re.match(r"^([A-D]):", text)
+        # DEBUG (keep this for now)
+        print(f"🔍 VC OPTION LINE CANDIDATE: {repr(text)}")
+
+        match = re.match(r"^([A-D])\s*:\s*(.+)$", text)
         if match:
             options.append({
                 "label": match.group(1),
-                "image_url": None,  # images handled at render time
+                "image_ref": match.group(2),
             })
 
     if not options:
