@@ -13906,10 +13906,10 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
     """
     Deterministic CLOZE (type 5) parser.
 
-    Document rules:
-    - Exactly ONE line must contain {{dropdown}} → this is cloze_text
+    Rules:
+    - Exactly ONE line must contain {{dropdown}} → cloze_text
     - OPTIONS and CORRECT_ANSWER are mandatory
-    - No GPT, no heuristics beyond the dropdown token
+    - No GPT, no layout assumptions
     """
 
     print("🔍 [CLOZE PARSER] START")
@@ -13932,7 +13932,6 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
 
     for idx, el in enumerate(block_elements, start=1):
         text = el.get("content")
-
         if not isinstance(text, str):
             continue
 
@@ -13948,9 +13947,9 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
                 f"(section={current_section})"
             )
 
-            # --------------------------------------------------
-            # SECTION HEADERS
-            # --------------------------------------------------
+            # ==================================================
+            # SECTION HEADERS (MUST RUN FIRST)
+            # ==================================================
             if upper == "METADATA:":
                 current_section = "metadata"
                 print("📌 [CLOZE PARSER] Entered METADATA")
@@ -13966,9 +13965,9 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
                 print("📌 [CLOZE PARSER] Entered CORRECT_ANSWER")
                 continue
 
-            # --------------------------------------------------
-            # CLOZE TEXT (authoritative rule)
-            # --------------------------------------------------
+            # ==================================================
+            # CLOZE TEXT (AUTHORITATIVE, SECTION-AGNOSTIC)
+            # ==================================================
             if "{{dropdown}}" in line:
                 if data["cloze_text"] is not None:
                     raise ValueError(
@@ -13983,9 +13982,9 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
                 )
                 continue
 
-            # --------------------------------------------------
+            # ==================================================
             # METADATA
-            # --------------------------------------------------
+            # ==================================================
             if current_section == "metadata":
                 if upper.startswith("CLASS:"):
                     data["class_name"] = line.split(":", 1)[1].strip().strip('"')
@@ -14007,9 +14006,9 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
                     data["difficulty"] = line.split(":", 1)[1].strip().strip('"')
                     print(f"✅ difficulty = {data['difficulty']}")
 
-            # --------------------------------------------------
+            # ==================================================
             # OPTIONS
-            # --------------------------------------------------
+            # ==================================================
             elif current_section == "options":
                 if ":" in line:
                     key, value = line.split(":", 1)
@@ -14024,9 +14023,9 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
                             f"⚠️ Ignored invalid option line: {line}"
                         )
 
-            # --------------------------------------------------
+            # ==================================================
             # CORRECT ANSWER
-            # --------------------------------------------------
+            # ==================================================
             elif current_section == "answer":
                 data["correct_answer"] = line
                 print(f"🎯 correct_answer = {data['correct_answer']}")
