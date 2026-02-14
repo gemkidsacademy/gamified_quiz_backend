@@ -18344,15 +18344,22 @@ def validate_cloze_deterministic(q: dict):
             f"Correct answer '{correct}' not in options {list(options.keys())}"
         )
 
-def is_visual_counting_exam(block: list) -> bool:
+def is_visual_counting_exam(block):
     for item in block:
-        if (
-            isinstance(item, dict)
-            and item.get("type") == "text"
-            and "question_type: 6" in item.get("text", "")
-        ):
+        if not isinstance(item, dict):
+            continue
+
+        if item.get("type") != "text":
+            continue
+
+        text = item.get("text") or item.get("content") or ""
+        text = text.strip().lower()
+
+        if text == "question_type: 6":
             return True
+
     return False
+
 def vc_extract_question_text(block):
     collecting = False
     lines = []
