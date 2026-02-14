@@ -18785,6 +18785,37 @@ def vc_extract_options_from_docx(content: bytes) -> list[dict]:
         )
 
     return options
+def vc_resolve_option_images(
+    options: list[dict],
+    db,
+    request_id: str,
+) -> list[dict]:
+    resolved = []
+
+    for opt in options:
+        image_ref = opt["image_ref"]
+
+        record = (
+            db.query(UploadedImage)
+            .filter(UploadedImage.original_name == image_ref)
+            .first()
+        )
+
+        if not record:
+            raise ValueError(
+                f"VC: Image '{image_ref}' not found in uploaded_images"
+            )
+
+        resolved.append({
+            "label": opt["label"],
+            "image_url": record.gcs_url,
+        })
+
+        print(
+            f"[{request_id}] 🖼️ VC: resolved {image_ref} → {record.gcs_url}"
+        )
+
+    return resolved
 
 def process_visual_counting_exam(
     block_idx,
@@ -18809,9 +18840,14 @@ def process_visual_counting_exam(
     # 2. Force DOCX-level extraction
     # --------------------------------------------------
     print(f"[{request_id}] 🔍 VC: extracting OPTIONS from DOCX")
-    parsed["OPTIONS"] = vc_extract_options_from_docx(
-        summary.file_bytes
+    raw_options = vc_extract_options_from_docx(summary.file_bytes)
+
+    parsed["OPTIONS"] = vc_resolve_option_images(
+        raw_options,
+        db=db,
+        request_id=request_id,
     )
+
 
     print(f"[{request_id}] 🔍 VC: extracting CORRECT_ANSWER from DOCX")
     parsed["CORRECT_ANSWER"] = vc_extract_correct_answer_from_docx(
