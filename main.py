@@ -18432,50 +18432,70 @@ def normalize_text(text: str) -> str:
 
 
 def vc_extract_image_options(block):
-    """
-    Extract exactly one image option for each label A–D
-    for Visual Counting (Type 6), regardless of document order.
-    """
-
     options = {}
 
-    for item in block:
+    print("\n================ VC DEBUG START ================")
+    print(f"Total block items: {len(block)}")
+
+    for idx, item in enumerate(block):
         raw = item.get("text") or item.get("content") or ""
         text = normalize_text(raw)
+
+        print(f"[VC RAW {idx}] repr(raw) = {repr(raw)}")
+        print(f"[VC NORM {idx}] text = {repr(text)}")
 
         if not text:
             continue
 
-        # Match lines like:
-        # A: image_8.png
-        # B. image_12.png
         match = re.match(
             r"^([A-D])\s*[:\.]\s*(image_[\w\-.]+)",
             text,
             flags=re.IGNORECASE
         )
-        if not match:
-            continue
 
-        label = match.group(1).upper()
+        if match:
+            label = match.group(1).upper()
+            image_ref = match.group(2)
 
-        # Keep first occurrence only
-        if label not in options:
-            options[label] = {
-                "label": label,
-                "image_ref": match.group(2),
-            }
+            print(
+                f"✅ VC MATCH FOUND → "
+                f"label={label}, image={image_ref}"
+            )
 
-        # 🔒 Hard stop: Visual Counting has exactly 4 options
-        if len(options) == 4:
-            break
+            if label in options:
+                print(
+                    f"⚠️ DUPLICATE LABEL IGNORED → {label}"
+                )
+            else:
+                options[label] = {
+                    "label": label,
+                    "image_ref": image_ref,
+                }
+                print(
+                    f"➕ OPTION STORED → {label}"
+                )
+
+        else:
+            if text.startswith(("A:", "B:", "C:", "D:")):
+                print(
+                    f"❌ LOOKS LIKE OPTION BUT REGEX DID NOT MATCH → {repr(text)}"
+                )
+
+    print("\n📊 VC OPTIONS COLLECTED:")
+    for k, v in options.items():
+        print(f"  {k}: {v['image_ref']}")
+
+    print(
+        f"📊 VC OPTION COUNT = {len(options)} "
+        f"(expected 4)"
+    )
+    print("================ VC DEBUG END ==================\n")
 
     if len(options) != 4:
         raise ValueError(
             f"VC: Expected 4 options, found {len(options)}"
         )
 
-    # Return options in deterministic A–D order
     return [options[k] for k in ["A", "B", "C", "D"]]
 
 def normalize_text(text: str) -> str:
