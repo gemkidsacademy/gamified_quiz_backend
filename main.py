@@ -18728,8 +18728,6 @@ def vc_extract_options_from_docx(content: bytes) -> list[dict]:
 def process_visual_counting_exam(
     block_idx,
     question_block,
-    *,
-    file_bytes: bytes,
     db,
     request_id,
     summary,
