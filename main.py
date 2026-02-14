@@ -13853,6 +13853,7 @@ def extract_cloze_options_from_blocks(block_elements):
         )
 
     return options
+
 def handle_cloze_question(
     q,
     question_block,
@@ -13860,65 +13861,15 @@ def handle_cloze_question(
     db,
     request_id,
     summary,
-    block_idx,
+    block_idx
 ):
     print(
-        f"[{request_id}] 🧩 [CLOZE] START | block={block_idx}"
+        f"[{request_id}] 🧩 [CLOZE] Persisting CLOZE | block={block_idx}"
     )
 
-    # --------------------------------------------------
-    # HARD GUARD: CLOZE options must come from document
-    # --------------------------------------------------
-    if q.get("options_source") != "document":
-        raise ValueError(
-            "CLOZE options must come from document"
-        )
-
-    if not isinstance(q.get("options"), dict):
-        raise ValueError(
-            "CLOZE options must be a dict parsed from document"
-        )
-
-    # --------------------------------------------------
-    # HARD NORMALIZATION (AUTHORITATIVE SHAPE)
-    # No legacy keys, no GPT fallthrough
-    # --------------------------------------------------
-    normalized_q = {
-        "class_name": q.get("class_name"),
-        "year": q.get("year"),
-        "subject": meta.get("subject"),
-        "topic": q.get("topic"),
-        "difficulty": q.get("difficulty"),
-        "answer_type": "CLOZE_DROPDOWN",
-        "cloze_text": q.get("cloze_text"),
-        "options": q.get("options"),
-        "correct_answer": q.get("correct_answer"),
-    }
-
-    print(
-        f"[{request_id}] 🧩 [CLOZE] Normalized keys = "
-        f"{list(normalized_q.keys())}"
-    )
-    print(
-        f"[{request_id}] 🧩 [CLOZE] options = "
-        f"{normalized_q['options']}"
-    )
-    print(
-        f"[{request_id}] 🧩 [CLOZE] correct_answer = "
-        f"{normalized_q['correct_answer']}"
-    )
-
-    # --------------------------------------------------
-    # STRICT VALIDATION (NO AUTO-REPAIR)
-    # --------------------------------------------------
-    validate_cloze_dropdown(normalized_q)
-
-    # --------------------------------------------------
-    # PERSIST (CANONICAL CLOZE TYPE)
-    # --------------------------------------------------
     persist_question(
-        q=normalized_q,
-        question_type=5,  # CLOZE
+        q=q,
+        question_type=5,
         question_block=question_block,
         meta=meta,
         db=db,
@@ -13926,17 +13877,8 @@ def handle_cloze_question(
         summary=summary,
         block_idx=block_idx,
     )
-    print(
-        f"[{request_id}] 🧪 [CLOZE VERIFY] "
-        f"options_source={normalized_q.get('options_source')} | "
-        f"options={normalized_q['options']} | "
-        f"correct={normalized_q['correct_answer']}"
-    )
 
 
-    print(
-        f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
-    )
 ClozeQuestionSchema = {
     "type": "object",
     "properties": {
@@ -13960,147 +13902,94 @@ ClozeQuestionSchema = {
     "additionalProperties": False,
 }
 
-async def parse_with_gpt_cloze(payload: dict, retries: int = 2):
+def parse_cloze_from_document(block_elements: list[dict]) -> dict:
     """
-    Deterministic GPT parser for CLOZE_DROPDOWN questions only.
+    Deterministic CLOZE (type 5) parser.
+    No GPT. Document is the source of truth.
     """
 
-    SYSTEM_PROMPT = """
-You are a deterministic exam-question parser.
+    data = {
+        "class_name": None,
+        "year": None,
+        "subject": None,
+        "topic": None,
+        "difficulty": None,
+        "cloze_text": None,
+        "options": {},
+        "correct_answer": None,
+        "answer_type": "CLOZE_DROPDOWN",
+        "options_source": "document",
+    }
 
-You are parsing ONE CLOZE_DROPDOWN question.
+    current_section = None
 
-=====================================
-INPUT GUARANTEES
-=====================================
-- The input text comes from a Word document.
-- The text MAY contain the following labeled sections:
-  - METADATA:
-  - QUESTION_TEXT:
-  - CLOZE:
-  - OPTIONS:
-  - CORRECT_ANSWER:
-
-=====================================
-CLOZE RULES (CRITICAL)
-=====================================
-- The CLOZE text MUST be taken ONLY from the section that starts with:
-  "CLOZE:"
-- The CLOZE text MUST contain the token {{dropdown}} exactly.
-- You MUST preserve {{dropdown}} verbatim.
-- Do NOT rewrite, rephrase, or normalize the CLOZE text.
-- If the CLOZE text does NOT contain {{dropdown}}, OMIT the question.
-
-FIELD EXTRACTION RULES
-=====================================
-Extract the following fields EXACTLY if present:
-
-- class_name
-- year (integer)
-- subject
-- topic
-- difficulty
-- cloze_text        ← from CLOZE section ONLY
-- correct_answer    ← single option label (e.g. "B")
-
-IMPORTANT:
-- The OPTIONS section is handled by the backend parser.
-- You MUST NOT extract or emit an "options" field.
-
-=====================================
-OUTPUT RULES
-=====================================
-- Set: answer_type = "CLOZE_DROPDOWN"
-- Do NOT emit question_type
-- Do NOT emit partial questions
-- Do NOT emit placeholder values
-- If ANY required field is missing, OMIT the question entirely
-
-=====================================
-FORMAT RULES
-=====================================
-- Return ONLY valid JSON
-- Output MUST match the provided JSON schema
-- Do NOT include explanations, comments, or markdown
-"""
-
-
-    print("🤖 [CLOZE] parse_with_gpt_cloze START")
-
-    blocks = payload.get("blocks", [])
-    print(f"🤖 [CLOZE] Incoming blocks count = {len(blocks)}")
-
-    serialized = serialize_blocks_for_gpt_cloze(blocks)
-
-    print(
-        "🤖 [CLOZE] Serialized payload preview:\n"
-        f"{serialized[:400]}"
-    )
-
-    for attempt in range(retries + 1):
-        print(f"🤖 [CLOZE] GPT attempt {attempt + 1}/{retries + 1}")
-
-        completion = await client_save_questions.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0,
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "QuestionList",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "questions": {
-                                "type": "array",
-                                "items": ClozeQuestionSchema,
-                            }
-                        },
-                        "required": ["questions"],
-                    },
-                },
-            },
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": serialized},
-            ],
-        )
-
-        raw = completion.choices[0].message.content
-        print(
-            "🤖 [CLOZE] Raw GPT response preview:\n"
-            f"{raw[:400]}"
-        )
-
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as e:
-            print(
-                f"❌ [CLOZE] JSON decode failed on attempt {attempt + 1} | "
-                f"error={e}"
-            )
-            if attempt < retries:
-                print("🔁 [CLOZE] Retrying…")
-                continue
-            print("🚫 [CLOZE] Exhausted retries, returning empty list")
-            return []
-
-        questions = parsed.get("questions", [])
-        print(f"🤖 [CLOZE] Parsed questions count = {len(questions)}")
-
-        if questions:
-            print(
-                "🧠 [CLOZE] First question keys = "
-                f"{list(questions[0].keys())}"
-            )
-            print("✅ [CLOZE] parse_with_gpt_cloze SUCCESS")
-            return questions   # ✅ FIX: return LIST
-
-        if attempt < retries:
-            print("⚠️ [CLOZE] Empty questions, retrying…")
+    for el in block_elements:
+        text = el.get("content")
+        if not isinstance(text, str):
             continue
 
-        print("🚫 [CLOZE] Empty questions after all retries")
-        return []
+        line = text.strip()
+
+        # ------------------------------
+        # Section headers
+        # ------------------------------
+        if line == "METADATA:":
+            current_section = "metadata"
+            continue
+        if line == "CLOZE:":
+            current_section = "cloze"
+            continue
+        if line == "OPTIONS:":
+            current_section = "options"
+            continue
+        if line == "CORRECT_ANSWER:":
+            current_section = "answer"
+            continue
+
+        # ------------------------------
+        # Parse metadata
+        # ------------------------------
+        if current_section == "metadata":
+            if line.startswith("CLASS:"):
+                data["class_name"] = line.split(":", 1)[1].strip().strip('"')
+            elif line.startswith("Year:"):
+                data["year"] = int(line.split(":", 1)[1].strip())
+            elif line.startswith("SUBJECT:"):
+                data["subject"] = line.split(":", 1)[1].strip().strip('"')
+            elif line.startswith("TOPIC:"):
+                data["topic"] = line.split(":", 1)[1].strip().strip('"')
+            elif line.startswith("DIFFICULTY:"):
+                data["difficulty"] = line.split(":", 1)[1].strip().strip('"')
+
+        # ------------------------------
+        # Parse cloze text
+        # ------------------------------
+        elif current_section == "cloze":
+             if line:
+                 if data["cloze_text"]:
+                     data["cloze_text"] += " " + line
+                 else:
+                     data["cloze_text"] = line
+
+        # ------------------------------
+        # Parse options
+        # ------------------------------
+        elif current_section == "options":
+            if ":" in line:
+                key, value = line.split(":", 1)
+                key = key.strip()
+                value = value.strip()
+                if len(key) == 1 and key.isupper():
+                    data["options"][key] = value
+
+        # ------------------------------
+        # Parse correct answer
+        # ------------------------------
+        elif current_section == "answer":
+            if line:
+                data["correct_answer"] = line
+
+    return data
 
 
 @app.post("/upload-word-naplan-reading")
@@ -18170,6 +18059,50 @@ ANSWER_TYPE_TO_QUESTION_TYPE = {
     "TEXT_INPUT": 4,
     "CLOZE_DROPDOWN": 5,   # 👈 NEW
 }
+def validate_cloze_deterministic(q: dict):
+    """
+    Strict validation for deterministic CLOZE questions.
+    Raises ValueError with clear messages on failure.
+    """
+
+    # ------------------------------
+    # CLOZE text
+    # ------------------------------
+    cloze_text = q.get("cloze_text")
+    if not cloze_text:
+        raise ValueError("CLOZE missing cloze_text")
+
+    token_count = cloze_text.count("{{dropdown}}")
+    if token_count != 1:
+        raise ValueError(
+            f"CLOZE must contain exactly one {{dropdown}} "
+            f"(found {token_count})"
+        )
+
+    # ------------------------------
+    # Options
+    # ------------------------------
+    options = q.get("options")
+    if not isinstance(options, dict) or not options:
+        raise ValueError("CLOZE missing options")
+
+    for key, value in options.items():
+        if not (len(key) == 1 and key.isupper()):
+            raise ValueError(f"Invalid option key: {key}")
+        if not value or not value.strip():
+            raise ValueError(f"Empty option value for {key}")
+
+    # ------------------------------
+    # Correct answer
+    # ------------------------------
+    correct = q.get("correct_answer")
+    if not correct:
+        raise ValueError("CLOZE missing correct_answer")
+
+    if correct not in options:
+        raise ValueError(
+            f"Correct answer '{correct}' not in options {list(options.keys())}"
+        )
 
  
 async def process_exam_block(
@@ -18202,73 +18135,37 @@ async def process_exam_block(
         )
     
         try:
-            # ----------------------------------------------
-            # Parse CLOZE metadata + cloze_text via GPT
-            # (OPTIONS are NOT handled by GPT)
-            # ----------------------------------------------
-            questions = await parse_with_gpt_cloze(
-                {"blocks": question_block}
-            )
+            q = parse_cloze_from_document(question_block)
+            validate_cloze_deterministic(q)
     
-            if not questions:
-                raise ValueError(
-                    "CLOZE parser returned no questions"
-                )
-    
-            # ----------------------------------------------
-            # Validate shared metadata (class, year, etc.)
-            # ----------------------------------------------
-            meta = validate_common_metadata(
-                questions=questions,
-                block_idx=block_idx,
+            handle_cloze_question(
+                q=q,
+                question_block=question_block,
+                meta=q,
+                db=db,
                 request_id=request_id,
+                summary=summary,
+                block_idx=block_idx,
             )
-            document_options = extract_cloze_options_from_blocks(
-                question_block
-            )
-            
-            if not document_options:
-                raise ValueError(
-                    "No CLOZE options found in document"
-                )
-    
-            # ----------------------------------------------
-            # Process each CLOZE question
-            # ----------------------------------------------
-            for q in questions:
-                q["options"] = document_options
-                q["options_source"] = "document"
-            
-                handle_cloze_question(
-                    q=q,
-                    question_block=question_block,
-                    meta=meta,
-                    db=db,
-                    request_id=request_id,
-                    summary=summary,
-                    block_idx=block_idx,
-                )
 
     
-            summary.block_success(block_idx, questions)
-    
+            summary.block_success(block_idx, [q])
             print(
                 f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
             )
     
         except Exception as e:
             error_msg = str(e)
-    
             print(
                 f"[{request_id}] ❌ BLOCK {block_idx} FAILED (CLOZE) | "
                 f"error={error_msg}"
             )
-    
             summary.block_failure(block_idx, error_msg)
     
-        # 🚨 IMPORTANT: CLOZE must never fall through
         return
 
+    
+        
     # ==================================================
     # 🧠 LEGACY BRANCH (QUESTION TYPES 1–4)
     # ==================================================
