@@ -18507,6 +18507,20 @@ def vc_extract_metadata(block):
         raise ValueError("VC: METADATA section not found")
 
     return metadata
+def vc_extract_correct_answer_from_docx(file_bytes: bytes) -> str:
+    doc = docx.Document(BytesIO(file_bytes))
+
+    for para in doc.paragraphs:
+        text = normalize_text(para.text)
+        if not text:
+            continue
+
+        if text.startswith("CORRECT_ANSWER"):
+            parts = text.split(":", 1)
+            if len(parts) == 2 and parts[1].strip():
+                return parts[1].strip()
+
+    raise ValueError("VC: CORRECT_ANSWER not found in DOCX")
 
 def vc_validate_block(parsed):
     """
@@ -18624,7 +18638,6 @@ def vc_validate_block(parsed):
 def parse_visual_counting_block(block):
     return {
         "QUESTION_TEXT": vc_extract_question_text(block),        
-        "CORRECT_ANSWER": vc_extract_correct_answer(block),
         "METADATA": vc_extract_metadata(block),
     }
 def persist_visual_counting_question(
@@ -18781,15 +18794,28 @@ def process_visual_counting_exam(
     request_id,
     summary,
 ):
-    print(f"[{request_id}] 🖼️ TYPE 6 detected | processing visual counting question")
+    print(
+        f"[{request_id}] 🖼️ TYPE 6 detected | "
+        f"processing visual counting question"
+    )
 
-    # 1. Parse NON-option content only
+    # --------------------------------------------------
+    # 1. Parse NON-option, NON-answer block content only
+    # --------------------------------------------------
     parsed = parse_visual_counting_block(question_block)
 
     # 🚨 DO NOT validate here
 
-    # 2. Force OPTIONS from DOCX
+    # --------------------------------------------------
+    # 2. Force DOCX-level extraction
+    # --------------------------------------------------
+    print(f"[{request_id}] 🔍 VC: extracting OPTIONS from DOCX")
     parsed["OPTIONS"] = vc_extract_options_from_docx(
+        summary.file_bytes
+    )
+
+    print(f"[{request_id}] 🔍 VC: extracting CORRECT_ANSWER from DOCX")
+    parsed["CORRECT_ANSWER"] = vc_extract_correct_answer_from_docx(
         summary.file_bytes
     )
 
@@ -18798,10 +18824,14 @@ def process_visual_counting_exam(
         f"count={len(parsed['OPTIONS'])}"
     )
 
-    # 3. Now validate
+    # --------------------------------------------------
+    # 3. Validate (single gatekeeper)
+    # --------------------------------------------------
     vc_validate_block(parsed)
 
+    # --------------------------------------------------
     # 4. Persist
+    # --------------------------------------------------
     persist_visual_counting_question(
         block=parsed,
         db=db,
