@@ -18872,6 +18872,12 @@ async def process_exam_block(
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
+
+    block_text = "\n".join(question_block)
+
+    # ==================================================
+    # 🖼️ TYPE 6 — VISUAL COUNTING (SEALED)
+    # ==================================================
     if is_visual_counting_exam(question_block):
         print(
             f"[{request_id}] 🖼️ TYPE 6 detected | "
@@ -18885,6 +18891,37 @@ async def process_exam_block(
             summary=summary,
         )
         return  # 🚨 DO NOT FALL THROUGH
+
+    # ==================================================
+    # 🔤 TYPE 7 — WORD_SELECTION (DETERMINISTIC)
+    # ==================================================
+    elif is_word_selection_exam(block_text):
+
+        metadata = ws_extract_metadata(block_text)
+        question_text = ws_extract_question_text(block_text)
+        sentence = ws_extract_sentence(block_text)
+        correct_answer = ws_extract_correct_answer(block_text)
+
+        parsed = {
+            "question_text": question_text,
+            "sentence": sentence,
+            "correct_answer": correct_answer,
+        }
+
+        ws_validate_block(parsed)
+
+        persist_word_selection_question(
+            db=db,
+            metadata=metadata,
+            question_text=question_text,
+            sentence=sentence,
+            correct_answer=correct_answer,
+        )
+
+        summary["saved"] += 1
+        return  # 🚨 DO NOT FALL THROUGH
+
+ 
 
     # --------------------------------------------------
     # Quick structural sanity check
@@ -19255,6 +19292,264 @@ def is_cloze_exam(exam_block: list[dict]) -> bool:
         if isinstance(text, str) and "question_type: 5" in text.lower():
             return True
     return False
+
+import re
+
+
+def ws_validate_block(parsed: dict) -> None:
+    """
+    Validates a parsed Type 7 — WORD_SELECTION block.
+
+    Raises ValueError on any validation failure.
+    Returns None on success.
+    """
+
+    if not isinstance(parsed, dict):
+        raise ValueError("Parsed block must be a dict")
+
+    question_text = parsed.get("question_text")
+    sentence = parsed.get("sentence")
+    correct_answer = parsed.get("correct_answer")
+
+    # Rule 1: QUESTION_TEXT exists
+    if not question_text or not question_text.strip():
+        raise ValueError("WORD_SELECTION validation failed: QUESTION_TEXT is missing or empty")
+
+    # Rule 2: SENTENCE exists
+    if not sentence or not sentence.strip():
+        raise ValueError("WORD_SELECTION validation failed: SENTENCE is missing or empty")
+
+    # Rule 3: CORRECT_ANSWER exists
+    if not correct_answer or not correct_answer.strip():
+        raise ValueError("WORD_SELECTION validation failed: CORRECT_ANSWER is missing or empty")
+
+    # Normalize answer
+    answer = correct_answer.strip()
+
+    # Rule 4: single word only
+    if " " in answer:
+        raise ValueError("WORD_SELECTION validation failed: CORRECT_ANSWER must be a single word")
+
+    # Rule 5: answer must appear in sentence (word-boundary safe)
+    pattern = rf"\b{re.escape(answer)}\b"
+    if not re.search(pattern, sentence, flags=re.IGNORECASE):
+        raise ValueError(
+            "WORD_SELECTION validation failed: "
+            "CORRECT_ANSWER does not appear as a standalone word in SENTENCE"
+        )
+def persist_word_selection_question(
+    *,
+    db,
+    metadata: dict,
+    question_text: str,
+    sentence: str,
+    correct_answer: str,
+):
+    """
+    Persists a validated Type 7 — WORD_SELECTION question.
+
+    Assumes ws_validate_block has already been called.
+    """
+
+    record = QuestionsNumeracyLC(
+        question_type=7,
+        class_name=metadata.get("class_name"),
+        year=metadata.get("year"),
+        subject=metadata.get("subject"),
+        topic=metadata.get("topic"),
+        difficulty=metadata.get("difficulty"),
+        question_text=question_text,
+        question_blocks={
+            "sentence": sentence
+        },
+        options=None,
+        correct_answer={
+            "value": correct_answer
+        },
+    )
+
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    return record
+def is_word_selection_exam(block: str) -> bool:
+    """
+    Detects whether a full exam block represents
+    Question Type 7 — WORD_SELECTION.
+
+    This function is:
+    - Deterministic
+    - Text-only
+    - Side-effect free
+    - Safe to call before any parsing
+    """
+
+    if not block or not isinstance(block, str):
+        return False
+
+    text = block.lower()
+
+    required_markers = [
+        "question_type: 7",
+        'answer_type: "word_selection"',
+        "sentence:",
+        "correct_answer:",
+    ]
+
+    return all(marker in text for marker in required_markers)
+
+def ws_extract_metadata(block: str) -> dict:
+    """
+    Extracts METADATA fields for Type 7 — WORD_SELECTION.
+
+    Returns a dict with keys:
+    - class_name
+    - year
+    - subject
+    - topic
+    - difficulty
+
+    Missing fields are returned as None.
+    """
+
+    metadata = {
+        "class_name": None,
+        "year": None,
+        "subject": None,
+        "topic": None,
+        "difficulty": None,
+    }
+
+    if not block or not isinstance(block, str):
+        return metadata
+
+    # Isolate METADATA section
+    try:
+        meta_section = block.split("METADATA:", 1)[1]
+    except IndexError:
+        return metadata
+
+    # Stop at the next known section boundary
+    stop_markers = [
+        "\nQUESTION_TEXT:",
+        "\nSENTENCE:",
+        "\nANSWER_TYPE:",
+        "\nCORRECT_ANSWER:",
+    ]
+
+    for marker in stop_markers:
+        if marker in meta_section:
+            meta_section = meta_section.split(marker, 1)[0]
+
+    # Line-by-line parse
+    for line in meta_section.splitlines():
+        line = line.strip()
+        if ":" not in line:
+            continue
+
+        key, value = line.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip().strip('"')
+
+        if key == "class":
+            metadata["class_name"] = value
+        elif key == "year":
+            metadata["year"] = value
+        elif key == "subject":
+            metadata["subject"] = value
+        elif key == "topic":
+            metadata["topic"] = value
+        elif key == "difficulty":
+            metadata["difficulty"] = value
+
+    return metadata
+def ws_extract_question_text(block: str) -> str | None:
+    """
+    Extracts QUESTION_TEXT for Type 7 — WORD_SELECTION.
+
+    Returns the question text as a string,
+    or None if the section is missing.
+    """
+
+    if not block or not isinstance(block, str):
+        return None
+
+    if "QUESTION_TEXT:" not in block:
+        return None
+
+    text = block.split("QUESTION_TEXT:", 1)[1]
+
+    stop_markers = [
+        "\nSENTENCE:",
+        "\nANSWER_TYPE:",
+        "\nCORRECT_ANSWER:",
+    ]
+
+    for marker in stop_markers:
+        if marker in text:
+            text = text.split(marker, 1)[0]
+
+    question_text = text.strip()
+    return question_text if question_text else None
+#here123
+def ws_extract_sentence(block: str) -> str | None:
+    """
+    Extracts the SENTENCE for Type 7 — WORD_SELECTION.
+
+    Returns the sentence string,
+    or None if the section is missing or empty.
+    """
+
+    if not block or not isinstance(block, str):
+        return None
+
+    if "SENTENCE:" not in block:
+        return None
+
+    text = block.split("SENTENCE:", 1)[1]
+
+    stop_markers = [
+        "\nANSWER_TYPE:",
+        "\nCORRECT_ANSWER:",
+    ]
+
+    for marker in stop_markers:
+        if marker in text:
+            text = text.split(marker, 1)[0]
+
+    sentence = text.strip()
+    return sentence if sentence else None
+def ws_extract_correct_answer(block: str) -> str | None:
+    """
+    Extracts CORRECT_ANSWER for Type 7 — WORD_SELECTION.
+
+    Returns the correct answer as a string,
+    or None if the section is missing or empty.
+    """
+
+    if not block or not isinstance(block, str):
+        return None
+
+    if "CORRECT_ANSWER:" not in block:
+        return None
+
+    text = block.split("CORRECT_ANSWER:", 1)[1]
+
+    # In case future sections are appended later
+    stop_markers = [
+        "\n===",
+    ]
+
+    for marker in stop_markers:
+        if marker in text:
+            text = text.split(marker, 1)[0]
+
+    answer = text.strip()
+    return answer if answer else None
+
+
+
 
 @app.post("/upload-word-naplan")
 async def upload_word_naplan(
