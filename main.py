@@ -18421,29 +18421,24 @@ def vc_extract_image_options(block):
             continue
 
         # Enter OPTIONS section
-        if text.startswith("OPTIONS:"):
+        if text.startswith("options:"):
             in_options = True
             continue
-
-        # Exit OPTIONS section
-        if in_options and text.startswith("ANSWER_TYPE:"):
-            break
 
         if not in_options:
             continue
 
-        # DEBUG (keep this for now)
-        print(f"🔍 VC OPTION LINE CANDIDATE: {repr(text)}")
-
-        match = re.match(r"^([A-D])\s*:\s*(.+)$", text)
+        # Match A–D options only
+        match = re.match(r"^([A-D])\s*[:\.]\s*(.+)$", text)
         if match:
             options.append({
                 "label": match.group(1),
                 "image_ref": match.group(2),
             })
 
-    if not options:
-        raise ValueError("VC: No options detected")
+            # 🔒 HARD STOP: Visual Counting has exactly 4 options
+            if len(options) == 4:
+                break
 
     if len(options) != 4:
         raise ValueError(
