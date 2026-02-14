@@ -17674,6 +17674,36 @@ def parse_docx_to_ordered_blocks(doc):
     flush_buffer()
 
     return blocks
+def parse_docx_to_flat_text_blocks(doc):
+    blocks = []
+
+    for element in doc.element.body:
+        if not element.tag.endswith("}p"):
+            continue
+
+        texts = []
+        image_names = []
+
+        for run in element.iter():
+            if run.tag.endswith("}t") and run.text:
+                texts.append(run.text)
+
+            if run.tag.endswith("}blip"):
+                r_id = run.attrib.get(qn("r:embed"))
+                if r_id:
+                    image_part = doc.part.related_parts[r_id]
+                    image_name = image_part.partname.split("/")[-1]
+                    image_names.append(image_name)
+
+        if texts:
+            text = "".join(texts).strip()
+            if text:
+                blocks.append({"type": "text", "content": text})
+
+        for img in image_names:
+            blocks.append({"type": "image", "name": img})
+
+    return blocks
 
 def filter_display_blocks(blocks: list[dict]) -> list[dict]:
     """
@@ -18182,16 +18212,22 @@ async def read_and_validate_file(file, request_id) -> bytes:
     print(f"[{request_id}] 📦 File read ({len(content)} bytes)")
     return content
 
+def is_cloze_exam_document(doc):
+    for p in doc.paragraphs:
+        if "question_type: 5" in p.text.lower():
+            return True
+    return False
 
 def parse_docx_blocks(content: bytes, request_id):
-    try:
-        doc = docx.Document(BytesIO(content))
+    doc = docx.Document(BytesIO(content))
+
+    # 👇 Detect CLOZE exam early
+    if is_cloze_exam_document(doc):
+        blocks = parse_docx_to_flat_text_blocks(doc)
+    else:
         blocks = parse_docx_to_ordered_blocks(doc)
-        print(f"[{request_id}] 🧩 Parsed ordered blocks: {len(blocks)}")
-        return blocks
-    except Exception as e:
-        print(f"[{request_id}] ❌ DOCX PARSE FAILED: {e}")
-        raise HTTPException(400, "Failed to read Word file")
+
+    return blocks
 
 async def parse_questions_with_gpt_naplan_numeracy_lc(
     question_block: list,
