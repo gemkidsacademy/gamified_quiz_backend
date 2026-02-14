@@ -18522,6 +18522,12 @@ def resolve_images(q: dict, db: Session, request_id: str):
         print(
             f"[{request_id}] ✅ Image resolved → {record.gcs_url}"
         )
+def is_cloze_exam(exam_block: list[dict]) -> bool:
+    for el in exam_block:
+        text = el.get("content", "")
+        if isinstance(text, str) and "question_type: 5" in text.lower():
+            return True
+    return False
 
 @app.post("/upload-word-naplan")
 async def upload_word_naplan(
@@ -18609,21 +18615,37 @@ async def upload_word_naplan(
         print("\n" + "-" * 70)
         print(f"[{request_id}] 🔄 Processing EXAM BLOCK {idx}")
         print(f"[{request_id}] 📦 Block element count = {len(block)}")
-
-        # Extra safety
+    
         if not isinstance(block, list):
             print(
                 f"[{request_id}] ❌ Block {idx} is not a list | "
                 f"type={type(block)}"
             )
             continue
-
+    
         try:
-            print(
-                f"[{request_id}] ▶️ Calling process_exam_block "
-                f"(block_idx={idx})"
-            )
-
+            # --------------------------------------------------
+            # 🧩 CLOZE exam → full exam block
+            # --------------------------------------------------
+            if is_cloze_exam(block):
+                print(
+                    f"[{request_id}] 🧩 CLOZE exam detected | "
+                    f"passing full exam block"
+                )
+    
+                await process_exam_block(
+                    block_idx=idx,
+                    question_block=block,
+                    db=db,
+                    request_id=request_id,
+                    summary=summary
+                )
+    
+                continue  # 🚨 do NOT fall through
+    
+            # --------------------------------------------------
+            # 🧠 Legacy exams → unchanged behavior
+            # --------------------------------------------------
             await process_exam_block(
                 block_idx=idx,
                 question_block=block,
@@ -18631,19 +18653,14 @@ async def upload_word_naplan(
                 request_id=request_id,
                 summary=summary
             )
-
-
-            print(
-                f"[{request_id}] ✅ process_exam_block COMPLETE "
-                f"(block_idx={idx})"
-            )
-
+    
         except Exception as e:
             print(
                 f"[{request_id}] ❌ EXCEPTION in block {idx} | "
                 f"error={e}"
             )
             summary.block_failure(idx, str(e))
+
 
     # --------------------------------------------------
     # STEP 7: Final logging
