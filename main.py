@@ -19361,7 +19361,7 @@ def persist_word_selection_question(
     Assumes ws_validate_block has already been called.
     """
 
-    record = QuestionsNumeracyLC(
+    record = QuestionNumeracyLC(
         question_type=7,
         class_name=metadata.get("class_name"),
         year=metadata.get("year"),
