@@ -13775,15 +13775,33 @@ def handle_cloze_question(
     db,
     request_id,
     summary,
-    block_idx
+    block_idx,
 ):
-    print(f"[{request_id}] 🧩 [CLOZE] handle_cloze_question START | block={block_idx}")
+    print(
+        f"[{request_id}] 🧩 [CLOZE] START | block={block_idx}"
+    )
 
-    # --- HARD NORMALIZATION (NO LEGACY FALLTHROUGH) ---
-    q = {
+    # --------------------------------------------------
+    # HARD GUARD: CLOZE options must come from document
+    # --------------------------------------------------
+    if q.get("options_source") != "document":
+        raise ValueError(
+            "CLOZE options must come from document"
+        )
+
+    if not isinstance(q.get("options"), dict):
+        raise ValueError(
+            "CLOZE options must be a dict parsed from document"
+        )
+
+    # --------------------------------------------------
+    # HARD NORMALIZATION (AUTHORITATIVE SHAPE)
+    # No legacy keys, no GPT fallthrough
+    # --------------------------------------------------
+    normalized_q = {
         "class_name": q.get("class_name"),
         "year": q.get("year"),
-        "subject": meta["subject"],
+        "subject": meta.get("subject"),
         "topic": q.get("topic"),
         "difficulty": q.get("difficulty"),
         "answer_type": "CLOZE_DROPDOWN",
@@ -13792,26 +13810,48 @@ def handle_cloze_question(
         "correct_answer": q.get("correct_answer"),
     }
 
-    print(f"[{request_id}] 🧩 [CLOZE] Normalized payload keys = {list(q.keys())}")
-    print(f"[{request_id}] 🧩 [CLOZE] options keys = {list(q['options'].keys()) if isinstance(q['options'], dict) else q['options']}")
-    print(f"[{request_id}] 🧩 [CLOZE] correct_answer = {q['correct_answer']}")
+    print(
+        f"[{request_id}] 🧩 [CLOZE] Normalized keys = "
+        f"{list(normalized_q.keys())}"
+    )
+    print(
+        f"[{request_id}] 🧩 [CLOZE] options = "
+        f"{normalized_q['options']}"
+    )
+    print(
+        f"[{request_id}] 🧩 [CLOZE] correct_answer = "
+        f"{normalized_q['correct_answer']}"
+    )
 
-    # --- STRICT VALIDATION ---
-    validate_cloze_dropdown(q)
+    # --------------------------------------------------
+    # STRICT VALIDATION (NO AUTO-REPAIR)
+    # --------------------------------------------------
+    validate_cloze_dropdown(normalized_q)
 
-    # --- SAVE ---
+    # --------------------------------------------------
+    # PERSIST (CANONICAL CLOZE TYPE)
+    # --------------------------------------------------
     persist_question(
-        q=q,
-        question_type=5,
+        q=normalized_q,
+        question_type=5,  # CLOZE
         question_block=question_block,
         meta=meta,
         db=db,
         request_id=request_id,
         summary=summary,
-        block_idx=block_idx
+        block_idx=block_idx,
+    )
+    print(
+        f"[{request_id}] 🧪 [CLOZE VERIFY] "
+        f"options_source={normalized_q.get('options_source')} | "
+        f"options={normalized_q['options']} | "
+        f"correct={normalized_q['correct_answer']}"
     )
 
-    print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)")
+
+    print(
+        f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
+    )
 
 async def parse_with_gpt_cloze(payload: dict, retries: int = 2):
     """
