@@ -18942,9 +18942,48 @@ async def process_exam_block(
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
+    validate_single_question_type(question_block)
 
     # 🔒 Determine question_type ONCE
-    detected_type = detect_question_type(block_text or question_block)
+    # ==================================================
+    # 🧩 CLOZE BRANCH (QUESTION TYPE 5 ONLY)
+    # ==================================================
+    if is_cloze_question(question_block):
+        print(
+            f"[{request_id}] 🧩 CLOZE detected | block={block_idx}"
+        )
+    
+        try:
+            q = extract_cloze_from_exam_block(question_block)
+            validate_cloze_deterministic(q)
+    
+            handle_cloze_question(
+                q=q,
+                question_block=question_block,
+                meta=q,
+                db=db,
+                request_id=request_id,
+                summary=summary,
+                block_idx=block_idx,
+            )
+
+    
+            summary.block_success(block_idx, [q])
+            print(
+                f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
+            )
+            return
+    
+        except Exception as e:
+            error_msg = str(e)
+            print(
+                f"[{request_id}] ❌ BLOCK {block_idx} FAILED (CLOZE) | "
+                f"error={error_msg}"
+            )
+            summary.block_failure(block_idx, error_msg)
+    
+        return
+
 
     # ==================================================
     # 🖼️ TYPE 6 — VISUAL COUNTING (SEALED)
@@ -18966,7 +19005,7 @@ async def process_exam_block(
     # ==================================================
     # 🔤 TYPE 7 — WORD_SELECTION (DETERMINISTIC)
     # ==================================================
-    elif is_word_selection_exam(
+    if is_word_selection_exam(
     "\n".join(
         item["content"]
         for item in question_block
@@ -19015,45 +19054,7 @@ async def process_exam_block(
         )
         return
 
-    # ==================================================
-    # 🧩 CLOZE BRANCH (QUESTION TYPE 5 ONLY)
-    # ==================================================
-    if is_cloze_question(question_block):
-        print(
-            f"[{request_id}] 🧩 CLOZE detected | block={block_idx}"
-        )
     
-        try:
-            q = extract_cloze_from_exam_block(question_block)
-            validate_cloze_deterministic(q)
-    
-            handle_cloze_question(
-                q=q,
-                question_block=question_block,
-                meta=q,
-                db=db,
-                request_id=request_id,
-                summary=summary,
-                block_idx=block_idx,
-            )
-
-    
-            summary.block_success(block_idx, [q])
-            print(
-                f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
-            )
-            return
-    
-        except Exception as e:
-            error_msg = str(e)
-            print(
-                f"[{request_id}] ❌ BLOCK {block_idx} FAILED (CLOZE) | "
-                f"error={error_msg}"
-            )
-            summary.block_failure(block_idx, error_msg)
-    
-        return
-
     
         
     # ==================================================
