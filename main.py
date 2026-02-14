@@ -13905,11 +13905,15 @@ ClozeQuestionSchema = {
 def parse_cloze_from_document(block_elements: list[dict]) -> dict:
     """
     Deterministic CLOZE (type 5) parser.
-    Parses CLOZE questions directly from the Word document structure.
+
+    Document rules:
+    - Exactly ONE line must contain {{dropdown}} → this is cloze_text
+    - OPTIONS and CORRECT_ANSWER are mandatory
+    - No GPT, no heuristics beyond the dropdown token
     """
 
-    print("🔍 [CLOZE PARSER] START parse_cloze_from_document")
-    print(f"🔍 [CLOZE PARSER] Incoming block elements = {len(block_elements)}")
+    print("🔍 [CLOZE PARSER] START")
+    print(f"🔍 [CLOZE PARSER] Block elements = {len(block_elements)}")
 
     data = {
         "class_name": None,
@@ -13932,10 +13936,7 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
         if not isinstance(text, str):
             continue
 
-        print(
-            f"🔎 [CLOZE PARSER] Block {idx} raw content:\n"
-            f"{text}"
-        )
+        print(f"\n🔎 [CLOZE PARSER] Block {idx} raw content:\n{text}")
 
         lines = [l.strip() for l in text.splitlines() if l.strip()]
 
@@ -13948,68 +13949,66 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
             )
 
             # --------------------------------------------------
-            # Section headers
+            # SECTION HEADERS
             # --------------------------------------------------
             if upper == "METADATA:":
                 current_section = "metadata"
-                print("📌 [CLOZE PARSER] Entered METADATA section")
-                continue
-
-            if upper == "CLOZE:":
-                current_section = "cloze"
-                print("📌 [CLOZE PARSER] Entered CLOZE section")
+                print("📌 [CLOZE PARSER] Entered METADATA")
                 continue
 
             if upper == "OPTIONS:":
                 current_section = "options"
-                print("📌 [CLOZE PARSER] Entered OPTIONS section")
+                print("📌 [CLOZE PARSER] Entered OPTIONS")
                 continue
 
             if upper == "CORRECT_ANSWER:":
                 current_section = "answer"
-                print("📌 [CLOZE PARSER] Entered CORRECT_ANSWER section")
+                print("📌 [CLOZE PARSER] Entered CORRECT_ANSWER")
                 continue
 
             # --------------------------------------------------
-            # Parse metadata
+            # CLOZE TEXT (authoritative rule)
+            # --------------------------------------------------
+            if "{{dropdown}}" in line:
+                if data["cloze_text"] is not None:
+                    raise ValueError(
+                        "Multiple CLOZE lines detected "
+                        "(multiple {{dropdown}} found)"
+                    )
+
+                data["cloze_text"] = line
+                print(
+                    f"🧩 [CLOZE PARSER] Detected cloze_text = "
+                    f"{data['cloze_text']}"
+                )
+                continue
+
+            # --------------------------------------------------
+            # METADATA
             # --------------------------------------------------
             if current_section == "metadata":
                 if upper.startswith("CLASS:"):
                     data["class_name"] = line.split(":", 1)[1].strip().strip('"')
-                    print(f"✅ [CLOZE PARSER] class_name = {data['class_name']}")
+                    print(f"✅ class_name = {data['class_name']}")
 
                 elif upper.startswith("YEAR:"):
                     data["year"] = int(line.split(":", 1)[1].strip())
-                    print(f"✅ [CLOZE PARSER] year = {data['year']}")
+                    print(f"✅ year = {data['year']}")
 
                 elif upper.startswith("SUBJECT:"):
                     data["subject"] = line.split(":", 1)[1].strip().strip('"')
-                    print(f"✅ [CLOZE PARSER] subject = {data['subject']}")
+                    print(f"✅ subject = {data['subject']}")
 
                 elif upper.startswith("TOPIC:"):
                     data["topic"] = line.split(":", 1)[1].strip().strip('"')
-                    print(f"✅ [CLOZE PARSER] topic = {data['topic']}")
+                    print(f"✅ topic = {data['topic']}")
 
                 elif upper.startswith("DIFFICULTY:"):
                     data["difficulty"] = line.split(":", 1)[1].strip().strip('"')
-                    print(f"✅ [CLOZE PARSER] difficulty = {data['difficulty']}")
+                    print(f"✅ difficulty = {data['difficulty']}")
 
             # --------------------------------------------------
-            # Parse cloze text
-            # --------------------------------------------------
-            elif current_section == "cloze":
-                if data["cloze_text"]:
-                    data["cloze_text"] += " " + line
-                else:
-                    data["cloze_text"] = line
-
-                print(
-                    f"🧩 [CLOZE PARSER] cloze_text so far = "
-                    f"{data['cloze_text']}"
-                )
-
-            # --------------------------------------------------
-            # Parse options
+            # OPTIONS
             # --------------------------------------------------
             elif current_section == "options":
                 if ":" in line:
@@ -14019,30 +14018,24 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
 
                     if len(key) == 1 and key.isupper():
                         data["options"][key] = value
-                        print(
-                            f"🅾️ [CLOZE PARSER] Option {key} = {value}"
-                        )
+                        print(f"🅾️ option {key} = {value}")
                     else:
                         print(
-                            f"⚠️ [CLOZE PARSER] Ignored invalid option line: "
-                            f"{line}"
+                            f"⚠️ Ignored invalid option line: {line}"
                         )
 
             # --------------------------------------------------
-            # Parse correct answer
+            # CORRECT ANSWER
             # --------------------------------------------------
             elif current_section == "answer":
                 data["correct_answer"] = line
-                print(
-                    f"🎯 [CLOZE PARSER] correct_answer = "
-                    f"{data['correct_answer']}"
-                )
+                print(f"🎯 correct_answer = {data['correct_answer']}")
 
-    print("📦 [CLOZE PARSER] FINAL PARSED DATA:")
+    print("\n📦 [CLOZE PARSER] FINAL PARSED DATA")
     for k, v in data.items():
-        print(f"    {k}: {v}")
+        print(f"  {k}: {v}")
 
-    print("🔍 [CLOZE PARSER] END parse_cloze_from_document")
+    print("🔍 [CLOZE PARSER] END")
     return data
 
 
