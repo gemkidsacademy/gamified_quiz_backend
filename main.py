@@ -13901,33 +13901,40 @@ ClozeQuestionSchema = {
     ],
     "additionalProperties": False,
 }
+import re
+
 def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
     """
     Deterministic extractor for CLOZE (question_type = 5).
 
-    Assumptions (guaranteed by design):
+    Guarantees:
     - Exactly one CLOZE per exam block
-    - Exactly one {{dropdown}} exists
-    - OPTIONS are lines like 'A: text'
-    - CORRECT_ANSWER follows 'CORRECT_ANSWER:'
+    - Exactly one {{dropdown}}
+    - OPTIONS are A:, B:, C: (Word-whitespace tolerant)
+    - CORRECT_ANSWER follows CORRECT_ANSWER:
+    - Order-independent
     """
 
-    lines = []
+    print("🔍 [CLOZE] START extract_cloze_from_exam_block")
 
-    # ----------------------------------
-    # Flatten exam block into text lines
-    # ----------------------------------
+    # --------------------------------------------------
+    # 1. Flatten exam block into clean text lines
+    # --------------------------------------------------
+    lines: list[str] = []
+
     for el in block_elements:
         text = el.get("content")
         if isinstance(text, str):
-            for line in text.splitlines():
-                line = line.strip()
+            for raw_line in text.splitlines():
+                line = raw_line.strip()
                 if line:
                     lines.append(line)
 
-    # ----------------------------------
-    # CLOZE text (must be exactly one)
-    # ----------------------------------
+    print(f"🔍 [CLOZE] Total flattened lines = {len(lines)}")
+
+    # --------------------------------------------------
+    # 2. Extract CLOZE text (exactly one {{dropdown}})
+    # --------------------------------------------------
     cloze_lines = [l for l in lines if "{{dropdown}}" in l]
 
     if len(cloze_lines) != 1:
@@ -13937,34 +13944,35 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
         )
 
     cloze_text = cloze_lines[0]
+    print(f"🧩 [CLOZE] cloze_text = {cloze_text}")
 
-    # ----------------------------------
-    # OPTIONS (A:, B:, C:, ...)
-    # ----------------------------------
-    options = {}
+    # --------------------------------------------------
+    # 3. Extract OPTIONS (Word-proof)
+    # --------------------------------------------------
+    option_pattern = re.compile(r"^([A-Z])\s*:\s*(.+)$")
+    options: dict[str, str] = {}
 
     for line in lines:
-        if ":" in line:
-            key, value = line.split(":", 1)
-            key = key.strip()
-            value = value.strip()
-
-            if len(key) == 1 and key.isupper():
-                options[key] = value
+        match = option_pattern.match(line)
+        if match:
+            key = match.group(1)
+            value = match.group(2).strip()
+            options[key] = value
+            print(f"🅾️ [CLOZE] option {key} = {value}")
 
     if not options:
         raise ValueError("CLOZE missing options")
 
-    # ----------------------------------
-    # CORRECT ANSWER
-    # ----------------------------------
+    # --------------------------------------------------
+    # 4. Extract CORRECT_ANSWER
+    # --------------------------------------------------
     correct_answer = None
 
-    for i, line in enumerate(lines):
+    for idx, line in enumerate(lines):
         if line.upper() == "CORRECT_ANSWER:":
-            if i + 1 >= len(lines):
+            if idx + 1 >= len(lines):
                 raise ValueError("CORRECT_ANSWER value missing")
-            correct_answer = lines[i + 1]
+            correct_answer = lines[idx + 1].strip()
             break
 
     if not correct_answer:
@@ -13975,43 +13983,62 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
             f"Correct answer '{correct_answer}' not in options {list(options.keys())}"
         )
 
-    # ----------------------------------
-    # METADATA (simple, order-agnostic)
-    # ----------------------------------
-    meta = {}
+    print(f"🎯 [CLOZE] correct_answer = {correct_answer}")
+
+    # --------------------------------------------------
+    # 5. Extract METADATA (order-agnostic)
+    # --------------------------------------------------
+    meta = {
+        "class_name": None,
+        "year": None,
+        "subject": None,
+        "topic": None,
+        "difficulty": None,
+    }
 
     for line in lines:
-        if ":" in line:
-            key, value = line.split(":", 1)
-            key = key.strip().lower()
-            value = value.strip().strip('"')
+        if ":" not in line:
+            continue
 
-            if key in {"class", "class_name"}:
-                meta["class_name"] = value
-            elif key == "year":
-                meta["year"] = int(value)
-            elif key == "subject":
-                meta["subject"] = value
-            elif key == "topic":
-                meta["topic"] = value
-            elif key == "difficulty":
-                meta["difficulty"] = value
+        key, value = line.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip().strip('"')
 
-    # ----------------------------------
-    # Final payload
-    # ----------------------------------
-    return {
-        "class_name": meta.get("class_name"),
-        "year": meta.get("year"),
-        "subject": meta.get("subject"),
-        "topic": meta.get("topic"),
-        "difficulty": meta.get("difficulty"),
+        if key in {"class", "class_name"}:
+            meta["class_name"] = value
+        elif key == "year":
+            meta["year"] = int(value)
+        elif key == "subject":
+            meta["subject"] = value
+        elif key == "topic":
+            meta["topic"] = value
+        elif key == "difficulty":
+            meta["difficulty"] = value
+
+    print("📦 [CLOZE] metadata =", meta)
+
+    # --------------------------------------------------
+    # 6. Final payload (backend-owned fields)
+    # --------------------------------------------------
+    result = {
+        "class_name": meta["class_name"],
+        "year": meta["year"],
+        "subject": meta["subject"],
+        "topic": meta["topic"],
+        "difficulty": meta["difficulty"],
         "cloze_text": cloze_text,
         "options": options,
         "correct_answer": correct_answer,
         "answer_type": "CLOZE_DROPDOWN",
         "options_source": "document",
     }
+
+    print("✅ [CLOZE] FINAL EXTRACTED QUESTION")
+    for k, v in result.items():
+        print(f"    {k}: {v}")
+
+    print("🔍 [CLOZE] END extract_cloze_from_exam_block")
+    return result
 
 def parse_cloze_from_document(block_elements: list[dict]) -> dict:
     """
