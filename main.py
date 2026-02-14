@@ -17743,10 +17743,10 @@ async def process_exam_block(
                 # Legacy fallback (types 1–4)
                 question_type = q.get("question_type")
             if not question_type:
-            raise ValueError(
-                f"Unable to determine question_type "
-                f"(answer_type={answer_type}) in block {block_idx}"
-            )
+                raise ValueError(
+                    f"Unable to determine question_type "
+                    f"(answer_type={answer_type}) in block {block_idx}"
+                )
             if question_type == 5 and not answer_type:
                 raise ValueError("CLOZE_DROPDOWN requires answer_type")
 
