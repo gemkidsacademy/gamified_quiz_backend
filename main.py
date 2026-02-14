@@ -18743,6 +18743,10 @@ def process_visual_counting_exam(
     # 1. Parse block-level structure (text + metadata)
     # --------------------------------------------------
     parsed = parse_visual_counting_block(question_block)
+    parsed["OPTIONS"] = vc_extract_options_from_docx(
+        summary.file_bytes
+    )
+
 
     print(
         f"[{request_id}] 🔍 VC: block parsed | "
@@ -19251,7 +19255,8 @@ async def upload_word_naplan(
     print(f"[{request_id}] ▶️ STEP 5: Initialise UploadSummary")
 
     summary = UploadSummary()
-
+    summary.file_bytes = content
+    
     print(f"[{request_id}] ✅ UploadSummary initialised")
 
     # --------------------------------------------------
