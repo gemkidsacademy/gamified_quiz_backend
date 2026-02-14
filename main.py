@@ -3582,6 +3582,8 @@ def get_naplan_question_bank(
     ]
 
 
+
+
 @app.get("/api/exams/review-reading")
 def review_reading_exam(
     session_id: int = Query(..., description="Reading exam session ID"),
@@ -3627,11 +3629,26 @@ def review_reading_exam(
         print("❌ Exam content missing")
         raise HTTPException(status_code=500, detail="Exam content missing")
 
-    sections = exam.exam_json.get("sections", [])
+    # --------------------------------------------------
+    # 3️⃣ Normalize exam_json (CRITICAL FIX)
+    # --------------------------------------------------
+    exam_json = exam.exam_json
+
+    if isinstance(exam_json, str):
+        try:
+            exam_json = json.loads(exam_json)
+        except json.JSONDecodeError as e:
+            print("❌ exam_json is invalid JSON:", e)
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid exam JSON structure"
+            )
+
+    sections = exam_json.get("sections", [])
     print(f"📘 Sections loaded: {len(sections)}")
 
     # --------------------------------------------------
-    # 3️⃣ Load student answers for this session
+    # 4️⃣ Load student answers for this session
     # --------------------------------------------------
     reports = (
         db.query(StudentExamReportReading)
@@ -3640,17 +3657,15 @@ def review_reading_exam(
     )
 
     print(f"📝 Answer rows found: {len(reports)}")
-
     report_map = {r.question_id: r for r in reports}
 
     # --------------------------------------------------
-    # 4️⃣ Build review payload
+    # 5️⃣ Build review payload
     # --------------------------------------------------
     review_questions = []
 
     for section_idx, section in enumerate(sections):
         topic = section.get("topic", "Other")
-
         passage_style = section.get("passage_style", "informational")
         reading_material = section.get("reading_material")
 
@@ -3660,18 +3675,15 @@ def review_reading_exam(
         for q in questions:
             qid = q.get("question_id")
             r = report_map.get(qid)
+
             # Resolve answer options correctly
-            # ✅ FIX A: resolve answer options correctly for ALL question types
             options_scope = section.get("options_scope", "per_question")
-            
             if options_scope == "shared":
                 answer_options = section.get("answer_options", {})
             else:
                 answer_options = q.get("answer_options", {})
-            
-            # 🔒 Safety: never send None
-            answer_options = answer_options or {}
 
+            answer_options = answer_options or {}
 
             review_questions.append({
                 "question_id": qid,
@@ -3687,7 +3699,7 @@ def review_reading_exam(
             })
 
     # --------------------------------------------------
-    # 5️⃣ Final payload logging (CRITICAL)
+    # 6️⃣ Final payload logging
     # --------------------------------------------------
     response_payload = {
         "session_id": session.id,
@@ -3717,7 +3729,6 @@ def review_reading_exam(
     print("================ END REVIEW READING EXAM ================\n")
 
     return response_payload
-
 
 @app.get(
     "/api/student/exam-review/mathematical-reasoning",
