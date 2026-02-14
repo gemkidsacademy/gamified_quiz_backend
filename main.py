@@ -13811,33 +13811,60 @@ async def parse_with_gpt_cloze(payload: dict, retries: int = 2):
     SYSTEM_PROMPT = """
 You are a deterministic exam-question parser.
 
-You are parsing a CLOZE_DROPDOWN question.
+You are parsing ONE CLOZE_DROPDOWN question.
 
-INPUT RULES:
-- You will receive plain text extracted from a single CLOZE question.
-- The text will explicitly contain:
+=====================================
+INPUT GUARANTEES
+=====================================
+- The input text comes from a Word document.
+- The text MAY contain the following labeled sections:
+  - METADATA:
+  - QUESTION_TEXT:
   - CLOZE:
   - OPTIONS:
   - CORRECT_ANSWER:
 
-EXTRACTION RULES:
-Extract the following fields:
+=====================================
+CLOZE RULES (CRITICAL)
+=====================================
+- The CLOZE text MUST be taken ONLY from the section that starts with:
+  "CLOZE:"
+- The CLOZE text MUST contain the token {{dropdown}} exactly.
+- You MUST preserve {{dropdown}} verbatim.
+- Do NOT rewrite, rephrase, or normalize the CLOZE text.
+- If the CLOZE text does NOT contain {{dropdown}}, OMIT the question.
+
+=====================================
+FIELD EXTRACTION RULES
+=====================================
+Extract the following fields EXACTLY if present:
 
 - class_name
 - year (integer)
 - subject
 - topic
 - difficulty
-- cloze_text (must contain {{dropdown}})
-- options (A–Z)
-- correct_answer (single option label)
+- cloze_text        ← from CLOZE section ONLY
+- options           ← from OPTIONS section ONLY
+- correct_answer    ← single option label (e.g. "B")
 
-OUTPUT RULES:
-- Set answer_type = "CLOZE_DROPDOWN"
+=====================================
+OUTPUT RULES
+=====================================
+- Set: answer_type = "CLOZE_DROPDOWN"
 - Do NOT emit question_type
+- Do NOT emit partial questions
+- Do NOT emit placeholder values
+- If ANY required field is missing, OMIT the question entirely
+
+=====================================
+FORMAT RULES
+=====================================
 - Return ONLY valid JSON
-- Do NOT include commentary
+- Output MUST match the provided JSON schema
+- Do NOT include explanations, comments, or markdown
 """
+
 
     print("🤖 [CLOZE] parse_with_gpt_cloze START")
 
@@ -18000,14 +18027,20 @@ async def process_exam_block(
     # Quick structural sanity check
     # --------------------------------------------------
     if not looks_like_question(question_block):
-        print(f"[{request_id}] ⚠️ Block {block_idx} skipped (not a question)")
+        print(
+            f"[{request_id}] ⚠️ Block {block_idx} skipped "
+            f"(not a question)"
+        )
         return
 
     # ==================================================
-    # 🔀 CLOZE BRANCH (QUESTION TYPE 5)
+    # 🔀 CLOZE BRANCH (QUESTION TYPE 5 ONLY)
     # ==================================================
     if is_cloze_question(question_block):
-        print(f"[{request_id}] 🧩 Detected CLOZE question in block {block_idx}")
+        print(
+            f"[{request_id}] 🧩 Detected CLOZE question "
+            f"in block {block_idx}"
+        )
 
         try:
             questions = await parse_with_gpt_cloze(
@@ -18015,7 +18048,9 @@ async def process_exam_block(
             )
 
             if not questions:
-                raise ValueError("CLOZE parser returned zero questions")
+                raise ValueError(
+                    "CLOZE parser returned zero questions"
+                )
 
             meta = validate_common_metadata(
                 questions=questions,
@@ -18035,8 +18070,9 @@ async def process_exam_block(
                 )
 
             summary.block_success(block_idx, questions)
-            print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)")
-            return  # 🚨 DO NOT FALL THROUGH
+            print(
+                f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
+            )
 
         except Exception as e:
             error_msg = str(e)
@@ -18045,17 +18081,27 @@ async def process_exam_block(
                 f"error={error_msg}"
             )
             summary.block_failure(block_idx, error_msg)
-            return
+
+        # 🚨 IMPORTANT: do NOT fall through
+        return
 
     # ==================================================
-    # 🟢 LEGACY PIPELINE (QUESTION TYPES 1–4)
+    # 🧠 LEGACY BRANCH (QUESTION TYPES 1–4)
     # ==================================================
     try:
-        print(f"[{request_id}] 🤖 Calling GPT parser for block {block_idx}")
+        print(
+            f"[{request_id}] 🤖 Calling legacy GPT parser "
+            f"for block {block_idx}"
+        )
 
         questions = await parse_questions_with_gpt_naplan_numeracy_lc(
             question_block=question_block,
             request_id=request_id
+        )
+
+        print(
+            f"[{request_id}] 🤖 GPT returned "
+            f"{len(questions)} question(s)"
         )
 
         if not questions:
@@ -18073,35 +18119,16 @@ async def process_exam_block(
         )
 
         for i, q in enumerate(questions, start=1):
-            answer_type = q.get("answer_type")
-
-            # Prefer answer_type if present
-            if answer_type:
-                question_type = ANSWER_TYPE_TO_QUESTION_TYPE.get(answer_type)
-            else:
-                question_type = q.get("question_type")
+            question_type = q.get("question_type")
 
             if not question_type:
                 raise ValueError(
-                    f"Unable to determine question_type in block {block_idx}"
+                    "Legacy question missing question_type"
                 )
 
-            # Hard guard: CLOZE must never reach legacy path
-            if question_type == 5:
-                raise ValueError(
-                    "CLOZE question routed to legacy pipeline"
-                )
             print(
-                f"[{request_id}] 🔎 DEBUG q.correct_answer = "
-                f"{q.get('correct_answer')} "
-                f"(type={type(q.get('correct_answer'))})"
-            )
-
-            validate_question_by_type(question_type, q)
-
-            print(
-                f"[{request_id}] ➕ Persisting question {i}/"
-                f"{len(questions)} (type={question_type})"
+                f"[{request_id}] ➕ Persisting question "
+                f"{i}/{len(questions)} (type={question_type})"
             )
 
             persist_question(
@@ -18116,7 +18143,9 @@ async def process_exam_block(
             )
 
         summary.block_success(block_idx, questions)
-        print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS")
+        print(
+            f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS"
+        )
 
     except Exception as e:
         error_msg = str(e)
