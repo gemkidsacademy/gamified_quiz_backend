@@ -18183,6 +18183,10 @@ def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
         text = block.get("content", "").strip()
 
         if "=== EXAM START ===" in text:
+            if in_exam:
+                raise ValueError(
+                    "Invalid document structure: nested EXAM START detected"
+                )
             in_exam = True
             current_exam = []
             continue
@@ -18198,6 +18202,7 @@ def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
             current_exam.append(block)
 
     return exams
+
 
 #async def read_and_validate_file(file, request_id) -> bytes:
  ##      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
