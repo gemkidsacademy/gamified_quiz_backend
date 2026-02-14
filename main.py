@@ -13747,14 +13747,6 @@ def is_cloze_question(blocks: list) -> bool:
             # Explicit declaration
             if "question_type: 5" in content:
                 return True
-def is_cloze_question(blocks: list) -> bool:
-    for b in blocks:
-        if b.get("type") == "text":
-            content = b.get("content", "").lower()
-
-            # Explicit declaration
-            if "question_type: 5" in content:
-                return True
 
             # Structural detection
             if "cloze:" in content and "{{dropdown}}" in content:
@@ -13762,12 +13754,6 @@ def is_cloze_question(blocks: list) -> bool:
 
     return False
 
- 
-            # Structural detection
-            if "cloze:" in content and "{{dropdown}}" in content:
-                return True
-
-    return False
 def is_cloze_question(blocks: list) -> bool:
     for b in blocks:
         if b.get("type") == "text":
