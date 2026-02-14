@@ -17039,9 +17039,48 @@ def parse_docx_to_ordered_blocks(doc):
     Returns a linear list of blocks:
     [{type: 'text', content: ...}, {type: 'image', name: ...}]
     preserving DOCX order exactly.
-    Supports BOTH embedded images and IMAGES: text declarations.
+
+    Extended to support:
+    - CLOZE blocks
+    - OPTIONS blocks
+    - IMAGES declarations
     """
     blocks = []
+
+    current_mode = None   # None | "cloze" | "options"
+    buffer = []
+
+    def flush_buffer():
+        nonlocal buffer, current_mode
+
+        if not buffer or not current_mode:
+            buffer = []
+            current_mode = None
+            return
+
+        if current_mode == "cloze":
+            blocks.append({
+                "type": "cloze",
+                "content": " ".join(buffer).strip()
+            })
+
+        elif current_mode == "options":
+            options = []
+            for line in buffer:
+                if ":" in line:
+                    label, text = line.split(":", 1)
+                    options.append({
+                        "id": label.strip(),
+                        "text": text.strip()
+                    })
+
+            blocks.append({
+                "type": "options",
+                "options": options
+            })
+
+        buffer = []
+        current_mode = None
 
     for element in doc.element.body:
         if element.tag.endswith("}p"):
@@ -17064,29 +17103,51 @@ def parse_docx_to_ordered_blocks(doc):
             if texts:
                 text = "".join(texts).strip()
 
-                # 👇 NEW: Convert IMAGES: lines into image blocks
-                if text.upper().startswith("IMAGES:"):
+                upper = text.upper()
+
+                # ---- Section headers ----
+                if upper == "CLOZE:":
+                    flush_buffer()
+                    current_mode = "cloze"
+                    continue
+
+                if upper == "OPTIONS:":
+                    flush_buffer()
+                    current_mode = "options"
+                    continue
+
+                # ---- Inside CLOZE / OPTIONS ----
+                if current_mode in {"cloze", "options"}:
+                    buffer.append(text)
+                    continue
+
+                # ---- IMAGES declaration ----
+                if upper.startswith("IMAGES:"):
                     img_part = text.split(":", 1)[1]
                     for img in img_part.split(","):
                         blocks.append({
                             "type": "image",
                             "name": img.strip()
                         })
-                else:
-                    blocks.append({
-                        "type": "text",
-                        "content": text
-                    })
+                    continue
 
-            # Embedded images (rare in your docs, but supported)
+                # ---- Default text ----
+                blocks.append({
+                    "type": "text",
+                    "content": text
+                })
+
+            # Embedded images (still supported)
             for img in image_names:
                 blocks.append({
                     "type": "image",
                     "name": img
                 })
 
-    return blocks
+    # Flush anything left at EOF
+    flush_buffer()
 
+    return blocks
 
 def filter_display_blocks(blocks: list[dict]) -> list[dict]:
     """
@@ -17835,6 +17896,11 @@ def validate_common_metadata(questions, block_idx, request_id):
         raise ValueError(f"Invalid subject: {subject}")
 
     return {"subject": subject}
+ 
+def validate_text_input(q):
+    # Text input questions are permissive for now
+    return
+
 def persist_question(
     q,
     question_type,   # 👈 ADD THIS
