@@ -13894,13 +13894,11 @@ OUTPUT RULES:
             if attempt < retries:
                 print("🔁 [CLOZE] Retrying…")
                 continue
-            print("🚫 [CLOZE] Exhausted retries, returning empty questions")
-            return {"questions": []}
+            print("🚫 [CLOZE] Exhausted retries, returning empty list")
+            return []
 
         questions = parsed.get("questions", [])
-        print(
-            f"🤖 [CLOZE] Parsed questions count = {len(questions)}"
-        )
+        print(f"🤖 [CLOZE] Parsed questions count = {len(questions)}")
 
         if questions:
             print(
@@ -13908,14 +13906,14 @@ OUTPUT RULES:
                 f"{list(questions[0].keys())}"
             )
             print("✅ [CLOZE] parse_with_gpt_cloze SUCCESS")
-            return parsed
+            return questions   # ✅ FIX: return LIST
 
         if attempt < retries:
             print("⚠️ [CLOZE] Empty questions, retrying…")
             continue
 
         print("🚫 [CLOZE] Empty questions after all retries")
-        return parsed
+        return []
 
 
 @app.post("/upload-word-naplan-reading")
