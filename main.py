@@ -18597,8 +18597,7 @@ def vc_validate_block(parsed):
 
 def parse_visual_counting_block(block):
     return {
-        "QUESTION_TEXT": vc_extract_question_text(block),
-        "OPTIONS": vc_extract_image_options(block),
+        "QUESTION_TEXT": vc_extract_question_text(block),        
         "CORRECT_ANSWER": vc_extract_correct_answer(block),
         "METADATA": vc_extract_metadata(block),
     }
