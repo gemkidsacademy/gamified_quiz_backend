@@ -18447,40 +18447,37 @@ def normalize_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
 
 def vc_extract_correct_answer(block):
-    expecting_value = False
+    print("🧪 VC CORRECT_ANSWER DEBUG START")
 
-    for item in block:
+    for idx, item in enumerate(block):
         if item.get("type") != "text":
+            print(f"  [{idx}] NON-TEXT ITEM → skipped")
             continue
 
         raw = item.get("text") or item.get("content") or ""
+        print(f"  [{idx}] RAW TEXT: {repr(raw)}")
+
         text = normalize_text(raw)
+        print(f"       NORMALIZED: {repr(text)}")
 
-        if not text:
-            continue
+        if text.startswith("CORRECT_ANSWER"):
+            print("       ↑ FOUND CORRECT_ANSWER LABEL")
 
-        # Case 1: label and value on same line
-        if text.startswith("CORRECT_ANSWER:"):
-            value = normalize_text(text.split(":", 1)[1])
-
-            if value:
-                if value not in {"A", "B", "C", "D"}:
-                    raise ValueError(
-                        f"VC: Invalid CORRECT_ANSWER '{value}'"
-                    )
+            parts = text.split(":", 1)
+            if len(parts) == 2 and parts[1].strip():
+                value = parts[1].strip()
+                print(f"       INLINE VALUE: {repr(value)}")
                 return value
 
+            print("       INLINE VALUE EMPTY → expecting next line")
             expecting_value = True
             continue
 
-        # Case 2: value on next line
-        if expecting_value:
-            if text not in {"A", "B", "C", "D"}:
-                raise ValueError(
-                    f"VC: Invalid CORRECT_ANSWER '{text}'"
-                )
+        if 'expecting_value' in locals() and expecting_value and text:
+            print(f"       NEXT LINE VALUE: {repr(text)}")
             return text
 
+    print("🧪 VC CORRECT_ANSWER DEBUG END")
     raise ValueError("VC: CORRECT_ANSWER not found")
 
 def vc_extract_metadata(block):
