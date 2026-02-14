@@ -18201,6 +18201,11 @@ def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
         if in_exam:
             current_exam.append(block)
 
+    if in_exam:
+        raise ValueError(
+            "Invalid document structure: missing EXAM END"
+        )
+
     return exams
 
 
