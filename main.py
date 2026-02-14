@@ -18667,60 +18667,50 @@ def persist_visual_counting_question(
     )
 from docx import Document
 from io import BytesIO
-import unicodedata
 import re
+import unicodedata
 
 
-def vc_normalize_text(text: str) -> str:
+def normalize_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = text.replace("\u00a0", " ")
-    text = text.replace("\u200b", "")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
 def vc_extract_options_from_docx(content: bytes) -> list[dict]:
-    """
-    Type 6 ONLY.
-    Extracts OPTIONS (A/B/C/D) directly from the Word document,
-    bypassing parse_docx_to_ordered_blocks entirely.
-    """
-
     doc = Document(BytesIO(content))
-    print("🧾 VC DOCX PARAGRAPH DUMP START")
-    for i, para in enumerate(doc.paragraphs):
-        print(f"  [{i}] {repr(para.text)}")
-    print("🧾 VC DOCX PARAGRAPH DUMP END")
-
     options = []
-    in_options = False
 
+    def try_parse_line(text: str):
+        match = re.match(r"^([A-D])\s*:\s*(.+)?$", text)
+        if match:
+            options.append({
+                "label": match.group(1),
+                "image_ref": match.group(2),
+            })
+
+    # ---------------------------------------
+    # 1. Scan normal paragraphs
+    # ---------------------------------------
     for para in doc.paragraphs:
-        raw = para.text or ""
-        text = vc_normalize_text(raw)
+        text = normalize_text(para.text or "")
+        if text:
+            try_parse_line(text)
 
-        if not text:
-            continue
-
-        # Detect OPTIONS section start
-        if text.upper() == "OPTIONS:":
-            in_options = True
-            continue
-
-        # Stop if another section begins
-        if in_options and text.endswith(":") and text.upper() not in {"A:", "B:", "C:", "D:"}:
-            break
-
-        if in_options:
-            match = re.match(r"^([A-D])\s*:\s*(.+)?$", text)
-            if match:
-                options.append({
-                    "label": match.group(1),
-                    "image_ref": match.group(2),  # may be None
-                })
+    # ---------------------------------------
+    # 2. Scan tables (THIS WAS MISSING)
+    # ---------------------------------------
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    text = normalize_text(para.text or "")
+                    if text:
+                        try_parse_line(text)
 
     if not options:
-        raise ValueError("VC: OPTIONS section not found in Word document")
+        raise ValueError("VC: No options detected")
 
     if len(options) != 4:
         raise ValueError(
