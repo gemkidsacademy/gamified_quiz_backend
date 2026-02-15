@@ -2291,6 +2291,8 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
         )
 
         raw = completion.choices[0].message.content
+        print(f"[GPT RAW {exam_idx}]", repr(raw))
+
 
         try:
             parsed = json.loads(raw)
