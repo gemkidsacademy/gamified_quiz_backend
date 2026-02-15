@@ -2228,14 +2228,17 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
 
     SYSTEM_PROMPT = (
         "You are a deterministic exam-question parser.\n\n"
+    
         "INPUT CONTRACT:\n"
         "- You will receive text representing EXACTLY ONE exam\n"
         "- The exam contains AT MOST ONE question\n"
         "- Metadata (class, subject, topic, difficulty) may appear before the question\n\n"
+    
         "CONTENT RULES:\n"
         "- Preserve wording exactly\n"
         "- Do NOT invent missing fields\n"
         "- Do NOT merge multiple questions\n\n"
+    
         "EXTRACTION RULES:\n"
         "- Extract the following fields if present:\n"
         "  class_name\n"
@@ -2244,16 +2247,21 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
         "  difficulty\n"
         "  options (A–D)\n"
         "  correct_answer\n\n"
+    
         "OMISSION RULES:\n"
-        "- If options or correct_answer are missing, return null\n"
-        "- Do NOT emit partial objects\n\n"
+        "- Extract all fields that are explicitly present\n"
+        "- If options or correct_answer are not explicitly present, set them to null\n"
+        "- Partial extraction is allowed\n\n"
+    
         "OUTPUT RULES:\n"
         "- Return ONLY valid JSON\n"
         "- No markdown, no commentary\n"
-        "- Either return a single question object or null\n\n"
+        "- Always return a single question object\n\n"
+    
         "OUTPUT FORMAT:\n"
-        '{ "question": { ... } } or { "question": null }'
+        '{ "question": { ... } }'
     )
+
 
     serialized = serialize_blocks_for_gpt(payload["blocks"])
 
@@ -2276,8 +2284,7 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
                         "properties": {
                             "question": {
                                 "type": ["object", "null"],
-                                "properties": QuestionSchema["properties"],
-                                "required": ["options", "correct_answer"]
+                                "properties": QuestionSchema["properties"]                                
                             }
                         },
                         "required": ["question"]
