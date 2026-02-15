@@ -2267,8 +2267,7 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
 
     # 🔍 DEBUG: input size + preview
     print("[GPT DEBUG] Serialized length:", len(serialized))
-    print("[GPT DEBUG] Serialized preview:", serialized[:300])
-
+    
     for attempt in range(retries + 1):
         print(f"\n[GPT DEBUG] Attempt {attempt}")
 
@@ -2299,39 +2298,22 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
 
         raw = completion.choices[0].message.content
 
-        # 🔥 CRITICAL DEBUG LINE (you already added this correctly)
-        print(f"[GPT RAW attempt={attempt}]", repr(raw))
-
-        # 🔍 DEBUG: empty / null detection
-        if not raw:
-            print("[GPT DEBUG] Raw response is EMPTY")
-        elif raw.strip() in ('{"question":null}', '{ "question": null }'):
-            print("[GPT DEBUG] GPT explicitly returned null question")
+        
 
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as e:
-            print("[GPT DEBUG] JSON decode error:", str(e))
+            
             if attempt < retries:
                 continue
             return {"question": None}
 
-        question = parsed.get("question")
-
-        # 🔍 DEBUG: parsed structure
-        print("[GPT DEBUG] Parsed keys:", list(parsed.keys()))
-        print("[GPT DEBUG] Question type:", type(question))
-
-        if isinstance(question, dict):
-            print("[GPT DEBUG] Question fields:", list(question.keys()))
-            print("[GPT DEBUG] options:", question.get("options"))
-            print("[GPT DEBUG] correct_answer:", question.get("correct_answer"))
+        question = parsed.get("question")        
 
         if question:
             return parsed
 
-        print("[GPT DEBUG] No valid question returned")
-
+        
         if attempt < retries:
             continue
 
