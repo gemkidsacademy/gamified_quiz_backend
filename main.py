@@ -2228,17 +2228,14 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
 
     SYSTEM_PROMPT = (
         "You are a deterministic exam-question parser.\n\n"
-
         "INPUT CONTRACT:\n"
         "- You will receive text representing EXACTLY ONE exam\n"
         "- The exam contains AT MOST ONE question\n"
         "- Metadata (class, subject, topic, difficulty) may appear before the question\n\n"
-
         "CONTENT RULES:\n"
         "- Preserve wording exactly\n"
         "- Do NOT invent missing fields\n"
         "- Do NOT merge multiple questions\n\n"
-
         "EXTRACTION RULES:\n"
         "- Extract the following fields if present:\n"
         "  class_name\n"
@@ -2247,23 +2244,26 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
         "  difficulty\n"
         "  options (A–D)\n"
         "  correct_answer\n\n"
-
         "OMISSION RULES:\n"
         "- If options or correct_answer are missing, return null\n"
         "- Do NOT emit partial objects\n\n"
-
         "OUTPUT RULES:\n"
         "- Return ONLY valid JSON\n"
         "- No markdown, no commentary\n"
         "- Either return a single question object or null\n\n"
-
         "OUTPUT FORMAT:\n"
-        "{ \"question\": { ... } } or { \"question\": null }"
+        '{ "question": { ... } } or { "question": null }'
     )
 
     serialized = serialize_blocks_for_gpt(payload["blocks"])
 
+    # 🔍 DEBUG: input size + preview
+    print("[GPT DEBUG] Serialized length:", len(serialized))
+    print("[GPT DEBUG] Serialized preview:", serialized[:300])
+
     for attempt in range(retries + 1):
+        print(f"\n[GPT DEBUG] Attempt {attempt}")
+
         completion = await client_save_questions.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0,
@@ -2291,22 +2291,41 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
         )
 
         raw = completion.choices[0].message.content
+
+        # 🔥 CRITICAL DEBUG LINE (you already added this correctly)
         print(f"[GPT RAW attempt={attempt}]", repr(raw))
 
-
+        # 🔍 DEBUG: empty / null detection
+        if not raw:
+            print("[GPT DEBUG] Raw response is EMPTY")
+        elif raw.strip() in ('{"question":null}', '{ "question": null }'):
+            print("[GPT DEBUG] GPT explicitly returned null question")
 
         try:
             parsed = json.loads(raw)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            print("[GPT DEBUG] JSON decode error:", str(e))
             if attempt < retries:
                 continue
             return {"question": None}
 
-        if parsed.get("question"):
+        question = parsed.get("question")
+
+        # 🔍 DEBUG: parsed structure
+        print("[GPT DEBUG] Parsed keys:", list(parsed.keys()))
+        print("[GPT DEBUG] Question type:", type(question))
+
+        if isinstance(question, dict):
+            print("[GPT DEBUG] Question fields:", list(question.keys()))
+            print("[GPT DEBUG] options:", question.get("options"))
+            print("[GPT DEBUG] correct_answer:", question.get("correct_answer"))
+
+        if question:
             return parsed
 
+        print("[GPT DEBUG] No valid question returned")
+
         if attempt < retries:
-            print(f"[GPT] Empty result, retry {attempt + 1}")
             continue
 
         return {"question": None}
