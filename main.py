@@ -17563,174 +17563,54 @@ def extract_images_from_text(block: str) -> list[str]:
 
 def parse_docx_to_ordered_blocks(doc):
     """
-    Returns a linear list of ordered blocks preserving DOCX order exactly.
-
-    Block types emitted:
-    - text:     {"type": "text", "content": "..."}
-    - image:    {"type": "image", "name": "..."}
-    - cloze:    {"type": "cloze", "content": "..."}
-    - options:  {"type": "options", "options": [{"id": "A", "text": "..."}]}
-
-    Guarantees:
-    - EXAM markers (=== EXAM START / END ===) are preserved verbatim
-    - CLOZE and OPTIONS are emitted as structured blocks
-    - IMAGES declarations are converted to image blocks
+    Returns a linear list of blocks:
+    [{type: 'text', content: ...}, {type: 'image', name: ...}]
+    preserving DOCX order exactly.
+    Supports BOTH embedded images and IMAGES: text declarations.
     """
-
     blocks = []
 
-    current_mode = None    # None | "cloze" | "options"
-    buffer = []
-
-    def flush_buffer():
-        nonlocal buffer, current_mode
-
-        if not buffer or not current_mode:
-            buffer = []
-            current_mode = None
-            return
-
-        if current_mode == "cloze":
-            blocks.append({
-                "type": "cloze",
-                "content": " ".join(buffer).strip()
-            })
-
-        elif current_mode == "options":
-            options = []
-            for line in buffer:
-                if ":" in line:
-                    label, text = line.split(":", 1)
-                    options.append({
-                        "id": label.strip(),
-                        "text": text.strip()
-                    })
-
-            blocks.append({
-                "type": "options",
-                "options": options
-            })
-
-        buffer = []
-        current_mode = None
-
     for element in doc.element.body:
-        if not element.tag.endswith("}p"):
-            continue
+        if element.tag.endswith("}p"):
+            texts = []
+            image_names = []
 
-        texts = []
-        image_names = []
+            for run in element.iter():
+                # Text
+                if run.tag.endswith("}t") and run.text:
+                    texts.append(run.text)
 
-        for run in element.iter():
-            # Text runs
-            if run.tag.endswith("}t") and run.text:
-                texts.append(run.text)
+                # Embedded image
+                if run.tag.endswith("}blip"):
+                    r_id = run.attrib.get(qn("r:embed"))
+                    if r_id:
+                        image_part = doc.part.related_parts[r_id]
+                        image_name = image_part.partname.split("/")[-1]
+                        image_names.append(image_name)
 
-            # Embedded images
-            if run.tag.endswith("}blip"):
-                r_id = run.attrib.get(qn("r:embed"))
-                if r_id:
-                    image_part = doc.part.related_parts[r_id]
-                    image_name = image_part.partname.split("/")[-1]
-                    image_names.append(image_name)
+            if texts:
+                text = "".join(texts).strip()
 
-        if texts:
-            text = "".join(texts).strip()
-            upper = text.upper()
-
-            # --------------------------------------------------
-            # EXAM markers (must remain untouched)
-            # --------------------------------------------------
-            if upper.startswith("==="):
-                flush_buffer()
-                blocks.append({
-                    "type": "text",
-                    "content": text
-                })
-                continue
-
-            # --------------------------------------------------
-            # Section headers
-            # --------------------------------------------------
-            if upper == "CLOZE:":
-                flush_buffer()
-                current_mode = "cloze"
-                continue
-
-            if upper == "OPTIONS:":
-                flush_buffer()
-                current_mode = "options"
-                continue
-
-            # --------------------------------------------------
-            # Inside CLOZE / OPTIONS sections
-            # --------------------------------------------------
-            if current_mode in {"cloze", "options"}:
-                buffer.append(text)
-                continue
-
-            # --------------------------------------------------
-            # IMAGES declaration
-            # --------------------------------------------------
-            if upper.startswith("IMAGES:"):
-                flush_buffer()
-                img_part = text.split(":", 1)[1]
-                for img in img_part.split(","):
+                # 👇 NEW: Convert IMAGES: lines into image blocks
+                if text.upper().startswith("IMAGES:"):
+                    img_part = text.split(":", 1)[1]
+                    for img in img_part.split(","):
+                        blocks.append({
+                            "type": "image",
+                            "name": img.strip()
+                        })
+                else:
                     blocks.append({
-                        "type": "image",
-                        "name": img.strip()
+                        "type": "text",
+                        "content": text
                     })
-                continue
 
-            # --------------------------------------------------
-            # Default text
-            # --------------------------------------------------
-            blocks.append({
-                "type": "text",
-                "content": text
-            })
-
-        # --------------------------------------------------
-        # Embedded images (still supported)
-        # --------------------------------------------------
-        for img in image_names:
-            blocks.append({
-                "type": "image",
-                "name": img
-            })
-
-    # Flush any remaining buffered content
-    flush_buffer()
-
-    return blocks
-def parse_docx_to_flat_text_blocks(doc):
-    blocks = []
-
-    for element in doc.element.body:
-        if not element.tag.endswith("}p"):
-            continue
-
-        texts = []
-        image_names = []
-
-        for run in element.iter():
-            if run.tag.endswith("}t") and run.text:
-                texts.append(run.text)
-
-            if run.tag.endswith("}blip"):
-                r_id = run.attrib.get(qn("r:embed"))
-                if r_id:
-                    image_part = doc.part.related_parts[r_id]
-                    image_name = image_part.partname.split("/")[-1]
-                    image_names.append(image_name)
-
-        if texts:
-            text = "".join(texts).strip()
-            if text:
-                blocks.append({"type": "text", "content": text})
-
-        for img in image_names:
-            blocks.append({"type": "image", "name": img})
+            # Embedded images (rare in your docs, but supported)
+            for img in image_names:
+                blocks.append({
+                    "type": "image",
+                    "name": img
+                })
 
     return blocks
 
@@ -18271,6 +18151,148 @@ def is_cloze_exam_document(doc):
             return True
     return False
 
+def parse_docx_to_ordered_blocks_numeracy(doc):
+    """
+    Returns a linear list of ordered blocks preserving DOCX order exactly.
+
+    Block types emitted:
+    - text:     {"type": "text", "content": "..."}
+    - image:    {"type": "image", "name": "..."}
+    - cloze:    {"type": "cloze", "content": "..."}
+    - options:  {"type": "options", "options": [{"id": "A", "text": "..."}]}
+
+    Guarantees:
+    - EXAM markers (=== EXAM START / END ===) are preserved verbatim
+    - CLOZE and OPTIONS are emitted as structured blocks
+    - IMAGES declarations are converted to image blocks
+    """
+
+    blocks = []
+
+    current_mode = None    # None | "cloze" | "options"
+    buffer = []
+
+    def flush_buffer():
+        nonlocal buffer, current_mode
+
+        if not buffer or not current_mode:
+            buffer = []
+            current_mode = None
+            return
+
+        if current_mode == "cloze":
+            blocks.append({
+                "type": "cloze",
+                "content": " ".join(buffer).strip()
+            })
+
+        elif current_mode == "options":
+            options = []
+            for line in buffer:
+                if ":" in line:
+                    label, text = line.split(":", 1)
+                    options.append({
+                        "id": label.strip(),
+                        "text": text.strip()
+                    })
+
+            blocks.append({
+                "type": "options",
+                "options": options
+            })
+
+        buffer = []
+        current_mode = None
+
+    for element in doc.element.body:
+        if not element.tag.endswith("}p"):
+            continue
+
+        texts = []
+        image_names = []
+
+        for run in element.iter():
+            # Text runs
+            if run.tag.endswith("}t") and run.text:
+                texts.append(run.text)
+
+            # Embedded images
+            if run.tag.endswith("}blip"):
+                r_id = run.attrib.get(qn("r:embed"))
+                if r_id:
+                    image_part = doc.part.related_parts[r_id]
+                    image_name = image_part.partname.split("/")[-1]
+                    image_names.append(image_name)
+
+        if texts:
+            text = "".join(texts).strip()
+            upper = text.upper()
+
+            # --------------------------------------------------
+            # EXAM markers (must remain untouched)
+            # --------------------------------------------------
+            if upper.startswith("==="):
+                flush_buffer()
+                blocks.append({
+                    "type": "text",
+                    "content": text
+                })
+                continue
+
+            # --------------------------------------------------
+            # Section headers
+            # --------------------------------------------------
+            if upper == "CLOZE:":
+                flush_buffer()
+                current_mode = "cloze"
+                continue
+
+            if upper == "OPTIONS:":
+                flush_buffer()
+                current_mode = "options"
+                continue
+
+            # --------------------------------------------------
+            # Inside CLOZE / OPTIONS sections
+            # --------------------------------------------------
+            if current_mode in {"cloze", "options"}:
+                buffer.append(text)
+                continue
+
+            # --------------------------------------------------
+            # IMAGES declaration
+            # --------------------------------------------------
+            if upper.startswith("IMAGES:"):
+                flush_buffer()
+                img_part = text.split(":", 1)[1]
+                for img in img_part.split(","):
+                    blocks.append({
+                        "type": "image",
+                        "name": img.strip()
+                    })
+                continue
+
+            # --------------------------------------------------
+            # Default text
+            # --------------------------------------------------
+            blocks.append({
+                "type": "text",
+                "content": text
+            })
+
+        # --------------------------------------------------
+        # Embedded images (still supported)
+        # --------------------------------------------------
+        for img in image_names:
+            blocks.append({
+                "type": "image",
+                "name": img
+            })
+
+    # Flush any remaining buffered content
+    flush_buffer()
+
+    return blocks
 def parse_docx_blocks(content: bytes, request_id):
     doc = docx.Document(BytesIO(content))
 
@@ -18278,7 +18300,7 @@ def parse_docx_blocks(content: bytes, request_id):
     if is_cloze_exam_document(doc):
         blocks = parse_docx_to_flat_text_blocks(doc)
     else:
-        blocks = parse_docx_to_ordered_blocks(doc)
+        blocks = parse_docx_to_ordered_blocks_numeracy(doc)
 
     return blocks
 
