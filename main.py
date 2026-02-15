@@ -16453,7 +16453,59 @@ def generate_admin_exam_report(
     print("🧠 ================== GENERATE ADMIN EXAM REPORT END ==================\n")
 
     return admin_report
+def resolve_option_value(raw_opt, db):
+    """
+    Normalize a single option value into:
+    - {type: image, src: full_url}
+    - {type: text, content: ...}
+    """
 
+    # Already normalized
+    if isinstance(raw_opt, dict):
+        return raw_opt
+
+    # Image filename or URL
+    if isinstance(raw_opt, str) and raw_opt.lower().endswith(
+        (".png", ".jpg", ".jpeg", ".webp")
+    ):
+        # full URL already
+        if raw_opt.startswith("http"):
+            return {
+                "type": "image",
+                "src": raw_opt,
+                "name": raw_opt.split("/")[-1]
+            }
+
+        # filename only → resolve via DB
+        record = (
+            db.query(UploadedImage)
+            .filter(
+                func.lower(UploadedImage.original_name)
+                == raw_opt.strip().lower()
+            )
+            .first()
+        )
+
+        if record:
+            return {
+                "type": "image",
+                "src": record.gcs_url,
+                "name": raw_opt
+            }
+
+        # fallback (still image-shaped)
+        return {
+            "type": "image",
+            "src": raw_opt
+        }
+
+    # Plain text
+    return {
+        "type": "text",
+        "content": raw_opt
+    }
+
+ 
 def normalize_thinking_skills_questions(raw_questions, db):
     normalized = []
 
@@ -16468,7 +16520,8 @@ def normalize_thinking_skills_questions(raw_questions, db):
         normalized_opts = {}
 
         if isinstance(opts, dict):
-            normalized_opts = opts
+           for key, raw_opt in opts.items():
+               normalized_opts[key] = resolve_option_value(raw_opt, db)
 
         elif isinstance(opts, list):
             if opts and isinstance(opts[0], str) and ")" in opts[0]:
@@ -16479,7 +16532,8 @@ def normalize_thinking_skills_questions(raw_questions, db):
                     try:
                         option_obj = ast.literal_eval(payload.strip())
                         if isinstance(option_obj, dict):
-                            normalized_opts[key] = option_obj
+                            normalized_opts[key] = resolve_option_value(option_obj, db)
+
                     except Exception:
                         normalized_opts[key] = {
                             "type": "text",
