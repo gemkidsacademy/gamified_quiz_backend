@@ -13518,7 +13518,7 @@ class GapFillHandler(QuestionHandler):
             "correct_answer": parsed["correct"]
         }
 
-def parse_common_sections(ctx):
+def parse_common_sections_naplan_reading(ctx):
     """
     Parses:
     - METADATA
@@ -13543,7 +13543,7 @@ def parse_common_sections(ctx):
             k, v = line.split(":", 1)
             meta[k.strip()] = v.strip().strip('"')
 
-    required = ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY", "Total_Questions"]
+    required = ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY"]
     if not all(k in meta for k in required):
         raise ValueError("INCOMPLETE_METADATA")
 
@@ -14261,7 +14261,7 @@ async def upload_word_naplan_reading(
             # Common sections
             # -------------------------------
             print(f"[{request_id}] 📘 Parsing METADATA / Reading / Images")
-            meta, reading, images = parse_common_sections(ctx)
+            meta, reading, images = parse_common_sections_naplan_reading(ctx)
             question_index = 0
 
             while ctx.peek():
