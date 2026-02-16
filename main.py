@@ -13208,7 +13208,12 @@ def register(handler_cls):
 
 def parse_block(ctx, key, stop_keys, *, required=True):
     def normalize(s):
-        return s.strip().upper().replace(" ", "_")
+        return (
+            s.strip()
+             .lstrip("-•– ")
+             .upper()
+             .replace(" ", "_")
+        )
 
     if not ctx.peek() or normalize(ctx.peek()) != normalize(f"{key}:"):
         if required:
@@ -13218,7 +13223,7 @@ def parse_block(ctx, key, stop_keys, *, required=True):
     ctx.next()  # consume header
 
     lines = []
-    stop_norm = {normalize(k) for k in stop_keys}
+    stop_norm = {normalize(k + ":") for k in stop_keys}
 
     while ctx.peek():
         if normalize(ctx.peek()) in stop_norm:
