@@ -1538,6 +1538,15 @@ class QuestionNaplanReading(Base):
     __tablename__ = "questions_naplan_reading"
 
     id = Column(Integer, primary_key=True, index=True)
+    # -----------------------------
+    # Passage linkage (CRITICAL)
+    # -----------------------------
+    passage_id = Column(
+        String(36),                 # UUID as string
+        index=True,
+        nullable=False,
+        comment="Groups all questions belonging to the same reading passage"
+    )
 
     # -----------------------------
     # Core metadata
