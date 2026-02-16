@@ -13849,16 +13849,32 @@ def resolve_image_options(image_options, db):
 
     return resolved
 def parse_statements(ctx):
-    if ctx.next() != "STATEMENTS:":
-        raise ValueError("MISSING_STATEMENTS")
-
     statements = {}
 
-    while ctx.peek() and not ctx.peek().startswith("CORRECT_ANSWER"):
-        line = ctx.next()
-        if ":" in line:
-            k, v = line.split(":", 1)
-            statements[k.strip()] = v.strip()
+    # Seek STATEMENTS header
+    while ctx.peek() and ctx.peek().strip().upper() != "STATEMENTS:":
+        ctx.next()
+
+    if not ctx.peek():
+        raise ValueError("EMPTY_STATEMENTS")
+
+    ctx.next()  # consume STATEMENTS:
+
+    idx = 0
+    while ctx.peek():
+        line = ctx.peek().strip()
+
+        if line.upper().startswith(("CORRECT_ANSWER", "QUESTION_", "--- QUESTION")):
+            break
+
+        clean = line.lstrip("-•– ").strip()
+        if clean:
+            idx += 1
+            statements[str(idx)] = clean
+            ctx.next()
+            continue
+
+        break
 
     if not statements:
         raise ValueError("EMPTY_STATEMENTS")
