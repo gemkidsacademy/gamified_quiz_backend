@@ -13563,60 +13563,19 @@ class SingleGapHandler(InstructionAwareHandler):
 class GapFillHandler(InstructionAwareHandler):
     question_type = 3
 
-    def parse(self, ctx):
-        instruction = parse_block(
-            ctx,
-            "QUESTION_INSTRUCTION",
-            ["QUESTION_TEXT"],
-            required=False
-        )
-
-        question_text = parse_block(
-            ctx,
-            "QUESTION_TEXT",
-            ["WORD_BANK"],
-            required=True
-        )
-
-        word_bank = parse_word_bank(ctx)
-        correct = parse_blank_answers(ctx)
-
-        return {
-            "instruction": instruction,
-            "question_text": question_text,
-            "word_bank": word_bank,
-            "correct": correct
-        }
-
     def validate(self, parsed, *, context=None):
         self._validate_instruction(parsed, context=context)
 
-        blanks = re.findall(r"\[BLANK_\d+\]", parsed["question_text"])
+        blanks = re.findall(r"\[BLANK\]", parsed["question_text"])
         if not blanks:
             raise ValueError("NO_BLANKS_FOUND")
 
-        for blank in blanks:
-            key = blank.strip("[]")
-            if key not in parsed["correct"]:
-                raise ValueError(f"MISSING_ANSWER_FOR_{key}")
+        if len(parsed["correct"]) != len(blanks):
+            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
 
-        for ans in parsed["correct"].values():
+        for ans in parsed["correct"]:
             if ans not in parsed["word_bank"]:
                 raise ValueError("ANSWER_NOT_IN_WORD_BANK")
-
-    def build_exam_bundle(self, parsed):
-        return {
-            "question_type": 3,
-            "question_blocks": (
-                self._instruction_block(parsed)
-                + [{
-                    "type": "gap_fill",
-                    "content": parsed["question_text"],
-                    "word_bank": parsed["word_bank"]
-                }]
-            ),
-            "correct_answer": parsed["correct"]
-        }
 
 def parse_common_sections_naplan_reading(ctx):
     """
@@ -13788,31 +13747,28 @@ def parse_word_bank(ctx):
     return words
 
 def parse_blank_answers(ctx):
-    answers = []
-
-    # Seek CORRECT_ANSWER
-    while ctx.peek() and not ctx.peek().strip().upper().startswith("CORRECT_ANSWER"):
-        ctx.next()
-
-    if not ctx.peek():
+    line = ctx.next()
+    if not line.startswith("CORRECT_ANSWER"):
         raise ValueError("MISSING_CORRECT_ANSWER")
 
-    ctx.next()  # consume CORRECT_ANSWER
+    answers = []
 
-    while ctx.peek():
-        line = ctx.peek().strip()
+    # Inline not used here, but supported
+    if ":" in line:
+        _, v = line.split(":", 1)
+        v = v.strip()
+        if v:
+            answers.append(v)
 
-        if line.startswith(("-", "•")):
-            answers.append(ctx.next().lstrip("-• ").strip())
-            continue
-
-        break
+    while ctx.peek() and ctx.peek().strip().startswith("-"):
+        answers.append(
+            ctx.next().replace("-", "").strip()
+        )
 
     if not answers:
         raise ValueError("EMPTY_CORRECT_ANSWER")
 
-    # Map answers to blanks by position
-    return {f"BLANK_{i+1}": ans for i, ans in enumerate(answers)}
+    return answers
 def parse_image_options(ctx):
     if ctx.next() != "IMAGE_OPTIONS:":
         raise ValueError("MISSING_IMAGE_OPTIONS")
