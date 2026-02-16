@@ -13292,21 +13292,21 @@ def parse_correct_answers(ctx):
     while ctx.peek():
         line = ctx.peek().strip()
 
-        # Stop on next section
+        # 🔴 HARD STOP at question boundary
         if line.upper().startswith((
-            "QUESTION_",
+            "--- QUESTION",
+            "QUESTION_TYPE",
+            "QUESTION_TEXT",
             "WORD_BANK",
             "IMAGE_OPTIONS",
             "STATEMENTS"
         )):
             break
 
-        # Bullet format
         if line.startswith(("-", "•")):
             answers.append(ctx.next().lstrip("-• ").strip())
             continue
 
-        # Bare value format (A / B / True / False)
         if line and " " not in line:
             answers.append(ctx.next().strip())
             continue
@@ -13849,7 +13849,7 @@ def resolve_image_options(image_options, db):
 
     return resolved
 def parse_statements(ctx):
-    statements = {}
+    statements = []
 
     # Seek STATEMENTS header
     while ctx.peek() and ctx.peek().strip().upper() != "STATEMENTS:":
@@ -13860,18 +13860,18 @@ def parse_statements(ctx):
 
     ctx.next()  # consume STATEMENTS:
 
-    idx = 0
     while ctx.peek():
         line = ctx.peek().strip()
 
-        if line.upper().startswith(("CORRECT_ANSWER", "QUESTION_", "--- QUESTION")):
+        if line.upper().startswith((
+            "CORRECT_ANSWER",
+            "--- QUESTION",
+            "QUESTION_TYPE"
+        )):
             break
 
-        clean = line.lstrip("-•– ").strip()
-        if clean:
-            idx += 1
-            statements[str(idx)] = clean
-            ctx.next()
+        if line.startswith(("-", "•")):
+            statements.append(ctx.next().lstrip("-• ").strip())
             continue
 
         break
