@@ -13907,19 +13907,30 @@ def parse_statements(ctx):
  
 def parse_true_false_answers(ctx):
     line = ctx.next()
-    if not line.startswith("CORRECT_ANSWER"):
+    if not line.strip().upper().startswith("CORRECT_ANSWER"):
         raise ValueError("MISSING_CORRECT_ANSWER")
 
-    answers = {}
+    answers = []
 
-    while ctx.peek() and ":" in ctx.peek():
-        k, v = ctx.next().split(":", 1)
-        val = v.strip().lower()
+    while ctx.peek():
+        raw = ctx.peek()
+        line = raw.strip()
 
-        if val not in ("true", "false"):
-            raise ValueError("INVALID_TRUE_FALSE_VALUE")
+        # 🚨 HARD STOP: question boundary
+        if is_question_boundary(line):
+            break
 
-        answers[k.strip()] = (val == "true")
+        # valid bullet answer
+        if line.startswith("-"):
+            val = ctx.next().lstrip("- ").strip().lower()
+
+            if val not in ("true", "false"):
+                raise ValueError("INVALID_TRUE_FALSE_VALUE")
+
+            answers.append(val.capitalize())
+            continue
+
+        break
 
     if not answers:
         raise ValueError("EMPTY_CORRECT_ANSWER")
