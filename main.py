@@ -13278,35 +13278,36 @@ def parse_options(ctx):
 
 
 def parse_correct_answers(ctx):
-    def normalize(s):
-        return s.strip().upper().replace(" ", "_")
+    answers = []
 
-    # Skip until CORRECT_ANSWER
-    while ctx.peek() and not normalize(ctx.peek()).startswith("CORRECT_ANSWER"):
+    # Seek CORRECT_ANSWER header
+    while ctx.peek() and not ctx.peek().strip().upper().startswith("CORRECT_ANSWER"):
         ctx.next()
 
     if not ctx.peek():
         raise ValueError("MISSING_CORRECT_ANSWER")
 
-    line = ctx.next()
-    answers = []
+    ctx.next()  # consume CORRECT_ANSWER:
 
-    # Inline format
-    if ":" in line:
-        _, v = line.split(":", 1)
-        v = v.strip().strip('"')
-        if v:
-            answers.append(v)
-
-    # Multiline
     while ctx.peek():
-        val = ctx.peek().strip()
+        line = ctx.peek().strip()
 
-        if val.startswith(("-", "•")):
-            answers.append(ctx.next().lstrip("-• ").strip().strip('"'))
+        # Stop on next section
+        if line.upper().startswith((
+            "QUESTION_",
+            "WORD_BANK",
+            "IMAGE_OPTIONS",
+            "STATEMENTS"
+        )):
+            break
+
+        # Bullet format
+        if line.startswith(("-", "•")):
+            answers.append(ctx.next().lstrip("-• ").strip())
             continue
 
-        if len(val) == 1 and val.isalpha():
+        # Bare value format (A / B / True / False)
+        if line and " " not in line:
             answers.append(ctx.next().strip())
             continue
 
@@ -13746,21 +13747,45 @@ def parse_year(meta):
     except Exception:
         raise ValueError("INVALID_CLASS_YEAR")
 def parse_word_bank(ctx):
-    if ctx.next() != "WORD_BANK:":
-        raise ValueError("MISSING_WORD_BANK")
+    words = []
 
-    bank = {}
+    def normalize(s):
+        return (
+            s.strip()
+             .lstrip("-•– ")
+             .upper()
+             .replace(" ", "_")
+        )
 
-    while ctx.peek() and not ctx.peek().startswith("CORRECT_ANSWER"):
-        line = ctx.next()
-        if ":" in line:
-            k, v = line.split(":", 1)
-            bank[k.strip()] = v.strip()
+    # Seek WORD_BANK header
+    while ctx.peek() and normalize(ctx.peek()) != "WORD_BANK:":
+        ctx.next()
 
-    if not bank:
+    if not ctx.peek():
         raise ValueError("EMPTY_WORD_BANK")
 
-    return bank
+    ctx.next()  # consume WORD BANK:
+
+    while ctx.peek():
+        line = ctx.peek().strip()
+
+        # Stop on next section
+        if normalize(line).startswith((
+            "CORRECT_ANSWER",
+            "QUESTION_"
+        )):
+            break
+
+        if line.startswith(("-", "•")):
+            words.append(ctx.next().lstrip("-• ").strip())
+            continue
+
+        break
+
+    if not words:
+        raise ValueError("EMPTY_WORD_BANK")
+
+    return words
 
 def parse_blank_answers(ctx):
     answers = []
