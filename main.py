@@ -13282,8 +13282,27 @@ class ParseContext:
         return val
 
 
+# --------------------------------------------------
+# Base mixin for instruction handling
+# --------------------------------------------------
+
+class InstructionAwareHandler(QuestionHandler):
+    def _validate_instruction(self, parsed, *, context=None):
+        if context != "reading" and not parsed.get("instruction"):
+            raise ValueError("MISSING_QUESTION_INSTRUCTION")
+
+    def _instruction_block(self, parsed):
+        if parsed.get("instruction"):
+            return [{"type": "text", "content": parsed["instruction"]}]
+        return []
+
+
+# --------------------------------------------------
+# 1️⃣ Single MCQ
+# --------------------------------------------------
+
 @register
-class SingleMCQHandler(QuestionHandler):
+class SingleMCQHandler(InstructionAwareHandler):
     question_type = 1
 
     def parse(self, ctx):
@@ -13300,46 +13319,49 @@ class SingleMCQHandler(QuestionHandler):
         }
 
     def validate(self, parsed, *, context=None):
-        if context != "reading" and not parsed.get("instruction"):
-            raise ValueError("MISSING_QUESTION_INSTRUCTION")
+        self._validate_instruction(parsed, context=context)
+
+        if len(parsed["correct"]) != 1:
+            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
 
     def build_exam_bundle(self, parsed):
         return {
             "question_type": 1,
-            "question_blocks": [
-                {"type": "text", "content": parsed["instruction"]},
-                {"type": "text", "content": parsed["question"]}
-            ],
+            "question_blocks": (
+                self._instruction_block(parsed)
+                + [{"type": "text", "content": parsed["question"]}]
+            ),
             "options": parsed["options"],
             "correct_answer": parsed["correct"]
         }
+
+
+# --------------------------------------------------
+# 2️⃣ Multi-select MCQ
+# --------------------------------------------------
 
 @register
 class MultiSelectMCQHandler(SingleMCQHandler):
     question_type = 2
 
-    def validate(self, parsed):
+    def validate(self, parsed, *, context=None):
+        self._validate_instruction(parsed, context=context)
+
         if len(parsed["correct"]) != 2:
             raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
 
 
+# --------------------------------------------------
+# 3️⃣ Image MCQ
+# --------------------------------------------------
+
 @register
-class ImageMCQHandler(QuestionHandler):
+class ImageMCQHandler(InstructionAwareHandler):
     question_type = 4
 
     def parse(self, ctx):
-        instruction = parse_block(
-            ctx,
-            "QUESTION_INSTRUCTION",
-            stop_keys=["QUESTION_TEXT"]
-        )
-
-        question_text = parse_block(
-            ctx,
-            "QUESTION_TEXT",
-            stop_keys=["IMAGE_OPTIONS"]
-        )
-
+        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["QUESTION_TEXT"])
+        question_text = parse_block(ctx, "QUESTION_TEXT", ["IMAGE_OPTIONS"])
         image_options = parse_image_options(ctx)
         correct = parse_correct_answers(ctx)
 
@@ -13350,7 +13372,9 @@ class ImageMCQHandler(QuestionHandler):
             "correct": correct
         }
 
-    def validate(self, parsed):
+    def validate(self, parsed, *, context=None):
+        self._validate_instruction(parsed, context=context)
+
         if len(parsed["correct"]) != 1:
             raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
 
@@ -13360,25 +13384,25 @@ class ImageMCQHandler(QuestionHandler):
     def build_exam_bundle(self, parsed):
         return {
             "question_type": 4,
-            "question_blocks": [
-                {"type": "text", "content": parsed["instruction"]},
-                {"type": "text", "content": parsed["question_text"]}
-            ],
+            "question_blocks": (
+                self._instruction_block(parsed)
+                + [{"type": "text", "content": parsed["question_text"]}]
+            ),
             "image_options": parsed["image_options"],
             "correct_answer": parsed["correct"]
         }
 
+
+# --------------------------------------------------
+# 4️⃣ True / False
+# --------------------------------------------------
+
 @register
-class TrueFalseHandler(QuestionHandler):
+class TrueFalseHandler(InstructionAwareHandler):
     question_type = 5
 
     def parse(self, ctx):
-        instruction = parse_block(
-            ctx,
-            "QUESTION_INSTRUCTION",
-            stop_keys=["STATEMENTS"]
-        )
-
+        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["STATEMENTS"])
         statements = parse_statements(ctx)
         correct = parse_true_false_answers(ctx)
 
@@ -13388,8 +13412,9 @@ class TrueFalseHandler(QuestionHandler):
             "correct": correct
         }
 
-    def validate(self, parsed):
-        # Every statement must have an answer
+    def validate(self, parsed, *, context=None):
+        self._validate_instruction(parsed, context=context)
+
         for key in parsed["statements"]:
             if key not in parsed["correct"]:
                 raise ValueError(f"MISSING_ANSWER_FOR_STATEMENT_{key}")
@@ -13397,32 +13422,28 @@ class TrueFalseHandler(QuestionHandler):
     def build_exam_bundle(self, parsed):
         return {
             "question_type": 5,
-            "question_blocks": [
-                { "type": "text", "content": parsed["instruction"] },
-                {
+            "question_blocks": (
+                self._instruction_block(parsed)
+                + [{
                     "type": "true_false",
                     "statements": parsed["statements"]
-                }
-            ],
+                }]
+            ),
             "correct_answer": parsed["correct"]
         }
+
+
+# --------------------------------------------------
+# 5️⃣ Single Gap
+# --------------------------------------------------
+
 @register
-class SingleGapHandler(QuestionHandler):
+class SingleGapHandler(InstructionAwareHandler):
     question_type = 6
 
     def parse(self, ctx):
-        instruction = parse_block(
-            ctx,
-            "QUESTION_INSTRUCTION",
-            stop_keys=["QUESTION_TEXT"]
-        )
-
-        question_text = parse_block(
-            ctx,
-            "QUESTION_TEXT",
-            stop_keys=["WORD_OPTIONS"]
-        )
-
+        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["QUESTION_TEXT"])
+        question_text = parse_block(ctx, "QUESTION_TEXT", ["WORD_OPTIONS"])
         options = parse_word_options(ctx)
         correct = parse_correct_answers(ctx)
 
@@ -13433,50 +13454,44 @@ class SingleGapHandler(QuestionHandler):
             "correct": correct
         }
 
-    def validate(self, parsed):
-        # Must contain exactly one blank
+    def validate(self, parsed, *, context=None):
+        self._validate_instruction(parsed, context=context)
+
         if parsed["question_text"].count("[BLANK]") != 1:
             raise ValueError("INVALID_BLANK_COUNT")
 
-        # Exactly one correct answer
         if len(parsed["correct"]) != 1:
             raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
 
-        # Correct answer must exist in options
         if parsed["correct"][0] not in parsed["options"]:
             raise ValueError("CORRECT_ANSWER_NOT_IN_OPTIONS")
 
     def build_exam_bundle(self, parsed):
         return {
             "question_type": 6,
-            "question_blocks": [
-                { "type": "text", "content": parsed["instruction"] },
-                {
+            "question_blocks": (
+                self._instruction_block(parsed)
+                + [{
                     "type": "single_gap",
                     "content": parsed["question_text"],
                     "options": parsed["options"]
-                }
-            ],
+                }]
+            ),
             "correct_answer": parsed["correct"]
         }
 
+
+# --------------------------------------------------
+# 6️⃣ Gap Fill
+# --------------------------------------------------
+
 @register
-class GapFillHandler(QuestionHandler):
+class GapFillHandler(InstructionAwareHandler):
     question_type = 3
 
     def parse(self, ctx):
-        instruction = parse_block(
-            ctx,
-            "QUESTION_INSTRUCTION",
-            stop_keys=["QUESTION_TEXT"]
-        )
-
-        question_text = parse_block(
-            ctx,
-            "QUESTION_TEXT",
-            stop_keys=["WORD_BANK"]
-        )
-
+        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["QUESTION_TEXT"])
+        question_text = parse_block(ctx, "QUESTION_TEXT", ["WORD_BANK"])
         word_bank = parse_word_bank(ctx)
         correct = parse_blank_answers(ctx)
 
@@ -13487,19 +13502,18 @@ class GapFillHandler(QuestionHandler):
             "correct": correct
         }
 
-    def validate(self, parsed):
-        # 1️⃣ Blanks must exist
+    def validate(self, parsed, *, context=None):
+        self._validate_instruction(parsed, context=context)
+
         blanks = re.findall(r"\[BLANK_\d+\]", parsed["question_text"])
         if not blanks:
             raise ValueError("NO_BLANKS_FOUND")
 
-        # 2️⃣ Every blank must have an answer
         for blank in blanks:
-            key = blank.replace("[", "").replace("]", "")
+            key = blank.strip("[]")
             if key not in parsed["correct"]:
                 raise ValueError(f"MISSING_ANSWER_FOR_{key}")
 
-        # 3️⃣ Answers must exist in word bank
         for ans in parsed["correct"].values():
             if ans not in parsed["word_bank"]:
                 raise ValueError("ANSWER_NOT_IN_WORD_BANK")
@@ -13507,14 +13521,14 @@ class GapFillHandler(QuestionHandler):
     def build_exam_bundle(self, parsed):
         return {
             "question_type": 3,
-            "question_blocks": [
-                {"type": "text", "content": parsed["instruction"]},
-                {
+            "question_blocks": (
+                self._instruction_block(parsed)
+                + [{
                     "type": "gap_fill",
                     "content": parsed["question_text"],
                     "word_bank": parsed["word_bank"]
-                }
-            ],
+                }]
+            ),
             "correct_answer": parsed["correct"]
         }
 
