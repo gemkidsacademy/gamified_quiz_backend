@@ -13207,59 +13207,96 @@ def register(handler_cls):
     return handler_cls
 
 def parse_block(ctx, key, stop_keys, *, required=True):
-    if not ctx.peek().startswith(key):
+    def normalize(s):
+        return s.strip().upper().replace(" ", "_")
+
+    if not ctx.peek() or normalize(ctx.peek()) != normalize(f"{key}:"):
         if required:
             raise ValueError(f"MISSING_{key}")
         return None
 
-    ctx.next()  # consume key
-    lines = []
+    ctx.next()  # consume header
 
-    while ctx.peek() and ctx.peek() not in stop_keys:
+    lines = []
+    stop_norm = {normalize(k) for k in stop_keys}
+
+    while ctx.peek():
+        if normalize(ctx.peek()) in stop_norm:
+            break
         lines.append(ctx.next())
 
-    return "\n".join(lines).strip()
+    content = "\n".join(lines).strip()
+    return content or None
 
 
 def parse_options(ctx):
-    if ctx.next() != "ANSWER_OPTIONS:":
+    def normalize(s):
+        return s.strip().upper().replace(" ", "_")
+
+    # Skip until we see ANSWER_OPTIONS
+    while ctx.peek() and normalize(ctx.peek()) != "ANSWER_OPTIONS:":
+        ctx.next()
+
+    if not ctx.peek():
         raise ValueError("MISSING_OPTIONS")
 
-    options = {}
-    while ctx.peek() and not ctx.peek().startswith("CORRECT_ANSWER"):
-        k, v = ctx.next().split(":", 1)
-        options[k.strip()] = v.strip()
+    ctx.next()  # consume ANSWER_OPTIONS:
 
-    if len(options) != 4:
+    options = {}
+
+    while ctx.peek():
+        line = ctx.peek().strip()
+
+        # Stop conditions
+        if normalize(line).startswith("CORRECT_ANSWER"):
+            break
+
+        # Remove bullets / dashes
+        clean = line.lstrip("-• ").strip()
+
+        if ":" in clean:
+            k, v = clean.split(":", 1)
+            options[k.strip()] = v.strip()
+            ctx.next()
+            continue
+
+        break
+
+    if len(options) < 2:
         raise ValueError("INVALID_OPTIONS")
 
     return options
 
 
 def parse_correct_answers(ctx):
-    line = ctx.next()
-    if not line.startswith("CORRECT_ANSWER"):
+    def normalize(s):
+        return s.strip().upper().replace(" ", "_")
+
+    # Skip until CORRECT_ANSWER
+    while ctx.peek() and not normalize(ctx.peek()).startswith("CORRECT_ANSWER"):
+        ctx.next()
+
+    if not ctx.peek():
         raise ValueError("MISSING_CORRECT_ANSWER")
 
+    line = ctx.next()
     answers = []
 
-    # Inline: CORRECT_ANSWER: A
+    # Inline format
     if ":" in line:
         _, v = line.split(":", 1)
         v = v.strip().strip('"')
         if v:
             answers.append(v)
 
-    # Multiline formats
-    while ctx.peek() and not ctx.peek().startswith(("QUESTION_", "WORD_BANK", "IMAGE_OPTIONS")):
+    # Multiline
+    while ctx.peek():
         val = ctx.peek().strip()
 
-        # Dash format: - A
-        if val.startswith("-"):
-            answers.append(ctx.next().replace("-", "").strip().strip('"'))
+        if val.startswith(("-", "•")):
+            answers.append(ctx.next().lstrip("-• ").strip().strip('"'))
             continue
 
-        # Bare value format: A
         if len(val) == 1 and val.isalpha():
             answers.append(ctx.next().strip())
             continue
