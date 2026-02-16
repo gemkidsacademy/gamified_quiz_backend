@@ -13231,9 +13231,14 @@ def parse_block(ctx, key, stop_keys, *, required=True):
 
 def parse_options(ctx):
     def normalize(s):
-        return s.strip().upper().replace(" ", "_")
+        return (
+            s.strip()
+             .lstrip("-•– ")   # 🔥 THIS IS THE MISSING PIECE
+             .upper()
+             .replace(" ", "_")
+        )
 
-    # Skip until we see ANSWER_OPTIONS
+    # Seek ANSWER_OPTIONS header
     while ctx.peek() and normalize(ctx.peek()) != "ANSWER_OPTIONS:":
         ctx.next()
 
@@ -13247,12 +13252,11 @@ def parse_options(ctx):
     while ctx.peek():
         line = ctx.peek().strip()
 
-        # Stop conditions
+        # Stop at correct answer
         if normalize(line).startswith("CORRECT_ANSWER"):
             break
 
-        # Remove bullets / dashes
-        clean = line.lstrip("-• ").strip()
+        clean = line.lstrip("-•– ").strip()
 
         if ":" in clean:
             k, v = clean.split(":", 1)
