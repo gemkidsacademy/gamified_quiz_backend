@@ -13206,15 +13206,19 @@ def register(handler_cls):
     QUESTION_HANDLERS[handler_cls.question_type] = handler_cls()
     return handler_cls
 
-def parse_block(ctx, start_key, stop_keys):
-    if ctx.next() != f"{start_key}:":
-        raise ValueError(f"MISSING_{start_key}")
+def parse_block(ctx, key, stop_keys, *, required=True):
+    if not ctx.peek().startswith(key):
+        if required:
+            raise ValueError(f"MISSING_{key}")
+        return None
 
+    ctx.next()  # consume key
     lines = []
-    while ctx.peek() and not any(ctx.peek().startswith(k) for k in stop_keys):
+
+    while ctx.peek() and ctx.peek() not in stop_keys:
         lines.append(ctx.next())
 
-    return " ".join(lines).strip()
+    return "\n".join(lines).strip()
 
 
 def parse_options(ctx):
@@ -13289,7 +13293,6 @@ class ParseContext:
 
 class InstructionAwareHandler(QuestionHandler):
     def _validate_instruction(self, parsed, *, context=None):
-        print("🧪 VALIDATE INSTRUCTION | context =", repr(context))
         if context != "reading" and not parsed.get("instruction"):
             raise ValueError("MISSING_QUESTION_INSTRUCTION")
 
@@ -13297,7 +13300,6 @@ class InstructionAwareHandler(QuestionHandler):
         if parsed.get("instruction"):
             return [{"type": "text", "content": parsed["instruction"]}]
         return []
-
 
 # --------------------------------------------------
 # 1️⃣ Single MCQ
@@ -13308,8 +13310,20 @@ class SingleMCQHandler(InstructionAwareHandler):
     question_type = 1
 
     def parse(self, ctx):
-        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["QUESTION_TEXT"])
-        question = parse_block(ctx, "QUESTION_TEXT", ["ANSWER_OPTIONS"])
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            ["QUESTION_TEXT"],
+            required=False
+        )
+
+        question = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            ["ANSWER_OPTIONS"],
+            required=True
+        )
+
         options = parse_options(ctx)
         correct = parse_correct_answers(ctx)
 
@@ -13362,8 +13376,20 @@ class ImageMCQHandler(InstructionAwareHandler):
     question_type = 4
 
     def parse(self, ctx):
-        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["QUESTION_TEXT"])
-        question_text = parse_block(ctx, "QUESTION_TEXT", ["IMAGE_OPTIONS"])
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            ["QUESTION_TEXT"],
+            required=False
+        )
+
+        question_text = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            ["IMAGE_OPTIONS"],
+            required=True
+        )
+
         image_options = parse_image_options(ctx)
         correct = parse_correct_answers(ctx)
 
@@ -13404,7 +13430,13 @@ class TrueFalseHandler(InstructionAwareHandler):
     question_type = 5
 
     def parse(self, ctx):
-        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["STATEMENTS"])
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            ["STATEMENTS"],
+            required=False
+        )
+
         statements = parse_statements(ctx)
         correct = parse_true_false_answers(ctx)
 
@@ -13444,8 +13476,20 @@ class SingleGapHandler(InstructionAwareHandler):
     question_type = 6
 
     def parse(self, ctx):
-        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["QUESTION_TEXT"])
-        question_text = parse_block(ctx, "QUESTION_TEXT", ["WORD_OPTIONS"])
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            ["QUESTION_TEXT"],
+            required=False
+        )
+
+        question_text = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            ["WORD_OPTIONS"],
+            required=True
+        )
+
         options = parse_word_options(ctx)
         correct = parse_correct_answers(ctx)
 
@@ -13492,8 +13536,20 @@ class GapFillHandler(InstructionAwareHandler):
     question_type = 3
 
     def parse(self, ctx):
-        instruction = parse_block(ctx, "QUESTION_INSTRUCTION", ["QUESTION_TEXT"])
-        question_text = parse_block(ctx, "QUESTION_TEXT", ["WORD_BANK"])
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            ["QUESTION_TEXT"],
+            required=False
+        )
+
+        question_text = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            ["WORD_BANK"],
+            required=True
+        )
+
         word_bank = parse_word_bank(ctx)
         correct = parse_blank_answers(ctx)
 
