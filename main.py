@@ -13477,12 +13477,8 @@ class TrueFalseHandler(InstructionAwareHandler):
 
     def parse(self, ctx):
         instruction = parse_block(
-            ctx,
-            "QUESTION_INSTRUCTION",
-            ["STATEMENTS"],
-            required=False
+            ctx, "QUESTION_INSTRUCTION", ["STATEMENTS"], required=False
         )
-
         statements = parse_statements(ctx)
         correct = parse_true_false_answers(ctx)
 
@@ -13495,23 +13491,8 @@ class TrueFalseHandler(InstructionAwareHandler):
     def validate(self, parsed, *, context=None):
         self._validate_instruction(parsed, context=context)
 
-        for key in parsed["statements"]:
-            if key not in parsed["correct"]:
-                raise ValueError(f"MISSING_ANSWER_FOR_STATEMENT_{key}")
-
-    def build_exam_bundle(self, parsed):
-        return {
-            "question_type": 5,
-            "question_blocks": (
-                self._instruction_block(parsed)
-                + [{
-                    "type": "true_false",
-                    "statements": parsed["statements"]
-                }]
-            ),
-            "correct_answer": parsed["correct"]
-        }
-
+        if len(parsed["correct"]) != len(parsed["statements"]):
+            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
 
 # --------------------------------------------------
 # 5️⃣ Single Gap
@@ -13782,20 +13763,31 @@ def parse_word_bank(ctx):
     return bank
 
 def parse_blank_answers(ctx):
-    line = ctx.next()
-    if not line.startswith("CORRECT_ANSWER"):
+    answers = []
+
+    # Seek CORRECT_ANSWER
+    while ctx.peek() and not ctx.peek().strip().upper().startswith("CORRECT_ANSWER"):
+        ctx.next()
+
+    if not ctx.peek():
         raise ValueError("MISSING_CORRECT_ANSWER")
 
-    answers = {}
+    ctx.next()  # consume CORRECT_ANSWER
 
-    while ctx.peek() and ":" in ctx.peek():
-        blank, val = ctx.next().split(":", 1)
-        answers[blank.strip()] = val.strip().strip('"')
+    while ctx.peek():
+        line = ctx.peek().strip()
+
+        if line.startswith(("-", "•")):
+            answers.append(ctx.next().lstrip("-• ").strip())
+            continue
+
+        break
 
     if not answers:
         raise ValueError("EMPTY_CORRECT_ANSWER")
 
-    return answers
+    # Map answers to blanks by position
+    return {f"BLANK_{i+1}": ans for i, ans in enumerate(answers)}
 def parse_image_options(ctx):
     if ctx.next() != "IMAGE_OPTIONS:":
         raise ValueError("MISSING_IMAGE_OPTIONS")
