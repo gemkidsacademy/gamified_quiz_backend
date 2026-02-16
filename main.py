@@ -4848,8 +4848,6 @@ def fetch_class_days(class_name: str, db: Session = Depends(get_db)):
         "days": days
     }
 
-
-
 @app.get("/api/reading/question-bank")
 def get_reading_question_bank_summary(
     subject: str = Query("reading_comprehension"),
@@ -4859,19 +4857,19 @@ def get_reading_question_bank_summary(
     """
     Admin overview of reading question bank.
 
-    Groups questions by:
+    Each row represents a distinct exam-ready question set,
+    grouped by:
     - difficulty
     - topic
+    - total_questions (set size)
 
-    Returns total question count per group.
-    Adds a derived 'variant' field for topics that require
-    semantic distinction based on question count.
+    This allows admins to clearly see, for example,
+    Comparative Analysis sets of size 8 vs 10.
     """
 
     subject_norm = func.lower(
         func.replace(func.trim(QuestionReading.subject), " ", "_")
     )
-
     class_norm = func.lower(func.trim(QuestionReading.class_name))
     difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
 
@@ -4879,7 +4877,8 @@ def get_reading_question_bank_summary(
         db.query(
             difficulty_norm.label("difficulty"),
             QuestionReading.topic,
-            func.count(QuestionReading.id).label("total_questions"),
+            QuestionReading.total_questions.label("set_size"),
+            func.count(QuestionReading.id).label("sets_available"),
         )
         .filter(subject_norm == subject.lower())
         .filter(class_norm == class_name.lower())
@@ -4887,33 +4886,29 @@ def get_reading_question_bank_summary(
         .group_by(
             difficulty_norm,
             QuestionReading.topic,
+            QuestionReading.total_questions,
         )
         .order_by(
             difficulty_norm,
             QuestionReading.topic,
+            QuestionReading.total_questions,
         )
         .all()
     )
-
-    def derive_variant(topic: str, total_questions: int) -> str | None:
-        if topic and topic.lower() == "comparative analysis":
-            if total_questions == 8:
-                return "short_set"
-            if total_questions == 10:
-                return "full_set"
-        return None
 
     return {
         "rows": [
             {
                 "difficulty": r.difficulty.capitalize(),
                 "topic": r.topic,
-                "total_questions": r.total_questions,
-                "variant": derive_variant(r.topic, r.total_questions),
+                "set_size": r.set_size,
+                "sets_available": r.sets_available,
             }
             for r in rows
         ]
     }
+
+
  
 @app.get("/api/admin/question-bank-reading")
 def get_question_bank_reading(
