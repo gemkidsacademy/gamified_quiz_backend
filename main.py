@@ -1567,11 +1567,7 @@ class QuestionNaplanReading(Base):
     # 3 = multiple_texts
     # 4 = visual_literacy
 
-    # -----------------------------
-    # Exam structure
-    # -----------------------------
-    total_questions = Column(Integer, nullable=False)
-
+    
     # -----------------------------
     # Render-safe bundle
     # -----------------------------
