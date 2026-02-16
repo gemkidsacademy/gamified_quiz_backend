@@ -13620,28 +13620,27 @@ def build_blocks_naplan_reading(reading, images, db):
         }
     ]
 
-    missing_image = None
-
     for img in images:
+        normalized = img.lstrip("-• ").strip().lower()
+
         record = (
             db.query(UploadedImage)
-            .filter(func.lower(func.trim(UploadedImage.original_name)) == img)
+            .filter(
+                func.lower(func.trim(UploadedImage.original_name)) == normalized
+            )
             .first()
         )
 
         if not record:
-            missing_image = img
-            break
+            raise ValueError(f"IMAGE_NOT_UPLOADED: {normalized}")
 
         blocks.append({
             "type": "image",
             "src": record.gcs_url
         })
 
-    if missing_image:
-        raise ValueError(f"IMAGE_NOT_UPLOADED: {missing_image}")
-
     return blocks
+
 def parse_year(meta):
     try:
         return int(meta["CLASS"].replace("Year", "").strip())
