@@ -13505,6 +13505,19 @@ class TrueFalseHandler(InstructionAwareHandler):
 
         if len(parsed["correct"]) != len(parsed["statements"]):
             raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+    def build_exam_bundle(self, parsed):
+        return {
+            "question_type": 5,
+            "question_blocks": (
+                self._instruction_block(parsed)
+                + [{
+                    "type": "true_false",
+                    "statements": parsed["statements"]
+                }]
+            ),
+            "correct_answer": parsed["correct"]
+        }
+
 
 # --------------------------------------------------
 # 5️⃣ Single Gap
