@@ -13885,19 +13885,19 @@ def parse_statements(ctx):
     ctx.next()  # consume STATEMENTS:
 
     while ctx.peek():
-        line = ctx.peek().strip()
+        raw = ctx.peek()
+        line = raw.strip()
 
-        if line.upper().startswith((
-            "CORRECT_ANSWER",
-            "--- QUESTION",
-            "QUESTION_TYPE"
-        )):
+        # 🚨 HARD STOP: question boundary ONLY
+        if is_question_boundary(line):
             break
 
+        # valid statement
         if line.startswith(("-", "•")):
             statements.append(ctx.next().lstrip("-• ").strip())
             continue
 
+        # anything else ends statements
         break
 
     if not statements:
