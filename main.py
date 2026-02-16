@@ -13522,46 +13522,64 @@ def parse_common_sections_naplan_reading(ctx):
     """
     Parses:
     - METADATA
-    - Reading_Material
+    - READING_MATERIAL
     - IMAGES (inline or multiline)
 
-    Leaves ctx.ptr positioned at QUESTION_INSTRUCTION
+    Leaves ctx.ptr positioned at the first QUESTION marker.
     """
 
     # -------------------------------
     # METADATA
     # -------------------------------
-    if ctx.peek() != "METADATA:":
+    if not ctx.peek() or ctx.peek().strip().upper() != "METADATA:":
         raise ValueError("MISSING_METADATA")
 
     ctx.next()  # consume METADATA:
 
     meta = {}
-    while ctx.peek() and ctx.peek() != "Reading_Material:":
+
+    while ctx.peek():
+        peek = ctx.peek().strip().upper()
+
+        # Stop when reading material begins
+        if peek == "READING_MATERIAL:":
+            break
+
         line = ctx.next()
         if ":" in line:
             k, v = line.split(":", 1)
-            meta[k.strip()] = v.strip().strip('"')
+            meta[k.strip().upper()] = v.strip().strip('"')
 
     required = ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY"]
     if not all(k in meta for k in required):
         raise ValueError("INCOMPLETE_METADATA")
 
     # -------------------------------
-    # Reading Material
+    # READING MATERIAL
     # -------------------------------
-    if ctx.next() != "Reading_Material:":
+    line = ctx.next()
+    if not line or line.strip().upper() != "READING_MATERIAL:":
         raise ValueError("MISSING_READING_MATERIAL")
 
     reading_lines = []
     images = []
 
     while ctx.peek():
+        peek = ctx.peek().strip()
+
+        upper = peek.upper()
+
+        # Stop when questions begin
+        if upper.startswith("QUESTION_") or upper.startswith("--- QUESTION"):
+            break
+
+        # -------------------------------
         # IMAGES section
-        if ctx.peek().startswith("IMAGES"):
+        # -------------------------------
+        if upper.startswith("IMAGES"):
             line = ctx.next()
 
-            # Inline IMAGES: a.png, b.png
+            # Inline: IMAGES: a.png, b.png
             if ":" in line:
                 _, rest = line.split(":", 1)
                 images.extend(
@@ -13569,17 +13587,13 @@ def parse_common_sections_naplan_reading(ctx):
                 )
 
             # Multiline image list
-            while ctx.peek() and not ctx.peek().startswith("QUESTION_"):
-                img = ctx.peek().strip().lower()
-                if img:
-                    images.append(ctx.next())
-                else:
-                    ctx.next()
-            continue
+            while ctx.peek():
+                next_line = ctx.peek().strip()
+                if not next_line or next_line.upper().startswith("QUESTION_") or next_line.upper().startswith("--- QUESTION"):
+                    break
+                images.append(ctx.next().strip().lower())
 
-        # Stop when questions start
-        if ctx.peek().startswith("QUESTION_"):
-            break
+            continue
 
         reading_lines.append(ctx.next())
 
@@ -13589,6 +13603,7 @@ def parse_common_sections_naplan_reading(ctx):
         raise ValueError("READING_TOO_SHORT")
 
     return meta, reading, images
+
 def build_blocks(reading, images, db):
     """
     Builds renderer-ready question_blocks:
