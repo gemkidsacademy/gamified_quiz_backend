@@ -13193,7 +13193,7 @@ class QuestionHandler:
     def parse(self, ctx):
         raise NotImplementedError
 
-    def validate(self, parsed):
+    def validate(self, parsed, *, context=None):
         raise NotImplementedError
 
     def build_exam_bundle(self, parsed):
@@ -13299,9 +13299,9 @@ class SingleMCQHandler(QuestionHandler):
             "correct": correct
         }
 
-    def validate(self, parsed):
-        if len(parsed["correct"]) != 1:
-            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+    def validate(self, parsed, *, context=None):
+        if context != "reading" and not parsed.get("instruction"):
+            raise ValueError("MISSING_QUESTION_INSTRUCTION")
 
     def build_exam_bundle(self, parsed):
         return {
@@ -14314,7 +14314,8 @@ async def upload_word_naplan_reading(
                     # Parse + validate question
                     # -------------------------------
                     parsed = handler.parse(ctx)
-                    handler.validate(parsed)
+                    handler.validate(parsed, context="reading")
+
             
                     exam_bundle = handler.build_exam_bundle(parsed)
             
