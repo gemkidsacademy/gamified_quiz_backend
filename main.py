@@ -14251,90 +14251,43 @@ async def upload_word_naplan_reading(
             print(f"[{request_id}] 📄 Lines after cleanup: {len(lines)}")
 
             ctx = ParseContext(lines)
+            passage_id = str(uuid.uuid4())
+            print(f"[{request_id}] 🔗 passage_id = {passage_id}")
 
-            # -------------------------------
-            # question_type
-            # -------------------------------
-            while ctx.peek() and not ctx.peek().startswith("question_type"):
-                ctx.next()
 
-            qt_line = ctx.next()
-            if not qt_line:
-                raise ValueError("MISSING_QUESTION_TYPE")
-
-            qt = int(qt_line.split(":", 1)[1].strip())
-            print(f"[{request_id}] ✅ question_type = {qt}")
-
-            handler = QUESTION_HANDLERS.get(qt)
-            if not handler:
-                raise ValueError(f"UNSUPPORTED_QUESTION_TYPE: {qt}")
-
-            print(f"[{request_id}] 🧠 Handler resolved: {handler.__class__.__name__}")
+           
 
             # -------------------------------
             # Common sections
             # -------------------------------
             print(f"[{request_id}] 📘 Parsing METADATA / Reading / Images")
             meta, reading, images = parse_common_sections(ctx)
+            question_index = 0
+
+            while ctx.peek():
+                # Skip anything until a QUESTION block
+                if not ctx.peek().startswith("--- question start"):
+                    ctx.next()
+                    continue
+            
+                question_index += 1
+                print(f"[{request_id}] ➤ Detected QUESTION {question_index}")
+            
+                ctx.next()  # consume --- QUESTION START ---
+            
+                # For now, just advance until QUESTION END
+                while ctx.peek() and not ctx.peek().startswith("--- question end"):
+                    ctx.next()
+            
+                if ctx.peek() and ctx.peek().startswith("--- question end"):
+                    ctx.next()  # consume --- QUESTION END ---
+
 
             print(f"[{request_id}] 📘 METADATA: {meta}")
             print(f"[{request_id}] 📖 Reading length: {len(reading)}")
             print(f"[{request_id}] 🖼️ Images declared: {images}")
 
-            # -------------------------------
-            # Question-type parsing
-            # -------------------------------
-            print(f"[{request_id}] 🧩 Parsing question blocks")
-            parsed = handler.parse(ctx)
-
-            print(f"[{request_id}] 🧪 Parsed structure keys: {list(parsed.keys())}")
-
-            print(f"[{request_id}] 🛂 Validating question")
-            handler.validate(parsed)
-            print(f"[{request_id}] ✅ Validation passed")
-
-            # -------------------------------
-            # Build renderer blocks
-            # -------------------------------
-            print(f"[{request_id}] 🧱 Resolving images + building blocks")
-            question_blocks = build_blocks(reading, images, db)
-
-            exam_bundle = handler.build_exam_bundle(parsed)
-            # Resolve image-based answer options (if any)
-            if "image_options" in exam_bundle:
-                exam_bundle["image_options"] = resolve_image_options(
-                    exam_bundle["image_options"], db
-                )
-
-            exam_bundle["question_blocks"] = (
-                question_blocks + exam_bundle["question_blocks"]
-            )
-
-            print(
-                f"[{request_id}] 📦 Exam bundle ready | "
-                f"blocks={len(exam_bundle['question_blocks'])}, "
-                f"options={len(exam_bundle.get('options', {}))}, "
-                f"correct={exam_bundle.get('correct_answer')}"
-            )
-
-            # -------------------------------
-            # Save to DB
-            # -------------------------------
-            obj = QuestionNaplanReading(
-                class_name=meta["CLASS"].lower(),
-                subject=meta["SUBJECT"].lower(),
-                year=parse_year(meta),
-                difficulty=meta["DIFFICULTY"].lower(),
-                topic=meta["TOPIC"],
-                question_type=qt,
-                total_questions=1,
-                exam_bundle=exam_bundle
-            )
-
-            db.add(obj)
-            db.commit()
-            db.refresh(obj)
-
+            
             saved_ids.append(obj.id)
             print(f"[{request_id}] 💾 SAVED EXAM {idx} | ID={obj.id}")
 
