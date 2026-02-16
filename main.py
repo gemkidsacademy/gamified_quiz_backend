@@ -13591,7 +13591,7 @@ def parse_common_sections_naplan_reading(ctx):
                 next_line = ctx.peek().strip()
                 if not next_line or next_line.upper().startswith("QUESTION_") or next_line.upper().startswith("--- QUESTION"):
                     break
-                images.append(ctx.next().strip().lower())
+                images.append(ctx.next().lstrip("-• ").strip().lower())
 
             continue
 
@@ -13604,7 +13604,7 @@ def parse_common_sections_naplan_reading(ctx):
 
     return meta, reading, images
 
-def build_blocks(reading, images, db):
+def build_blocks_naplan_reading(reading, images, db):
     """
     Builds renderer-ready question_blocks:
     - Reading text
@@ -14277,31 +14277,104 @@ async def upload_word_naplan_reading(
             # -------------------------------
             print(f"[{request_id}] 📘 Parsing METADATA / Reading / Images")
             meta, reading, images = parse_common_sections_naplan_reading(ctx)
-            question_index = 0
-
-            while ctx.peek():
-                # Skip anything until a QUESTION block
-                if not ctx.peek().startswith("--- question start"):
-                    ctx.next()
-                    continue
-            
-                question_index += 1
-                print(f"[{request_id}] ➤ Detected QUESTION {question_index}")
-            
-                ctx.next()  # consume --- QUESTION START ---
-            
-                # For now, just advance until QUESTION END
-                while ctx.peek() and not ctx.peek().startswith("--- question end"):
-                    ctx.next()
-            
-                if ctx.peek() and ctx.peek().startswith("--- question end"):
-                    ctx.next()  # consume --- QUESTION END ---
-
-
             print(f"[{request_id}] 📘 METADATA: {meta}")
             print(f"[{request_id}] 📖 Reading length: {len(reading)}")
             print(f"[{request_id}] 🖼️ Images declared: {images}")
 
+            shared_blocks = build_blocks_naplan_reading(reading, images, db)
+            question_index = 0
+
+            while ctx.peek():
+                peek = ctx.peek().strip().upper()
+            
+                # Skip until QUESTION START
+                if not peek.startswith("--- QUESTION START"):
+                    ctx.next()
+                    continue
+            
+                ctx.next()  # consume --- QUESTION START ---
+                question_index += 1
+            
+                print(f"[{request_id}] ➤ Parsing QUESTION {question_index}")
+            
+                try:
+                    # -------------------------------
+                    # QUESTION_TYPE
+                    # -------------------------------
+                    qt_line = ctx.next()
+                    if not qt_line or not qt_line.strip().upper().startswith("QUESTION_TYPE"):
+                        raise ValueError("MISSING_QUESTION_TYPE")
+            
+                    qt = int(qt_line.split(":", 1)[1].strip())
+                    handler = QUESTION_HANDLERS.get(qt)
+            
+                    if not handler:
+                        raise ValueError(f"UNSUPPORTED_QUESTION_TYPE: {qt}")
+            
+                    # -------------------------------
+                    # Parse + validate question
+                    # -------------------------------
+                    parsed = handler.parse(ctx)
+                    handler.validate(parsed)
+            
+                    exam_bundle = handler.build_exam_bundle(parsed)
+            
+                    # Resolve image options if needed
+                    if "image_options" in exam_bundle:
+                        exam_bundle["image_options"] = resolve_image_options(
+                            exam_bundle["image_options"], db
+                        )
+            
+                    # Prepend shared reading blocks
+                    exam_bundle["question_blocks"] = (
+                        shared_blocks + exam_bundle["question_blocks"]
+                    )
+            
+                    # -------------------------------
+                    # Save QUESTION
+                    # -------------------------------
+                    obj = QuestionNaplanReading(
+                        passage_id=passage_id,
+                        class_name=meta["CLASS"].lower(),
+                        subject=meta["SUBJECT"].lower(),
+                        year=parse_year(meta),
+                        difficulty=meta["DIFFICULTY"].lower(),
+                        topic=meta["TOPIC"],
+                        question_type=qt,
+                        exam_bundle=exam_bundle
+                    )
+            
+                    db.add(obj)
+                    db.commit()
+                    db.refresh(obj)
+            
+                    saved_ids.append(obj.id)
+            
+                    print(
+                        f"[{request_id}] 💾 SAVED QUESTION {question_index} | ID={obj.id}"
+                    )
+            
+                except Exception as q_err:
+                    db.rollback()
+                    skipped.append(
+                       (f"exam {idx} question {question_index}", str(q_err))
+                    )
+
+                    print(
+                        f"[{request_id}] ❌ SKIPPED QUESTION {question_index} | {q_err}"
+                    )
+            
+                # -------------------------------
+                # Consume QUESTION END safely
+                # -------------------------------
+                while ctx.peek() and not ctx.peek().strip().upper().startswith("--- QUESTION END"):
+                    ctx.next()
+            
+                if ctx.peek():
+                    ctx.next()  # consume --- QUESTION END ---
+
+
+            
             
             #saved_ids.append(obj.id)
             #print(f"[{request_id}] 💾 SAVED EXAM {idx} | ID={obj.id}")
