@@ -4864,6 +4864,8 @@ def get_reading_question_bank_summary(
     - topic
 
     Returns total question count per group.
+    Adds a derived 'variant' field for topics that require
+    semantic distinction based on question count.
     """
 
     subject_norm = func.lower(
@@ -4871,7 +4873,6 @@ def get_reading_question_bank_summary(
     )
 
     class_norm = func.lower(func.trim(QuestionReading.class_name))
-
     difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
 
     rows = (
@@ -4894,16 +4895,26 @@ def get_reading_question_bank_summary(
         .all()
     )
 
+    def derive_variant(topic: str, total_questions: int) -> str | None:
+        if topic and topic.lower() == "comparative analysis":
+            if total_questions == 8:
+                return "short_set"
+            if total_questions == 10:
+                return "full_set"
+        return None
+
     return {
         "rows": [
             {
                 "difficulty": r.difficulty.capitalize(),
                 "topic": r.topic,
                 "total_questions": r.total_questions,
+                "variant": derive_variant(r.topic, r.total_questions),
             }
             for r in rows
         ]
     }
+ 
 @app.get("/api/admin/question-bank-reading")
 def get_question_bank_reading(
     db: Session = Depends(get_db)
