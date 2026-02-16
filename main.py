@@ -13563,19 +13563,60 @@ class SingleGapHandler(InstructionAwareHandler):
 class GapFillHandler(InstructionAwareHandler):
     question_type = 3
 
+    def parse(self, ctx):
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            ["QUESTION_TEXT"],
+            required=False
+        )
+
+        question_text = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            ["WORD_BANK"]
+        )
+
+        word_bank = parse_word_bank(ctx)
+        correct = parse_blank_answers(ctx)
+
+        return {
+            "instruction": instruction,
+            "question_text": question_text,
+            "word_bank": word_bank,
+            "correct": correct
+        }
+
     def validate(self, parsed, *, context=None):
         self._validate_instruction(parsed, context=context)
 
+        # 🔹 Find blanks exactly as used in NAPLAN Reading
         blanks = re.findall(r"\[BLANK\]", parsed["question_text"])
         if not blanks:
             raise ValueError("NO_BLANKS_FOUND")
 
+        # 🔹 Must have one correct answer per blank
         if len(parsed["correct"]) != len(blanks):
             raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
 
+        # 🔹 Every correct answer must exist in word bank
         for ans in parsed["correct"]:
             if ans not in parsed["word_bank"]:
                 raise ValueError("ANSWER_NOT_IN_WORD_BANK")
+
+    def build_exam_bundle(self, parsed):
+        return {
+            "question_type": 3,
+            "question_blocks": (
+                self._instruction_block(parsed)
+                + [{
+                    "type": "gap_fill",
+                    "content": parsed["question_text"],
+                    "word_bank": parsed["word_bank"]
+                }]
+            ),
+            "correct_answer": parsed["correct"]
+        }
 
 def parse_common_sections_naplan_reading(ctx):
     """
