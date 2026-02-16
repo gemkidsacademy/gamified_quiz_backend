@@ -13282,6 +13282,15 @@ def parse_options(ctx):
     return options
 
 
+
+def is_question_boundary(line: str) -> bool:
+    line = line.strip().upper()
+    return (
+        line == "--- QUESTION END ---"
+        or line == "--- QUESTION START ---"
+        or line.startswith("QUESTION_TYPE:")
+    )
+
 def parse_correct_answers(ctx):
     answers = []
 
@@ -13295,27 +13304,24 @@ def parse_correct_answers(ctx):
     ctx.next()  # consume CORRECT_ANSWER:
 
     while ctx.peek():
-        line = ctx.peek().strip()
+        raw_line = ctx.peek()
+        line = raw_line.strip()
 
-        # 🔴 HARD STOP at question boundary
-        if line.upper().startswith((
-            "--- QUESTION",
-            "QUESTION_TYPE",
-            "QUESTION_TEXT",
-            "WORD_BANK",
-            "IMAGE_OPTIONS",
-            "STATEMENTS"
-        )):
+        # ✅ HARD STOP: true question boundary
+        if is_question_boundary(line):
             break
 
+        # valid bullet answer
         if line.startswith(("-", "•")):
             answers.append(ctx.next().lstrip("-• ").strip())
             continue
 
+        # single-token answer (e.g. "B", "True")
         if line and " " not in line:
             answers.append(ctx.next().strip())
             continue
 
+        # anything else ends the answer block
         break
 
     if not answers:
