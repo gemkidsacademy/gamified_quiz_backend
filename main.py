@@ -13289,6 +13289,7 @@ class ParseContext:
 
 class InstructionAwareHandler(QuestionHandler):
     def _validate_instruction(self, parsed, *, context=None):
+        print("🧪 VALIDATE INSTRUCTION | context =", repr(context))
         if context != "reading" and not parsed.get("instruction"):
             raise ValueError("MISSING_QUESTION_INSTRUCTION")
 
