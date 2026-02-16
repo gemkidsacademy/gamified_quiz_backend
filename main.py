@@ -52,6 +52,7 @@ from sqlalchemy.ext.mutable import MutableDict
 
 from openai import OpenAI
 from apscheduler.schedulers.background import BackgroundScheduler
+print("🔥 FILE EXECUTION:", __name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 GLOBAL_IMAGE_MAP = {}
 
