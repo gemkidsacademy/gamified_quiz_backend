@@ -13800,22 +13800,35 @@ def parse_word_bank(ctx):
 
 def parse_blank_answers(ctx):
     line = ctx.next()
-    if not line.startswith("CORRECT_ANSWER"):
+    if not line.strip().upper().startswith("CORRECT_ANSWER"):
         raise ValueError("MISSING_CORRECT_ANSWER")
 
     answers = []
 
-    # Inline not used here, but supported
+    # Inline answer support (rare but allowed)
     if ":" in line:
         _, v = line.split(":", 1)
         v = v.strip()
         if v:
             answers.append(v)
 
-    while ctx.peek() and ctx.peek().strip().startswith("-"):
-        answers.append(
-            ctx.next().replace("-", "").strip()
-        )
+    while ctx.peek():
+        raw = ctx.peek()
+        line = raw.strip()
+
+        # 🚨 HARD STOP: question boundary
+        if is_question_boundary(line):
+            break
+
+        # valid bullet answer
+        if line.startswith("-"):
+            answers.append(
+                ctx.next().lstrip("- ").strip()
+            )
+            continue
+
+        # anything else ends the answer block
+        break
 
     if not answers:
         raise ValueError("EMPTY_CORRECT_ANSWER")
