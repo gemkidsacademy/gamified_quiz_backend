@@ -14303,8 +14303,8 @@ async def upload_word_naplan_reading(
             print(f"[{request_id}] 🖼️ Images declared: {images}")
 
             
-            saved_ids.append(obj.id)
-            print(f"[{request_id}] 💾 SAVED EXAM {idx} | ID={obj.id}")
+            #saved_ids.append(obj.id)
+            #print(f"[{request_id}] 💾 SAVED EXAM {idx} | ID={obj.id}")
 
         except Exception as e:
             db.rollback()
