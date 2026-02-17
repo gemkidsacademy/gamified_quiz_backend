@@ -18572,6 +18572,37 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     flush_buffer()
 
     return blocks
+def parse_docx_to_flat_text_blocks(doc: docx.Document) -> List[Dict]:
+    """
+    CLOZE-safe flat parser.
+
+    Returns a linear sequence of text blocks preserving document order.
+    Each paragraph becomes ONE block.
+    No semantic parsing happens here.
+    """
+
+    blocks: List[Dict] = []
+
+    for idx, paragraph in enumerate(doc.paragraphs):
+        raw_text = paragraph.text
+
+        if not raw_text:
+            continue
+
+        text = raw_text.strip()
+
+        # Skip fully empty / whitespace-only lines
+        if not text:
+            continue
+
+        blocks.append({
+            "type": "text",
+            "text": text,
+            "source": "docx",
+            "paragraph_index": idx
+        })
+
+    return blocks
 def parse_docx_blocks(content: bytes, request_id):
     doc = docx.Document(BytesIO(content))
 
