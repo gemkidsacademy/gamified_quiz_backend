@@ -13793,42 +13793,51 @@ def parse_common_sections_naplan_reading(ctx):
 
     return meta, normalized
 
-def build_blocks_naplan_reading(reading, images, db):
+def build_blocks_naplan_reading_from_extracts(extracts, db):
     """
-    Builds renderer-ready question_blocks:
-    - Reading text
-    - Image blocks (resolved via UploadedImage)
+    Builds renderer-ready reading blocks from multiple extracts.
 
-    Hard-fails if any referenced image is missing.
+    Each extract may contain:
+    - title (optional)
+    - text content
+    - images (validated via UploadedImage)
+
+    Returns a single shared reading block suitable
+    for prepending to all questions.
     """
 
-    blocks = [
-        {
-            "type": "text",
-            "content": reading
+    reading_block = {
+        "type": "reading",
+        "extracts": []
+    }
+
+    for e in extracts:
+        extract_block = {
+            "extract_id": e["extract_id"],
+            "title": e.get("title"),
+            "content": e["content"],
+            "images": []
         }
-    ]
 
-    for img in images:
-        normalized = img.lstrip("-• ").strip().lower()
+        for img in e.get("images", []):
+            normalized = img.lstrip("-• ").strip().lower()
 
-        record = (
-            db.query(UploadedImage)
-            .filter(
-                func.lower(func.trim(UploadedImage.original_name)) == normalized
+            record = (
+                db.query(UploadedImage)
+                .filter(
+                    func.lower(func.trim(UploadedImage.original_name)) == normalized
+                )
+                .first()
             )
-            .first()
-        )
 
-        if not record:
-            raise ValueError(f"IMAGE_NOT_UPLOADED: {normalized}")
+            if not record:
+                raise ValueError(f"IMAGE_NOT_UPLOADED: {normalized}")
 
-        blocks.append({
-            "type": "image",
-            "src": record.gcs_url
-        })
+            extract_block["images"].append(record.gcs_url)
 
-    return blocks
+        reading_block["extracts"].append(extract_block)
+
+    return [reading_block]
 
 def parse_year(meta):
     try:
@@ -14540,20 +14549,8 @@ async def upload_word_naplan_reading(
             
             print(f"[{request_id}] 📘 METADATA: {meta}")
             print(f"[{request_id}] 📖 Extracts detected: {len(extracts)}")
-            shared_blocks = [{
-                "type": "reading",
-                "extracts": [
-                    {
-                        "extract_id": e["extract_id"],
-                        "title": e["title"],
-                        "content": e["content"],
-                        "images": [
-                            resolve_image_path(img, db) for img in e["images"]
-                        ]
-                    }
-                    for e in extracts
-                ]
-            }]
+            shared_blocks = build_blocks_naplan_reading_from_extracts(extracts, db)
+
 
             question_index = 0
 
