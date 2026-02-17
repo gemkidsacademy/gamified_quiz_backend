@@ -3493,22 +3493,31 @@ def build_question_blocks(q):
     # TYPE 2 — IMAGE SELECTION (MULTI)
     # ==================================================
     if q.question_type == 2:
+        # 1️⃣ Instruction text (REQUIRED)
+        if q.question_text:
+            blocks.append({
+                "type": "text",
+                "content": q.question_text.strip()
+            })
+    
+        # 2️⃣ Extract images from raw blocks
         images = []
-
+    
         if isinstance(q.question_blocks, list):
             for block in q.question_blocks:
                 content = block.get("content", "")
                 if content.startswith("IMAGES:"):
                     image_name = content.replace("IMAGES:", "").strip()
                     images.append(image_name)
-
+    
+        # 3️⃣ Image selection block
         if images:
             blocks.append({
                 "type": "image-selection",
                 "images": images,
                 "maxSelections": 2
             })
-
+    
         return blocks
 
     # ==================================================
