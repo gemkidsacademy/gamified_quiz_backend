@@ -3474,45 +3474,55 @@ def normalize_question_blocks_backend(blocks):
 def build_question_blocks(q):
     """
     Build render-safe question_blocks for exam delivery.
+    This function is used ONLY at exam generation time.
     """
 
     blocks = []
 
     # ==================================================
-    # Include question_text only for non-inline types
+    # Include question_text for NON-inline types
+    # (Type 5 and 7 are handled explicitly below)
     # ==================================================
     if q.question_text and q.question_type not in {2, 5, 7}:
         blocks.append({
             "type": "text",
             "content": q.question_text.strip()
         })
+
     # ==================================================
     # TYPE 2 — IMAGE SELECTION (MULTI)
     # ==================================================
     if q.question_type == 2:
         images = []
-    
+
         if isinstance(q.question_blocks, list):
             for block in q.question_blocks:
                 content = block.get("content", "")
                 if content.startswith("IMAGES:"):
                     image_name = content.replace("IMAGES:", "").strip()
                     images.append(image_name)
-    
+
         if images:
             blocks.append({
                 "type": "image-selection",
                 "images": images,
                 "maxSelections": 2
             })
-    
+
         return blocks
 
-
     # ==================================================
-    # TYPE 7 — WORD_SELECTION
+    # TYPE 7 — WORD_SELECTION (Grammar – Adverbs)
     # ==================================================
     if q.question_type == 7:
+        # 1️⃣ Instruction text (REQUIRED)
+        if q.question_text:
+            blocks.append({
+                "type": "text",
+                "content": q.question_text.strip()
+            })
+
+        # 2️⃣ Interactive sentence
         if q.question_blocks and isinstance(q.question_blocks, dict):
             sentence = q.question_blocks.get("sentence")
             selectable_words = q.question_blocks.get("selectable_words")
@@ -3559,6 +3569,7 @@ def build_question_blocks(q):
         blocks.extend(normalized)
 
     return blocks
+
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
