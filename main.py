@@ -16253,13 +16253,25 @@ def serialize_type1_question_for_exam(q):
 
 
 def normalize_images_in_question(question: dict, image_map: dict):
+    # Normalize images in options
     options = question.get("options")
-    if not options:
-        return
+    if options:
+        for key, value in options.items():
+            if value in image_map:
+                options[key] = image_map[value]
 
-    for key, value in options.items():
-        if value in image_map:
-            options[key] = image_map[value]
+    # Normalize images inside question_blocks
+    blocks = question.get("question_blocks") or []
+    for block in blocks:
+        images = block.get("images")
+        if not images:
+            continue
+
+        normalized_images = []
+        for img in images:
+            normalized_images.append(image_map.get(img, img))
+
+        block["images"] = normalized_images
 
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
