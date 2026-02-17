@@ -3075,6 +3075,63 @@ def normalize_mr_questions_exam_review(raw_questions):
     print(f"🧹 Normalized questions count: {len(normalized)}")
     return normalized
  
+def normalize_question_blocks(raw_blocks):
+    """
+    Normalize question_blocks into a list of block dicts.
+
+    Output contract:
+    [
+        { "type": "text", "content": "..." },
+        { "type": "image", "src": "..." },   # if present
+        ...
+    ]
+    """
+
+    # 1️⃣ None → no structured blocks
+    if raw_blocks is None:
+        return []
+
+    # 2️⃣ Single string → wrap as text block
+    if isinstance(raw_blocks, str):
+        content = raw_blocks.strip()
+        return (
+            [{"type": "text", "content": content}]
+            if content
+            else []
+        )
+
+    # 3️⃣ List → normalize each element
+    if isinstance(raw_blocks, list):
+        normalized = []
+
+        for item in raw_blocks:
+            # string → text block
+            if isinstance(item, str):
+                content = item.strip()
+                if content:
+                    normalized.append({
+                        "type": "text",
+                        "content": content
+                    })
+
+            # dict → assume already structured
+            elif isinstance(item, dict):
+                # must at least have a type
+                if "type" in item:
+                    normalized.append(item)
+
+            # anything else → ignore (but visible if you log)
+            else:
+                # optional debug:
+                # print(f"⚠️ Ignoring invalid block item: {item}")
+                pass
+
+        return normalized
+
+    # 4️⃣ Defensive failure (unexpected type)
+    raise ValueError(
+        f"Unsupported question_blocks type: {type(raw_blocks)}"
+    )
 
 
 @app.post("/naplan/language-conventions/generate-exam")
@@ -3211,7 +3268,7 @@ def generate_naplan_language_conventions_exam(
                 "topic": q.topic,
                 "difficulty": q.difficulty,
                 "question_text": q.question_text,
-                "question_blocks": q.question_blocks,
+                "question_blocks": normalize_question_blocks(q.question_blocks),
                 "options": q.options,
                 "correct_answer": q.correct_answer,
             })
@@ -3283,45 +3340,37 @@ def generate_naplan_language_conventions_exam(
         "total_questions": len(assembled_questions),
     }
 
-
-def normalize_question_blocks(raw_blocks):
-    # string → single text block
-    if isinstance(raw_blocks, str):
-        return [
-            {"type": "text", "content": raw_blocks}
-        ]
-
-    # list → normalize each element
-    if isinstance(raw_blocks, list):
-        normalized = []
-        for b in raw_blocks:
-            if isinstance(b, str):
-                normalized.append({
-                    "type": "text",
-                    "content": b
-                })
-            elif isinstance(b, dict):
-                normalized.append(b)
-        return normalized
-
-    # fallback (defensive)
-    raise ValueError(
-        f"Unsupported question_blocks type: {type(raw_blocks)}"
-    )
-
-
 def clean_question_blocks(blocks, correct_answer):
-    # ✅ THIS is what was missing
-    blocks = normalize_question_blocks(blocks)
+    if not blocks:
+        return []
 
     cleaned = []
 
     for block in blocks:
         if block.get("type") != "text":
+            cleaned.append(block)
             continue
 
-        content = block.get("content", "").strip()
+        content = (block.get("content") or "").strip()
+
         if not content:
+            continue
+
+        lower = content.lower()
+
+        if lower.startswith("question_type"):
+            continue
+
+        if lower.startswith("answer_type"):
+            continue
+
+        if lower.startswith("year:"):
+            continue
+
+        if lower.startswith("question_blocks"):
+            continue
+
+        if str(content).strip() == str(correct_answer).strip():
             continue
 
         cleaned.append({
@@ -3330,6 +3379,8 @@ def clean_question_blocks(blocks, correct_answer):
         })
 
     return cleaned
+
+
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
