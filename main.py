@@ -20293,11 +20293,15 @@ def persist_word_selection_question(
 
     Assumes ws_validate_block has already been called.
     """
-
+    class_name = (
+        metadata.get("class_name")   # legacy / internal
+        or metadata.get("class")     # document-authored
+    )
+    
     record = QuestionNumeracyLC(
         question_type=7,
-        class_name=metadata.get("class_name"),
-        year=metadata.get("year"),
+        class_name=class_name,
+        year=int(metadata.get("year")) if metadata.get("year") else None,
         subject=metadata.get("subject"),
         topic=metadata.get("topic"),
         difficulty=metadata.get("difficulty"),
@@ -20307,9 +20311,7 @@ def persist_word_selection_question(
             "selectable_words": selectable_words,
         },
         options=None,
-        correct_answer={
-            "value": correct_answer
-        },
+        correct_answer={"value": correct_answer},
     )
 
     db.add(record)
