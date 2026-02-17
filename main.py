@@ -176,6 +176,23 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class ParsingCursor:
+    def __init__(self, lines):
+        self.lines = lines
+        self.index = 0
+
+    def peek(self):
+        if self.index < len(self.lines):
+            return self.lines[self.index]
+        return None
+
+    def next(self):
+        if self.index < len(self.lines):
+            current = self.lines[self.index]
+            self.index += 1
+            return current
+        return None
+
 class UploadSummary:
     def __init__(self):
         self.saved = 0
@@ -19756,56 +19773,54 @@ async def process_exam_block(
     # ==================================================
     # 🔤 TYPE 7 — WORD_SELECTION (DETERMINISTIC)
     # ==================================================
-    if is_word_selection_exam(
-    "\n".join(
+    block_text = "\n".join(
         item["content"]
         for item in question_block
-            if isinstance(item, dict) and "content" in item
-        )
-    ):
-        block_text = "\n".join(
-            item["content"]
-            for item in question_block
-            if isinstance(item, dict) and "content" in item
-        )
+        if isinstance(item, dict) and "content" in item
+    )
     
-        metadata = ws_extract_metadata(block_text)
-        question_text = ws_extract_question_text(block_text)
-        sentence = ws_extract_sentence(block_text)
-        correct_answer = ws_extract_correct_answer(block_text)
-        selectable_words = ws_extract_selectable_words(block_text)
-
+    if is_word_selection_exam(block_text):
+    
+        ctx = ParsingCursor(block_text.splitlines())
+    
+        metadata = ws_extract_metadata(ctx)
+        question_text = ws_extract_question_text(ctx)
+        sentence = ws_extract_sentence(ctx)
+        selectable_words = ws_extract_selectable_words(ctx)
+        correct_answer = ws_extract_correct_answer(ctx)
+    
         parsed = {
             "question_text": question_text,
             "sentence": sentence,
             "selectable_words": selectable_words,
             "correct_answer": correct_answer,
         }
-
+    
         ws_validate_block(parsed)
-
+    
         persist_word_selection_question(
             db=db,
             metadata=metadata,
             question_text=question_text,
             sentence=sentence,
+            selectable_words=selectable_words,
             correct_answer=correct_answer,
         )
-
+    
         summary.block_success(block_idx, [1])
         return  # 🚨 DO NOT FALL THROUGH
-
- 
-
-    # --------------------------------------------------
-    # Quick structural sanity check
-    # --------------------------------------------------
-    if not looks_like_question(question_block):
-        print(
-            f"[{request_id}] ⚠️ Block {block_idx} skipped "
-            f"(not a question)"
-        )
-        return
+    
+     
+    
+        # --------------------------------------------------
+        # Quick structural sanity check
+        # --------------------------------------------------
+        if not looks_like_question(question_block):
+            print(
+                f"[{request_id}] ⚠️ Block {block_idx} skipped "
+                f"(not a question)"
+            )
+            return
 
     
     
