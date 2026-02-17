@@ -19617,6 +19617,31 @@ def debug_detect_question_types(question_block):
                     types.add(p)
 
     return types
+def ws_extract_selectable_words(block_text: str) -> list[str]:
+    """
+    Extract SELECTABLE_WORDS as an ordered list.
+    """
+    lines = block_text.splitlines()
+
+    words = []
+    in_section = False
+
+    for line in lines:
+        line = line.strip()
+
+        if line == "SELECTABLE_WORDS:":
+            in_section = True
+            continue
+
+        if in_section:
+            # stop at next header
+            if line.isupper() and line.endswith(":"):
+                break
+
+            if line:
+                words.append(line)
+
+    return words
 
 async def process_exam_block(
     block_idx: int,
@@ -19712,10 +19737,12 @@ async def process_exam_block(
         question_text = ws_extract_question_text(block_text)
         sentence = ws_extract_sentence(block_text)
         correct_answer = ws_extract_correct_answer(block_text)
+        selectable_words = ws_extract_selectable_words(block_text)
 
         parsed = {
             "question_text": question_text,
             "sentence": sentence,
+            "selectable_words": selectable_words,
             "correct_answer": correct_answer,
         }
 
@@ -20070,6 +20097,9 @@ def is_cloze_exam(exam_block: list[dict]) -> bool:
 import re
 
 
+import re
+
+
 def ws_validate_block(parsed: dict) -> None:
     """
     Validates a parsed Type 7 — WORD_SELECTION block.
@@ -20083,40 +20113,79 @@ def ws_validate_block(parsed: dict) -> None:
 
     question_text = parsed.get("question_text")
     sentence = parsed.get("sentence")
+    selectable_words = parsed.get("selectable_words")
     correct_answer = parsed.get("correct_answer")
 
     # Rule 1: QUESTION_TEXT exists
     if not question_text or not question_text.strip():
-        raise ValueError("WORD_SELECTION validation failed: QUESTION_TEXT is missing or empty")
+        raise ValueError(
+            "WORD_SELECTION validation failed: QUESTION_TEXT is missing or empty"
+        )
 
     # Rule 2: SENTENCE exists
     if not sentence or not sentence.strip():
-        raise ValueError("WORD_SELECTION validation failed: SENTENCE is missing or empty")
+        raise ValueError(
+            "WORD_SELECTION validation failed: SENTENCE is missing or empty"
+        )
 
-    # Rule 3: CORRECT_ANSWER exists
+    # Rule 3: SELECTABLE_WORDS exists and is a list
+    if not isinstance(selectable_words, list) or not selectable_words:
+        raise ValueError(
+            "WORD_SELECTION validation failed: SELECTABLE_WORDS must be a non-empty list"
+        )
+
+    # Normalize selectable words
+    normalized_words = []
+    for w in selectable_words:
+        if not isinstance(w, str) or not w.strip():
+            raise ValueError(
+                "WORD_SELECTION validation failed: SELECTABLE_WORDS contains invalid entries"
+            )
+        if " " in w.strip():
+            raise ValueError(
+                "WORD_SELECTION validation failed: SELECTABLE_WORDS must be single words only"
+            )
+        normalized_words.append(w.strip())
+
+    # Rule 4: CORRECT_ANSWER exists
     if not correct_answer or not correct_answer.strip():
-        raise ValueError("WORD_SELECTION validation failed: CORRECT_ANSWER is missing or empty")
+        raise ValueError(
+            "WORD_SELECTION validation failed: CORRECT_ANSWER is missing or empty"
+        )
 
-    # Normalize answer
     answer = correct_answer.strip()
 
-    # Rule 4: single word only
+    # Rule 5: CORRECT_ANSWER must be a single word
     if " " in answer:
-        raise ValueError("WORD_SELECTION validation failed: CORRECT_ANSWER must be a single word")
+        raise ValueError(
+            "WORD_SELECTION validation failed: CORRECT_ANSWER must be a single word"
+        )
 
-    # Rule 5: answer must appear in sentence (word-boundary safe)
-    pattern = rf"\b{re.escape(answer)}\b"
-    if not re.search(pattern, sentence, flags=re.IGNORECASE):
+    # Rule 6: CORRECT_ANSWER must be one of SELECTABLE_WORDS
+    if answer not in normalized_words:
         raise ValueError(
             "WORD_SELECTION validation failed: "
-            "CORRECT_ANSWER does not appear as a standalone word in SENTENCE"
+            "CORRECT_ANSWER must be one of SELECTABLE_WORDS"
         )
+
+    # Rule 7: Every selectable word must appear in sentence (word-boundary safe)
+    for word in normalized_words:
+        pattern = rf"\b{re.escape(word)}\b"
+        if not re.search(pattern, sentence, flags=re.IGNORECASE):
+            raise ValueError(
+                f"WORD_SELECTION validation failed: "
+                f"Selectable word '{word}' does not appear as a standalone word in SENTENCE"
+            )
+
+
+
 def persist_word_selection_question(
     *,
     db,
     metadata: dict,
     question_text: str,
     sentence: str,
+    selectable_words: list[str],
     correct_answer: str,
 ):
     """
@@ -20134,7 +20203,8 @@ def persist_word_selection_question(
         difficulty=metadata.get("difficulty"),
         question_text=question_text,
         question_blocks={
-            "sentence": sentence
+            "sentence": sentence,
+            "selectable_words": selectable_words,
         },
         options=None,
         correct_answer={
@@ -20147,6 +20217,7 @@ def persist_word_selection_question(
     db.refresh(record)
 
     return record
+
 def is_word_selection_exam(block: str) -> bool:
     """
     Detects whether a full exam block represents
