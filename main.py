@@ -19833,6 +19833,9 @@ async def process_exam_block(
         question_text = ws_extract_question_text(ctx)
         sentence = ws_extract_sentence(ctx)
         selectable_words = ws_extract_selectable_words(ctx)
+        # ⬇️ NEW: skip ANSWER_TYPE
+        while ctx.peek() and not ctx.peek().strip().upper().startswith("CORRECT_ANSWER"):
+            ctx.next()
         correct_answer = ws_extract_correct_answer(ctx)
     
         parsed = {
