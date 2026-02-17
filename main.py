@@ -3363,6 +3363,26 @@ def clean_question_blocks(blocks, correct_answer):
     return cleaned
 
 
+def normalize_question_blocks_backend(blocks):
+    if not blocks:
+        return []
+
+    if isinstance(blocks, str):
+        return [{"type": "text", "content": blocks}]
+
+    if isinstance(blocks, dict):
+        return [blocks]
+
+    if isinstance(blocks, list):
+        normalized = []
+        for b in blocks:
+            if isinstance(b, str):
+                normalized.append({"type": "text", "content": b})
+            elif isinstance(b, dict):
+                normalized.append(b)
+        return normalized
+
+    return []
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
@@ -3491,22 +3511,17 @@ def generate_naplan_numeracy_exam(
         selected = random.sample(questions, db_count)
         print(f"🎯 Selected {len(selected)} questions for topic '{topic_name}'")
 
-        for q in selected:
-            cleaned_blocks = clean_question_blocks(
-                q.question_blocks,
-                q.correct_answer
-            )
-
-
+        for q in selected:        
             assembled_questions.append({
                 "id": q.id,
                 "question_type": q.question_type,
                 "topic": q.topic,
                 "difficulty": q.difficulty,
-                "question_blocks": cleaned_blocks,
+                "question_blocks": normalize_question_blocks_backend(q.question_blocks),
                 "options": q.options,
                 "correct_answer": q.correct_answer,
             })
+
 
 
     # 7. Final validation
