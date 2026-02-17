@@ -16250,6 +16250,17 @@ def serialize_type1_question_for_exam(q):
         # MCQ options are needed
         "options": q.get("options"),
     }
+
+
+def normalize_images_in_question(question: dict, image_map: dict):
+    options = question.get("options")
+    if not options:
+        return
+
+    for key, value in options.items():
+        if value in image_map:
+            options[key] = image_map[value]
+
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
@@ -16258,9 +16269,6 @@ def start_naplan_numeracy_exam(
     print("\n================ START NAPLAN NUMERACY EXAM =================")
     print("📥 Incoming payload:", req.dict())
 
-    # --------------------------------------------------
-    # 1️⃣ Resolve student
-    # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(
@@ -16271,18 +16279,8 @@ def start_naplan_numeracy_exam(
     )
 
     if not student:
-        print("❌ Student not found:", repr(req.student_id))
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print(
-        f"✅ Student resolved | "
-        f"student_id={student.student_id} | "
-        f"internal_id={student.id}"
-    )
-
-    # --------------------------------------------------
-    # 2️⃣ Fetch latest NAPLAN Numeracy attempt
-    # --------------------------------------------------
     attempt = (
         db.query(StudentExamNaplanNumeracy)
         .filter(StudentExamNaplanNumeracy.student_id == student.id)
@@ -16293,14 +16291,10 @@ def start_naplan_numeracy_exam(
     MAX_DURATION = timedelta(minutes=40)
     now = datetime.now(timezone.utc)
 
-    if attempt:
-        print(
-            "🔢 Existing NAPLAN Numeracy attempt found | "
-            f"attempt_id={attempt.id} | "
-            f"started_at={attempt.started_at} | "
-            f"completed_at={attempt.completed_at}"
-        )
+    uploaded_images = db.query(UploadedImage).all()
+    image_map = {img.original_name: img.gcs_url for img in uploaded_images}
 
+    if attempt:
         started_at = attempt.started_at
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
@@ -16308,27 +16302,14 @@ def start_naplan_numeracy_exam(
         expires_at = started_at + MAX_DURATION
         elapsed = int((now - started_at).total_seconds())
 
-        print(
-            "⏱️ Timer evaluation | "
-            f"now={now} | "
-            f"expires_at={expires_at} | "
-            f"elapsed_seconds={elapsed}"
-        )
-
-        # ⛔ Expired attempt → auto-complete
         if attempt.completed_at is None and now > expires_at:
             attempt.completed_at = expires_at
             db.commit()
-
-            print("➡️ Returning: completed=true (timeout)")
             return {"completed": True}
 
-        # ✅ Already completed
         if attempt.completed_at is not None:
-            print("➡️ Returning: completed=true (already completed)")
             return {"completed": True}
 
-        # ▶ Resume active attempt
         remaining = max(0, attempt.duration_minutes * 60 - elapsed)
 
         exam = (
@@ -16342,27 +16323,15 @@ def start_naplan_numeracy_exam(
             .first()
         )
 
-        if not exam:
-            raise HTTPException(
-                status_code=404,
-                detail="NAPLAN Numeracy exam not found"
-            )
-
         raw_questions = normalize_naplan_numeracy_questions_live(exam.questions or [])
 
         normalized_questions = []
-        
         for q in raw_questions:
-            # ✅ STRICT handling for Type 1 only
             if q.get("question_type") == 1:
-                normalized_questions.append(
-                    serialize_type1_question_for_exam(q)
-                )
-            else:
-                # 🚫 Leave all other types completely untouched
-                normalized_questions.append(q)
+                q = serialize_type1_question_for_exam(q)
 
-
+            normalize_images_in_question(q, image_map)
+            normalized_questions.append(q)
 
         return {
             "completed": False,
@@ -16373,8 +16342,6 @@ def start_naplan_numeracy_exam(
     # --------------------------------------------------
     # 🆕 FIRST ATTEMPT
     # --------------------------------------------------
-    print("🆕 No existing attempt → creating first NAPLAN Numeracy attempt")
-
     exam = (
         db.query(ExamNaplanNumeracy)
         .filter(
@@ -16386,24 +16353,15 @@ def start_naplan_numeracy_exam(
         .first()
     )
 
-    if not exam:
-        raise HTTPException(
-            status_code=404,
-            detail="NAPLAN Numeracy exam not found"
-        )
-
     raw_questions = normalize_naplan_numeracy_questions_live(exam.questions or [])
 
     normalized_questions = []
-    
     for q in raw_questions:
         if q.get("question_type") == 1:
-            normalized_questions.append(
-                serialize_type1_question_for_exam(q)
-            )
-        else:
-            normalized_questions.append(q)
+            q = serialize_type1_question_for_exam(q)
 
+        normalize_images_in_question(q, image_map)
+        normalized_questions.append(q)
 
     new_attempt = StudentExamNaplanNumeracy(
         student_id=student.id,
@@ -16416,20 +16374,10 @@ def start_naplan_numeracy_exam(
     db.commit()
     db.refresh(new_attempt)
 
-    print(
-        "🆕 New attempt created | "
-        f"attempt_id={new_attempt.id}"
-    )
-
-    # --------------------------------------------------
-    # Pre-create response rows
-    # --------------------------------------------------
-    
     for original_q in exam.questions or []:
         normalized_correct_option = normalize_correct_option_for_db(
             original_q.get("correct_answer")
         )
-    
         db.add(
             StudentExamResponseNaplanNumeracy(
                 student_id=student.id,
@@ -16438,14 +16386,12 @@ def start_naplan_numeracy_exam(
                 q_id=original_q["id"],
                 topic=original_q.get("topic"),
                 selected_option=None,
-                correct_option=normalized_correct_option,  # ✅ STRING ONLY
+                correct_option=normalized_correct_option,
                 is_correct=None
             )
         )
 
     db.commit()
-
-    print("================ END START NAPLAN NUMERACY EXAM ================\n")
 
     return {
         "completed": False,
