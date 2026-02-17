@@ -16211,7 +16211,25 @@ def normalize_correct_option_for_db(correct):
         return correct
 
     return str(correct)
+def serialize_type1_question_for_exam(q):
+    """
+    Build exam-safe payload for Type 1 (MCQ single).
+    Strips authoring junk and NEVER sends correct_answer.
+    """
+    return {
+        "id": q["id"],
+        "question_type": q["question_type"],
+        "topic": q.get("topic"),
+        "difficulty": q.get("difficulty"),
 
+        # 🔑 Use ALREADY normalized blocks (do NOT rebuild)
+        "question_blocks": normalize_question_blocks_backend(
+            q.get("question_blocks")
+        ),
+
+        # MCQ options are needed
+        "options": q.get("options"),
+    }
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
@@ -16310,7 +16328,20 @@ def start_naplan_numeracy_exam(
                 detail="NAPLAN Numeracy exam not found"
             )
 
-        normalized_questions = normalize_naplan_numeracy_questions_live(exam.questions or [])
+        raw_questions = normalize_naplan_numeracy_questions_live(exam.questions or [])
+
+        normalized_questions = []
+        
+        for q in raw_questions:
+            # ✅ STRICT handling for Type 1 only
+            if q.get("question_type") == 1:
+                normalized_questions.append(
+                    serialize_type1_question_for_exam(q)
+                )
+            else:
+                # 🚫 Leave all other types completely untouched
+                normalized_questions.append(q)
+
 
 
         return {
@@ -16341,7 +16372,18 @@ def start_naplan_numeracy_exam(
             detail="NAPLAN Numeracy exam not found"
         )
 
-    normalized_questions = normalize_naplan_numeracy_questions_live(exam.questions or [])
+    raw_questions = normalize_naplan_numeracy_questions_live(exam.questions or [])
+
+    normalized_questions = []
+    
+    for q in raw_questions:
+        if q.get("question_type") == 1:
+            normalized_questions.append(
+                serialize_type1_question_for_exam(q)
+            )
+        else:
+            normalized_questions.append(q)
+
 
     new_attempt = StudentExamNaplanNumeracy(
         student_id=student.id,
