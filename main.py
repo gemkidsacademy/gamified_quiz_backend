@@ -16018,6 +16018,23 @@ def normalize_naplan_numeracy_questions_live(raw_questions):
     return normalized
 
    
+def normalize_correct_option_for_db(correct):
+    if correct is None:
+        return None
+
+    # { value: "B" }
+    if isinstance(correct, dict) and "value" in correct:
+        return str(correct["value"])
+
+    # ['A', 'C']
+    if isinstance(correct, list):
+        return ",".join(map(str, correct))
+
+    # "['A','C']"
+    if isinstance(correct, str):
+        return correct
+
+    return str(correct)
 
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
@@ -16171,10 +16188,10 @@ def start_naplan_numeracy_exam(
     # --------------------------------------------------
     
     for original_q in exam.questions or []:
-        correct_option = original_q["correct_answer"]
-
-        if not isinstance(correct_option, list):
-            correct_option = [correct_option]
+        normalized_correct_option = normalize_correct_option_for_db(
+            original_q.get("correct_answer")
+        )
+    
         db.add(
             StudentExamResponseNaplanNumeracy(
                 student_id=student.id,
@@ -16183,7 +16200,7 @@ def start_naplan_numeracy_exam(
                 q_id=original_q["id"],
                 topic=original_q.get("topic"),
                 selected_option=None,
-                correct_option=correct_option,
+                correct_option=normalized_correct_option,  # ✅ STRING ONLY
                 is_correct=None
             )
         )
