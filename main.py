@@ -3418,13 +3418,16 @@ def build_question_blocks(q):
                 "content": q.question_text.strip()
             })
 
-        # Interactive sentence
+        # Word-selection interaction
         if q.question_blocks and isinstance(q.question_blocks, dict):
             sentence = q.question_blocks.get("sentence")
-            if sentence:
+            selectable_words = q.question_blocks.get("selectable_words")
+
+            if sentence and selectable_words:
                 blocks.append({
-                    "type": "sentence",
-                    "content": sentence.strip()
+                    "type": "word-selection",
+                    "sentence": sentence.strip(),
+                    "selectable_words": selectable_words
                 })
 
         return blocks
