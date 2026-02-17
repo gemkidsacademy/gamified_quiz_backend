@@ -19705,6 +19705,14 @@ def ws_extract_selectable_words(ctx):
 
 
 
+QUESTION_SECTION_HEADERS = {
+    "QUESTION_TEXT",
+    "SENTENCE",
+    "SELECTABLE_WORDS",
+    "CORRECT_ANSWER",
+    "ANSWER_TYPE",
+}
+
 def ws_extract_metadata_from_block(block_text: str) -> dict:
     metadata = {}
     in_meta = False
@@ -19715,27 +19723,29 @@ def ws_extract_metadata_from_block(block_text: str) -> dict:
         line = raw_line.strip()
         print(f"🧪 META line {idx}: {repr(line)} | in_meta={in_meta}")
 
-        # Start METADATA section (must match exactly)
+        if not line:
+            continue
+
+        # Start metadata
         if line.upper() == "METADATA:":
             in_meta = True
             print("🧪 META START detected")
             continue
 
-        # Ignore everything before METADATA
         if not in_meta:
             continue
 
-        # Stop at the NEXT section header (but NOT metadata entries)
-        if is_header_line(line):
-            print(f"🧪 META END detected at line: {repr(line)}")
+        # Stop ONLY at real question sections
+        header_name = line.split(":", 1)[0].strip().upper()
+        if header_name in QUESTION_SECTION_HEADERS:
+            print(f"🧪 META END detected at section header: {repr(line)}")
             break
 
-        # Parse key-value pairs
+        # Parse metadata key-value
         if ":" in line:
             k, v = line.split(":", 1)
             key = k.strip().lower()
             value = v.strip().strip('"')
-
             metadata[key] = value
             print(f"🧪 META PARSED: {key} = {value}")
 
