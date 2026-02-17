@@ -19646,6 +19646,12 @@ def normalize_ws_word(raw: str) -> str:
 
     return word
 
+HEADER_RE = re.compile(r"^[A-Z_]+\s*:")
+
+def is_header_line(line: str) -> bool:
+    if not line:
+        return False
+    return bool(HEADER_RE.match(line.strip()))
 
 def ws_extract_selectable_words(ctx):
     """
@@ -20268,7 +20274,6 @@ def persist_word_selection_question(
     db.refresh(record)
 
     return record
-
 def is_word_selection_exam(block: str) -> bool:
     """
     Detects whether a full exam block represents
