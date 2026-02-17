@@ -19617,31 +19617,67 @@ def debug_detect_question_types(question_block):
                     types.add(p)
 
     return types
-def ws_extract_selectable_words(block_text: str) -> list[str]:
+
+WORD_RE = re.compile(r"^[A-Za-z]+$")
+
+def normalize_ws_word(raw: str) -> str:
+    # Strip whitespace (including Word junk)
+    word = raw.strip()
+
+    # Remove leading/trailing punctuation
+    word = re.sub(r"^[^\w]+|[^\w]+$", "", word)
+
+    return word
+
+
+def ws_extract_selectable_words(ctx):
     """
-    Extract SELECTABLE_WORDS as an ordered list.
+    Extracts and normalizes SELECTABLE_WORDS block
+    Returns: List[str]
     """
-    lines = block_text.splitlines()
 
-    words = []
-    in_section = False
+    raw_words = []
 
-    for line in lines:
-        line = line.strip()
+    # Seek SELECTABLE_WORDS header
+    while ctx.peek() and not ctx.peek().strip().upper().startswith("SELECTABLE_WORDS"):
+        ctx.next()
 
-        if line == "SELECTABLE_WORDS:":
-            in_section = True
-            continue
+    if not ctx.peek():
+        raise ValueError("MISSING_SELECTABLE_WORDS")
 
-        if in_section:
-            # stop at next header
-            if line.isupper() and line.endswith(":"):
-                break
+    ctx.next()  # consume SELECTABLE_WORDS:
 
-            if line:
-                words.append(line)
+    # Collect raw lines until next header
+    while ctx.peek():
+        line = ctx.peek().strip()
 
-    return words
+        if is_header_line(line):
+            break
+
+        if line:
+            raw_words.append(line)
+
+        ctx.next()
+
+    if not raw_words:
+        raise ValueError("SELECTABLE_WORDS cannot be empty")
+
+    # 🔹 NORMALIZE HERE (this is your snippet)
+    selectable_words = []
+
+    for raw in raw_words:
+        word = normalize_ws_word(raw)
+        if word:
+            selectable_words.append(word)
+
+    # 🔹 VALIDATE HERE
+    for w in selectable_words:
+        if not WORD_RE.match(w):
+            raise ValueError(
+                "WORD_SELECTION validation failed: SELECTABLE_WORDS must be single words only"
+            )
+
+    return selectable_words
 
 async def process_exam_block(
     block_idx: int,
