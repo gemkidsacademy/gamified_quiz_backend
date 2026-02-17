@@ -19846,6 +19846,9 @@ async def process_exam_block(
         }
     
         ws_validate_block(parsed)
+        print("🧪 DEBUG metadata dict:", metadata)
+        print("🧪 DEBUG metadata keys:", list(metadata.keys()))
+
     
         persist_word_selection_question(
             db=db,
