@@ -3405,20 +3405,21 @@ def build_question_blocks(q):
     Build render-safe question_blocks for exam delivery.
     """
 
-    # -------------------------------
-    # Grammar (Adverbs) — Type 7
-    # -------------------------------
+    blocks = []
+
+    # ==================================================
+    # Always include question_text if present
+    # ==================================================
+    if q.question_text:
+        blocks.append({
+            "type": "text",
+            "content": q.question_text.strip()
+        })
+
+    # ==================================================
+    # TYPE 7 — WORD_SELECTION
+    # ==================================================
     if q.question_type == 7:
-        blocks = []
-
-        # Question prompt
-        if q.question_text:
-            blocks.append({
-                "type": "text",
-                "content": q.question_text.strip()
-            })
-
-        # Word-selection interaction
         if q.question_blocks and isinstance(q.question_blocks, dict):
             sentence = q.question_blocks.get("sentence")
             selectable_words = q.question_blocks.get("selectable_words")
@@ -3432,13 +3433,14 @@ def build_question_blocks(q):
 
         return blocks
 
-    # -------------------------------
-    # All other question types
-    # -------------------------------
+    # ==================================================
+    # ALL OTHER TYPES
+    # ==================================================
     if q.question_blocks:
-        return normalize_question_blocks_backend(q.question_blocks)
+        normalized = normalize_question_blocks_backend(q.question_blocks)
+        blocks.extend(normalized)
 
-    return []
+    return blocks
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
