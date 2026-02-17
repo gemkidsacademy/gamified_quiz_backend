@@ -3383,6 +3383,25 @@ def normalize_question_blocks_backend(blocks):
         return normalized
 
     return []
+def build_question_blocks(q):
+    """
+    Build render-safe question_blocks for exam delivery.
+    """
+
+    # Normal path — most question types
+    if q.question_blocks:
+        return normalize_question_blocks_backend(q.question_blocks)
+
+    # Special case — Type 6 (Counting Objects)
+    if q.question_type == 6 and q.question_text:
+        return [
+            {
+                "type": "text",
+                "content": q.question_text.strip()
+            }
+        ]
+
+    return []
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
@@ -3517,7 +3536,7 @@ def generate_naplan_numeracy_exam(
                 "question_type": q.question_type,
                 "topic": q.topic,
                 "difficulty": q.difficulty,
-                "question_blocks": normalize_question_blocks_backend(q.question_blocks),
+                "question_blocks": build_question_blocks(q),
                 "options": q.options,
                 "correct_answer": q.correct_answer,
             })
