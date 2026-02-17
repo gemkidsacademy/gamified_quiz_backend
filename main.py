@@ -19709,20 +19709,37 @@ def ws_extract_metadata_from_block(block_text: str) -> dict:
     metadata = {}
     in_meta = False
 
-    for line in block_text.splitlines():
-        line = line.strip()
+    print("🧪 ENTER ws_extract_metadata_from_block")
 
-        if line.upper().startswith("METADATA"):
+    for idx, raw_line in enumerate(block_text.splitlines(), start=1):
+        line = raw_line.strip()
+        print(f"🧪 META line {idx}: {repr(line)} | in_meta={in_meta}")
+
+        # Start METADATA section (must match exactly)
+        if line.upper() == "METADATA:":
             in_meta = True
+            print("🧪 META START detected")
             continue
 
-        if in_meta and is_header_line(line):
+        # Ignore everything before METADATA
+        if not in_meta:
+            continue
+
+        # Stop at the NEXT section header (but NOT metadata entries)
+        if is_header_line(line):
+            print(f"🧪 META END detected at line: {repr(line)}")
             break
 
-        if in_meta and ":" in line:
+        # Parse key-value pairs
+        if ":" in line:
             k, v = line.split(":", 1)
-            metadata[k.strip().lower()] = v.strip().strip('"')
+            key = k.strip().lower()
+            value = v.strip().strip('"')
 
+            metadata[key] = value
+            print(f"🧪 META PARSED: {key} = {value}")
+
+    print("🧪 META FINAL DICT:", metadata)
     return metadata
 
 async def process_exam_block(
