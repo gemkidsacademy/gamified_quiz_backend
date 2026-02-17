@@ -3078,34 +3078,30 @@ def normalize_mr_questions_exam_review(raw_questions):
 def normalize_question_blocks(raw_blocks):
     """
     Normalize question_blocks into a list of block dicts.
-
-    Output contract:
-    [
-        { "type": "text", "content": "..." },
-        { "type": "image", "src": "..." },   # if present
-        ...
-    ]
+    Always returns a list.
     """
 
-    # 1️⃣ None → no structured blocks
+    # 1️⃣ None → no blocks
     if raw_blocks is None:
         return []
 
-    # 2️⃣ Single string → wrap as text block
+    # 2️⃣ Single string → text block
     if isinstance(raw_blocks, str):
         content = raw_blocks.strip()
         return (
             [{"type": "text", "content": content}]
-            if content
-            else []
+            if content else []
         )
 
-    # 3️⃣ List → normalize each element
+    # 3️⃣ Single dict → wrap in list
+    if isinstance(raw_blocks, dict):
+        return [raw_blocks]
+
+    # 4️⃣ List → normalize each element
     if isinstance(raw_blocks, list):
         normalized = []
 
         for item in raw_blocks:
-            # string → text block
             if isinstance(item, str):
                 content = item.strip()
                 if content:
@@ -3113,22 +3109,17 @@ def normalize_question_blocks(raw_blocks):
                         "type": "text",
                         "content": content
                     })
-
-            # dict → assume already structured
             elif isinstance(item, dict):
-                # must at least have a type
                 if "type" in item:
                     normalized.append(item)
-
-            # anything else → ignore (but visible if you log)
             else:
-                # optional debug:
+                # optional debug
                 # print(f"⚠️ Ignoring invalid block item: {item}")
                 pass
 
         return normalized
 
-    # 4️⃣ Defensive failure (unexpected type)
+    # 5️⃣ Truly unsupported
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
