@@ -9280,6 +9280,12 @@ def generate_exam_writing(
     # ----------------------------------
     db.query(GeneratedExamWriting).delete(synchronize_session=False)
     db.commit()
+    # ----------------------------------
+    # Clear previous student exam attempts
+    # ----------------------------------
+    db.query(StudentExamWriting).delete(synchronize_session=False)
+    db.commit()
+
 
     # ----------------------------------
     # Fetch ONE random writing question
