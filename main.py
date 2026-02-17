@@ -19810,6 +19810,8 @@ async def process_exam_block(
     if is_word_selection_exam(block_text):
     
         ctx = ParsingCursor(block_text.splitlines())
+        while ctx.peek() and not ctx.peek().strip().upper().startswith("QUESTION_TEXT"):
+              ctx.next()
     
         metadata = ws_extract_metadata_from_block(block_text)
         question_text = ws_extract_question_text(ctx)
