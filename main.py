@@ -16305,10 +16305,13 @@ def normalize_type2_image_multiselect(question: dict):
     options = question.get("options") or {}
 
     image_block = None
+    text_blocks = []
+
     for block in blocks:
         if block.get("type") == "image-selection":
             image_block = block
-            break
+        else:
+            text_blocks.append(block)
 
     if not image_block:
         return
@@ -16327,7 +16330,9 @@ def normalize_type2_image_multiselect(question: dict):
             "image": image_url
         })
 
+    # ✅ PRESERVE text + replace image block only
     question["question_blocks"] = [
+        *text_blocks,
         {
             "type": "image-multi-select",
             "maxSelections": image_block.get("maxSelections", 1),
@@ -16335,6 +16340,7 @@ def normalize_type2_image_multiselect(question: dict):
         }
     ]
 
+    # Remove legacy options
     question.pop("options", None)
 
 import ast
