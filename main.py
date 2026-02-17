@@ -19702,6 +19702,28 @@ def ws_extract_selectable_words(ctx):
 
     return selectable_words
 
+
+
+def ws_extract_metadata_from_block(block_text: str) -> dict:
+    metadata = {}
+    in_meta = False
+
+    for line in block_text.splitlines():
+        line = line.strip()
+
+        if line.upper().startswith("METADATA"):
+            in_meta = True
+            continue
+
+        if in_meta and is_header_line(line):
+            break
+
+        if in_meta and ":" in line:
+            k, v = line.split(":", 1)
+            metadata[k.strip().lower()] = v.strip().strip('"')
+
+    return metadata
+
 async def process_exam_block(
     block_idx: int,
     question_block: list,
@@ -19789,7 +19811,7 @@ async def process_exam_block(
     
         ctx = ParsingCursor(block_text.splitlines())
     
-        metadata = ws_extract_metadata(ctx)
+        metadata = ws_extract_metadata_from_block(block_text)
         question_text = ws_extract_question_text(ctx)
         sentence = ws_extract_sentence(ctx)
         selectable_words = ws_extract_selectable_words(ctx)
