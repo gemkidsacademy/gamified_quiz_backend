@@ -3481,11 +3481,33 @@ def build_question_blocks(q):
     # ==================================================
     # Include question_text only for non-inline types
     # ==================================================
-    if q.question_text and q.question_type not in {5, 7}:
+    if q.question_text and q.question_type not in {2, 5, 7}:
         blocks.append({
             "type": "text",
             "content": q.question_text.strip()
         })
+    # ==================================================
+    # TYPE 2 — IMAGE SELECTION (MULTI)
+    # ==================================================
+    if q.question_type == 2:
+        images = []
+    
+        if isinstance(q.question_blocks, list):
+            for block in q.question_blocks:
+                content = block.get("content", "")
+                if content.startswith("IMAGES:"):
+                    image_name = content.replace("IMAGES:", "").strip()
+                    images.append(image_name)
+    
+        if images:
+            blocks.append({
+                "type": "image-selection",
+                "images": images,
+                "maxSelections": 2
+            })
+    
+        return blocks
+
 
     # ==================================================
     # TYPE 7 — WORD_SELECTION
