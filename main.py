@@ -3537,28 +3537,37 @@ def build_question_blocks(q):
         return blocks
 
     # ==================================================
-    # TYPE 5 — CLOZE_DROPDOWN
+    # TYPE 5 — CLOZE_DROPDOWN (WITH INSTRUCTION)
     # ==================================================
     if q.question_type == 5:
         sentence = None
-
-        # sentence may live in question_blocks (dict or list)
-        if isinstance(q.question_blocks, dict):
-            sentence = q.question_blocks.get("sentence")
-
-        elif isinstance(q.question_blocks, list):
+        instruction = None
+    
+        if isinstance(q.question_blocks, list):
             for block in q.question_blocks:
-                if "{{dropdown}}" in block.get("content", ""):
-                    sentence = block["content"]
-                    break
-
+                content = block.get("content", "").strip()
+    
+                if content == "Choose the word to correctly complete this sentence.":
+                    instruction = content
+    
+                if "{{dropdown}}" in content:
+                    sentence = content
+    
+        # 1️⃣ Instruction text (optional but recommended)
+        if instruction:
+            blocks.append({
+                "type": "text",
+                "content": instruction
+            })
+    
+        # 2️⃣ Inline dropdown sentence
         if sentence and q.options:
             blocks.append({
                 "type": "cloze-dropdown",
                 "sentence": sentence.strip(),
                 "options": list(q.options.values())
             })
-
+    
         return blocks
 
     # ==================================================
