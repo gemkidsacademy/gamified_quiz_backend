@@ -16272,6 +16272,61 @@ def normalize_images_in_question(question: dict, image_map: dict):
             normalized_images.append(image_map.get(img, img))
 
         block["images"] = normalized_images
+def normalize_type2_image_multiselect(question: dict):
+    if question.get("question_type") != 2:
+        return
+
+    blocks = question.get("question_blocks") or []
+    options = question.get("options") or {}
+
+    image_block = None
+    for block in blocks:
+        if block.get("type") == "image-selection":
+            image_block = block
+            break
+
+    if not image_block:
+        return
+
+    images = image_block.get("images") or []
+    option_items = list(options.items())
+
+    if len(images) != len(option_items):
+        raise ValueError("TYPE2_IMAGE_OPTION_COUNT_MISMATCH")
+
+    visual_options = []
+    for (opt_id, label), image_url in zip(option_items, images):
+        visual_options.append({
+            "id": opt_id,
+            "label": label,
+            "image": image_url
+        })
+
+    question["question_blocks"] = [
+        {
+            "type": "image-multi-select",
+            "maxSelections": image_block.get("maxSelections", 1),
+            "options": visual_options
+        }
+    ]
+
+    question.pop("options", None)
+
+import ast
+
+def normalize_type2_correct_answer(question: dict):
+    if question.get("question_type") != 2:
+        return
+
+    raw = question.get("correct_answer")
+
+    if isinstance(raw, dict):
+        return
+
+    if isinstance(raw, str):
+        question["correct_answer"] = {
+            "value": ast.literal_eval(raw)
+        }
 
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
@@ -16343,6 +16398,8 @@ def start_naplan_numeracy_exam(
                 q = serialize_type1_question_for_exam(q)
 
             normalize_images_in_question(q, image_map)
+            normalize_type2_image_multiselect(q)
+            normalize_type2_correct_answer(q)
             normalized_questions.append(q)
 
         return {
@@ -16373,6 +16430,9 @@ def start_naplan_numeracy_exam(
             q = serialize_type1_question_for_exam(q)
 
         normalize_images_in_question(q, image_map)
+        normalize_type2_image_multiselect(q)
+        normalize_type2_correct_answer(q)
+
         normalized_questions.append(q)
 
     new_attempt = StudentExamNaplanNumeracy(
