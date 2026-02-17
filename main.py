@@ -8508,7 +8508,7 @@ def get_reading_content(exam_id: int, db: Session = Depends(get_db)):
     print("✅ exam.exam_json type:", type(exam.exam_json))
     print("🔑 exam.exam_json keys:", exam.exam_json.keys())
 
-    sections = exam.exam_json.get("sections")
+    sections = exam.exam_json.get("sections", [])
     print("📚 sections type:", type(sections))
     print("📚 sections length:", len(sections) if isinstance(sections, list) else "N/A")
 
@@ -8516,7 +8516,6 @@ def get_reading_content(exam_id: int, db: Session = Depends(get_db)):
         first_section = sections[0]
         print("🧱 FIRST SECTION KEYS:", first_section.keys())
 
-        # try to locate questions
         for key in ["questions", "items", "question_list"]:
             if key in first_section:
                 print(f"🧩 FOUND QUESTIONS UNDER KEY: '{key}'")
@@ -8527,11 +8526,24 @@ def get_reading_content(exam_id: int, db: Session = Depends(get_db)):
         else:
             print("⚠️ NO QUESTION ARRAY FOUND in first section")
 
+    # 🔧 FIX 1 — normalize reading_material (string → object)
+    for section in sections:
+        rm = section.get("reading_material")
+
+        if isinstance(rm, str):
+            print("🛠 Normalizing reading_material for section:", section.get("section_id"))
+
+            section["reading_material"] = {
+                "title": section.get("topic") or "Reading Passage",
+                "content": rm
+            }
+
     print("📤 RETURNING exam_json TO FRONTEND\n")
 
     return {
         "exam_json": exam.exam_json
     }
+
 
 @app.get("/api/foundational/classes")
 def get_foundational_classes(db: Session = Depends(get_db)):
