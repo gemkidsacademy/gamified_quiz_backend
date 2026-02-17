@@ -19655,11 +19655,9 @@ def is_header_line(line: str) -> bool:
 
 def ws_extract_selectable_words(ctx):
     """
-    Extracts and normalizes SELECTABLE_WORDS block
+    Extracts and normalizes SELECTABLE_WORDS using a ParsingCursor.
     Returns: List[str]
     """
-
-    raw_words = []
 
     # Seek SELECTABLE_WORDS header
     while ctx.peek() and not ctx.peek().strip().upper().startswith("SELECTABLE_WORDS"):
@@ -19670,30 +19668,33 @@ def ws_extract_selectable_words(ctx):
 
     ctx.next()  # consume SELECTABLE_WORDS:
 
-    # Collect raw lines until next header
-    while ctx.peek():
-        line = ctx.peek().strip()
+    # Skip blank lines after header
+    while ctx.peek() and not ctx.peek().strip():
+        ctx.next()
 
-        if is_header_line(line):
+    raw_words = []
+
+    # Collect words until next header
+    while ctx.peek():
+        current = ctx.peek().strip()
+
+        if is_header_line(current):
             break
 
-        if line:
-            raw_words.append(line)
-
+        raw_words.append(current)
         ctx.next()
 
     if not raw_words:
         raise ValueError("SELECTABLE_WORDS cannot be empty")
 
-    # 🔹 NORMALIZE HERE (this is your snippet)
+    # Normalize words
     selectable_words = []
-
     for raw in raw_words:
         word = normalize_ws_word(raw)
         if word:
             selectable_words.append(word)
 
-    # 🔹 VALIDATE HERE
+    # Validate single-word tokens
     for w in selectable_words:
         if not WORD_RE.match(w):
             raise ValueError(
@@ -20405,19 +20406,18 @@ def ws_extract_metadata(block: str) -> dict:
 
     return metadata
 def ws_extract_question_text(ctx):
-    """
-    Extracts QUESTION_TEXT using a ParsingCursor.
-    Cursor is expected to be positioned at QUESTION_TEXT:
-    """
     print("🧪 ENTER ws_extract_question_text")
     print(f"🧪 peek at entry = {repr(ctx.peek())}")
 
     # Expect QUESTION_TEXT header
-    line = ctx.peek()
-    if not line or not line.strip().upper().startswith("QUESTION_TEXT"):
+    if not ctx.peek() or not ctx.peek().strip().upper().startswith("QUESTION_TEXT"):
         return None
 
     ctx.next()  # consume QUESTION_TEXT:
+
+    # ⬇️ IMPORTANT: skip blank lines
+    while ctx.peek() and not ctx.peek().strip():
+        ctx.next()
 
     lines = []
 
@@ -20428,9 +20428,7 @@ def ws_extract_question_text(ctx):
         if is_header_line(current):
             break
 
-        if current:
-            lines.append(current)
-
+        lines.append(current)
         ctx.next()
 
     question_text = " ".join(lines).strip()
@@ -20444,14 +20442,16 @@ def ws_extract_sentence(ctx):
     Extracts SENTENCE using a ParsingCursor.
     Cursor is expected to be positioned at SENTENCE:
     """
-    print("🧪 ENTER ws_extract_sentence")
-    print(f"🧪 peek at entry = {repr(ctx.peek())}")
 
-    line = ctx.peek()
-    if not line or not line.strip().upper().startswith("SENTENCE"):
+    # Expect SENTENCE header
+    if not ctx.peek() or not ctx.peek().strip().upper().startswith("SENTENCE"):
         return None
 
     ctx.next()  # consume SENTENCE:
+
+    # Skip blank lines after header
+    while ctx.peek() and not ctx.peek().strip():
+        ctx.next()
 
     lines = []
 
@@ -20462,29 +20462,26 @@ def ws_extract_sentence(ctx):
         if is_header_line(current):
             break
 
-        if current:
-            lines.append(current)
-
+        lines.append(current)
         ctx.next()
 
     sentence = " ".join(lines).strip()
-    print(f"🧪 extracted SENTENCE = {repr(sentence)}")
-
     return sentence if sentence else None
-
 def ws_extract_correct_answer(ctx):
     """
     Extracts CORRECT_ANSWER using a ParsingCursor.
     Cursor is expected to be positioned at CORRECT_ANSWER:
     """
-    print("🧪 ENTER ws_extract_correct_answer")
-    print(f"🧪 peek at entry = {repr(ctx.peek())}")
 
-    line = ctx.peek()
-    if not line or not line.strip().upper().startswith("CORRECT_ANSWER"):
+    # Expect CORRECT_ANSWER header
+    if not ctx.peek() or not ctx.peek().strip().upper().startswith("CORRECT_ANSWER"):
         return None
 
     ctx.next()  # consume CORRECT_ANSWER:
+
+    # Skip blank lines after header
+    while ctx.peek() and not ctx.peek().strip():
+        ctx.next()
 
     lines = []
 
@@ -20495,15 +20492,12 @@ def ws_extract_correct_answer(ctx):
         if is_header_line(current) or current.startswith("==="):
             break
 
-        if current:
-            lines.append(current)
-
+        lines.append(current)
         ctx.next()
 
     answer = " ".join(lines).strip()
-    print(f"🧪 extracted CORRECT_ANSWER = {repr(answer)}")
-
     return answer if answer else None
+
 
 def validate_single_question_type(exam_block):
     found = set()
