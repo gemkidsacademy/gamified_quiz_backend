@@ -13415,14 +13415,56 @@ class SingleMCQHandler(InstructionAwareHandler):
 # --------------------------------------------------
 
 @register
-class MultiSelectMCQHandler(SingleMCQHandler):
+class MultiSelectMCQHandler(InstructionAwareHandler):
     question_type = 2
+
+    def parse(self, ctx):
+        instruction = parse_block(
+            ctx,
+            "QUESTION_INSTRUCTION",
+            ["QUESTION_TEXT"],
+            required=False
+        )
+
+        question = parse_block(
+            ctx,
+            "QUESTION_TEXT",
+            ["ANSWER_OPTIONS"],
+            required=True
+        )
+
+        options = parse_options(ctx)
+        correct = parse_correct_answers(ctx)
+
+        return {
+            "instruction": instruction,
+            "question": question,
+            "options": options,
+            "correct": correct
+        }
 
     def validate(self, parsed, *, context=None):
         self._validate_instruction(parsed, context=context)
 
-        if len(parsed["correct"]) != 2:
-            raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+        # 🔒 Must select at least TWO answers
+        if len(parsed["correct"]) < 2:
+            raise ValueError("MULTI_SELECT_REQUIRES_MULTIPLE_ANSWERS")
+
+        # 🔒 Every correct answer must exist in options
+        for ans in parsed["correct"]:
+            if ans not in parsed["options"]:
+                raise ValueError("INVALID_CORRECT_OPTION")
+
+    def build_exam_bundle(self, parsed):
+        return {
+            "question_type": 2,
+            "question_blocks": (
+                self._instruction_block(parsed)
+                + [{"type": "multi_select", "content": parsed["question"]}]
+            ),
+            "options": parsed["options"],
+            "correct_answer": parsed["correct"]
+        }
 
 
 # --------------------------------------------------
