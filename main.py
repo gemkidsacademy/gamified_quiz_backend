@@ -13644,17 +13644,23 @@ class GapFillHandler(InstructionAwareHandler):
 
 def parse_common_sections_naplan_reading(ctx):
     """
-    Parses:
+    Parses shared NAPLAN Reading sections:
+
     - METADATA
-    - READING_MATERIAL
-    - IMAGES (inline or multiline)
+    - READING_MATERIAL with support for MULTIPLE extracts
+      - TEXT_TITLE starts a new extract
+      - IMAGES belong to the current extract
 
     Leaves ctx.ptr positioned at the first QUESTION marker.
+
+    Returns:
+        meta: dict
+        extracts: list[dict]
     """
 
-    # -------------------------------
+    # ==================================================
     # METADATA
-    # -------------------------------
+    # ==================================================
     if not ctx.peek() or ctx.peek().strip().upper() != "METADATA:":
         raise ValueError("MISSING_METADATA")
 
@@ -13665,7 +13671,6 @@ def parse_common_sections_naplan_reading(ctx):
     while ctx.peek():
         peek = ctx.peek().strip().upper()
 
-        # Stop when reading material begins
         if peek == "READING_MATERIAL:":
             break
 
@@ -13674,59 +13679,119 @@ def parse_common_sections_naplan_reading(ctx):
             k, v = line.split(":", 1)
             meta[k.strip().upper()] = v.strip().strip('"')
 
-    required = ["CLASS", "SUBJECT", "TOPIC", "DIFFICULTY"]
-    if not all(k in meta for k in required):
+    required = {"CLASS", "SUBJECT", "TOPIC", "DIFFICULTY"}
+    if not required.issubset(meta.keys()):
         raise ValueError("INCOMPLETE_METADATA")
 
-    # -------------------------------
-    # READING MATERIAL
-    # -------------------------------
+    # ==================================================
+    # READING MATERIAL (MULTI-EXTRACT)
+    # ==================================================
     line = ctx.next()
     if not line or line.strip().upper() != "READING_MATERIAL:":
         raise ValueError("MISSING_READING_MATERIAL")
 
-    reading_lines = []
-    images = []
+    extracts = []
+    current = None
+    extract_index = 0
+
+    def start_new_extract(title=None):
+        nonlocal extract_index, current
+        extract_index += 1
+        current = {
+            "extract_id": chr(64 + extract_index),  # A, B, C...
+            "title": title,
+            "text_lines": [],
+            "images": []
+        }
+        extracts.append(current)
 
     while ctx.peek():
-        peek = ctx.peek().strip()
+        raw = ctx.peek()
+        line = raw.strip()
+        upper = line.upper()
 
-        upper = peek.upper()
-
-        # Stop when questions begin
+        # -------------------------------
+        # STOP at first question
+        # -------------------------------
         if upper.startswith("QUESTION_") or upper.startswith("--- QUESTION"):
             break
+
+        # -------------------------------
+        # TEXT_TITLE → new extract
+        # -------------------------------
+        if upper.startswith("TEXT_TITLE:"):
+            ctx.next()
+            title = line.split(":", 1)[1].strip().strip('"')
+            start_new_extract(title=title)
+            continue
 
         # -------------------------------
         # IMAGES section
         # -------------------------------
         if upper.startswith("IMAGES"):
-            line = ctx.next()
+            ctx.next()
+
+            if current is None:
+                start_new_extract(title=None)
 
             # Inline: IMAGES: a.png, b.png
             if ":" in line:
                 _, rest = line.split(":", 1)
-                images.extend(
+                current["images"].extend(
                     [i.strip().lower() for i in rest.split(",") if i.strip()]
                 )
 
-            # Multiline image list
+            # Multiline images
             while ctx.peek():
-                next_line = ctx.peek().strip()
-                if not next_line or next_line.upper().startswith("QUESTION_") or next_line.upper().startswith("--- QUESTION"):
+                peek = ctx.peek().strip()
+                up = peek.upper()
+
+                if (
+                    not peek
+                    or up.startswith("QUESTION_")
+                    or up.startswith("--- QUESTION")
+                    or up.startswith("TEXT_TITLE:")
+                ):
                     break
-                images.append(ctx.next().lstrip("-• ").strip().lower())
+
+                current["images"].append(
+                    ctx.next().lstrip("-• ").strip().lower()
+                )
 
             continue
 
-        reading_lines.append(ctx.next())
+        # -------------------------------
+        # Regular reading text
+        # -------------------------------
+        if current is None:
+            # Backward compatibility:
+            # reading text before any TEXT_TITLE
+            start_new_extract(title=None)
 
-    reading = "\n".join(reading_lines).strip()
+        current["text_lines"].append(ctx.next())
 
-    if len(reading) < 20:
+    # ==================================================
+    # VALIDATION + NORMALIZATION
+    # ==================================================
+    if not extracts:
         raise ValueError("READING_TOO_SHORT")
 
-    return meta, reading, images
+    normalized = []
+
+    for e in extracts:
+        content = "\n".join(e["text_lines"]).strip()
+        if content:
+            normalized.append({
+                "extract_id": e["extract_id"],
+                "title": e["title"],
+                "content": content,
+                "images": e["images"]
+            })
+
+    if not normalized:
+        raise ValueError("READING_TOO_SHORT")
+
+    return meta, normalized
 
 def build_blocks_naplan_reading(reading, images, db):
     """
@@ -14470,13 +14535,26 @@ async def upload_word_naplan_reading(
             # -------------------------------
             # Common sections
             # -------------------------------
-            print(f"[{request_id}] 📘 Parsing METADATA / Reading / Images")
-            meta, reading, images = parse_common_sections_naplan_reading(ctx)
+            print(f"[{request_id}] 📘 Parsing METADATA / Reading / Extracts")
+            meta, extracts = parse_common_sections_naplan_reading(ctx)
+            
             print(f"[{request_id}] 📘 METADATA: {meta}")
-            print(f"[{request_id}] 📖 Reading length: {len(reading)}")
-            print(f"[{request_id}] 🖼️ Images declared: {images}")
+            print(f"[{request_id}] 📖 Extracts detected: {len(extracts)}")
+            shared_blocks = [{
+                "type": "reading",
+                "extracts": [
+                    {
+                        "extract_id": e["extract_id"],
+                        "title": e["title"],
+                        "content": e["content"],
+                        "images": [
+                            resolve_image_path(img, db) for img in e["images"]
+                        ]
+                    }
+                    for e in extracts
+                ]
+            }]
 
-            shared_blocks = build_blocks_naplan_reading(reading, images, db)
             question_index = 0
 
             while ctx.peek():
