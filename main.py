@@ -3434,7 +3434,32 @@ def build_question_blocks(q):
         return blocks
 
     # ==================================================
-    # ALL OTHER TYPES
+    # TYPE 5 — CLOZE_DROPDOWN
+    # ==================================================
+    if q.question_type == 5:
+        sentence = None
+
+        # sentence may live in question_blocks (dict or list)
+        if isinstance(q.question_blocks, dict):
+            sentence = q.question_blocks.get("sentence")
+
+        elif isinstance(q.question_blocks, list):
+            for block in q.question_blocks:
+                if "{{dropdown}}" in block.get("content", ""):
+                    sentence = block["content"]
+                    break
+
+        if sentence and q.options:
+            blocks.append({
+                "type": "cloze-dropdown",
+                "sentence": sentence.strip(),
+                "options": list(q.options.values())
+            })
+
+        return blocks
+
+    # ==================================================
+    # ALL OTHER TYPES (legacy-safe)
     # ==================================================
     if q.question_blocks:
         normalized = normalize_question_blocks_backend(q.question_blocks)
