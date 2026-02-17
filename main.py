@@ -3388,18 +3388,35 @@ def build_question_blocks(q):
     Build render-safe question_blocks for exam delivery.
     """
 
-    # Normal path — most question types
-    if q.question_blocks:
-        return normalize_question_blocks_backend(q.question_blocks)
+    # -------------------------------
+    # Grammar (Adverbs) — Type 7
+    # -------------------------------
+    if q.question_type == 7:
+        blocks = []
 
-    # Special case — Type 6 (Counting Objects)
-    if q.question_type == 6 and q.question_text:
-        return [
-            {
+        # Question prompt
+        if q.question_text:
+            blocks.append({
                 "type": "text",
                 "content": q.question_text.strip()
-            }
-        ]
+            })
+
+        # Interactive sentence
+        if q.question_blocks and isinstance(q.question_blocks, dict):
+            sentence = q.question_blocks.get("sentence")
+            if sentence:
+                blocks.append({
+                    "type": "sentence",
+                    "content": sentence.strip()
+                })
+
+        return blocks
+
+    # -------------------------------
+    # All other question types
+    # -------------------------------
+    if q.question_blocks:
+        return normalize_question_blocks_backend(q.question_blocks)
 
     return []
 
