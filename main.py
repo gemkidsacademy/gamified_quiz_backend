@@ -3341,33 +3341,24 @@ def generate_naplan_language_conventions_exam(
     }
 
 def clean_question_blocks(blocks, correct_answer):
-    if not blocks:
-        return []
+    # ✅ ALWAYS normalize first
+    blocks = normalize_question_blocks(blocks)
 
     cleaned = []
 
     for block in blocks:
+        # now block is GUARANTEED to be a dict
         if block.get("type") != "text":
             cleaned.append(block)
             continue
 
         content = (block.get("content") or "").strip()
-
         if not content:
             continue
 
         lower = content.lower()
 
-        if lower.startswith("question_type"):
-            continue
-
-        if lower.startswith("answer_type"):
-            continue
-
-        if lower.startswith("year:"):
-            continue
-
-        if lower.startswith("question_blocks"):
+        if lower.startswith(("question_type", "answer_type", "year:", "question_blocks")):
             continue
 
         if str(content).strip() == str(correct_answer).strip():
