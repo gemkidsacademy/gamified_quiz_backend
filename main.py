@@ -19810,9 +19810,24 @@ async def process_exam_block(
     if is_word_selection_exam(block_text):
         metadata = ws_extract_metadata_from_block(block_text)
         ctx = ParsingCursor(block_text.splitlines())
-        while ctx.peek() and not ctx.peek().strip().upper().startswith("QUESTION_TEXT"):
-              ctx.next()
-    
+
+        print("🧪 DEBUG cursor fast-forward start")
+        
+        steps = 0
+        while ctx.peek():
+            current = ctx.peek()
+            print(f"   ↪ peek[{steps}] = {repr(current)}")
+        
+            if current.strip().upper().startswith("QUESTION_TEXT"):
+                print("   🎯 FOUND QUESTION_TEXT header")
+                break
+        
+            ctx.next()
+            steps += 1
+        
+        print("🧪 DEBUG cursor fast-forward end")
+        print(f"🧪 DEBUG cursor final peek = {repr(ctx.peek())}")
+
         
         question_text = ws_extract_question_text(ctx)
         sentence = ws_extract_sentence(ctx)
@@ -20389,88 +20404,105 @@ def ws_extract_metadata(block: str) -> dict:
             metadata["difficulty"] = value
 
     return metadata
-def ws_extract_question_text(block: str) -> str | None:
+def ws_extract_question_text(ctx):
     """
-    Extracts QUESTION_TEXT for Type 7 — WORD_SELECTION.
-
-    Returns the question text as a string,
-    or None if the section is missing.
+    Extracts QUESTION_TEXT using a ParsingCursor.
+    Cursor is expected to be positioned at QUESTION_TEXT:
     """
+    print("🧪 ENTER ws_extract_question_text")
+    print(f"🧪 peek at entry = {repr(ctx.peek())}")
 
-    if not block or not isinstance(block, str):
+    # Expect QUESTION_TEXT header
+    line = ctx.peek()
+    if not line or not line.strip().upper().startswith("QUESTION_TEXT"):
         return None
 
-    if "QUESTION_TEXT:" not in block:
-        return None
+    ctx.next()  # consume QUESTION_TEXT:
 
-    text = block.split("QUESTION_TEXT:", 1)[1]
+    lines = []
 
-    stop_markers = [
-        "\nSENTENCE:",
-        "\nANSWER_TYPE:",
-        "\nCORRECT_ANSWER:",
-    ]
+    while ctx.peek():
+        current = ctx.peek().strip()
 
-    for marker in stop_markers:
-        if marker in text:
-            text = text.split(marker, 1)[0]
+        # Stop at next section header
+        if is_header_line(current):
+            break
 
-    question_text = text.strip()
+        if current:
+            lines.append(current)
+
+        ctx.next()
+
+    question_text = " ".join(lines).strip()
+    print(f"🧪 extracted QUESTION_TEXT = {repr(question_text)}")
+
     return question_text if question_text else None
+
 #here123
-def ws_extract_sentence(block: str) -> str | None:
+def ws_extract_sentence(ctx):
     """
-    Extracts the SENTENCE for Type 7 — WORD_SELECTION.
-
-    Returns the sentence string,
-    or None if the section is missing or empty.
+    Extracts SENTENCE using a ParsingCursor.
+    Cursor is expected to be positioned at SENTENCE:
     """
+    print("🧪 ENTER ws_extract_sentence")
+    print(f"🧪 peek at entry = {repr(ctx.peek())}")
 
-    if not block or not isinstance(block, str):
+    line = ctx.peek()
+    if not line or not line.strip().upper().startswith("SENTENCE"):
         return None
 
-    if "SENTENCE:" not in block:
-        return None
+    ctx.next()  # consume SENTENCE:
 
-    text = block.split("SENTENCE:", 1)[1]
+    lines = []
 
-    stop_markers = [
-        "\nANSWER_TYPE:",
-        "\nCORRECT_ANSWER:",
-    ]
+    while ctx.peek():
+        current = ctx.peek().strip()
 
-    for marker in stop_markers:
-        if marker in text:
-            text = text.split(marker, 1)[0]
+        # Stop at next section header
+        if is_header_line(current):
+            break
 
-    sentence = text.strip()
+        if current:
+            lines.append(current)
+
+        ctx.next()
+
+    sentence = " ".join(lines).strip()
+    print(f"🧪 extracted SENTENCE = {repr(sentence)}")
+
     return sentence if sentence else None
-def ws_extract_correct_answer(block: str) -> str | None:
-    """
-    Extracts CORRECT_ANSWER for Type 7 — WORD_SELECTION.
 
-    Returns the correct answer as a string,
-    or None if the section is missing or empty.
+def ws_extract_correct_answer(ctx):
     """
+    Extracts CORRECT_ANSWER using a ParsingCursor.
+    Cursor is expected to be positioned at CORRECT_ANSWER:
+    """
+    print("🧪 ENTER ws_extract_correct_answer")
+    print(f"🧪 peek at entry = {repr(ctx.peek())}")
 
-    if not block or not isinstance(block, str):
+    line = ctx.peek()
+    if not line or not line.strip().upper().startswith("CORRECT_ANSWER"):
         return None
 
-    if "CORRECT_ANSWER:" not in block:
-        return None
+    ctx.next()  # consume CORRECT_ANSWER:
 
-    text = block.split("CORRECT_ANSWER:", 1)[1]
+    lines = []
 
-    # In case future sections are appended later
-    stop_markers = [
-        "\n===",
-    ]
+    while ctx.peek():
+        current = ctx.peek().strip()
 
-    for marker in stop_markers:
-        if marker in text:
-            text = text.split(marker, 1)[0]
+        # Stop at next section header or exam boundary
+        if is_header_line(current) or current.startswith("==="):
+            break
 
-    answer = text.strip()
+        if current:
+            lines.append(current)
+
+        ctx.next()
+
+    answer = " ".join(lines).strip()
+    print(f"🧪 extracted CORRECT_ANSWER = {repr(answer)}")
+
     return answer if answer else None
 
 def validate_single_question_type(exam_block):
