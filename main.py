@@ -13307,21 +13307,26 @@ def parse_correct_answers(ctx):
         raw_line = ctx.peek()
         line = raw_line.strip()
 
-        # ✅ HARD STOP: true question boundary
+        # 🔒 HARD STOP at question boundary
         if is_question_boundary(line):
             break
 
-        # valid bullet answer
+        # Bullet answers
         if line.startswith(("-", "•")):
-            answers.append(ctx.next().lstrip("-• ").strip())
+            value = ctx.next().lstrip("-• ").strip()
+
+            # ✅ NEW: split comma-separated answers
+            parts = [v.strip() for v in value.split(",") if v.strip()]
+            answers.extend(parts)
             continue
 
-        # single-token answer (e.g. "B", "True")
+        # Single-token answer (rare but supported)
         if line and " " not in line:
-            answers.append(ctx.next().strip())
+            value = ctx.next().strip()
+            parts = [v.strip() for v in value.split(",") if v.strip()]
+            answers.extend(parts)
             continue
 
-        # anything else ends the answer block
         break
 
     if not answers:
