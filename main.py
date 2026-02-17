@@ -20327,7 +20327,11 @@ def persist_word_selection_question(
         metadata.get("class_name")   # legacy / internal
         or metadata.get("class")     # document-authored
     )
-    
+    print("🧪 FINAL question_blocks payload:", {
+        "sentence": sentence,
+        "selectable_words": selectable_words,
+    })
+
     record = QuestionNumeracyLC(
         question_type=7,
         class_name=class_name,
