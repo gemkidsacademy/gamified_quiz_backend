@@ -3141,7 +3141,6 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 
-
 @app.post("/naplan/language-conventions/generate-exam")
 def generate_naplan_language_conventions_exam(
     db: Session = Depends(get_db)
@@ -3175,7 +3174,7 @@ def generate_naplan_language_conventions_exam(
 
     assembled_questions = []
 
-    # 2. Iterate topic configs
+    # 2. Iterate topics
     for idx, topic_cfg in enumerate(quiz.topics):
         print(f"\n--- Processing topic {idx + 1} ---")
         print(f"Raw topic config: {topic_cfg}")
@@ -3195,22 +3194,20 @@ def generate_naplan_language_conventions_exam(
             db.query(QuestionNumeracyLC)
             .filter(
                 QuestionNumeracyLC.topic == topic_name,
-                func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject,
-                QuestionNumeracyLC.year == quiz.year
+                QuestionNumeracyLC.year == quiz.year,
+                func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
             )
             .count()
         )
 
-        print(
-            f"🔍 Topic+subject+year match count: {topic_only_count}"
-        )
+        print(f"🔍 Topic+subject+year match count: {topic_only_count}")
 
         if topic_only_count == 0:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"No Language Conventions questions found for "
-                    f"topic '{topic_name}' (Year {quiz.year})"
+                    f"No Language Conventions questions found for topic "
+                    f"'{topic_name}' (Year {quiz.year})"
                 )
             )
 
@@ -3301,27 +3298,20 @@ def generate_naplan_language_conventions_exam(
     # 8. Delete previous exams
     print("🧹 Resetting NAPLAN Language Conventions data...")
 
-    # 1️⃣ Delete student responses
-    deleted_responses = (
-        db.query(StudentExamResponseNaplanLanguageConventions)
-        .delete()
-    )
-    print(f"🗑️ Deleted {deleted_responses} student response record(s)")
-    
-    # 2️⃣ Delete student attempts
-    deleted_attempts = (
-        db.query(StudentExamNaplanLanguageConventions)
-        .delete()
-    )
-    print(f"🗑️ Deleted {deleted_attempts} student attempt record(s)")
-    
-    # 3️⃣ Delete existing exams
+    db.query(StudentExamResponseNaplanLanguageConventions).delete()
+    db.commit()
+
+    db.query(StudentExamNaplanLanguageConventions).delete()
+    db.commit()
+
     deleted_exams = (
         db.query(ExamNaplanLanguageConventions)
         .delete()
     )
     print(f"🗑️ Deleted {deleted_exams} previous exam record(s)")
 
+    # 9. Persist exam
+    print("💾 Saving exam to exam_naplan_language_conventions table...")
 
     exam = ExamNaplanLanguageConventions(
         quiz_id=quiz.id,
@@ -3341,12 +3331,12 @@ def generate_naplan_language_conventions_exam(
     )
     print("=== END: Generate NAPLAN Language Conventions Exam ===\n")
 
-    
     return {
         "message": "NAPLAN Language Conventions exam generated successfully",
         "exam_id": exam.id,
         "total_questions": len(assembled_questions),
     }
+
 
 def clean_question_blocks(blocks, correct_answer):
     # ✅ ALWAYS normalize first
