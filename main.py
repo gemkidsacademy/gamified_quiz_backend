@@ -19092,6 +19092,16 @@ def is_cloze_exam_document(doc):
         if "question_type: 5" in p.text.lower():
             return True
     return False
+SECTION_HEADERS = {
+    "QUESTION_TEXT:",
+    "OPTIONS:",
+    "CORRECT_ANSWER:",
+    "METADATA:",
+    "CLOZE:",
+    "IMAGES:"
+}
+
+
 
 def parse_docx_to_ordered_blocks_numeracy(doc):
     """
@@ -19102,18 +19112,14 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     - image:    {"type": "image", "name": "..."}
     - cloze:    {"type": "cloze", "content": "..."}
     - options:  {"type": "options", "options": [{"id": "A", "text": "..."}]}
-
-    Guarantees:
-    - EXAM markers (=== EXAM START / END ===) are preserved verbatim
-    - CLOZE and OPTIONS are emitted as structured blocks
-    - IMAGES declarations are converted to image blocks
     """
 
     print("🧩 [PARSE] ===== START DOCX → ORDERED BLOCKS (NUMERACY) =====")
 
     blocks = []
-    current_mode = None   # None | "cloze" | "options"
+    current_mode = None   # None | "cloze" | "options" | "images"
     buffer = []
+    images_emitted = False
 
     def flush_buffer():
         nonlocal buffer, current_mode
@@ -19178,7 +19184,6 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             continue
 
         texts = []
-
         for run in element.iter():
             if run.tag.endswith("}t") and run.text:
                 texts.append(run.text)
@@ -19197,10 +19202,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         if upper.startswith("==="):
             print(f"🧩 [PARSE] EXAM MARKER detected: {text}")
 
-            if not (
-                text.strip().startswith("=== EXAM START ===")
-                or text.strip().startswith("=== EXAM END ===")
-            ):
+            if text.strip() not in {"=== EXAM START ===", "=== EXAM END ==="}:
                 raise ValueError(
                     f"[PARSE] Invalid EXAM marker format: {repr(text)}"
                 )
@@ -19216,51 +19218,86 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # Section headers
         # --------------------------------------------------
         if upper == "CLOZE:":
-            print("🧩 [PARSE] Entering CLOZE mode")
             flush_buffer()
             current_mode = "cloze"
+            print("🧩 [PARSE] Entering CLOZE mode")
             continue
 
         if upper == "OPTIONS:":
-            print("🧩 [PARSE] Entering OPTIONS mode")
             flush_buffer()
             current_mode = "options"
+            print("🧩 [PARSE] Entering OPTIONS mode")
             continue
 
         # --------------------------------------------------
         # Inside CLOZE / OPTIONS
         # --------------------------------------------------
         if current_mode in {"cloze", "options"}:
-            print(f"🧩 [PARSE] Buffering ({current_mode}): {text}")
-            buffer.append(text)
-            continue
+            if upper in SECTION_HEADERS:
+                print(
+                    f"🧩 [PARSE] Exiting {current_mode.upper()} mode "
+                    f"on header: {text}"
+                )
+                flush_buffer()
+                current_mode = None
+                # fall through to re-process this line
+            else:
+                print(f"🧩 [PARSE] Buffering ({current_mode}): {text}")
+                buffer.append(text)
+                continue
 
         # --------------------------------------------------
-        # IMAGES declaration (FAIL LOUD)
+        # Inside IMAGES section
+        # --------------------------------------------------
+        if current_mode == "images":
+            if upper in SECTION_HEADERS:
+                if not images_emitted:
+                    raise ValueError(
+                        "[PARSE] IMAGES section terminated without any filenames"
+                    )
+
+                print("🧩 [PARSE] Exiting IMAGES mode")
+                current_mode = None
+                images_emitted = False
+                # fall through to re-process header
+            else:
+                print(f"🧩 [PARSE] → Emitting image block: {text}")
+                blocks.append({
+                    "type": "image",
+                    "name": text
+                })
+                images_emitted = True
+                continue
+
+        # --------------------------------------------------
+        # IMAGES declaration (robust)
         # --------------------------------------------------
         if upper.startswith("IMAGES:"):
             flush_buffer()
-
             print(f"🧩 [PARSE] IMAGES declaration detected: {text}")
 
-            img_part = text.split(":", 1)[1].strip()
+            trailing = text.split(":", 1)[1].strip()
 
-            if not img_part:
-                raise ValueError("[PARSE] IMAGES declared but no filenames provided")
+            # Case 1: filenames on same line
+            if trailing:
+                for img in trailing.split(","):
+                    name = img.strip()
+                    if not name:
+                        raise ValueError(
+                            "[PARSE] Empty image name in IMAGES declaration"
+                        )
 
-            for img in img_part.split(","):
-                name = img.strip()
+                    print(f"🧩 [PARSE] → Emitting image block: {name}")
+                    blocks.append({
+                        "type": "image",
+                        "name": name
+                    })
+                continue
 
-                if not name:
-                    raise ValueError("[PARSE] Empty image name in IMAGES declaration")
-
-                print(f"🧩 [PARSE] → Emitting image block: {name}")
-
-                blocks.append({
-                    "type": "image",
-                    "name": name
-                })
-
+            # Case 2: filenames on subsequent lines
+            print("🧩 [PARSE] IMAGES filenames expected on subsequent lines")
+            current_mode = "images"
+            images_emitted = False
             continue
 
         # --------------------------------------------------
@@ -19280,7 +19317,6 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     # Final sanity log
     # --------------------------------------------------
     print(f"🧩 [PARSE] ===== PARSE COMPLETE | blocks={len(blocks)} =====")
-
     for i, block in enumerate(blocks):
         print(f"🧩 [PARSE] Block[{i}]: {block}")
 
