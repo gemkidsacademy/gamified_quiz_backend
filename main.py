@@ -20259,10 +20259,27 @@ async def process_exam_block(
     # --------------------------------------------------
     # Extract ordered stem blocks (TEXT + IMAGE only)
     # --------------------------------------------------
-    stem_blocks = [
-        b for b in question_block
-        if isinstance(b, dict) and b.get("type") in {"text", "image"}
-    ]
+    stem_blocks = []
+    stop_stem = False
+    
+    for b in question_block:
+        if b.get("type") != "text" and b.get("type") != "image":
+            continue
+    
+        content = b.get("content", "").upper()
+    
+        if content.startswith("OPTIONS:") or content.startswith("CORRECT_ANSWER"):
+            stop_stem = True
+    
+        if stop_stem:
+            break
+    
+        # Skip metadata lines
+        if content.startswith(("QUESTION_TYPE:", "YEAR:", "CLASS:", "SUBJECT:", "TOPIC:", "DIFFICULTY:")):
+            continue
+    
+        stem_blocks.append(b)
+
 
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
