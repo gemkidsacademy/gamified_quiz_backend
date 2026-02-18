@@ -20370,13 +20370,16 @@ async def process_exam_block(
         ws_validate_block(parsed)
 
         persist_word_selection_question(
-            db=db,
-            metadata=metadata,
-            question_text=question_text,
-            sentence=sentence,
-            selectable_words=selectable_words,
-            correct_answer=correct_answer,
+           db=db,
+           metadata=metadata,
+           question_text=question_text,
+           sentence=sentence,
+           selectable_words=selectable_words,
+           correct_answer=correct_answer,
+           summary=summary,
+           request_id=request_id,
         )
+
 
         summary.block_success(block_idx, [1])
         return  # 🚨 DO NOT FALL THROUGH
@@ -20820,7 +20823,10 @@ def persist_word_selection_question(
     sentence: str,
     selectable_words: list[str],
     correct_answer: str,
+    summary,              # 👈 ADD
+    request_id: str,      # 👈 OPTIONAL (for logs)
 ):
+ 
     """
     Persists a validated Type 7 — WORD_SELECTION question.
 
@@ -20854,6 +20860,11 @@ def persist_word_selection_question(
     db.add(record)
     db.commit()
     db.refresh(record)
+    summary.saved += 1
+    print(
+        f"[{request_id}] ✅ SAVED Type 7 WORD_SELECTION "
+        f"(id={record.id})"
+    )
 
     return record
 def is_word_selection_exam(block: str) -> bool:
