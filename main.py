@@ -16286,25 +16286,36 @@ def serialize_type1_question_for_exam(q):
 
 
 def normalize_images_in_question(question: dict, image_map: dict):
-    # Normalize images in options
     options = question.get("options")
-    if options:
+
+    # -------------------------------
+    # Case 1: options is a dict (Numeracy MCQ)
+    # -------------------------------
+    if isinstance(options, dict):
         for key, value in options.items():
-            if value in image_map:
+            if isinstance(value, str) and value in image_map:
                 options[key] = image_map[value]
 
-    # Normalize images inside question_blocks
+    # -------------------------------
+    # Case 2: options is a list (LC image multi-select)
+    # -------------------------------
+    elif isinstance(options, list):
+        for opt in options:
+            if isinstance(opt, dict) and "image" in opt:
+                img = opt["image"]
+                if img in image_map:
+                    opt["image"] = image_map[img]
+
+    # -------------------------------
+    # question_blocks images (unchanged)
+    # -------------------------------
     blocks = question.get("question_blocks") or []
     for block in blocks:
         images = block.get("images")
         if not images:
             continue
 
-        normalized_images = []
-        for img in images:
-            normalized_images.append(image_map.get(img, img))
-
-        block["images"] = normalized_images
+        block["images"] = [image_map.get(img, img) for img in images]
 def normalize_type2_image_multiselect(question: dict):
     if question.get("question_type") != 2:
         return
