@@ -9961,17 +9961,6 @@ def normalize_naplan_language_conventions_questions_live(
         })
 
     return normalized
-def normalize_naplan_language_conventions_questions_live(questions):
-    normalized = normalize_naplan_numeracy_questions_live(questions)
-
-    for i, q in enumerate(normalized):
-        if q.get("question_type") == 1:
-            normalized[i] = serialize_type1_question_for_exam(q)
-
-        normalize_type2_image_multiselect(normalized[i])
-        normalize_type2_correct_answer(normalized[i])
-
-    return normalized
 
  
 @app.post("/api/student/start-exam/naplan-language-conventions")
