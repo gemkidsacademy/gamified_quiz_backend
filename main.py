@@ -9894,7 +9894,10 @@ def build_sections_with_questions(exam_json):
 
     return sections
 
-def normalize_naplan_language_conventions_questions_live(raw_questions):
+def normalize_naplan_language_conventions_questions_live(
+    raw_questions,
+    image_map: dict
+):
     """
     Build EXAM-SAFE question DTOs.
     No answers. No metadata. No leakage.
@@ -9926,7 +9929,27 @@ def normalize_naplan_language_conventions_questions_live(raw_questions):
             if content == correct_answer:
                 continue
 
+            # ✅ normalize images inside blocks
+            images = block.get("images")
+            if images:
+                block["images"] = [
+                    image_map.get(img, img) for img in images
+                ]
+
             display_blocks.append(block)
+
+        # ✅ normalize images inside options
+        options = q.get("options")
+
+        if isinstance(options, dict):
+            for k, v in options.items():
+                if isinstance(v, str) and v in image_map:
+                    options[k] = image_map[v]
+
+        elif isinstance(options, list):
+            for opt in options:
+                if "image" in opt and opt["image"] in image_map:
+                    opt["image"] = image_map[opt["image"]]
 
         normalized.append({
             "id": q["id"],
@@ -9934,7 +9957,7 @@ def normalize_naplan_language_conventions_questions_live(raw_questions):
             "topic": q.get("topic"),
             "difficulty": q.get("difficulty"),
             "question_blocks": display_blocks,
-            "options": q.get("options")
+            "options": options
         })
 
     return normalized
@@ -10061,11 +10084,10 @@ def start_naplan_language_conventions_exam(
 
         # 🔥 SANITIZE BEFORE RETURNING
         normalized_questions = normalize_naplan_language_conventions_questions_live(
-            exam.questions or []
+            exam.questions or [],
+            image_map
         )
-        
-        for q in normalized_questions:
-            normalize_images_in_question(q, image_map)
+
         
         return {
             "completed": False,
@@ -10100,11 +10122,9 @@ def start_naplan_language_conventions_exam(
         )
 
     normalized_questions = normalize_naplan_language_conventions_questions_live(
-        exam.questions or []
+        exam.questions or [],
+        image_map
     )
-    
-    for q in normalized_questions:
-        normalize_images_in_question(q, image_map)
 
 
     new_attempt = StudentExamNaplanLanguageConventions(
