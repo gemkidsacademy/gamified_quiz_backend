@@ -18942,43 +18942,115 @@ async def upload_word(
 
 
 def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
+    print("🧩 [CHUNK] ===== START EXAM CHUNKING =====")
+    print(f"🧩 [CHUNK] Incoming blocks count: {len(blocks)}")
+
     exams = []
     current_exam = []
     in_exam = False
 
-    for block in blocks:
-        if block["type"] != "text":
+    for idx, block in enumerate(blocks):
+        print(f"🧩 [CHUNK] Inspecting block[{idx}]: {block}")
+
+        if block.get("type") != "text":
             if in_exam:
+                print(
+                    f"🧩 [CHUNK] → Non-text block added to current exam: "
+                    f"{block.get('type')}"
+                )
                 current_exam.append(block)
+            else:
+                print(
+                    f"🧩 [CHUNK] → Non-text block ignored (outside exam)"
+                )
             continue
 
         raw = block.get("content", "")
         lines = [line.strip() for line in raw.splitlines() if line.strip()]
 
-        for text in lines:
+        print(
+            f"🧩 [CHUNK] Text block split into {len(lines)} line(s): {lines}"
+        )
+
+        for line_idx, text in enumerate(lines):
+            print(
+                f"🧩 [CHUNK] Line[{idx}.{line_idx}] = {repr(text)}"
+            )
+
+            # ----------------------------------------------
+            # EXAM START
+            # ----------------------------------------------
             if text == "=== EXAM START ===":
+                print("🧩 [CHUNK] EXAM START detected")
+
                 if in_exam:
-                    raise ValueError("Nested EXAM START detected")
+                    raise ValueError(
+                        "[CHUNK] Nested EXAM START detected"
+                    )
+
                 in_exam = True
                 current_exam = []
                 continue
 
+            # ----------------------------------------------
+            # EXAM END
+            # ----------------------------------------------
             if text == "=== EXAM END ===":
+                print("🧩 [CHUNK] EXAM END detected")
+
                 if not in_exam:
-                    raise ValueError("EXAM END without EXAM START")
+                    raise ValueError(
+                        "[CHUNK] EXAM END detected without EXAM START"
+                    )
+
+                print(
+                    f"🧩 [CHUNK] Finalizing exam with "
+                    f"{len(current_exam)} block(s)"
+                )
+
                 exams.append(current_exam)
                 current_exam = []
                 in_exam = False
                 continue
 
+            # ----------------------------------------------
+            # Normal content inside exam
+            # ----------------------------------------------
             if in_exam:
-                current_exam.append({"type": "text", "content": text})
+                print(
+                    f"🧩 [CHUNK] → Adding content to current exam: {text}"
+                )
+                current_exam.append({
+                    "type": "text",
+                    "content": text
+                })
+            else:
+                print(
+                    f"🧩 [CHUNK] → Ignoring content outside exam: {text}"
+                )
 
+    # ----------------------------------------------
+    # Final consistency check
+    # ----------------------------------------------
     if in_exam:
-        raise ValueError("Missing EXAM END")
+        raise ValueError(
+            "[CHUNK] Missing EXAM END at end of document"
+        )
+
+    print(
+        f"🧩 [CHUNK] ===== CHUNKING COMPLETE | "
+        f"exams_detected={len(exams)} ====="
+    )
+
+    for i, exam in enumerate(exams, start=1):
+        preview = [b.get("type") for b in exam[:5]]
+        print(
+            f"🧩 [CHUNK] Exam {i}: "
+            f"blocks={len(exam)} | "
+            f"preview_types={preview}"
+        )
 
     return exams
-
 
 #async def read_and_validate_file(file, request_id) -> bytes:
  ##      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -19037,9 +19109,10 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     - IMAGES declarations are converted to image blocks
     """
 
-    blocks = []
+    print("🧩 [PARSE] ===== START DOCX → ORDERED BLOCKS (NUMERACY) =====")
 
-    current_mode = None    # None | "cloze" | "options"
+    blocks = []
+    current_mode = None   # None | "cloze" | "options"
     buffer = []
 
     def flush_buffer():
@@ -19050,21 +19123,43 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             current_mode = None
             return
 
+        print(f"🧩 [PARSE] Flushing buffer | mode={current_mode} | lines={len(buffer)}")
+
         if current_mode == "cloze":
+            content = " ".join(buffer).strip()
+            if not content:
+                raise ValueError("[PARSE] Empty CLOZE content detected")
+
             blocks.append({
                 "type": "cloze",
-                "content": " ".join(buffer).strip()
+                "content": content
             })
 
         elif current_mode == "options":
             options = []
+
             for line in buffer:
-                if ":" in line:
-                    label, text = line.split(":", 1)
-                    options.append({
-                        "id": label.strip(),
-                        "text": text.strip()
-                    })
+                if ":" not in line:
+                    raise ValueError(
+                        f"[PARSE] Invalid option format (missing ':'): {repr(line)}"
+                    )
+
+                label, text = line.split(":", 1)
+                label = label.strip()
+                text = text.strip()
+
+                if not label or not text:
+                    raise ValueError(
+                        f"[PARSE] Invalid option entry: {repr(line)}"
+                    )
+
+                options.append({
+                    "id": label,
+                    "text": text
+                })
+
+            if not options:
+                raise ValueError("[PARSE] OPTIONS section declared but no options found")
 
             blocks.append({
                 "type": "options",
@@ -19074,95 +19169,123 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         buffer = []
         current_mode = None
 
-    for element in doc.element.body:
+    # --------------------------------------------------
+    # Walk DOCX paragraphs in order
+    # --------------------------------------------------
+    for idx, element in enumerate(doc.element.body):
+
         if not element.tag.endswith("}p"):
             continue
 
         texts = []
-        image_names = []
 
         for run in element.iter():
-            # Text runs
             if run.tag.endswith("}t") and run.text:
                 texts.append(run.text)
 
-            # Embedded images
-            if run.tag.endswith("}blip"):
-                r_id = run.attrib.get(qn("r:embed"))
-                if r_id:
-                    image_part = doc.part.related_parts[r_id]
-                    image_name = image_part.partname.split("/")[-1]
-                    image_names.append(image_name)
+        if not texts:
+            continue
 
-        if texts:
-            text = "".join(texts).strip()
-            upper = text.upper()
+        text = " ".join("".join(texts).split())
+        upper = text.upper()
 
-            # --------------------------------------------------
-            # EXAM markers (must remain untouched)
-            # --------------------------------------------------
-            if upper.startswith("==="):
-                flush_buffer()
-                blocks.append({
-                    "type": "text",
-                    "content": text
-                })
-                continue
+        print(f"🧩 [PARSE] Paragraph[{idx}]: {repr(text)}")
 
-            # --------------------------------------------------
-            # Section headers
-            # --------------------------------------------------
-            if upper == "CLOZE:":
-                flush_buffer()
-                current_mode = "cloze"
-                continue
+        # --------------------------------------------------
+        # EXAM markers
+        # --------------------------------------------------
+        if upper.startswith("==="):
+            print(f"🧩 [PARSE] EXAM MARKER detected: {text}")
 
-            if upper == "OPTIONS:":
-                flush_buffer()
-                current_mode = "options"
-                continue
+            if not (
+                text.strip().startswith("=== EXAM START ===")
+                or text.strip().startswith("=== EXAM END ===")
+            ):
+                raise ValueError(
+                    f"[PARSE] Invalid EXAM marker format: {repr(text)}"
+                )
 
-            # --------------------------------------------------
-            # Inside CLOZE / OPTIONS sections
-            # --------------------------------------------------
-            if current_mode in {"cloze", "options"}:
-                buffer.append(text)
-                continue
-
-            # --------------------------------------------------
-            # IMAGES declaration
-            # --------------------------------------------------
-            if upper.startswith("IMAGES:"):
-                flush_buffer()
-                img_part = text.split(":", 1)[1]
-                for img in img_part.split(","):
-                    blocks.append({
-                        "type": "image",
-                        "name": img.strip()
-                    })
-                continue
-
-            # --------------------------------------------------
-            # Default text
-            # --------------------------------------------------
+            flush_buffer()
             blocks.append({
                 "type": "text",
                 "content": text
             })
+            continue
 
         # --------------------------------------------------
-        # Embedded images (still supported)
+        # Section headers
         # --------------------------------------------------
-        for img in image_names:
-            blocks.append({
-                "type": "image",
-                "name": img
-            })
+        if upper == "CLOZE:":
+            print("🧩 [PARSE] Entering CLOZE mode")
+            flush_buffer()
+            current_mode = "cloze"
+            continue
 
-    # Flush any remaining buffered content
+        if upper == "OPTIONS:":
+            print("🧩 [PARSE] Entering OPTIONS mode")
+            flush_buffer()
+            current_mode = "options"
+            continue
+
+        # --------------------------------------------------
+        # Inside CLOZE / OPTIONS
+        # --------------------------------------------------
+        if current_mode in {"cloze", "options"}:
+            print(f"🧩 [PARSE] Buffering ({current_mode}): {text}")
+            buffer.append(text)
+            continue
+
+        # --------------------------------------------------
+        # IMAGES declaration (FAIL LOUD)
+        # --------------------------------------------------
+        if upper.startswith("IMAGES:"):
+            flush_buffer()
+
+            print(f"🧩 [PARSE] IMAGES declaration detected: {text}")
+
+            img_part = text.split(":", 1)[1].strip()
+
+            if not img_part:
+                raise ValueError("[PARSE] IMAGES declared but no filenames provided")
+
+            for img in img_part.split(","):
+                name = img.strip()
+
+                if not name:
+                    raise ValueError("[PARSE] Empty image name in IMAGES declaration")
+
+                print(f"🧩 [PARSE] → Emitting image block: {name}")
+
+                blocks.append({
+                    "type": "image",
+                    "name": name
+                })
+
+            continue
+
+        # --------------------------------------------------
+        # Default text
+        # --------------------------------------------------
+        blocks.append({
+            "type": "text",
+            "content": text
+        })
+
+    # --------------------------------------------------
+    # Final flush
+    # --------------------------------------------------
     flush_buffer()
 
+    # --------------------------------------------------
+    # Final sanity log
+    # --------------------------------------------------
+    print(f"🧩 [PARSE] ===== PARSE COMPLETE | blocks={len(blocks)} =====")
+
+    for i, block in enumerate(blocks):
+        print(f"🧩 [PARSE] Block[{i}]: {block}")
+
     return blocks
+ 
 def parse_docx_to_flat_text_blocks(doc):
     blocks = []
 
@@ -20089,25 +20212,32 @@ async def process_exam_block(
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
+
     detected_types = debug_detect_question_types(question_block)
     print(
         f"[{request_id}] 🧪 Block {block_idx} detected question_types = {detected_types}"
     )
+
     validate_single_question_type(question_block)
 
-    # 🔒 Determine question_type ONCE
+    # --------------------------------------------------
+    # Extract ordered stem blocks (TEXT + IMAGE only)
+    # --------------------------------------------------
+    stem_blocks = [
+        b for b in question_block
+        if isinstance(b, dict) and b.get("type") in {"text", "image"}
+    ]
+
     # ==================================================
-    # 🧩 CLOZE BRANCH (QUESTION TYPE 5 ONLY)
+    # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
     # ==================================================
     if is_cloze_question(question_block):
-        print(
-            f"[{request_id}] 🧩 CLOZE detected | block={block_idx}"
-        )
-    
+        print(f"[{request_id}] 🧩 CLOZE detected | block={block_idx}")
+
         try:
             q = extract_cloze_from_exam_block(question_block)
             validate_cloze_deterministic(q)
-    
+
             handle_cloze_question(
                 q=q,
                 question_block=question_block,
@@ -20118,13 +20248,10 @@ async def process_exam_block(
                 block_idx=block_idx,
             )
 
-    
             summary.block_success(block_idx, [q])
-            print(
-                f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)"
-            )
+            print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)")
             return
-    
+
         except Exception as e:
             error_msg = str(e)
             print(
@@ -20132,9 +20259,7 @@ async def process_exam_block(
                 f"error={error_msg}"
             )
             summary.block_failure(block_idx, error_msg)
-    
-        return
-
+            return
 
     # ==================================================
     # 🖼️ TYPE 6 — VISUAL COUNTING (SEALED)
@@ -20144,6 +20269,7 @@ async def process_exam_block(
             f"[{request_id}] 🖼️ TYPE 6 detected | "
             f"processing visual counting question"
         )
+
         process_visual_counting_exam(
             block_idx=block_idx,
             question_block=question_block,
@@ -20154,56 +20280,42 @@ async def process_exam_block(
         return  # 🚨 DO NOT FALL THROUGH
 
     # ==================================================
-    # 🔤 TYPE 7 — WORD_SELECTION (DETERMINISTIC)
+    # 🔤 TYPE 7 — WORD SELECTION (DETERMINISTIC)
     # ==================================================
     block_text = "\n".join(
         item["content"]
         for item in question_block
         if isinstance(item, dict) and "content" in item
     )
-    
+
     if is_word_selection_exam(block_text):
         metadata = ws_extract_metadata_from_block(block_text)
         ctx = ParsingCursor(block_text.splitlines())
 
-        print("🧪 DEBUG cursor fast-forward start")
-        
-        steps = 0
+        # Fast-forward to QUESTION_TEXT
         while ctx.peek():
-            current = ctx.peek()
-            print(f"   ↪ peek[{steps}] = {repr(current)}")
-        
-            if current.strip().upper().startswith("QUESTION_TEXT"):
-                print("   🎯 FOUND QUESTION_TEXT header")
+            if ctx.peek().strip().upper().startswith("QUESTION_TEXT"):
                 break
-        
             ctx.next()
-            steps += 1
-        
-        print("🧪 DEBUG cursor fast-forward end")
-        print(f"🧪 DEBUG cursor final peek = {repr(ctx.peek())}")
 
-        
         question_text = ws_extract_question_text(ctx)
         sentence = ws_extract_sentence(ctx)
         selectable_words = ws_extract_selectable_words(ctx)
-        # ⬇️ NEW: skip ANSWER_TYPE
+
         while ctx.peek() and not ctx.peek().strip().upper().startswith("CORRECT_ANSWER"):
             ctx.next()
+
         correct_answer = ws_extract_correct_answer(ctx)
-    
+
         parsed = {
             "question_text": question_text,
             "sentence": sentence,
             "selectable_words": selectable_words,
             "correct_answer": correct_answer,
         }
-    
-        ws_validate_block(parsed)
-        print("🧪 DEBUG metadata dict:", metadata)
-        print("🧪 DEBUG metadata keys:", list(metadata.keys()))
 
-    
+        ws_validate_block(parsed)
+
         persist_word_selection_question(
             db=db,
             metadata=metadata,
@@ -20212,27 +20324,12 @@ async def process_exam_block(
             selectable_words=selectable_words,
             correct_answer=correct_answer,
         )
-    
+
         summary.block_success(block_idx, [1])
         return  # 🚨 DO NOT FALL THROUGH
-    
-     
-    
-        # --------------------------------------------------
-        # Quick structural sanity check
-        # --------------------------------------------------
-        if not looks_like_question(question_block):
-            print(
-                f"[{request_id}] ⚠️ Block {block_idx} skipped "
-                f"(not a question)"
-            )
-            return
 
-    
-    
-        
     # ==================================================
-    # 🧠 LEGACY BRANCH (QUESTION TYPES 1–4)
+    # 🧠 LEGACY BRANCH — QUESTION TYPES 1–4
     # ==================================================
     try:
         print(
@@ -20268,13 +20365,19 @@ async def process_exam_block(
             question_type = q.get("question_type")
 
             if not question_type:
-                raise ValueError(
-                    "Legacy question missing question_type"
-                )
+                raise ValueError("Legacy question missing question_type")
+
+            # 🔒 Attach structured stem blocks
+            q["question_blocks"] = stem_blocks
+
+            # Optional but useful
+            if any(b["type"] == "image" for b in stem_blocks):
+                q["requires_image"] = True
 
             print(
                 f"[{request_id}] ➕ Persisting question "
-                f"{i}/{len(questions)} (type={question_type})"
+                f"{i}/{len(questions)} (type={question_type}) | "
+                f"blocks={len(stem_blocks)}"
             )
 
             persist_question(
@@ -20289,9 +20392,7 @@ async def process_exam_block(
             )
 
         summary.block_success(block_idx, questions)
-        print(
-            f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS"
-        )
+        print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS")
 
     except Exception as e:
         error_msg = str(e)
