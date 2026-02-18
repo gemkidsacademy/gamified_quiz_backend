@@ -3266,17 +3266,17 @@ def generate_naplan_language_conventions_exam(
         selected = random.sample(questions, db_count)
         print(f"🎯 Selected {len(selected)} questions for topic '{topic_name}'")
 
-        for q in selected:
+        for q in selected:        
             assembled_questions.append({
                 "id": q.id,
                 "question_type": q.question_type,
                 "topic": q.topic,
                 "difficulty": q.difficulty,
-                "question_text": q.question_text,
-                "question_blocks": normalize_question_blocks(q.question_blocks),
+                "question_blocks": build_question_blocks(q),
                 "options": q.options,
                 "correct_answer": q.correct_answer,
             })
+
 
     # 7. Final validation
     print("\n=== FINAL CHECK ===")
