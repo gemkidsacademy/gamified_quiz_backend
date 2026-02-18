@@ -9938,7 +9938,19 @@ def normalize_naplan_language_conventions_questions_live(raw_questions):
         })
 
     return normalized
+def normalize_naplan_language_conventions_questions_live(questions):
+    normalized = normalize_naplan_numeracy_questions_live(questions)
 
+    for i, q in enumerate(normalized):
+        if q.get("question_type") == 1:
+            normalized[i] = serialize_type1_question_for_exam(q)
+
+        normalize_type2_image_multiselect(normalized[i])
+        normalize_type2_correct_answer(normalized[i])
+
+    return normalized
+
+ 
 @app.post("/api/student/start-exam/naplan-language-conventions")
 def start_naplan_language_conventions_exam(
     req: StartExamRequest = Body(...),
@@ -9946,7 +9958,7 @@ def start_naplan_language_conventions_exam(
 ):
     print("\n================ START NAPLAN LANGUAGE CONVENTIONS EXAM =================")
     print("📥 Incoming payload:", req.dict())
-
+    
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
@@ -9985,6 +9997,9 @@ def start_naplan_language_conventions_exam(
 
     MAX_DURATION = timedelta(minutes=40)
     now = datetime.now(timezone.utc)
+    uploaded_images = db.query(UploadedImage).all()
+    image_map = {img.original_name: img.gcs_url for img in uploaded_images}
+
 
     if attempt:
         print(
@@ -10045,17 +10060,19 @@ def start_naplan_language_conventions_exam(
             )
 
         # 🔥 SANITIZE BEFORE RETURNING
-        normalized_questions = (
-            normalize_naplan_language_conventions_questions_live(
-                exam.questions or []
-            )
+        normalized_questions = normalize_naplan_language_conventions_questions_live(
+            exam.questions or []
         )
-
+        
+        for q in normalized_questions:
+            normalize_images_in_question(q, image_map)
+        
         return {
             "completed": False,
             "questions": normalized_questions,
             "remaining_time": remaining
         }
+
 
     # --------------------------------------------------
     # 🆕 FIRST ATTEMPT
@@ -10082,11 +10099,13 @@ def start_naplan_language_conventions_exam(
             detail="NAPLAN Language Conventions exam not found"
         )
 
-    normalized_questions = (
-        normalize_naplan_language_conventions_questions_live(
-            exam.questions or []
-        )
+    normalized_questions = normalize_naplan_language_conventions_questions_live(
+        exam.questions or []
     )
+    
+    for q in normalized_questions:
+        normalize_images_in_question(q, image_map)
+
 
     new_attempt = StudentExamNaplanLanguageConventions(
         student_id=student.id,
@@ -10108,10 +10127,9 @@ def start_naplan_language_conventions_exam(
     # Pre-create response rows
     # --------------------------------------------------
     for original_q in exam.questions or []:
-        correct_option = original_q["correct_answer"]
-
-        if not isinstance(correct_option, list):
-            correct_option = [correct_option]
+        correct_option = normalize_correct_option_for_db(
+            original_q.get("correct_answer")
+        )
 
         db.add(
             StudentExamResponseNaplanLanguageConventions(
