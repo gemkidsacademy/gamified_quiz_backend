@@ -20501,36 +20501,55 @@ def validate_text_input(q):
 
 def persist_question(
     q,
-    question_type,   # 👈 ADD THIS
+    question_type,
     question_block,
     meta,
     db,
     request_id,
     summary,
-    block_idx
+    block_idx,
+    stem_blocks=None,   # 👈 optional, non-breaking
 ):
-    
-    validate_question_by_type(question_type, q)
+    """
+    Persist a question safely.
 
+    - question_block: raw parsed exam block (unsafe by default)
+    - stem_blocks: exam-safe blocks (text + images only, optional)
+    """
+
+    validate_question_by_type(question_type, q)
     resolve_images(q, db, request_id)
 
+    # --------------------------------------------------
+    # Decide which blocks are safe to persist
+    # --------------------------------------------------
+    display_blocks = stem_blocks if stem_blocks is not None else question_block
+
+    # --------------------------------------------------
+    # Build question_text (student-visible text only)
+    # --------------------------------------------------
     if question_type == 5:
+        # CLOZE has its own canonical text
         question_text = q.get("cloze_text")
     else:
         question_text = "\n\n".join(
-            b["content"] for b in question_block if b["type"] == "text"
+            b["content"]
+            for b in display_blocks
+            if b.get("type") == "text"
         )
 
-
+    # --------------------------------------------------
+    # Persist
+    # --------------------------------------------------
     obj = QuestionNumeracyLC(
         question_type=question_type,
         class_name=q["class_name"],
         year=q["year"],
         subject=meta["subject"],
-        topic=q["topic"],
+        topic=q.get("topic"),
         difficulty=q["difficulty"],
         question_text=question_text,
-        question_blocks=filter_display_blocks(question_block),
+        question_blocks=filter_display_blocks(display_blocks),  # ✅ SAFE
         options=q.get("options"),
         correct_answer=str(q["correct_answer"]).strip(),
     )
@@ -20540,7 +20559,10 @@ def persist_question(
     db.refresh(obj)
 
     summary.saved += 1
-    print(f"[{request_id}] ✅ SAVED question (id={obj.id})")
+    print(
+        f"[{request_id}] ✅ SAVED question "
+        f"(id={obj.id}, type={question_type})"
+    )
 
 def log_start(request_id, file):
     print("\n" + "=" * 70)
