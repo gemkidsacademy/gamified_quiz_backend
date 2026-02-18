@@ -9893,6 +9893,19 @@ def build_sections_with_questions(exam_json):
         )
 
     return sections
+def _extract_correct_answer_value(correct_answer):
+    """
+    Normalize correct_answer to a comparable string.
+    SAFE: does not change payload shape.
+    """
+    if isinstance(correct_answer, dict):
+        return str(correct_answer.get("value", "")).strip()
+
+    if isinstance(correct_answer, list):
+        return ",".join(map(str, correct_answer))
+
+    return str(correct_answer or "").strip()
+
 
 def normalize_naplan_language_conventions_questions_live(
     raw_questions,
@@ -9911,7 +9924,7 @@ def normalize_naplan_language_conventions_questions_live(
         blocks = q.get("question_blocks") or []
         display_blocks = []
 
-        correct_answer = str(q.get("correct_answer")).strip()
+        correct_answer = _extract_correct_answer_value(q.get("correct_answer"))
         is_image_multiselect = False
 
         for block in blocks:
@@ -9921,8 +9934,21 @@ def normalize_naplan_language_conventions_questions_live(
             # --------------------------------------------------
             # Skip metadata / leakage
             # --------------------------------------------------
-            if lowered.startswith(("question_type", "year:", "answer_type", "correct_answer")):
+            if any(marker in lowered for marker in (
+                "question_type",
+                "question:",
+                "metadata:",
+                "class:",
+                "subject:",
+                "topic:",
+                "difficulty:",
+                "year:",
+                "answer_type",
+                "correct_answer",
+                "question_text:"
+            )):
                 continue
+
 
             if content == correct_answer:
                 continue
@@ -9958,9 +9984,11 @@ def normalize_naplan_language_conventions_questions_live(
             # Normalize images inside regular blocks
             # --------------------------------------------------
             if block.get("images"):
-                block["images"] = [
-                    image_map.get(img, img) for img in block["images"]
-                ]
+                block = {
+                    **block,
+                    "images": [image_map.get(img, img) for img in block["images"]]
+                }
+
 
             display_blocks.append(block)
 
@@ -9979,15 +10007,20 @@ def normalize_naplan_language_conventions_questions_live(
             options = q.get("options")
 
             if isinstance(options, dict):
-                for k, v in options.items():
-                    if isinstance(v, str) and v in image_map:
-                        options[k] = image_map[v]
-
+                options = {
+                    k: image_map.get(v, v) if isinstance(v, str) else v
+                    for k, v in options.items()
+                }
+            
             elif isinstance(options, list):
-                for opt in options:
-                    if "image" in opt and opt["image"] in image_map:
-                        opt["image"] = image_map[opt["image"]]
-
+                options = [
+                    {
+                        **opt,
+                        "image": image_map.get(opt["image"], opt["image"])
+                    } if isinstance(opt, dict) and "image" in opt else opt
+                    for opt in options
+                ]
+            
             payload["options"] = options
 
         normalized.append(payload)
