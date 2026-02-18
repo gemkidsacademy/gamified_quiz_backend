@@ -16301,10 +16301,10 @@ def normalize_images_in_question(question: dict, image_map: dict):
     # -------------------------------
     elif isinstance(options, list):
         for opt in options:
-            if isinstance(opt, dict) and "image" in opt:
-                img = opt["image"]
-                if img in image_map:
-                    opt["image"] = image_map[img]
+            if "image" in opt:
+                print("🖼️ before:", opt["image"])
+                opt["image"] = image_map.get(opt["image"], opt["image"])
+                print("🖼️ after:", opt["image"])
 
     # -------------------------------
     # question_blocks images (unchanged)
