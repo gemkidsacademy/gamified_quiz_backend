@@ -9899,8 +9899,10 @@ def normalize_naplan_language_conventions_questions_live(
     image_map: dict
 ):
     """
-    Build EXAM-SAFE question DTOs.
-    No answers. No metadata. No leakage.
+    Build EXAM-SAFE question DTOs for Language Conventions.
+    - No answers
+    - No metadata leakage
+    - Frontend-compatible shapes
     """
 
     normalized = []
@@ -9910,55 +9912,85 @@ def normalize_naplan_language_conventions_questions_live(
         display_blocks = []
 
         correct_answer = str(q.get("correct_answer")).strip()
+        is_image_multiselect = False
 
         for block in blocks:
             content = (block.get("content") or "").strip()
             lowered = content.lower()
 
-            # Skip metadata
-            if lowered.startswith("question_type"):
-                continue
-            if lowered.startswith("year:"):
-                continue
-            if lowered.startswith("answer_type"):
-                continue
-            if lowered.startswith("correct_answer"):
+            # --------------------------------------------------
+            # Skip metadata / leakage
+            # --------------------------------------------------
+            if lowered.startswith(("question_type", "year:", "answer_type", "correct_answer")):
                 continue
 
-            # Skip raw answer leakage
             if content == correct_answer:
                 continue
 
-            # ✅ normalize images inside blocks
-            images = block.get("images")
-            if images:
+            # --------------------------------------------------
+            # IMAGE MULTI SELECT (LC → Numeracy shape)
+            # --------------------------------------------------
+            if block.get("type") in ("image-selection", "image-multi-select"):
+                is_image_multiselect = True
+
+                raw_images = block.get("images") or []
+                images = [image_map.get(img, img) for img in raw_images]
+                max_sel = block.get("maxSelections", 1)
+
+                option_labels = q.get("options") or {}
+
+                display_blocks.append({
+                    "type": "image-multi-select",
+                    "maxSelections": max_sel,
+                    "options": [
+                        {
+                            "id": key,
+                            "label": label,
+                            "image": images[idx] if idx < len(images) else None
+                        }
+                        for idx, (key, label) in enumerate(option_labels.items())
+                    ]
+                })
+
+                continue
+
+            # --------------------------------------------------
+            # Normalize images inside regular blocks
+            # --------------------------------------------------
+            if block.get("images"):
                 block["images"] = [
-                    image_map.get(img, img) for img in images
+                    image_map.get(img, img) for img in block["images"]
                 ]
 
             display_blocks.append(block)
 
-        # ✅ normalize images inside options
-        options = q.get("options")
-
-        if isinstance(options, dict):
-            for k, v in options.items():
-                if isinstance(v, str) and v in image_map:
-                    options[k] = image_map[v]
-
-        elif isinstance(options, list):
-            for opt in options:
-                if "image" in opt and opt["image"] in image_map:
-                    opt["image"] = image_map[opt["image"]]
-
-        normalized.append({
+        # --------------------------------------------------
+        # Root-level options (ONLY for non-image-multiselect)
+        # --------------------------------------------------
+        payload = {
             "id": q["id"],
             "question_type": q["question_type"],
             "topic": q.get("topic"),
             "difficulty": q.get("difficulty"),
             "question_blocks": display_blocks,
-            "options": options
-        })
+        }
+
+        if not is_image_multiselect:
+            options = q.get("options")
+
+            if isinstance(options, dict):
+                for k, v in options.items():
+                    if isinstance(v, str) and v in image_map:
+                        options[k] = image_map[v]
+
+            elif isinstance(options, list):
+                for opt in options:
+                    if "image" in opt and opt["image"] in image_map:
+                        opt["image"] = image_map[opt["image"]]
+
+            payload["options"] = options
+
+        normalized.append(payload)
 
     return normalized
 
