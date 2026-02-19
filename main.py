@@ -20164,7 +20164,7 @@ def extract_reference_images(
         if b.get("type") != "text":
             continue
 
-        raw = b.get("content", "").strip()
+        raw = (b.get("content") or "").strip()
         upper = raw.upper()
 
         # Start capture
@@ -20175,13 +20175,16 @@ def extract_reference_images(
         if not capture:
             continue
 
-        # Stop when next section starts
+        # 🛑 Stop on new section
         if upper.endswith(":"):
             break
 
-        # Expect filename
+        # 🛑 Stop if OPTIONS start (A:, B:, etc.)
+        if re.match(r"^[A-D]\s*[:.]\s*", raw):
+            break
+
+        # Expect filename only
         if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            # 🔁 Reuse the existing resolver
             resolved = vc_resolve_option_images(
                 [{"label": "_REF", "image_ref": raw}],
                 db=db,
