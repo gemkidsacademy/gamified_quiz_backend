@@ -2367,30 +2367,24 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
     
     Your task is to extract structured data from a single exam question.
     
-    INPUT RULES:
+    You MUST follow all rules exactly. Any violation makes the output INVALID.
+    
+    ==================================================
+    INPUT RULES
+    ==================================================
+    
     - You will receive plain text extracted from a Word document.
     - The text may span multiple paragraphs.
     - The text contains no images and no layout information.
+    - Section headers such as QUESTION_TEXT, QUESTION_BLOCKS, OPTIONS, and CORRECT_ANSWER
+      are part of the input and define structure.
     
-    EXTRACTION RULES:
+    ==================================================
+    EXTRACTION RESPONSIBILITIES
+    ==================================================
     
-    OPTION NORMALIZATION RULES (MANDATORY):
-    - Multiple-choice options may be written as "A.", "A:", or "A)".
-    - ALWAYS normalize option keys to exactly "A", "B", "C", "D".
-    - Do NOT include punctuation or extra characters in option keys.
-    - This rule applies ONLY to question_type 1 and 2.
-    - Output that violates this rule is INVALID.
+    You are responsible ONLY for semantic extraction of:
     
-    OPTION VALUE RULES (MANDATORY):
-    - Each option value MUST be the text that appears after the option label
-      in the OPTIONS section.
-    - Do NOT use the CORRECT_ANSWER value as an option value.
-    - Do NOT leave option values empty.
-    - If an option value is ambiguous, extract the most literal text
-      following the option label without inference.
-
-    
-    Extract the following fields if present:
     - class_name
     - question_type (integer)
     - year (integer)
@@ -2400,37 +2394,84 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
     - options (ONLY for question_type 1 and 2)
     - correct_answer
     
-    ANSWER FORMAT RULES:
+    Visual order, images, layout, and question_blocks are handled entirely by the backend.
+    You MUST NOT infer or reconstruct visual structure.
+    
+    ==================================================
+    OPTION NORMALIZATION RULES (MANDATORY)
+    ==================================================
+    
+    - Multiple-choice options may be written as "A.", "A:", or "A)".
+    - Normalize option keys to uppercase letters WITHOUT punctuation.
+    
     - If question_type = 1 (MCQ single):
-      - correct_answer MUST be a single string
+      - You MUST return EXACTLY four options.
+      - Allowed option keys: "A", "B", "C", "D".
+      - Outputting more or fewer options is INVALID.
+    
+    - If question_type = 2 (MCQ multi):
+      - You MUST return ALL option labels present in the OPTIONS section.
+      - Allowed option keys include (but are not limited to):
+        "A", "B", "C", "D", "E", "F", etc.
+      - You MUST NOT truncate options.
+      - Do NOT invent or omit options.
+    
+    ==================================================
+    OPTION VALUE RULES (MANDATORY)
+    ==================================================
+    
+    - Each option value MUST be the literal text that appears immediately
+      after the option label in the OPTIONS section.
+    - Do NOT use the CORRECT_ANSWER value as an option value.
+    - Do NOT leave option values empty.
+    - If an option value is ambiguous, extract the most literal text
+      without inference or interpretation.
+    
+    ==================================================
+    ANSWER FORMAT RULES
+    ==================================================
+    
+    - If question_type = 1 (MCQ single):
+      - correct_answer MUST be a single string.
       - Example: "B"
     
     - If question_type = 2 (MCQ multi):
-      - correct_answer MUST be an array of strings
+      - correct_answer MUST be an array of strings.
       - Example: ["B", "D"]
     
     - If question_type = 3 (Numeric input):
-      - correct_answer MUST be a number or numeric string
+      - correct_answer MUST be a number or numeric string.
       - Example: 23
     
     - If question_type = 4 (Text input):
-      - correct_answer MUST be a single string
+      - correct_answer MUST be a single string.
       - Example: "stars"
     
-    CONTENT RULES:
+    ==================================================
+    CONTENT RULES
+    ==================================================
+    
     - Preserve wording exactly as given.
     - Do NOT summarize, paraphrase, or invent content.
     - Do NOT infer missing information.
+    - Do NOT correct spelling or grammar.
     
-    OMISSION RULES:
-    - If a required field is missing, OMIT the question entirely.
-    - Do NOT emit placeholders or partial questions.
-    - An empty questions array is valid.
+    ==================================================
+    OMISSION RULES
+    ==================================================
     
-    OUTPUT RULES:
+    - If ANY required field is missing or invalid, OMIT the question entirely.
+    - Do NOT emit placeholders.
+    - Do NOT emit partial questions.
+    - Returning an empty questions array is valid.
+    
+    ==================================================
+    OUTPUT RULES
+    ==================================================
+    
     - Return ONLY valid JSON.
-    - Output MUST match the provided JSON schema.
-    - Do NOT include commentary, markdown, or explanations.
+    - Output MUST match the provided JSON schema exactly.
+    - Do NOT include explanations, markdown, or commentary.
     """
 
 
