@@ -16398,46 +16398,23 @@ def normalize_type2_image_multiselect(question: dict):
         return
 
     blocks = question.get("question_blocks") or []
-    options = question.get("options") or {}
 
     image_block = None
-    text_blocks = []
-
     for block in blocks:
-        if block.get("type") == "image-selection":
+        if block.get("type") == "image-multi-select":
             image_block = block
-        else:
-            text_blocks.append(block)
+            break
 
+    # If no image-multi-select block exists, do nothing
     if not image_block:
         return
 
-    images = image_block.get("images") or []
-    option_items = list(options.items())
+    # Ensure maxSelections exists
+    image_block.setdefault("maxSelections", 2)
 
-    if len(images) != len(option_items):
-        raise ValueError("TYPE2_IMAGE_OPTION_COUNT_MISMATCH")
-
-    visual_options = []
-    for (opt_id, label), image_url in zip(option_items, images):
-        visual_options.append({
-            "id": opt_id,
-            "label": label,
-            "image": image_url
-        })
-
-    # ✅ PRESERVE text + replace image block only
-    question["question_blocks"] = [
-        *text_blocks,
-        {
-            "type": "image-multi-select",
-            "maxSelections": image_block.get("maxSelections", 1),
-            "options": visual_options
-        }
-    ]
-
-    # Remove legacy options
+    # 🚨 Type 2 NEVER uses `options`
     question.pop("options", None)
+
 
 import ast
 
