@@ -20260,25 +20260,33 @@ async def process_exam_block(
     # Extract ordered stem blocks (TEXT + IMAGE only)
     # --------------------------------------------------
     stem_blocks = []
-    stop_stem = False
+    in_question_text = False
     
     for b in question_block:
-        if b.get("type") != "text" and b.get("type") != "image":
-            continue
+        if b.get("type") == "text":
+            content = b["content"].strip()
+            upper = content.upper()
     
-        content = b.get("content", "").upper()
+            # Start stem
+            if upper == "QUESTION_TEXT:":
+                in_question_text = True
+                continue
     
-        if content.startswith("OPTIONS:") or content.startswith("CORRECT_ANSWER"):
-            stop_stem = True
+            # Stop stem
+            if upper in {"OPTIONS:", "CORRECT_ANSWER:"}:
+                break
     
-        if stop_stem:
-            break
+            if not in_question_text:
+                continue
     
-        # Skip metadata lines
-        if content.startswith(("QUESTION_TYPE:", "YEAR:", "CLASS:", "SUBJECT:", "TOPIC:", "DIFFICULTY:")):
-            continue
+            # 🚫 Skip IMAGES header
+            if upper == "IMAGES:":
+                continue
     
-        stem_blocks.append(b)
+            stem_blocks.append(b)
+    
+        elif b.get("type") == "image" and in_question_text:
+            stem_blocks.append(b)
 
 
     # ==================================================
