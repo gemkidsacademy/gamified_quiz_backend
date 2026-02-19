@@ -19939,37 +19939,41 @@ def persist_visual_counting_question(
     # --------------------------------------------------
     # Create Question row
     # --------------------------------------------------
-    question = QuestionNumeracyLC(
+    obj = QuestionNumeracyLC(
         question_type=6,
-        class_name=block["METADATA"]["CLASS"],
-        year=int(block["METADATA"]["Year"]),
-        subject=block["METADATA"]["SUBJECT"],
-        topic=block["METADATA"].get("TOPIC"),
-        difficulty=block["METADATA"]["DIFFICULTY"],
-
-        question_text=block["QUESTION_TEXT"],
-
-        # Optional but useful for rendering/debugging
-        question_blocks=block.get("QUESTION_BLOCKS"),
-
+        class_name=parsed["METADATA"]["class_name"],
+        year=parsed["METADATA"]["year"],
+        subject=parsed["METADATA"]["subject"],
+        topic=parsed["METADATA"].get("topic"),
+        difficulty=parsed["METADATA"]["difficulty"],
+    
+        question_text=parsed["QUESTION_TEXT"],
+    
+        # ✅ Persist render-ready blocks (reference + option images)
+        question_blocks=parsed.get("question_blocks"),
+    
         options=options_map,
-
+    
         # Stored as JSON for consistency across question types
         correct_answer={
-            "value": block["CORRECT_ANSWER"]
+            "value": parsed["CORRECT_ANSWER"]
         },
+    
+        # ✅ Accurate stem-image flag for rendering logic
+        has_stem_images=bool(parsed.get("question_blocks")),
     )
-
-    db.add(question)
+    
+    db.add(obj)
     db.commit()
-    db.refresh(question)
-
+    db.refresh(obj)
+    
     summary.saved += 1
-
+    
     print(
         f"[{request_id}] 💾 VC: Question saved successfully | "
-        f"id={question.id}"
+        f"id={obj.id}"
     )
+
 
 from docx import Document
 from io import BytesIO
