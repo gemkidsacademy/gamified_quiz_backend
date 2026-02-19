@@ -19816,10 +19816,10 @@ def vc_validate_block(parsed):
     """
     Validation gatekeeper for VISUAL_COUNTING (Type 6).
 
-    This function must be called AFTER parse_visual_counting_block()
+    Must be called AFTER parse_visual_counting_block()
     and BEFORE persist_visual_counting_question().
 
-    It enforces structural correctness only.
+    Enforces structural correctness only.
     No image understanding. No counting. No AI.
     """
 
@@ -19898,7 +19898,7 @@ def vc_validate_block(parsed):
         )
 
     # --------------------------------------------------
-    # METADATA
+    # METADATA (normalized keys)
     # --------------------------------------------------
     metadata = parsed["METADATA"]
 
@@ -19906,17 +19906,20 @@ def vc_validate_block(parsed):
         raise ValueError("VC: METADATA must be a dict")
 
     required_metadata_fields = {
-        "CLASS",
-        "Year",
-        "SUBJECT",
-        "TOPIC",
-        "DIFFICULTY",
+        "class_name",
+        "year",
+        "subject",
+        "difficulty",
     }
 
-    missing_meta = required_metadata_fields - metadata.keys()
+    missing_meta = [
+        key for key in required_metadata_fields
+        if not metadata.get(key)
+    ]
+
     if missing_meta:
         raise ValueError(
-            f"VC: Missing METADATA fields: {sorted(missing_meta)}"
+            f"VC: Missing METADATA fields: {missing_meta}"
         )
 
     # --------------------------------------------------
