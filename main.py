@@ -19236,23 +19236,35 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             continue
 
         
+        
         # --------------------------------------------------
         # Inside CLOZE / OPTIONS
         # --------------------------------------------------
-        if current_mode in {"cloze", "options"}:
+        if current_mode == "options":
         
-            # 🚨 EXIT MODE FIRST if we hit a section header
-            if upper in SECTION_HEADERS:
-                print(
-                    f"🧩 [PARSE] Exiting {current_mode.upper()} mode "
-                    f"on header: {text}"
-                )
+            # 🚨 EXIT OPTIONS MODE on any header or exam marker
+            if (
+                upper in SECTION_HEADERS
+                or upper.startswith("CORRECT_ANSWER")
+                or upper.startswith("===")
+            ):
+                print(f"🧩 [PARSE] Exiting OPTIONS mode on: {text}")
                 flush_buffer()
                 current_mode = None
-                # ⬇️ DO NOT buffer this line
-                # fall through so header is processed normally
+                # fall through, do NOT buffer
             else:
-                print(f"🧩 [PARSE] Buffering ({current_mode}): {text}")
+                print(f"🧩 [PARSE] Buffering option line: {text}")
+                buffer.append(text)
+                continue
+        
+        
+        elif current_mode == "cloze":
+        
+            if upper in SECTION_HEADERS or upper.startswith("==="):
+                print(f"🧩 [PARSE] Exiting CLOZE mode on: {text}")
+                flush_buffer()
+                current_mode = None
+            else:
                 buffer.append(text)
                 continue
 
