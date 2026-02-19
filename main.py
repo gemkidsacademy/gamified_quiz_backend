@@ -2371,6 +2371,14 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
     - The text contains no images and no layout information.
     
     EXTRACTION RULES:
+
+    OPTION NORMALIZATION RULES (MANDATORY):
+    - Multiple-choice options may be written as "A.", "A:", or "A)".
+    - ALWAYS normalize option keys to exactly "A", "B", "C", "D".
+    - Do NOT include punctuation or extra characters in option keys.
+    - This rule applies ONLY to question_type 1 and 2.
+    - Output that violates this rule is INVALID.
+    
     Extract the following fields if present:
     
     - class_name
@@ -2381,7 +2389,7 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
     - difficulty
     - options (ONLY for question_type 1 and 2)
     - correct_answer
-    
+
     ANSWER FORMAT RULES:
     - If question_type = 1 (MCQ single):
       - correct_answer MUST be a single string
