@@ -19235,10 +19235,13 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             print("🧩 [PARSE] Entering OPTIONS mode")
             continue
 
+        
         # --------------------------------------------------
         # Inside CLOZE / OPTIONS
         # --------------------------------------------------
         if current_mode in {"cloze", "options"}:
+        
+            # 🚨 EXIT MODE FIRST if we hit a section header
             if upper in SECTION_HEADERS:
                 print(
                     f"🧩 [PARSE] Exiting {current_mode.upper()} mode "
@@ -19246,7 +19249,8 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 )
                 flush_buffer()
                 current_mode = None
-                # fall through to re-process this line
+                # ⬇️ DO NOT buffer this line
+                # fall through so header is processed normally
             else:
                 print(f"🧩 [PARSE] Buffering ({current_mode}): {text}")
                 buffer.append(text)
