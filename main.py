@@ -2384,7 +2384,9 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
       in the OPTIONS section.
     - Do NOT use the CORRECT_ANSWER value as an option value.
     - Do NOT leave option values empty.
-    - If option values cannot be extracted exactly, OMIT the question.
+    - If an option value is ambiguous, extract the most literal text
+      following the option label without inference.
+
     
     Extract the following fields if present:
     - class_name
@@ -16380,25 +16382,29 @@ def normalize_images_in_question(question: dict, image_map: dict):
                 options[key] = image_map[value]
 
     # -------------------------------
-    # Case 2: options is a list (LC image multi-select)
+    # Case 2: options is a list (legacy LC)
     # -------------------------------
     elif isinstance(options, list):
         for opt in options:
             if "image" in opt:
-                print("🖼️ before:", opt["image"])
                 opt["image"] = image_map.get(opt["image"], opt["image"])
-                print("🖼️ after:", opt["image"])
 
     # -------------------------------
-    # question_blocks images (unchanged)
+    # question_blocks images (legacy)
     # -------------------------------
     blocks = question.get("question_blocks") or []
     for block in blocks:
         images = block.get("images")
-        if not images:
-            continue
+        if images:
+            block["images"] = [image_map.get(img, img) for img in images]
 
-        block["images"] = [image_map.get(img, img) for img in images]
+        # 🔥 ADD THIS — TYPE 2 FIX
+        if block.get("type") == "image-multi-select":
+            for opt in block.get("options", []):
+                img = opt.get("image")
+                if img in image_map:
+                    opt["image"] = image_map[img]
+
 def normalize_type2_image_multiselect(question: dict):
     if question.get("question_type") != 2:
         return
