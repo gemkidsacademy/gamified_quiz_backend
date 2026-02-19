@@ -2203,6 +2203,16 @@ def serialize_blocks_for_gpt_numeracy_LC(blocks: list[dict]) -> str:
         elif block_type == "image":
             image_ref = block.get("name") or block.get("src") or ""
             lines.append(f"[IMAGE: {image_ref}]")
+        elif block_type == "options":
+            lines.append("OPTIONS:")
+        
+            for opt in block.get("options", []):
+                opt_id = opt.get("id")
+                opt_text = opt.get("text", "").strip()
+        
+                if opt_id and opt_text:
+                    lines.append(f"{opt_id}. {opt_text}")
+
 
     # If file ends while still inside METADATA
     if inside_metadata:
@@ -20627,7 +20637,7 @@ def persist_question(
     request_id,
     summary,
     block_idx,
-    stem_blocks=None,   # 👈 optional, non-breaking
+    stem_blocks=None,   # optional, non-breaking
 ):
     """
     Persist a question safely.
@@ -20636,54 +20646,71 @@ def persist_question(
     - stem_blocks: exam-safe blocks (text + images only, optional)
     """
 
-    validate_question_by_type(question_type, q)
-    resolve_images(q, db, request_id)
+    try:
+        # --------------------------------------------------
+        # Validation + image resolution
+        # --------------------------------------------------
+        validate_question_by_type(question_type, q)
+        resolve_images(q, db, request_id)
 
-    # --------------------------------------------------
-    # Decide which blocks are safe to persist
-    # --------------------------------------------------
-    display_blocks = stem_blocks if stem_blocks is not None else question_block
+        # --------------------------------------------------
+        # Decide which blocks are safe to persist
+        # --------------------------------------------------
+        display_blocks = stem_blocks if stem_blocks is not None else question_block
 
-    # --------------------------------------------------
-    # Build question_text (student-visible text only)
-    # --------------------------------------------------
-    if question_type == 5:
-        # CLOZE has its own canonical text
-        question_text = q.get("cloze_text")
-    else:
-        question_text = "\n\n".join(
-            b["content"]
-            for b in display_blocks
-            if b.get("type") == "text"
+        # --------------------------------------------------
+        # Build student-visible question text
+        # --------------------------------------------------
+        if question_type == 5:
+            # CLOZE has its own canonical text
+            question_text = q.get("cloze_text")
+        else:
+            question_text = "\n\n".join(
+                b["content"]
+                for b in display_blocks
+                if b.get("type") == "text"
+            )
+
+        # --------------------------------------------------
+        # Persist
+        # --------------------------------------------------
+        obj = QuestionNumeracyLC(
+            question_type=question_type,
+            class_name=q["class_name"],
+            year=q["year"],
+            subject=meta["subject"],
+            topic=q.get("topic"),
+            difficulty=q["difficulty"],
+            question_text=question_text,
+            question_blocks=filter_display_blocks(display_blocks),
+            options=q.get("options"),
+            correct_answer=str(q["correct_answer"]).strip(),
+            has_stem_images=q.get("has_stem_images", False),
         )
 
-    # --------------------------------------------------
-    # Persist
-    # --------------------------------------------------
-    obj = QuestionNumeracyLC(
-        question_type=question_type,
-        class_name=q["class_name"],
-        year=q["year"],
-        subject=meta["subject"],
-        topic=q.get("topic"),
-        difficulty=q["difficulty"],
-        question_text=question_text,
-        question_blocks=filter_display_blocks(display_blocks),  # ✅ SAFE
-        options=q.get("options"),
-        correct_answer=str(q["correct_answer"]).strip(),
-        has_stem_images=q.get("has_stem_images", False),  # 👈 NEW
-    )
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
 
+        summary.saved += 1
+        print(
+            f"[{request_id}] ✅ SAVED question "
+            f"(id={obj.id}, type={question_type})"
+        )
 
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
+        return obj
 
-    summary.saved += 1
-    print(
-        f"[{request_id}] ✅ SAVED question "
-        f"(id={obj.id}, type={question_type})"
-    )
+    except Exception as e:
+        # --------------------------------------------------
+        # CRITICAL: rollback to avoid poisoned session
+        # --------------------------------------------------
+        db.rollback()
+
+        print(
+            f"[{request_id}] ❌ FAILED to persist question "
+            f"(type={question_type}) | error={e}"
+        )
+        raise
 
 def log_start(request_id, file):
     print("\n" + "=" * 70)
