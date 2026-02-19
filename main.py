@@ -3471,7 +3471,6 @@ def build_question_blocks(q):
 
     # ==================================================
     # Include question_text for NON-inline types
-    # (Type 5 and 7 are handled explicitly below)
     # ==================================================
     if q.question_text and q.question_type not in {2, 5, 7}:
         blocks.append({
@@ -3480,65 +3479,63 @@ def build_question_blocks(q):
         })
 
     # ==================================================
-    # TYPE 2 — IMAGE SELECTION (MULTI)
+    # TYPE 2 — IMAGE MULTI SELECT
     # ==================================================
     if q.question_type == 2:
-        # 1️⃣ Instruction text (from raw blocks)
-        if isinstance(q.question_blocks, list):
-            for block in q.question_blocks:
+        # 1️⃣ Instruction text (text blocks only)
+        for block in q.question_blocks or []:
+            if block.get("type") == "text":
                 content = block.get("content", "").strip()
-    
-                # Stop once images start
-                if content.startswith("IMAGES:"):
-                    break
-    
-                # Skip metadata / noise
+
                 if (
                     not content
                     or content.startswith("question_type")
                     or content.startswith("Year:")
                     or content.startswith("QUESTION_BLOCKS")
+                    or content.startswith("CORRECT_ANSWER")
                 ):
                     continue
-    
+
                 blocks.append({
                     "type": "text",
                     "content": content
                 })
-    
-        # 2️⃣ Extract images
-        images = []
-        if isinstance(q.question_blocks, list):
-            for block in q.question_blocks:
-                content = block.get("content", "")
-                if content.startswith("IMAGES:"):
-                    images.append(
-                        content.replace("IMAGES:", "").strip()
-                    )
-    
-        # 3️⃣ Image selection block
+
+        # 2️⃣ Collect image blocks
+        images = [
+            block["src"]
+            for block in q.question_blocks or []
+            if block.get("type") == "image" and block.get("src")
+        ]
+
+        # 3️⃣ Emit image-multi-select block
         if images:
             blocks.append({
-                "type": "image-selection",
-                "images": images,
+                "type": "image-multi-select",
+                "options": [
+                    {
+                        "id": chr(ord("A") + i),
+                        "image": img,
+                        "label": f"Option {chr(ord('A') + i)}"
+                    }
+                    for i, img in enumerate(images)
+                ],
                 "maxSelections": 2
             })
-    
+
         return blocks
 
     # ==================================================
-    # TYPE 7 — WORD_SELECTION (Grammar – Adverbs)
+    # TYPE 7 — WORD SELECTION
     # ==================================================
     if q.question_type == 7:
-        # 1️⃣ Instruction text (REQUIRED)
         if q.question_text:
             blocks.append({
                 "type": "text",
                 "content": q.question_text.strip()
             })
 
-        # 2️⃣ Interactive sentence
-        if q.question_blocks and isinstance(q.question_blocks, dict):
+        if isinstance(q.question_blocks, dict):
             sentence = q.question_blocks.get("sentence")
             selectable_words = q.question_blocks.get("selectable_words")
 
@@ -3552,45 +3549,43 @@ def build_question_blocks(q):
         return blocks
 
     # ==================================================
-    # TYPE 5 — CLOZE_DROPDOWN (WITH INSTRUCTION)
+    # TYPE 5 — CLOZE DROPDOWN
     # ==================================================
     if q.question_type == 5:
-        sentence = None
         instruction = None
-    
-        if isinstance(q.question_blocks, list):
-            for block in q.question_blocks:
-                content = block.get("content", "").strip()
-    
-                if content == "Choose the word to correctly complete this sentence.":
-                    instruction = content
-    
-                if "{{dropdown}}" in content:
-                    sentence = content
-    
-        # 1️⃣ Instruction text (optional but recommended)
+        sentence = None
+
+        for block in q.question_blocks or []:
+            content = block.get("content", "").strip()
+
+            if content == "Choose the word to correctly complete this sentence.":
+                instruction = content
+
+            if "{{dropdown}}" in content:
+                sentence = content
+
         if instruction:
             blocks.append({
                 "type": "text",
                 "content": instruction
             })
-    
-        # 2️⃣ Inline dropdown sentence
+
         if sentence and q.options:
             blocks.append({
                 "type": "cloze-dropdown",
                 "sentence": sentence.strip(),
                 "options": list(q.options.values())
             })
-    
+
         return blocks
 
     # ==================================================
-    # ALL OTHER TYPES (legacy-safe)
+    # ALL OTHER TYPES (SAFE FALLBACK)
     # ==================================================
     if q.question_blocks:
-        normalized = normalize_question_blocks_backend(q.question_blocks)
-        blocks.extend(normalized)
+        blocks.extend(
+            normalize_question_blocks_backend(q.question_blocks)
+        )
 
     return blocks
 
