@@ -20230,10 +20230,11 @@ def process_visual_counting_exam(
     for opt in parsed["OPTIONS"]:
         question_blocks.append({
             "type": "image",
-            "src": opt["src"],
+            "src": opt["image_url"],   # ✅ correct key
             "role": "option",
-            "option_id": opt["id"],
+            "option_id": opt["label"], # ✅ correct key
         })
+
     
     parsed["question_blocks"] = question_blocks
     
