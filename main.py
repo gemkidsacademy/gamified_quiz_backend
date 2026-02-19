@@ -19146,7 +19146,8 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
 
             for line in buffer:
                 
-                match = re.match(r"^([A-Da-d])[\.\:\)]\s*(.+)$", line)
+                match = re.match(r"^([A-Za-z])[\.\:\)]\s*(.+)$", line)
+
                 
                 if not match:
                     raise ValueError(
