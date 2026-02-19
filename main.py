@@ -9967,28 +9967,27 @@ def normalize_naplan_language_conventions_questions_live(
             # --------------------------------------------------
             # IMAGE MULTI SELECT (LC → Numeracy shape)
             # --------------------------------------------------
-            if block.get("type") in ("image-selection", "image-multi-select"):
+            # --------------------------------------------------
+            # IMAGE MULTI SELECT — PASS THROUGH (SEALED)
+            # --------------------------------------------------
+            if block.get("type") == "image-multi-select":
                 is_image_multiselect = True
-
-                raw_images = block.get("images") or []
-                images = [image_map.get(img, img) for img in raw_images]
-                max_sel = block.get("maxSelections", 1)
-
-                option_labels = q.get("options") or {}
-
+            
+                # Resolve image URLs defensively
+                fixed_options = []
+                for opt in block.get("options", []):
+                    img = opt.get("image")
+                    fixed_options.append({
+                        **opt,
+                        "image": image_map.get(img, img)
+                    })
+            
                 display_blocks.append({
-                    "type": "image-multi-select",
-                    "maxSelections": max_sel,
-                    "options": [
-                        {
-                            "id": key,
-                            "label": label,
-                            "image": images[idx] if idx < len(images) else None
-                        }
-                        for idx, (key, label) in enumerate(option_labels.items())
-                    ]
+                    **block,
+                    "options": fixed_options,
+                    "maxSelections": block.get("maxSelections", 1),
                 })
-
+            
                 continue
 
             # --------------------------------------------------
