@@ -19558,16 +19558,13 @@ def vc_extract_question_text(block, *, debug=False, request_id=None):
     lines = []
 
     def normalize(value: str) -> str:
-        return value.upper().replace(":", " ").strip()
+        return value.upper().strip()
 
-    STOP_TOKENS = {
-        "OPTIONS",
-        "ANSWER_TYPE",
-        "CORRECT_ANSWER",
-        "A ",
-        "B ",
-        "C ",
-        "D ",
+    STOP_HEADERS = {
+        "REFERENCE_IMAGE:",
+        "OPTIONS:",
+        "ANSWER_TYPE:",
+        "CORRECT_ANSWER:",
     }
 
     for idx, item in enumerate(block):
@@ -19580,10 +19577,12 @@ def vc_extract_question_text(block, *, debug=False, request_id=None):
         if not text:
             continue
 
-        normalized = normalize(text)
+        upper = normalize(text)
 
-        # Start collecting
-        if normalized.startswith("QUESTION_TEXT"):
+        # --------------------------------------------------
+        # Start QUESTION_TEXT
+        # --------------------------------------------------
+        if upper == "QUESTION_TEXT:":
             collecting = True
             if debug:
                 print(
@@ -19592,33 +19591,34 @@ def vc_extract_question_text(block, *, debug=False, request_id=None):
                 )
             continue
 
-        if collecting:
-            # Stop condition
-            for token in STOP_TOKENS:
-                if token in normalized:
-                    if debug:
-                        print(
-                            f"[{request_id}] 🛑 VC QUESTION_TEXT STOP "
-                            f"(token='{token}', line='{text}')"
-                        )
-                    collecting = False
-                    break
-            else:
-                lines.append(text)
-                continue
+        if not collecting:
+            continue
 
-            break  # hard stop after termination
+        # --------------------------------------------------
+        # Stop conditions
+        # --------------------------------------------------
+        if any(upper.startswith(h) for h in STOP_HEADERS):
+            if debug:
+                print(
+                    f"[{request_id}] 🛑 VC QUESTION_TEXT STOP "
+                    f"(line='{text}')"
+                )
+            break
+
+        lines.append(text)
 
     if not lines:
         raise ValueError("VC: QUESTION_TEXT section not found or empty")
 
+    final_text = " ".join(lines).strip()
+
     if debug:
         print(
             f"[{request_id}] 🧾 VC QUESTION_TEXT FINAL = "
-            f"'{ ' '.join(lines) }'"
+            f"'{final_text}'"
         )
 
-    return " ".join(lines)
+    return final_text
 
 import re
 import unicodedata
@@ -20180,28 +20180,6 @@ def process_visual_counting_exam(
     request_id=None,
     summary=None,
 ):
-    # --------------------------------------------------
-    # Resolve exam metadata (self-sufficient)
-    # --------------------------------------------------
-    parsed = parse_visual_counting_block(question_block)
-    if exam_metadata is None:
-        metadata = parsed.get("METADATA", {})
-    
-        exam_metadata = {
-            "class_name": metadata.get("class_name"),
-            "year": metadata.get("year"),
-            "subject": metadata.get("subject"),
-            "difficulty": metadata.get("difficulty"),
-        }
-    
-    # Final safety check
-    if not all(exam_metadata.values()):
-        raise ValueError(
-            "Type 6 missing exam metadata. "
-            "Ensure class_name, year, subject, and difficulty are present."
-        )
-
-
     print(
         f"[{request_id}] 🖼️ TYPE 6 detected | "
         f"processing visual counting question"
@@ -20209,7 +20187,7 @@ def process_visual_counting_exam(
     print(f"[{request_id}] 🔥 VC STEP 1: entered process_visual_counting_exam")
 
     # --------------------------------------------------
-    # 1. Parse NON-option, NON-answer block content only
+    # 1️⃣ Parse base content (text + metadata only)
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 2: parsing visual counting block")
 
@@ -20220,10 +20198,26 @@ def process_visual_counting_exam(
         f"keys={list(parsed.keys())}"
     )
 
-    # 🚨 DO NOT validate here
+    # --------------------------------------------------
+    # 2️⃣ Resolve exam metadata (self-sufficient)
+    # --------------------------------------------------
+    if exam_metadata is None:
+        metadata = parsed.get("METADATA", {})
+        exam_metadata = {
+            "class_name": metadata.get("class_name"),
+            "year": metadata.get("year"),
+            "subject": metadata.get("subject"),
+            "difficulty": metadata.get("difficulty"),
+        }
+
+    if not all(exam_metadata.values()):
+        raise ValueError(
+            "Type 6 missing exam metadata. "
+            "Ensure class_name, year, subject, and difficulty are present."
+        )
 
     # --------------------------------------------------
-    # 2. Force DOCX-level extraction (OPTIONS)
+    # 3️⃣ Extract OPTIONS
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 3: extracting OPTIONS from DOCX")
 
@@ -20231,7 +20225,7 @@ def process_visual_counting_exam(
 
     print(
         f"[{request_id}] 🔥 VC STEP 3a: raw options extracted | "
-        f"count={len(raw_options)} | raw={raw_options}"
+        f"count={len(raw_options)}"
     )
 
     parsed["OPTIONS"] = vc_resolve_option_images(
@@ -20242,48 +20236,48 @@ def process_visual_counting_exam(
 
     print(
         f"[{request_id}] 🔥 VC STEP 3b: resolved option images | "
-        f"count={len(parsed['OPTIONS'])} | options={parsed['OPTIONS']}"
+        f"count={len(parsed['OPTIONS'])}"
     )
 
     # --------------------------------------------------
-    # 3. Extract CORRECT_ANSWER
+    # 4️⃣ Extract CORRECT_ANSWER
     # --------------------------------------------------
-    print(f"[{request_id}] 🔥 VC STEP 4: extracting CORRECT_ANSWER from DOCX")
+    print(f"[{request_id}] 🔥 VC STEP 4: extracting CORRECT_ANSWER")
 
     parsed["CORRECT_ANSWER"] = vc_extract_correct_answer_from_block(
         question_block
     )
 
     print(
-        f"[{request_id}] 🔥 VC STEP 4a: correct answer extracted | "
-        f"value={parsed['CORRECT_ANSWER']}"
+        f"[{request_id}] 🔥 VC STEP 4a: correct answer = "
+        f"{parsed['CORRECT_ANSWER']}"
     )
 
     # --------------------------------------------------
-    # 4. Validate (single gatekeeper)
+    # 5️⃣ Validate (single gatekeeper)
     # --------------------------------------------------
-    print(f"[{request_id}] 🔥 VC STEP 5: validating visual counting block")
+    print(f"[{request_id}] 🔥 VC STEP 5: validating block")
 
     vc_validate_block(parsed)
 
     print(f"[{request_id}] 🔥 VC STEP 5a: validation PASSED")
 
-    # ==================================================
-    # 5️⃣ Build question_blocks (render-ready)
-    # ==================================================
-    print(f"[{request_id}] 🔥 VC STEP 5b: building question_blocks")
+    # --------------------------------------------------
+    # 6️⃣ Build question_blocks (render-ready)
+    # --------------------------------------------------
+    print(f"[{request_id}] 🔥 VC STEP 6: building question_blocks")
 
     question_blocks = []
 
-    # 1️⃣ Reference images (non-interactive)
+    # Reference images (non-interactive)
     for img in reference_images or []:
         question_blocks.append({
             "type": "image",
-            "src": img.get("src"),
+            "src": img["src"],
             "role": "reference",
         })
 
-    # 2️⃣ Option images (interactive answers)
+    # Option images (interactive)
     for opt in parsed["OPTIONS"]:
         question_blocks.append({
             "type": "image",
@@ -20295,14 +20289,14 @@ def process_visual_counting_exam(
     parsed["question_blocks"] = question_blocks
 
     print(
-        f"[{request_id}] 🔥 VC STEP 5c: question_blocks built | "
+        f"[{request_id}] 🔥 VC STEP 6a: question_blocks built | "
         f"count={len(question_blocks)}"
     )
 
     # --------------------------------------------------
-    # 6. Persist (exam metadata comes from caller)
+    # 7️⃣ Persist
     # --------------------------------------------------
-    print(f"[{request_id}] 🔥 VC STEP 6: persisting visual counting question")
+    print(f"[{request_id}] 🔥 VC STEP 7: persisting question")
 
     question_id = persist_visual_counting_question(
         block=parsed,
@@ -20316,7 +20310,7 @@ def process_visual_counting_exam(
     )
 
     print(
-        f"[{request_id}] 🔥 VC STEP 6: persistence complete | "
+        f"[{request_id}] 🔥 VC STEP 7a: persistence complete | "
         f"question_id={question_id}"
     )
 
