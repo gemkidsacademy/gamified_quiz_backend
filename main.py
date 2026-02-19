@@ -20153,12 +20153,11 @@ def process_visual_counting_exam(
     block_idx,
     question_block,
     reference_images=None,
+    exam_metadata=None,
     db=None,
     request_id=None,
     summary=None,
 ):
-
- 
     print(
         f"[{request_id}] 🖼️ TYPE 6 detected | "
         f"processing visual counting question"
@@ -20169,6 +20168,7 @@ def process_visual_counting_exam(
     # 1. Parse NON-option, NON-answer block content only
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 2: parsing visual counting block")
+
     parsed = parse_visual_counting_block(question_block)
 
     print(
@@ -20182,6 +20182,7 @@ def process_visual_counting_exam(
     # 2. Force DOCX-level extraction (OPTIONS)
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 3: extracting OPTIONS from DOCX")
+
     raw_options = vc_extract_options_from_block(question_block)
 
     print(
@@ -20204,7 +20205,10 @@ def process_visual_counting_exam(
     # 3. Extract CORRECT_ANSWER
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 4: extracting CORRECT_ANSWER from DOCX")
-    parsed["CORRECT_ANSWER"] = vc_extract_correct_answer_from_block(question_block)
+
+    parsed["CORRECT_ANSWER"] = vc_extract_correct_answer_from_block(
+        question_block
+    )
 
     print(
         f"[{request_id}] 🔥 VC STEP 4a: correct answer extracted | "
@@ -20215,17 +20219,18 @@ def process_visual_counting_exam(
     # 4. Validate (single gatekeeper)
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 5: validating visual counting block")
+
     vc_validate_block(parsed)
 
     print(f"[{request_id}] 🔥 VC STEP 5a: validation PASSED")
-    
+
     # ==================================================
     # 5️⃣ Build question_blocks (render-ready)
     # ==================================================
     print(f"[{request_id}] 🔥 VC STEP 5b: building question_blocks")
-    
+
     question_blocks = []
-    
+
     # 1️⃣ Reference images (non-interactive)
     for img in reference_images or []:
         question_blocks.append({
@@ -20233,43 +20238,46 @@ def process_visual_counting_exam(
             "src": img.get("src"),
             "role": "reference",
         })
-    
+
     # 2️⃣ Option images (interactive answers)
     for opt in parsed["OPTIONS"]:
         question_blocks.append({
             "type": "image",
-            "src": opt["image_url"],   # ✅ correct key
+            "src": opt["image_url"],
             "role": "option",
-            "option_id": opt["label"], # ✅ correct key
+            "option_id": opt["label"],
         })
 
-    
     parsed["question_blocks"] = question_blocks
-    
+
     print(
         f"[{request_id}] 🔥 VC STEP 5c: question_blocks built | "
         f"count={len(question_blocks)}"
     )
 
     # --------------------------------------------------
-    # 5. Persist
+    # 6. Persist (exam metadata comes from caller)
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 6: persisting visual counting question")
 
-    metadata = parsed.get("METADATA", {})
-    class_name = metadata.get("class_name")
-    
     question_id = persist_visual_counting_question(
         block=parsed,
         db=db,
         request_id=request_id,
         summary=summary,
-        class_name=class_name,
+        class_name=exam_metadata["class_name"],
+        year=exam_metadata["year"],
+        subject=exam_metadata["subject"],
+        difficulty=exam_metadata["difficulty"],
     )
-    
-    print(f"[{request_id}] 🔥 VC STEP 6: persistence complete | question_id={question_id}")
+
+    print(
+        f"[{request_id}] 🔥 VC STEP 6: persistence complete | "
+        f"question_id={question_id}"
+    )
 
     summary.block_success(block_idx, [question_id])
+
     print(
         f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (VISUAL COUNTING)"
     )
@@ -20409,12 +20417,14 @@ def ws_extract_metadata_from_block(block_text: str) -> dict:
     return metadata
 
 async def process_exam_block(
-    block_idx: int,
-    question_block: list,
-    db: Session,
-    request_id: str,
-    summary
+    block_idx,
+    question_block,
+    db,
+    request_id,
+    summary,
+    exam_metadata,
 ):
+ 
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
@@ -20507,13 +20517,15 @@ async def process_exam_block(
         )
         reference_images = extract_reference_images(question_block)
         process_visual_counting_exam(
-           block_idx=block_idx,
-           question_block=question_block,
-           reference_images=reference_images,  # 👈 NEW
-           db=db,
-           request_id=request_id,
-           summary=summary,
-       )
+            block_idx=block_idx,
+            question_block=question_block,
+            reference_images=reference_images,
+            exam_metadata=exam_metadata,  # 👈 exam-level context
+            db=db,
+            request_id=request_id,
+            summary=summary,
+        )
+
         return  # 🚨 DO NOT FALL THROUGH
 
     # ==================================================
@@ -21359,6 +21371,23 @@ async def upload_word_naplan(
     summary.file_bytes = content
     
     print(f"[{request_id}] ✅ UploadSummary initialised")
+    # --------------------------------------------------
+    # STEP 5a: Resolve exam-level metadata
+    # --------------------------------------------------
+    print(f"[{request_id}] ▶️ STEP 5a: resolve exam metadata")
+    
+    # ⚠️ Use your EXISTING logic here (do not invent new rules)
+    # These examples assume metadata lives in exam headers / first block
+    exam_metadata = extract_exam_metadata(exam_blocks)
+    
+    print(
+        f"[{request_id}] 🧾 Exam metadata | "
+        f"class_name={exam_metadata.get('class_name')}, "
+        f"year={exam_metadata.get('year')}, "
+        f"subject={exam_metadata.get('subject')}, "
+        f"difficulty={exam_metadata.get('difficulty')}"
+    )
+
 
     # --------------------------------------------------
     # STEP 6: Process each EXAM block
@@ -21393,8 +21422,10 @@ async def upload_word_naplan(
                     question_block=block,
                     db=db,
                     request_id=request_id,
-                    summary=summary
+                    summary=summary,
+                    exam_metadata=exam_metadata,
                 )
+
     
                 continue  # 🚨 do NOT fall through
     
