@@ -19096,6 +19096,17 @@ SECTION_HEADERS = {
     "IMAGES:"
 }
 
+def strip_inline_control_tokens(text: str) -> str:
+    # Remove inline OPTIONS like "A: image.png B: image.png"
+    text = re.sub(r"\b[A-F][\.\:]\s*\S+", "", text)
+
+    # Remove inline ANSWER_TYPE
+    text = re.sub(r'ANSWER_TYPE:\s*".*?"', "", text, flags=re.IGNORECASE)
+
+    # Remove inline CORRECT_ANSWER
+    text = re.sub(r'CORRECT_ANSWER:\s*\S+', "", text, flags=re.IGNORECASE)
+
+    return " ".join(text.split()).strip()
 
 
 def parse_docx_to_ordered_blocks_numeracy(doc):
@@ -19313,24 +19324,18 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 images_emitted = True
                 continue
 
-        SKIP_HEADERS = {
-            "OPTIONS:",
-            "CORRECT_ANSWER:",
-            "ANSWER_TYPE:",
-            "QUESTION_BLOCKS:",
-        }
         
-        if upper in SKIP_HEADERS:
-            print(f"🧩 [PARSE] Skipping control header: {text}")
-            continue
+        # --------------------------------------------------
+        # Default text (cleaned)
+        # --------------------------------------------------
+        cleaned = strip_inline_control_tokens(text)
+        
+        if cleaned:
+            blocks.append({
+                "type": "text",
+                "content": cleaned
+            })
 
-        # --------------------------------------------------
-        # Default text
-        # --------------------------------------------------
-        blocks.append({
-            "type": "text",
-            "content": text
-        })
 
     # --------------------------------------------------
     # Final flush
