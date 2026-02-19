@@ -19516,14 +19516,24 @@ def is_visual_counting_exam(block):
             return True
 
     return False
-def vc_extract_question_text(block):
+def vc_extract_question_text(block, *, debug=False, request_id=None):
     collecting = False
     lines = []
 
-    def normalize_header(value: str) -> str:
-        return value.upper().replace(":", "").strip()
+    def normalize(value: str) -> str:
+        return value.upper().replace(":", " ").strip()
 
-    for item in block:
+    STOP_TOKENS = {
+        "OPTIONS",
+        "ANSWER_TYPE",
+        "CORRECT_ANSWER",
+        "A ",
+        "B ",
+        "C ",
+        "D ",
+    }
+
+    for idx, item in enumerate(block):
         if item.get("type") != "text":
             continue
 
@@ -19533,22 +19543,43 @@ def vc_extract_question_text(block):
         if not text:
             continue
 
-        header = normalize_header(text)
+        normalized = normalize(text)
 
-        # Start collecting after QUESTION_TEXT
-        if header == "QUESTION_TEXT":
+        # Start collecting
+        if normalized.startswith("QUESTION_TEXT"):
             collecting = True
+            if debug:
+                print(
+                    f"[{request_id}] 🧩 VC QUESTION_TEXT START "
+                    f"(block_index={idx})"
+                )
             continue
 
         if collecting:
-            # Stop collecting when structural sections begin
-            if header in {"OPTIONS", "ANSWER_TYPE", "CORRECT_ANSWER"}:
-                break
+            # Stop condition
+            for token in STOP_TOKENS:
+                if token in normalized:
+                    if debug:
+                        print(
+                            f"[{request_id}] 🛑 VC QUESTION_TEXT STOP "
+                            f"(token='{token}', line='{text}')"
+                        )
+                    collecting = False
+                    break
+            else:
+                lines.append(text)
+                continue
 
-            lines.append(text)
+            break  # hard stop after termination
 
     if not lines:
         raise ValueError("VC: QUESTION_TEXT section not found or empty")
+
+    if debug:
+        print(
+            f"[{request_id}] 🧾 VC QUESTION_TEXT FINAL = "
+            f"'{ ' '.join(lines) }'"
+        )
 
     return " ".join(lines)
 
