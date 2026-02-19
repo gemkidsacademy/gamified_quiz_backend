@@ -20495,14 +20495,14 @@ async def process_exam_block(
             f"processing visual counting question"
         )
 
-         process_visual_counting_exam(
-            block_idx=block_idx,
-            question_block=question_block,
-            reference_images=reference_images,  # 👈 NEW
-            db=db,
-            request_id=request_id,
-            summary=summary,
-        )
+        process_visual_counting_exam(
+           block_idx=block_idx,
+           question_block=question_block,
+           reference_images=reference_images,  # 👈 NEW
+           db=db,
+           request_id=request_id,
+           summary=summary,
+       )
         return  # 🚨 DO NOT FALL THROUGH
 
     # ==================================================
