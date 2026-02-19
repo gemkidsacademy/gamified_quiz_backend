@@ -20155,6 +20155,12 @@ def process_visual_counting_exam(
     request_id=None,
     summary=None,
 ):
+    if exam_metadata is None:
+        raise ValueError(
+            "Exam metadata not resolved yet. "
+            "Ensure a legacy (Types 1–4) question appears before Type 6."
+        )
+
     print(
         f"[{request_id}] 🖼️ TYPE 6 detected | "
         f"processing visual counting question"
