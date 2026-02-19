@@ -20151,23 +20151,45 @@ def vc_extract_correct_answer_from_block(question_block):
             return text
 
     raise ValueError("VC: CORRECT_ANSWER not found in block")
-def extract_reference_images(question_block):
+def extract_reference_images(
+    question_block,
+    *,
+    db=None,
+    request_id=None,
+):
     reference_images = []
-    capture_next = False
+    capture = False
 
     for b in question_block:
-        if b.get("type") == "text":
-            content = b.get("content", "").strip().upper()
+        if b.get("type") != "text":
+            continue
 
-            if content == "REFERENCE_IMAGE:":
-                capture_next = True
-                continue
+        raw = b.get("content", "").strip()
+        upper = raw.upper()
 
-            if capture_next and content.endswith(":"):
-                break
+        # Start capture
+        if upper == "REFERENCE_IMAGE:":
+            capture = True
+            continue
 
-        elif capture_next and b.get("type") == "image":
-            reference_images.append(b)
+        if not capture:
+            continue
+
+        # Stop on next section
+        if upper.endswith(":"):
+            break
+
+        # Expect filename
+        if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            src = resolve_image_name_to_gcs_url(
+                raw,
+                db=db,
+                request_id=request_id,
+            )
+            reference_images.append({
+                "type": "image",
+                "src": src,
+            })
 
     return reference_images
 
@@ -20553,7 +20575,12 @@ async def process_exam_block(
             f"[{request_id}] 🖼️ TYPE 6 detected | "
             f"processing visual counting question"
         )
-        reference_images = extract_reference_images(question_block)
+        reference_images = extract_reference_images(
+            question_block,
+            db=db,
+            request_id=request_id,
+        )
+
         process_visual_counting_exam(
             block_idx=block_idx,
             question_block=question_block,
