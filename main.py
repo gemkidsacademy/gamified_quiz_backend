@@ -16411,20 +16411,11 @@ def normalize_type2_image_multiselect(question: dict):
 
     blocks = question.get("question_blocks") or []
 
-    image_block = None
-    for block in blocks:
-        if block.get("type") == "image-multi-select":
-            image_block = block
-            break
-
-    # If no image-multi-select block exists, do nothing
-    if not image_block:
+    # 🔒 Ensure image-multi-select already exists
+    if not any(b.get("type") == "image-multi-select" for b in blocks):
         return
 
-    # Ensure maxSelections exists
-    image_block.setdefault("maxSelections", 2)
-
-    # 🚨 Type 2 NEVER uses `options`
+    # 🔥 Type 2 NEVER uses top-level options
     question.pop("options", None)
 
 
