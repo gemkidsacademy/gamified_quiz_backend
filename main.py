@@ -19939,6 +19939,9 @@ def persist_visual_counting_question(
     request_id,
     summary,
     class_name,
+    year,
+    subject,
+    difficulty,
 ):
     """
     Persist a VISUAL_COUNTING (Type 6) question.
@@ -19946,10 +19949,8 @@ def persist_visual_counting_question(
     Assumes:
     - block has already been validated by vc_validate_block
     - OPTIONS contain resolved image_url values
-    - class_name is passed explicitly (no hidden coupling)
+    - exam metadata is passed explicitly (no hidden coupling)
     """
-
-    metadata = block.get("METADATA", {})
 
     # --------------------------------------------------
     # Build options map: {"A": url, "B": url, ...}
@@ -19965,12 +19966,12 @@ def persist_visual_counting_question(
     obj = QuestionNumeracyLC(
         question_type=6,
         class_name=class_name,
-        year=metadata.get("year"),
-        subject=metadata.get("subject"),
-        topic=metadata.get("topic"),
-        difficulty=metadata.get("difficulty"),
+        year=year,
+        subject=subject,
+        topic=block.get("METADATA", {}).get("topic"),
+        difficulty=difficulty,
 
-        question_text=block.get("QUESTION_TEXT"),
+        question_text=block["QUESTION_TEXT"],
 
         # ✅ reference + option images
         question_blocks=block.get("question_blocks"),
@@ -19978,7 +19979,7 @@ def persist_visual_counting_question(
         options=options_map,
 
         correct_answer={
-            "value": block.get("CORRECT_ANSWER")
+            "value": block["CORRECT_ANSWER"]
         },
 
         has_stem_images=bool(block.get("question_blocks")),
@@ -19994,6 +19995,8 @@ def persist_visual_counting_question(
         f"[{request_id}] 💾 VC: Question saved successfully | "
         f"id={obj.id}"
     )
+
+    return obj.id
 
     
 
