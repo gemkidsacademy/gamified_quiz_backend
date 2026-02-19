@@ -20155,11 +20155,27 @@ def process_visual_counting_exam(
     request_id=None,
     summary=None,
 ):
+    # --------------------------------------------------
+    # Resolve exam metadata (self-sufficient)
+    # --------------------------------------------------
+    parsed = parse_visual_counting_block(question_block)
     if exam_metadata is None:
+        metadata = parsed.get("METADATA", {})
+    
+        exam_metadata = {
+            "class_name": metadata.get("class_name"),
+            "year": metadata.get("year"),
+            "subject": metadata.get("subject"),
+            "difficulty": metadata.get("difficulty"),
+        }
+    
+    # Final safety check
+    if not all(exam_metadata.values()):
         raise ValueError(
-            "Exam metadata not resolved yet. "
-            "Ensure a legacy (Types 1–4) question appears before Type 6."
+            "Type 6 missing exam metadata. "
+            "Ensure class_name, year, subject, and difficulty are present."
         )
+
 
     print(
         f"[{request_id}] 🖼️ TYPE 6 detected | "
