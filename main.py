@@ -19919,6 +19919,7 @@ def persist_visual_counting_question(
     db,
     request_id,
     summary,
+    class_name,
 ):
     """
     Persist a VISUAL_COUNTING (Type 6) question.
@@ -19926,7 +19927,10 @@ def persist_visual_counting_question(
     Assumes:
     - block has already been validated by vc_validate_block
     - OPTIONS contain resolved image_url values
+    - class_name is passed explicitly (no hidden coupling)
     """
+
+    metadata = block.get("METADATA", {})
 
     # --------------------------------------------------
     # Build options map: {"A": url, "B": url, ...}
@@ -19941,37 +19945,39 @@ def persist_visual_counting_question(
     # --------------------------------------------------
     obj = QuestionNumeracyLC(
         question_type=6,
-        class_name=block["METADATA"]["class_name"],
-        year=block["METADATA"]["year"],
-        subject=block["METADATA"]["subject"],
-        topic=block["METADATA"].get("topic"),
-        difficulty=block["METADATA"]["difficulty"],
-    
-        question_text=block["QUESTION_TEXT"],
-    
+        class_name=class_name,
+        year=metadata.get("year"),
+        subject=metadata.get("subject"),
+        topic=metadata.get("topic"),
+        difficulty=metadata.get("difficulty"),
+
+        question_text=block.get("QUESTION_TEXT"),
+
         # ✅ reference + option images
         question_blocks=block.get("question_blocks"),
-    
+
         options=options_map,
-    
+
         correct_answer={
-            "value": block["CORRECT_ANSWER"]
+            "value": block.get("CORRECT_ANSWER")
         },
-    
+
         has_stem_images=bool(block.get("question_blocks")),
     )
 
-    
     db.add(obj)
     db.commit()
     db.refresh(obj)
-    
+
     summary.saved += 1
-    
+
     print(
         f"[{request_id}] 💾 VC: Question saved successfully | "
         f"id={obj.id}"
     )
+
+    return obj.id
+)
 
 
 from docx import Document
@@ -20250,17 +20256,19 @@ def process_visual_counting_exam(
     # 5. Persist
     # --------------------------------------------------
     print(f"[{request_id}] 🔥 VC STEP 6: persisting visual counting question")
+
+    metadata = parsed.get("METADATA", {})
+    class_name = metadata.get("class_name")
+    
     question_id = persist_visual_counting_question(
         block=parsed,
         db=db,
         request_id=request_id,
         summary=summary,
+        class_name=class_name,
     )
-
-    print(
-        f"[{request_id}] 🔥 VC STEP 6a: persistence complete | "
-        f"question_id={question_id}"
-    )
+    
+    print(f"[{request_id}] 🔥 VC STEP 6: persistence complete | question_id={question_id}")
 
     summary.block_success(block_idx, [question_id])
     print(
