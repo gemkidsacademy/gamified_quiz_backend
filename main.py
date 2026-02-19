@@ -18977,16 +18977,13 @@ async def upload_word(
 
 
 def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
-    print("🧩 [CHUNK] ===== START EXAM CHUNKING =====")
-    print(f"🧩 [CHUNK] Incoming blocks count: {len(blocks)}")
-
+    
     exams = []
     current_exam = []
     in_exam = False
 
     for idx, block in enumerate(blocks):
-        print(f"🧩 [CHUNK] Inspecting block[{idx}]: {block}")
-
+        
         if block.get("type") != "text":
             if in_exam:
                 print(
@@ -21382,7 +21379,7 @@ async def upload_word_naplan(
     
     # ⚠️ Use your EXISTING logic here (do not invent new rules)
     # These examples assume metadata lives in exam headers / first block
-    exam_metadata = extract_exam_metadata(exam_blocks)
+    
     
     print(
         f"[{request_id}] 🧾 Exam metadata | "
