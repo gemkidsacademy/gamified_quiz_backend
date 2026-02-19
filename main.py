@@ -19976,8 +19976,7 @@ def persist_visual_counting_question(
         f"id={obj.id}"
     )
 
-    return obj.id
-)
+    
 
 
 from docx import Document
