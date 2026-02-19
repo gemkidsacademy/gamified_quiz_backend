@@ -19941,27 +19941,26 @@ def persist_visual_counting_question(
     # --------------------------------------------------
     obj = QuestionNumeracyLC(
         question_type=6,
-        class_name=parsed["METADATA"]["class_name"],
-        year=parsed["METADATA"]["year"],
-        subject=parsed["METADATA"]["subject"],
-        topic=parsed["METADATA"].get("topic"),
-        difficulty=parsed["METADATA"]["difficulty"],
+        class_name=block["METADATA"]["class_name"],
+        year=block["METADATA"]["year"],
+        subject=block["METADATA"]["subject"],
+        topic=block["METADATA"].get("topic"),
+        difficulty=block["METADATA"]["difficulty"],
     
-        question_text=parsed["QUESTION_TEXT"],
+        question_text=block["QUESTION_TEXT"],
     
-        # ✅ Persist render-ready blocks (reference + option images)
-        question_blocks=parsed.get("question_blocks"),
+        # ✅ reference + option images
+        question_blocks=block.get("question_blocks"),
     
         options=options_map,
     
-        # Stored as JSON for consistency across question types
         correct_answer={
-            "value": parsed["CORRECT_ANSWER"]
+            "value": block["CORRECT_ANSWER"]
         },
     
-        # ✅ Accurate stem-image flag for rendering logic
-        has_stem_images=bool(parsed.get("question_blocks")),
+        has_stem_images=bool(block.get("question_blocks")),
     )
+
     
     db.add(obj)
     db.commit()
