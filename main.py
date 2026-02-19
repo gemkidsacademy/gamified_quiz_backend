@@ -21370,26 +21370,9 @@ async def upload_word_naplan(
 
     summary = UploadSummary()
     summary.file_bytes = content
-    
+    exam_metadata = None 
     print(f"[{request_id}] ✅ UploadSummary initialised")
-    # --------------------------------------------------
-    # STEP 5a: Resolve exam-level metadata
-    # --------------------------------------------------
-    print(f"[{request_id}] ▶️ STEP 5a: resolve exam metadata")
     
-    # ⚠️ Use your EXISTING logic here (do not invent new rules)
-    # These examples assume metadata lives in exam headers / first block
-    
-    
-    print(
-        f"[{request_id}] 🧾 Exam metadata | "
-        f"class_name={exam_metadata.get('class_name')}, "
-        f"year={exam_metadata.get('year')}, "
-        f"subject={exam_metadata.get('subject')}, "
-        f"difficulty={exam_metadata.get('difficulty')}"
-    )
-    exam_metadata = None
-
 
     # --------------------------------------------------
     # STEP 6: Process each EXAM block
@@ -21439,8 +21422,10 @@ async def upload_word_naplan(
                 question_block=block,
                 db=db,
                 request_id=request_id,
-                summary=summary
+                summary=summary,
+                exam_metadata=exam_metadata,
             )
+
     
         except Exception as e:
             print(
