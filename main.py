@@ -19272,16 +19272,12 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # Inside IMAGES section
         # --------------------------------------------------
         if current_mode == "images":
-            if upper in SECTION_HEADERS:
-                if not images_emitted:
-                    raise ValueError(
-                        "[PARSE] IMAGES section terminated without any filenames"
-                    )
-
-                print("🧩 [PARSE] Exiting IMAGES mode")
+            # Accept only real filenames
+            if not re.search(r"\.(png|jpg|jpeg|webp|svg)$", text, re.IGNORECASE):
+                print("🧩 [PARSE] Exiting IMAGES mode (non-filename encountered)")
                 current_mode = None
                 images_emitted = False
-                # fall through to re-process header
+                # re-process this paragraph normally
             else:
                 print(f"🧩 [PARSE] → Emitting image block: {text}")
                 blocks.append({
