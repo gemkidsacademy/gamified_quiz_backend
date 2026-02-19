@@ -19219,6 +19219,36 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 "content": text
             })
             continue
+        # --------------------------------------------------
+        # IMAGES declaration (MUST be global)
+        # --------------------------------------------------
+        if upper == "IMAGES:" or upper.startswith("IMAGES:"):
+            flush_buffer()
+            print(f"🧩 [PARSE] IMAGES declaration detected: {text}")
+
+            trailing = text.split(":", 1)[1].strip()
+
+            # Case 1: filenames on same line
+            if trailing:
+                for img in trailing.split(","):
+                    name = img.strip()
+                    if not name:
+                        raise ValueError(
+                            "[PARSE] Empty image name in IMAGES declaration"
+                        )
+
+                    print(f"🧩 [PARSE] → Emitting image block: {name}")
+                    blocks.append({
+                        "type": "image",
+                        "name": name
+                    })
+                continue
+
+            # Case 2: filenames on subsequent lines
+            print("🧩 [PARSE] IMAGES filenames expected on subsequent lines")
+            current_mode = "images"
+            images_emitted = False
+            continue
 
         # --------------------------------------------------
         # Section headers
@@ -19287,37 +19317,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 images_emitted = True
                 continue
 
-        # --------------------------------------------------
-        # IMAGES declaration (robust)
-        # --------------------------------------------------
-        if upper.startswith("IMAGES:"):
-            flush_buffer()
-            print(f"🧩 [PARSE] IMAGES declaration detected: {text}")
-
-            trailing = text.split(":", 1)[1].strip()
-
-            # Case 1: filenames on same line
-            if trailing:
-                for img in trailing.split(","):
-                    name = img.strip()
-                    if not name:
-                        raise ValueError(
-                            "[PARSE] Empty image name in IMAGES declaration"
-                        )
-
-                    print(f"🧩 [PARSE] → Emitting image block: {name}")
-                    blocks.append({
-                        "type": "image",
-                        "name": name
-                    })
-                continue
-
-            # Case 2: filenames on subsequent lines
-            print("🧩 [PARSE] IMAGES filenames expected on subsequent lines")
-            current_mode = "images"
-            images_emitted = False
-            continue
-
+        
         # --------------------------------------------------
         # Default text
         # --------------------------------------------------
