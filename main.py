@@ -19145,12 +19145,18 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             options = []
 
             for line in buffer:
-                if ":" not in line:
+                
+                match = re.match(r"^([A-Da-d])[\.\:\)]\s*(.+)$", line)
+                
+                if not match:
                     raise ValueError(
-                        f"[PARSE] Invalid option format (missing ':'): {repr(line)}"
+                        f"[PARSE] Invalid option format: {repr(line)} "
+                        "(expected A: 1 or A. 1 or A) 1)"
                     )
+                
+                label = match.group(1).upper()
+                text = match.group(2).strip()
 
-                label, text = line.split(":", 1)
                 label = label.strip()
                 text = text.strip()
 
