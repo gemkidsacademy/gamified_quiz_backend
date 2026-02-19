@@ -1509,6 +1509,8 @@ class QuestionNumeracyLC(Base):
 
     # Ordered visual blocks (text + resolved images)
     question_blocks = Column(JSON, nullable=True)
+    has_stem_images = Column(Boolean, default=False)
+
 
     # MCQ options: {"A": "...", "B": "...", "C": "...", "D": "..."}
     options = Column(JSON, nullable=True)
@@ -20341,6 +20343,10 @@ async def process_exam_block(
         elif b.get("type") == "image" and in_question_text:
             stem_blocks.append(b)
 
+    has_stem_images = any(
+        b.get("type") == "image"
+        for b in stem_blocks
+    )
 
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
@@ -20491,11 +20497,12 @@ async def process_exam_block(
 
             # 🔒 Attach structured stem blocks
             q["question_blocks"] = stem_blocks
-
+            q["has_stem_images"] = has_stem_images
             # Optional but useful
             if any(b["type"] == "image" for b in stem_blocks):
                 q["requires_image"] = True
 
+            
             print(
                 f"[{request_id}] ➕ Persisting question "
                 f"{i}/{len(questions)} (type={question_type}) | "
@@ -20622,7 +20629,9 @@ def persist_question(
         question_blocks=filter_display_blocks(display_blocks),  # ✅ SAFE
         options=q.get("options"),
         correct_answer=str(q["correct_answer"]).strip(),
+        has_stem_images=q.get("has_stem_images", False),  # 👈 NEW
     )
+
 
     db.add(obj)
     db.commit()
