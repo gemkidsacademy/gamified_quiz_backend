@@ -19313,7 +19313,13 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 images_emitted = True
                 continue
 
-        
+        # --------------------------------------------------
+        # STOP text capture on structural headers
+        # --------------------------------------------------
+        if re.match(r"^[A-Z_]+:\s*", upper):
+            print(f"🧩 [PARSE] Skipping structural header: {text}")
+            continue
+
         # --------------------------------------------------
         # Default text
         # --------------------------------------------------
