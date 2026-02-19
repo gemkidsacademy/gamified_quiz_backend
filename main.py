@@ -19328,13 +19328,11 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # --------------------------------------------------
         # Default text (cleaned)
         # --------------------------------------------------
-        cleaned = strip_inline_control_tokens(text)
-        
-        if cleaned:
-            blocks.append({
-                "type": "text",
-                "content": cleaned
-            })
+        blocks.append({
+            "type": "text",
+            "content": text
+        })
+
 
 
     # --------------------------------------------------
@@ -19522,6 +19520,9 @@ def vc_extract_question_text(block):
     collecting = False
     lines = []
 
+    def normalize_header(value: str) -> str:
+        return value.upper().replace(":", "").strip()
+
     for item in block:
         if item.get("type") != "text":
             continue
@@ -19529,15 +19530,22 @@ def vc_extract_question_text(block):
         raw = item.get("text") or item.get("content") or ""
         text = raw.strip()
 
-        if text == "QUESTION_TEXT:":
+        if not text:
+            continue
+
+        header = normalize_header(text)
+
+        # Start collecting after QUESTION_TEXT
+        if header == "QUESTION_TEXT":
             collecting = True
             continue
 
         if collecting:
-            if text == "OPTIONS:":
+            # Stop collecting when structural sections begin
+            if header in {"OPTIONS", "ANSWER_TYPE", "CORRECT_ANSWER"}:
                 break
-            if text:
-                lines.append(text)
+
+            lines.append(text)
 
     if not lines:
         raise ValueError("VC: QUESTION_TEXT section not found or empty")
