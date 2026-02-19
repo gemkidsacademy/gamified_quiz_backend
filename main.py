@@ -19275,10 +19275,11 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         
             # 🚨 EXIT OPTIONS MODE on any header or exam marker
             if (
-                upper in SECTION_HEADERS
+                upper.endswith(":")
                 or upper.startswith("CORRECT_ANSWER")
                 or upper.startswith("===")
             ):
+
                 print(f"🧩 [PARSE] Exiting OPTIONS mode on: {text}")
                 flush_buffer()
                 current_mode = None
