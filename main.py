@@ -20607,6 +20607,13 @@ async def process_exam_block(
             block_idx=block_idx,
             request_id=request_id
         )
+        if exam_metadata is None:
+            exam_metadata = {
+                "class_name": meta.get("class_name"),
+                "year": meta.get("year"),
+                "subject": meta.get("subject"),
+                "difficulty": meta.get("difficulty"),
+            }
 
         print(
             f"[{request_id}] 🏷️ Metadata validated | "
@@ -21387,6 +21394,7 @@ async def upload_word_naplan(
         f"subject={exam_metadata.get('subject')}, "
         f"difficulty={exam_metadata.get('difficulty')}"
     )
+    exam_metadata = None
 
 
     # --------------------------------------------------
