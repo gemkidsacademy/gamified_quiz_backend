@@ -19365,10 +19365,8 @@ def parse_docx_blocks(content: bytes, request_id):
     doc = docx.Document(BytesIO(content))
 
     # 👇 Detect CLOZE exam early
-    if is_cloze_exam_document(doc):
-        blocks = parse_docx_to_flat_text_blocks(doc)
-    else:
-        blocks = parse_docx_to_ordered_blocks_numeracy(doc)
+    # Always preserve structure
+    blocks = parse_docx_to_ordered_blocks_numeracy(doc)
 
     return blocks
 
