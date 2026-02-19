@@ -20154,8 +20154,8 @@ def vc_extract_correct_answer_from_block(question_block):
 def extract_reference_images(
     question_block,
     *,
-    db=None,
-    request_id=None,
+    db,
+    request_id,
 ):
     reference_images = []
     capture = False
@@ -20175,20 +20175,22 @@ def extract_reference_images(
         if not capture:
             continue
 
-        # Stop on next section
+        # Stop when next section starts
         if upper.endswith(":"):
             break
 
         # Expect filename
         if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            src = resolve_image_name_to_gcs_url(
-                raw,
+            # 🔁 Reuse the existing resolver
+            resolved = vc_resolve_option_images(
+                [{"label": "_REF", "image_ref": raw}],
                 db=db,
                 request_id=request_id,
             )
+
             reference_images.append({
                 "type": "image",
-                "src": src,
+                "src": resolved[0]["image_url"],
             })
 
     return reference_images
