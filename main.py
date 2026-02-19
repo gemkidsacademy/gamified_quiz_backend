@@ -20615,10 +20615,7 @@ async def process_exam_block(
                 "difficulty": meta.get("difficulty"),
             }
 
-        print(
-            f"[{request_id}] 🏷️ Metadata validated | "
-            f"subject={meta.get('subject')}"
-        )
+        
 
         for i, q in enumerate(questions, start=1):
             question_type = q.get("question_type")
