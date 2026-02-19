@@ -20506,6 +20506,7 @@ async def process_exam_block(
                 q=q,
                 question_type=question_type,
                 question_block=question_block,
+                stem_blocks=stem_blocks,   # ✅ PASS EXPLICITLY
                 meta=meta,
                 db=db,
                 request_id=request_id,
