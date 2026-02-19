@@ -20494,7 +20494,7 @@ async def process_exam_block(
             f"[{request_id}] 🖼️ TYPE 6 detected | "
             f"processing visual counting question"
         )
-
+        reference_images = extract_reference_images(question_block)
         process_visual_counting_exam(
            block_idx=block_idx,
            question_block=question_block,
