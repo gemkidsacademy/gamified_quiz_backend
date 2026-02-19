@@ -20121,14 +20121,36 @@ def vc_extract_correct_answer_from_block(question_block):
             return text
 
     raise ValueError("VC: CORRECT_ANSWER not found in block")
+def extract_reference_images(question_block):
+    reference_images = []
+    capture_next = False
+
+    for b in question_block:
+        if b.get("type") == "text":
+            content = b.get("content", "").strip().upper()
+
+            if content == "REFERENCE_IMAGE:":
+                capture_next = True
+                continue
+
+            if capture_next and content.endswith(":"):
+                break
+
+        elif capture_next and b.get("type") == "image":
+            reference_images.append(b)
+
+    return reference_images
 
 def process_visual_counting_exam(
     block_idx,
     question_block,
-    db,
-    request_id,
-    summary,
+    reference_images=None,
+    db=None,
+    request_id=None,
+    summary=None,
 ):
+
+ 
     print(
         f"[{request_id}] 🖼️ TYPE 6 detected | "
         f"processing visual counting question"
@@ -20188,6 +20210,37 @@ def process_visual_counting_exam(
     vc_validate_block(parsed)
 
     print(f"[{request_id}] 🔥 VC STEP 5a: validation PASSED")
+    
+    # ==================================================
+    # 5️⃣ Build question_blocks (render-ready)
+    # ==================================================
+    print(f"[{request_id}] 🔥 VC STEP 5b: building question_blocks")
+    
+    question_blocks = []
+    
+    # 1️⃣ Reference images (non-interactive)
+    for img in reference_images or []:
+        question_blocks.append({
+            "type": "image",
+            "src": img.get("src"),
+            "role": "reference",
+        })
+    
+    # 2️⃣ Option images (interactive answers)
+    for opt in parsed["OPTIONS"]:
+        question_blocks.append({
+            "type": "image",
+            "src": opt["src"],
+            "role": "option",
+            "option_id": opt["id"],
+        })
+    
+    parsed["question_blocks"] = question_blocks
+    
+    print(
+        f"[{request_id}] 🔥 VC STEP 5c: question_blocks built | "
+        f"count={len(question_blocks)}"
+    )
 
     # --------------------------------------------------
     # 5. Persist
@@ -20442,9 +20495,10 @@ async def process_exam_block(
             f"processing visual counting question"
         )
 
-        process_visual_counting_exam(
+         process_visual_counting_exam(
             block_idx=block_idx,
             question_block=question_block,
+            reference_images=reference_images,  # 👈 NEW
             db=db,
             request_id=request_id,
             summary=summary,
