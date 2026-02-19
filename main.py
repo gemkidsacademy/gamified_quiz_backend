@@ -20480,6 +20480,11 @@ async def process_exam_block(
 
         for i, q in enumerate(questions, start=1):
             question_type = q.get("question_type")
+            print(
+                f"[{request_id}] 🔎 Persisting legacy question "
+                f"type={question_type}"
+            )
+
 
             if not question_type:
                 raise ValueError("Legacy question missing question_type")
