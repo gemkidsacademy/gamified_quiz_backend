@@ -19755,6 +19755,14 @@ def vc_extract_metadata(block):
     metadata = {}
     collecting = False
 
+    KEY_MAP = {
+        "class": "class_name",
+        "year": "year",
+        "subject": "subject",
+        "difficulty": "difficulty",
+        "topic": "topic",
+    }
+
     for item in block:
         if item.get("type") != "text":
             continue
@@ -19762,22 +19770,33 @@ def vc_extract_metadata(block):
         raw = item.get("text") or item.get("content") or ""
         text = raw.strip()
 
-        if text == "METADATA:":
+        if text.upper() == "METADATA:":
             collecting = True
             continue
 
         if collecting:
-            if text == "QUESTION_TEXT:":
+            if text.upper() == "QUESTION_TEXT:":
                 break
 
             if ":" in text:
                 key, value = text.split(":", 1)
-                metadata[key.strip()] = value.strip().strip('"')
+                raw_key = key.strip().lower()
+                value = value.strip().strip('"')
+
+                mapped_key = KEY_MAP.get(raw_key)
+                if not mapped_key:
+                    continue  # ignore unknown metadata
+
+                if mapped_key == "year":
+                    value = int(value)
+
+                metadata[mapped_key] = value
 
     if not metadata:
         raise ValueError("VC: METADATA section not found")
 
     return metadata
+ 
 def vc_extract_correct_answer_from_docx(file_bytes: bytes) -> str:
     doc = docx.Document(BytesIO(file_bytes))
 
