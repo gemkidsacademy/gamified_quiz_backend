@@ -20307,6 +20307,39 @@ def vc_extract_correct_answer_from_block(question_block):
             return text
 
     raise ValueError("VC: CORRECT_ANSWER not found in block")
+
+def upload_exam_image(
+    *,
+    image_ref: str,
+    db,
+    request_id: str,
+) -> str:
+    """
+    Resolve a single exam image (reference / non-interactive).
+
+    - No option semantics
+    - No labels
+    - No MCQ assumptions
+    - Returns a single GCS URL
+    """
+
+    record = (
+        db.query(UploadedImage)
+        .filter(UploadedImage.original_name == image_ref)
+        .first()
+    )
+
+    if not record:
+        raise ValueError(
+            f"Exam image '{image_ref}' not found in uploaded_images"
+        )
+
+    print(
+        f"[{request_id}] 🖼️ EXAM: resolved {image_ref} → {record.gcs_url}"
+    )
+
+    return record.gcs_url
+
 def extract_reference_images(
     question_block,
     *,
@@ -20341,15 +20374,14 @@ def extract_reference_images(
 
         # Expect filename only
         if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            resolved = vc_resolve_option_images(
-                [{"label": "_REF", "image_ref": raw}],
+            image_url = upload_exam_image(
+                image_ref=raw,
                 db=db,
                 request_id=request_id,
             )
-
+            
             reference_images.append({
-                "type": "image",
-                "src": resolved[0]["image_url"],
+                "src": image_url,
             })
 
     return reference_images
