@@ -3601,14 +3601,19 @@ def build_question_blocks(q):
     
         for block in q.question_blocks or []:
     
-            # Pass through question text
             if block.get("type") == "text":
                 blocks.append({
                     "type": "text",
                     "content": block.get("content", "").strip()
                 })
     
-            # ✅ Pass through semantic word-selection block
+            elif block.get("type") == "image":
+                blocks.append({
+                    "type": "image",
+                    "src": block.get("src"),
+                    "role": block.get("role", "stem")
+                })
+    
             elif block.get("type") == "word-selection":
                 blocks.append({
                     "type": "word-selection",
