@@ -10250,6 +10250,24 @@ def normalize_type6_language_conventions_question(question: dict):
 
     question["question_text"] = "\n".join(cleaned_lines).strip()
     return question
+def synthesize_question_text_from_blocks(blocks: list[dict]) -> str:
+    """
+    Build a canonical question_text from text blocks.
+    Used when question_text is missing (Language Conventions).
+    """
+    lines = []
+
+    for block in blocks:
+        if block.get("type") != "text":
+            continue
+
+        content = (block.get("content") or "").strip()
+        if not content:
+            continue
+
+        lines.append(content)
+
+    return " ".join(lines).strip()
 @app.post("/api/student/start-exam/naplan-language-conventions")
 def start_naplan_language_conventions_exam(
     req: StartExamRequest = Body(...),
