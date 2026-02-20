@@ -20649,6 +20649,13 @@ async def process_exam_block(
         b.get("type") == "image"
         for b in stem_blocks
     )
+    # --------------------------------------------------
+    # Extract option image blocks (TYPE 2)
+    # --------------------------------------------------
+    option_image_blocks = [
+        b for b in question_block
+        if b.get("type") == "image" and b.get("role") == "option"
+    ]
 
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
@@ -20830,9 +20837,18 @@ async def process_exam_block(
                 raise ValueError("Legacy question missing question_type")
 
             # 🔒 Attach structured stem blocks
-            if question_type != 2:
+            # 🔒 Attach structured question blocks
+            if question_type == 2:
+                q["question_blocks"] = stem_blocks + option_image_blocks
+                q["has_stem_images"] = has_stem_images
+            else:
                 q["question_blocks"] = stem_blocks
                 q["has_stem_images"] = has_stem_images
+            # 🚨 Safety check for Type 2
+            if question_type == 2 and not option_image_blocks:
+                raise ValueError(
+                    f"[{request_id}] ❌ Type 2 question has no option images"
+                )
             # Optional but useful
             if any(b["type"] == "image" for b in stem_blocks):
                 q["requires_image"] = True
