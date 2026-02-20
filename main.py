@@ -20357,35 +20357,45 @@ def extract_reference_images(
         upper = raw.upper()
 
         # Start capture
-        if upper == "REFERENCE_IMAGE:":
+        if upper.startswith("REFERENCE_IMAGE"):
+            print(f"[{request_id}] 📌 REFERENCE_IMAGE section detected")
             capture = True
             continue
 
         if not capture:
             continue
 
-        # 🛑 Stop on new section
-        if upper.endswith(":"):
+        # Stop on new section (but allow image filenames)
+        if (
+            upper.endswith(":")
+            and not upper.lower().endswith((".png:", ".jpg:", ".jpeg:", ".webp:"))
+        ):
             break
 
-        # 🛑 Stop if OPTIONS start (A:, B:, etc.)
+        # Stop if OPTIONS start (A:, B:, etc.)
         if re.match(r"^[A-D]\s*[:.]\s*", raw):
             break
 
-        # Expect filename only
-        if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        # Expect filename
+        if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".png:", ".jpg:", ".jpeg:", ".webp:")):
+            clean = raw.rstrip(":")  # defensive
             image_url = upload_exam_image(
-                image_ref=raw,
+                image_ref=clean,
                 db=db,
                 request_id=request_id,
             )
-            
+
             reference_images.append({
                 "src": image_url,
             })
 
-    return reference_images
+    print(
+        f"[{request_id}] 🧪 extract_reference_images RESULT | "
+        f"count={len(reference_images)} | "
+        f"images={reference_images}"
+    )
 
+    return reference_images
 def process_visual_counting_exam(
     block_idx,
     question_block,
