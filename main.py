@@ -16510,6 +16510,60 @@ def normalize_type2_correct_answer(question: dict):
             "value": ast.literal_eval(raw)
         }
 
+def normalize_type3_numeric_input_question(question: dict):
+    """
+    Normalize Question Type 3 (Numeric Input).
+    Exam-safe:
+    - Remove ANSWER_TYPE leakage
+    - Remove duplicated text blocks
+    - Normalize image blocks
+    """
+
+    if question.get("question_type") != 3:
+        return question
+
+    cleaned_blocks = []
+    seen_texts = set()
+
+    for block in question.get("question_blocks", []):
+
+        # ----------------------------
+        # TEXT BLOCKS
+        # ----------------------------
+        if block.get("type") == "text":
+            content = (block.get("content") or "").strip()
+
+            # Drop ANSWER_TYPE pollution
+            if "ANSWER_TYPE" in content:
+                continue
+
+            # Deduplicate identical text
+            if content in seen_texts:
+                continue
+
+            seen_texts.add(content)
+
+            cleaned_blocks.append({
+                "type": "text",
+                "content": content
+            })
+
+        # ----------------------------
+        # IMAGE BLOCKS
+        # ----------------------------
+        elif block.get("type") == "image":
+            src = block.get("src")
+            if not src:
+                continue
+
+            cleaned_blocks.append({
+                "type": "image",
+                "src": src
+            })
+
+    question["question_blocks"] = cleaned_blocks
+    return question
+
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
@@ -16582,6 +16636,7 @@ def start_naplan_numeracy_exam(
             normalize_images_in_question(q, image_map)
             normalize_type2_image_multiselect(q)
             normalize_type2_correct_answer(q)
+            normalize_type3_numeric_input_question(q)
             normalized_questions.append(q)
 
         return {
@@ -16614,6 +16669,7 @@ def start_naplan_numeracy_exam(
         normalize_images_in_question(q, image_map)
         normalize_type2_image_multiselect(q)
         normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
 
         normalized_questions.append(q)
 
