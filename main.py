@@ -3598,25 +3598,25 @@ def build_question_blocks(q):
     # TYPE 7 — WORD SELECTION
     # ==================================================
     if q.question_type == 7:
-        if q.question_text:
-            blocks.append({
-                "type": "text",
-                "content": q.question_text.strip()
-            })
-
-        if isinstance(q.question_blocks, dict):
-            sentence = q.question_blocks.get("sentence")
-            selectable_words = q.question_blocks.get("selectable_words")
-
-            if sentence and selectable_words:
+    
+        for block in q.question_blocks or []:
+    
+            # Pass through question text
+            if block.get("type") == "text":
+                blocks.append({
+                    "type": "text",
+                    "content": block.get("content", "").strip()
+                })
+    
+            # ✅ Pass through semantic word-selection block
+            elif block.get("type") == "word-selection":
                 blocks.append({
                     "type": "word-selection",
-                    "sentence": sentence.strip(),
-                    "selectable_words": selectable_words
+                    "sentence": block["sentence"].strip(),
+                    "selectable_words": block["selectable_words"]
                 })
-
+    
         return blocks
-
     # ==================================================
     # TYPE 5 — CLOZE DROPDOWN
     # ==================================================
