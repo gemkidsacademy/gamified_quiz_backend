@@ -10028,18 +10028,20 @@ def normalize_type6_remove_text_options(blocks: list[dict]) -> list[dict]:
     return cleaned
 
 import re
+ 
+import re
 
 def normalize_type6_question_text(question: dict):
     """
-    Remove inline OPTIONS leakage from question_text for Type 6 questions.
+    Strip inline OPTIONS / A:, B:, C: leakage from question_text for Type 6.
     """
-
     if question.get("question_type") != 6:
         return question
 
-    text = question.get("question_text") or ""
+    print("\n[TYPE6 TEXT NORMALIZER] ENTER")
+    print("Before:", repr(question.get("question_text")))
 
-    # Remove everything starting from OPTIONS or first A:/B:/C:/D:
+    text = question.get("question_text") or ""
     lines = text.splitlines()
     cleaned = []
 
@@ -10047,19 +10049,24 @@ def normalize_type6_question_text(question: dict):
         upper = line.strip().upper()
 
         if upper == "OPTIONS:":
+            print("[TYPE6 TEXT NORMALIZER] OPTIONS marker found → CUT")
             break
 
         if re.match(r".*\b[A-D]\s*[:.]\s*", line):
-            # Inline options detected → cut here
+            print("[TYPE6 TEXT NORMALIZER] Inline option detected → CUT:", repr(line))
             break
 
         cleaned.append(line)
 
     question["question_text"] = " ".join(cleaned).strip()
-    return question
- 
 
-def normalize_naplan_language_conventions_questions_live(
+    print("After:", repr(question.get("question_text")))
+    print("[TYPE6 TEXT NORMALIZER] EXIT\n")
+
+    return question
+
+
+ def normalize_naplan_language_conventions_questions_live(
     raw_questions,
     image_map: dict
 ):
@@ -10073,53 +10080,69 @@ def normalize_naplan_language_conventions_questions_live(
     normalized = []
 
     for q in raw_questions or []:
+        print("\n================ TRACE QUESTION =================")
+        print("QID:", q.get("id"))
+        print("TYPE:", q.get("question_type"))
+        print("RAW question_text BEFORE normalization:")
+        print(repr(q.get("question_text")))
+
+        # --------------------------------------------------
+        # 1️⃣ Normalize Type-6 question_text
+        # --------------------------------------------------
         normalize_type6_question_text(q)
+
+        # --------------------------------------------------
+        # 2️⃣ Load and normalize blocks
+        # --------------------------------------------------
         blocks = q.get("question_blocks") or []
-    
-        # ✅ TYPE 6 — remove text-based OPTIONS at exam start
+
         if q.get("question_type") == 6:
             blocks = normalize_type6_remove_text_options(blocks)
-    
+            print("[AFTER BLOCK NORMALIZATION]")
+            for b in blocks:
+                if b.get("type") == "text":
+                    print("TEXT BLOCK:", repr(b.get("content")))
+                else:
+                    print("BLOCK:", b.get("type"), b.get("role"))
+
         display_blocks = []
         correct_answer = _extract_correct_answer_value(q.get("correct_answer"))
         is_image_multiselect = False
 
+        # --------------------------------------------------
+        # 3️⃣ Build display_blocks
+        # --------------------------------------------------
         for block in blocks:
-            content = (block.get("content") or "").strip()
-            lowered = content.lower()
+            if block.get("type") == "text":
+                content = (block.get("content") or "").strip()
+                lowered = content.lower()
 
-            # --------------------------------------------------
-            # Skip metadata / leakage
-            # --------------------------------------------------
-            if any(marker in lowered for marker in (
-                "question_type",
-                "question:",
-                "metadata:",
-                "class:",
-                "subject:",
-                "topic:",
-                "difficulty:",
-                "year:",
-                "answer_type",
-                "correct_answer",
-                "question_text:"
-            )):
+                # Skip metadata / leakage
+                if any(marker in lowered for marker in (
+                    "question_type",
+                    "question:",
+                    "metadata:",
+                    "class:",
+                    "subject:",
+                    "topic:",
+                    "difficulty:",
+                    "year:",
+                    "answer_type",
+                    "correct_answer",
+                    "question_text:"
+                )):
+                    continue
+
+                if content == correct_answer:
+                    continue
+
+                display_blocks.append(block)
                 continue
 
-
-            if content == correct_answer:
-                continue
-
-            # --------------------------------------------------
-            # IMAGE MULTI SELECT (LC → Numeracy shape)
-            # --------------------------------------------------
-            # --------------------------------------------------
-            # IMAGE MULTI SELECT — PASS THROUGH (SEALED)
-            # --------------------------------------------------
+            # IMAGE MULTI SELECT (sealed)
             if block.get("type") == "image-multi-select":
                 is_image_multiselect = True
-            
-                # Resolve image URLs defensively
+
                 fixed_options = []
                 for opt in block.get("options", []):
                     img = opt.get("image")
@@ -10127,37 +10150,39 @@ def normalize_naplan_language_conventions_questions_live(
                         **opt,
                         "image": image_map.get(img, img)
                     })
-            
+
                 display_blocks.append({
                     **block,
                     "options": fixed_options,
                     "maxSelections": block.get("maxSelections", 1),
                 })
-            
                 continue
 
-            # --------------------------------------------------
-            # Normalize images inside regular blocks
-            # --------------------------------------------------
+            # Normalize images inside other blocks
             if block.get("images"):
                 block = {
                     **block,
                     "images": [image_map.get(img, img) for img in block["images"]]
                 }
 
-
             display_blocks.append(block)
 
         # --------------------------------------------------
-        # Root-level options (ONLY for non-image-multiselect)
+        # 4️⃣ Build payload (AUTHORITATIVE DATA SENT TO UI)
         # --------------------------------------------------
         payload = {
             "id": q["id"],
             "question_type": q["question_type"],
             "topic": q.get("topic"),
             "difficulty": q.get("difficulty"),
+            "question_text": q.get("question_text"),  # ✅ authoritative
             "question_blocks": display_blocks,
         }
+
+        # --------------------------------------------------
+        # 5️⃣ Root-level options (non image-multiselect only)
+        # --------------------------------------------------
+        options = None
 
         if not is_image_multiselect:
             options = q.get("options")
@@ -10167,7 +10192,7 @@ def normalize_naplan_language_conventions_questions_live(
                     k: image_map.get(v, v) if isinstance(v, str) else v
                     for k, v in options.items()
                 }
-            
+
             elif isinstance(options, list):
                 options = [
                     {
@@ -10176,13 +10201,26 @@ def normalize_naplan_language_conventions_questions_live(
                     } if isinstance(opt, dict) and "image" in opt else opt
                     for opt in options
                 ]
-            
+
+        if options is not None:
             payload["options"] = options
+
+        # --------------------------------------------------
+        # 6️⃣ Final trace
+        # --------------------------------------------------
+        print("\n[FINAL PAYLOAD]")
+        print("FINAL question_text:", repr(payload["question_text"]))
+        print("FINAL question_blocks:")
+        for b in payload["question_blocks"]:
+            if b.get("type") == "text":
+                print("TEXT:", repr(b.get("content")))
+            else:
+                print("BLOCK:", b.get("type"), b.get("role"))
+        print("===============================================\n")
 
         normalized.append(payload)
 
     return normalized
-
  
 def normalize_type6_language_conventions_question(question: dict):
     """
