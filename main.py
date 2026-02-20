@@ -9993,7 +9993,39 @@ def _extract_correct_answer_value(correct_answer):
 
     return str(correct_answer or "").strip()
 
+import re
 
+def normalize_type6_remove_text_options(blocks: list[dict]) -> list[dict]:
+    """
+    Remove text-based OPTIONS leakage for Type 6 questions.
+
+    - Drops 'OPTIONS:' markers
+    - Drops 'A: ...', 'B: ...' etc text blocks
+    - Leaves images and non-option text untouched
+    """
+
+    cleaned = []
+
+    for block in blocks:
+        # Only text blocks can leak options
+        if block.get("type") != "text":
+            cleaned.append(block)
+            continue
+
+        content = (block.get("content") or "").strip()
+        upper = content.upper()
+
+        # Drop OPTIONS header
+        if upper == "OPTIONS:":
+            continue
+
+        # Drop option label lines
+        if re.match(r"^[A-D]\s*[:.]\s*", content):
+            continue
+
+        cleaned.append(block)
+
+    return cleaned
 def normalize_naplan_language_conventions_questions_live(
     raw_questions,
     image_map: dict
@@ -10009,8 +10041,12 @@ def normalize_naplan_language_conventions_questions_live(
 
     for q in raw_questions or []:
         blocks = q.get("question_blocks") or []
+    
+        # ✅ TYPE 6 — remove text-based OPTIONS at exam start
+        if q.get("question_type") == 6:
+            blocks = normalize_type6_remove_text_options(blocks)
+    
         display_blocks = []
-
         correct_answer = _extract_correct_answer_value(q.get("correct_answer"))
         is_image_multiselect = False
 
@@ -10114,6 +10150,37 @@ def normalize_naplan_language_conventions_questions_live(
     return normalized
 
  
+def normalize_type6_language_conventions_question(question: dict):
+    """
+    Normalize Type 6 questions for Language Conventions at exam runtime.
+
+    Goals:
+    - Remove OPTIONS / A:, B:, C:, D: text leakage
+    - Preserve only the question stem in question_text
+    - Leave question_blocks untouched
+    """
+
+    if question.get("question_type") != 6:
+        return question
+
+    text = question.get("question_text") or ""
+    cleaned_lines = []
+
+    for line in text.splitlines():
+        upper = line.strip().upper()
+
+        # Stop when OPTIONS section begins
+        if upper == "OPTIONS:":
+            break
+
+        # Drop option lines defensively
+        if upper.startswith(("A:", "B:", "C:", "D:")):
+            continue
+
+        cleaned_lines.append(line)
+
+    question["question_text"] = "\n".join(cleaned_lines).strip()
+    return question
 @app.post("/api/student/start-exam/naplan-language-conventions")
 def start_naplan_language_conventions_exam(
     req: StartExamRequest = Body(...),
