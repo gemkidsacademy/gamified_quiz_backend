@@ -20955,8 +20955,16 @@ def persist_question(
         # --------------------------------------------------
         # Decide which blocks are safe to persist
         # --------------------------------------------------
-        display_blocks = stem_blocks if stem_blocks is not None else question_block
-
+        # --------------------------------------------------
+        # Decide which blocks are safe to persist
+        # --------------------------------------------------
+        if question_type == 2:
+            # Type 2 has fully-constructed semantic blocks upstream
+            display_blocks = q["question_blocks"]
+        elif stem_blocks is not None:
+            display_blocks = stem_blocks
+        else:
+            display_blocks = question_block
         # --------------------------------------------------
         # Build student-visible question text
         # --------------------------------------------------
