@@ -16563,7 +16563,55 @@ def normalize_type3_numeric_input_question(question: dict):
 
     question["question_blocks"] = cleaned_blocks
     return question
+def normalize_type4_text_input_question(question: dict):
+    """
+    Normalize Question Type 4 (Spelling / Text Input).
+    Exam-safe:
+    - Remove ANSWER_TYPE leakage
+    - Remove duplicated text blocks
+    - Normalize image blocks
+    - Force options = null
+    """
 
+    if question.get("question_type") != 4:
+        return question
+
+    cleaned_blocks = []
+    seen_texts = set()
+
+    for block in question.get("question_blocks", []):
+
+        # ----------------------------
+        # TEXT BLOCKS
+        if block.get("type") == "text":
+            content = (block.get("content") or "").strip()
+
+            # Drop ANSWER_TYPE leakage
+            if "ANSWER_TYPE" in content:
+                continue
+
+            # Drop empty or duplicated text
+            if not content or content in seen_texts:
+                continue
+
+            seen_texts.add(content)
+            cleaned_blocks.append({
+                "type": "text",
+                "content": content
+            })
+
+        # ----------------------------
+        # IMAGE BLOCKS
+        elif block.get("type") == "image":
+            cleaned_blocks.append({
+                "type": "image",
+                "src": block.get("src")
+            })
+
+    question["question_blocks"] = cleaned_blocks
+    question["options"] = None
+
+    return question
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
@@ -16637,6 +16685,7 @@ def start_naplan_numeracy_exam(
             normalize_type2_image_multiselect(q)
             normalize_type2_correct_answer(q)
             normalize_type3_numeric_input_question(q)
+            normalize_type4_text_input_question(q)
             normalized_questions.append(q)
 
         return {
@@ -16670,6 +16719,7 @@ def start_naplan_numeracy_exam(
         normalize_type2_image_multiselect(q)
         normalize_type2_correct_answer(q)
         normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
 
         normalized_questions.append(q)
 
