@@ -9995,73 +9995,59 @@ def _extract_correct_answer_value(correct_answer):
 
 import re
 
-def normalize_type6_remove_text_options(blocks: list[dict]) -> list[dict]:
+def normalize_type6_remove_text_options(blocks: list):
     """
-    Remove text-based OPTIONS leakage for Type 6 questions.
-
-    - Drops 'OPTIONS:' markers
-    - Drops 'A: ...', 'B: ...' etc text blocks
-    - Leaves images and non-option text untouched
+    For Type-6:
+    - Keep ONE clean text block (question prompt)
+    - Remove option references from text
     """
 
-    cleaned = []
+    cleaned_blocks = []
 
     for block in blocks:
-        # Only text blocks can leak options
-        if block.get("type") != "text":
-            cleaned.append(block)
+        # -----------------------------
+        # TEXT BLOCK
+        if block.get("type") == "text":
+            raw = block.get("content") or ""
+            cleaned = re.split(r"\bA\s*:", raw)[0].strip()
+
+            if cleaned:
+                cleaned_blocks.append({
+                    "type": "text",
+                    "content": cleaned
+                })
             continue
 
-        content = (block.get("content") or "").strip()
-        upper = content.upper()
-
-        # Drop OPTIONS header
-        if upper == "OPTIONS:":
+        # -----------------------------
+        # IMAGE OPTION BLOCKS → keep
+        if block.get("type") == "image" and block.get("role") == "option":
+            cleaned_blocks.append(block)
             continue
 
-        # Drop option label lines
-        if re.match(r"^[A-D]\s*[:.]\s*", content):
-            continue
+        # -----------------------------
+        # Other blocks → pass through
+        cleaned_blocks.append(block)
 
-        cleaned.append(block)
+    return cleaned_blocks
 
-    return cleaned
-
+import re
 
 def normalize_type6_question_text(question: dict):
     """
-    Strip inline OPTIONS / A:, B:, C: leakage from question_text for Type 6.
+    For Type-6:
+    - Remove option leakage like 'A: image.png B: image.png'
+    - Leave only the pure question prompt
     """
+
     if question.get("question_type") != 6:
-        return question
+        return
 
-    print("\n[TYPE6 TEXT NORMALIZER] ENTER")
-    print("Before:", repr(question.get("question_text")))
+    raw = question.get("question_text") or ""
 
-    text = question.get("question_text") or ""
-    lines = text.splitlines()
-    cleaned = []
+    # Split at first option marker
+    cleaned = re.split(r"\bA\s*:", raw)[0].strip()
 
-    for line in lines:
-        upper = line.strip().upper()
-
-        if upper == "OPTIONS:":
-            print("[TYPE6 TEXT NORMALIZER] OPTIONS marker found → CUT")
-            break
-
-        if re.match(r".*\b[A-D]\s*[:.]\s*", line):
-            print("[TYPE6 TEXT NORMALIZER] Inline option detected → CUT:", repr(line))
-            break
-
-        cleaned.append(line)
-
-    question["question_text"] = " ".join(cleaned).strip()
-
-    print("After:", repr(question.get("question_text")))
-    print("[TYPE6 TEXT NORMALIZER] EXIT\n")
-
-    return question
-
+    question["question_text"] = cleaned
 
 def normalize_naplan_language_conventions_questions_live(
     raw_questions,
@@ -10071,7 +10057,8 @@ def normalize_naplan_language_conventions_questions_live(
     Build EXAM-SAFE question DTOs for Language Conventions.
     - No answers
     - No metadata leakage
-    - Frontend-compatible shapes
+    - Frontend-safe
+    - Type-6 image options normalized correctly
     """
 
     normalized = []
@@ -10080,8 +10067,6 @@ def normalize_naplan_language_conventions_questions_live(
         print("\n================ TRACE QUESTION =================")
         print("QID:", q.get("id"))
         print("TYPE:", q.get("question_type"))
-        print("RAW question_text BEFORE normalization:")
-        print(repr(q.get("question_text")))
 
         # --------------------------------------------------
         # 1️⃣ Normalize Type-6 question_text
@@ -10095,22 +10080,20 @@ def normalize_naplan_language_conventions_questions_live(
 
         if q.get("question_type") == 6:
             blocks = normalize_type6_remove_text_options(blocks)
-            print("[AFTER BLOCK NORMALIZATION]")
-            for b in blocks:
-                if b.get("type") == "text":
-                    print("TEXT BLOCK:", repr(b.get("content")))
-                else:
-                    print("BLOCK:", b.get("type"), b.get("role"))
 
         display_blocks = []
         correct_answer = _extract_correct_answer_value(q.get("correct_answer"))
         is_image_multiselect = False
 
         # --------------------------------------------------
-        # 3️⃣ Build display_blocks
+        # 3️⃣ Build display blocks
         # --------------------------------------------------
         for block in blocks:
-            if block.get("type") == "text":
+            block_type = block.get("type")
+
+            # -----------------------------
+            # TEXT BLOCKS
+            if block_type == "text":
                 content = (block.get("content") or "").strip()
                 lowered = content.lower()
 
@@ -10130,14 +10113,19 @@ def normalize_naplan_language_conventions_questions_live(
                 )):
                     continue
 
+                # Skip accidental answer echo
                 if content == correct_answer:
                     continue
 
-                display_blocks.append(block)
+                display_blocks.append({
+                    "type": "text",
+                    "content": content
+                })
                 continue
 
+            # -----------------------------
             # IMAGE MULTI SELECT (sealed)
-            if block.get("type") == "image-multi-select":
+            if block_type == "image-multi-select":
                 is_image_multiselect = True
 
                 fixed_options = []
@@ -10151,56 +10139,55 @@ def normalize_naplan_language_conventions_questions_live(
                 display_blocks.append({
                     **block,
                     "options": fixed_options,
-                    "maxSelections": block.get("maxSelections", 1),
+                    "maxSelections": block.get("maxSelections", 1)
                 })
                 continue
 
-            # Normalize images inside other blocks
-            if block.get("images"):
-                block = {
+            # -----------------------------
+            # IMAGE BLOCKS
+            if block_type == "image":
+                display_blocks.append({
                     **block,
-                    "images": [image_map.get(img, img) for img in block["images"]]
-                }
+                    "src": image_map.get(block.get("src"), block.get("src"))
+                })
+                continue
 
+            # -----------------------------
+            # FALLBACK
             display_blocks.append(block)
 
         # --------------------------------------------------
-        # 4️⃣ Build payload (AUTHORITATIVE DATA SENT TO UI)
+        # 4️⃣ Build payload (authoritative)
         # --------------------------------------------------
         payload = {
             "id": q["id"],
             "question_type": q["question_type"],
             "topic": q.get("topic"),
             "difficulty": q.get("difficulty"),
-            "question_text": q.get("question_text"),  # ✅ authoritative
-            "question_blocks": display_blocks,
+            "question_text": q.get("question_text"),
+            "question_blocks": display_blocks
         }
 
         # --------------------------------------------------
         # 5️⃣ Root-level options (non image-multiselect only)
         # --------------------------------------------------
-        options = None
-
         if not is_image_multiselect:
             options = q.get("options")
 
             if isinstance(options, dict):
-                options = {
+                payload["options"] = {
                     k: image_map.get(v, v) if isinstance(v, str) else v
                     for k, v in options.items()
                 }
 
             elif isinstance(options, list):
-                options = [
+                payload["options"] = [
                     {
                         **opt,
                         "image": image_map.get(opt["image"], opt["image"])
                     } if isinstance(opt, dict) and "image" in opt else opt
                     for opt in options
                 ]
-
-        if options is not None:
-            payload["options"] = options
 
         # --------------------------------------------------
         # 6️⃣ Final trace
@@ -10217,8 +10204,7 @@ def normalize_naplan_language_conventions_questions_live(
 
         normalized.append(payload)
 
-    return normalized
- 
+    return normalized 
 def normalize_type6_language_conventions_question(question: dict):
     """
     Normalize Type 6 questions for Language Conventions at exam runtime.
@@ -10268,6 +10254,44 @@ def synthesize_question_text_from_blocks(blocks: list[dict]) -> str:
         lines.append(content)
 
     return " ".join(lines).strip()
+
+import re
+
+def normalize_type6_image_option_question(question: dict):
+    """
+    Normalize Question Type 6 (Image Options):
+    - Strip option labels from text
+    - Keep only pure question prompt
+    - Preserve image option blocks
+    """
+
+    if question.get("question_type") != 6:
+        return question
+
+    cleaned_blocks = []
+
+    for block in question.get("question_blocks", []):
+        # --------------------------------
+        # TEXT BLOCK → CLEAN IT
+        if block.get("type") == "text":
+            raw = block.get("content", "")
+
+            # ❌ Remove "A: image_x B: image_x ..."
+            cleaned_text = re.split(r"\bA\s*:", raw)[0].strip()
+
+            if cleaned_text:
+                cleaned_blocks.append({
+                    "type": "text",
+                    "content": cleaned_text
+                })
+
+        # --------------------------------
+        # IMAGE OPTION BLOCKS → KEEP AS IS
+        elif block.get("type") == "image" and block.get("role") == "option":
+            cleaned_blocks.append(block)
+
+    question["question_blocks"] = cleaned_blocks
+    return question
 @app.post("/api/student/start-exam/naplan-language-conventions")
 def start_naplan_language_conventions_exam(
     req: StartExamRequest = Body(...),
