@@ -20705,6 +20705,13 @@ async def process_exam_block(
             db=db,
             request_id=request_id,
         )
+        
+        # 🔒 ADD THE SEMANTIC WORD-SELECTION BLOCK
+        question_blocks.append({
+            "type": "word-selection",
+            "sentence": sentence,
+            "selectable_words": selectable_words,
+        })
     
         # 🔹 Sentence and rest of parsing
         sentence = ws_extract_sentence(ctx)
