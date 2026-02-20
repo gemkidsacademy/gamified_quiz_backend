@@ -20480,7 +20480,55 @@ def ws_extract_metadata_from_block(block_text: str) -> dict:
 
     print("🧪 META FINAL DICT:", metadata)
     return metadata
+def ws_extract_question_text_blocks(
+    question_block,
+    db,
+    request_id,
+):
+    blocks = []
+    in_question_text = False
 
+    for b in question_block:
+
+        # -----------------------------
+        # TEXT BLOCKS
+        # -----------------------------
+        if b.get("type") == "text":
+            content = b["content"].strip()
+            upper = content.upper()
+
+            # Start
+            if upper == "QUESTION_TEXT:":
+                in_question_text = True
+                continue
+
+            # Stop at next section
+            if in_question_text and upper.endswith(":"):
+                break
+
+            if not in_question_text:
+                continue
+
+            # Skip IMAGE header text
+            if upper == "IMAGE:":
+                continue
+
+            blocks.append({
+                "type": "text",
+                "content": content
+            })
+
+        # -----------------------------
+        # IMAGE BLOCKS
+        # -----------------------------
+        elif b.get("type") == "image" and in_question_text:
+            blocks.append({
+                "type": "image",
+                "src": b["src"],
+                "role": "stem"
+            })
+
+    return blocks
 async def process_exam_block(
     block_idx,
     question_block,
@@ -20606,21 +20654,30 @@ async def process_exam_block(
         for item in question_block
         if isinstance(item, dict) and "content" in item
     )
-
+    
     if is_word_selection_exam(block_text):
         metadata = ws_extract_metadata_from_block(block_text)
         ctx = ParsingCursor(block_text.splitlines())
-
+    
         # Fast-forward to QUESTION_TEXT
         while ctx.peek():
             if ctx.peek().strip().upper().startswith("QUESTION_TEXT"):
                 break
             ctx.next()
-
+    
+        # 🔹 Text-only question (for storage / validation)
         question_text = ws_extract_question_text(ctx)
+    
+        # 🔹 Block-based question (for rendering)
+        question_blocks = ws_extract_question_text_blocks(
+            question_block=question_block,
+            db=db,
+            request_id=request_id,
+        )
+    
+        # 🔹 Sentence and rest of parsing
         sentence = ws_extract_sentence(ctx)
         selectable_words = ws_extract_selectable_words(ctx)
-
         while ctx.peek() and not ctx.peek().strip().upper().startswith("CORRECT_ANSWER"):
             ctx.next()
 
@@ -20638,14 +20695,17 @@ async def process_exam_block(
         persist_word_selection_question(
            db=db,
            metadata=metadata,
-           question_text=question_text,
+           question_text=question_text,      # clean text-only
+           question_blocks=question_blocks,  # 👈 THIS IS THE POINT
            sentence=sentence,
            selectable_words=selectable_words,
            correct_answer=correct_answer,
+           has_stem_images=any(
+               b["type"] == "image" for b in question_blocks
+           ),
            summary=summary,
            request_id=request_id,
         )
-
 
         summary.block_success(block_idx, [1])
         return  # 🚨 DO NOT FALL THROUGH
@@ -21116,27 +21176,40 @@ def persist_word_selection_question(
     db,
     metadata: dict,
     question_text: str,
+    question_blocks: list[dict],     # 👈 NEW (authoritative for rendering)
     sentence: str,
     selectable_words: list[str],
     correct_answer: str,
-    summary,              # 👈 ADD
-    request_id: str,      # 👈 OPTIONAL (for logs)
+    has_stem_images: bool,            # 👈 NEW
+    summary,
+    request_id: str,
 ):
- 
     """
     Persists a validated Type 7 — WORD_SELECTION question.
 
-    Assumes ws_validate_block has already been called.
+    Assumes:
+    - ws_validate_block has already been called
+    - question_blocks is ordered and renderer-ready
     """
+
+    # -------------------------------
+    # Normalize metadata
+    # -------------------------------
     class_name = (
-        metadata.get("class_name")   # legacy / internal
+        metadata.get("class_name")   # normalized
         or metadata.get("class")     # document-authored
     )
-    print("🧪 FINAL question_blocks payload:", {
-        "sentence": sentence,
-        "selectable_words": selectable_words,
-    })
 
+    # Defensive visibility (safe to remove later)
+    print(
+        f"[{request_id}] 🧪 Persisting Type 7 WORD_SELECTION | "
+        f"blocks={len(question_blocks)} | "
+        f"has_stem_images={has_stem_images}"
+    )
+
+    # -------------------------------
+    # Persist record
+    # -------------------------------
     record = QuestionNumeracyLC(
         question_type=7,
         class_name=class_name,
@@ -21144,25 +21217,32 @@ def persist_word_selection_question(
         subject=metadata.get("subject"),
         topic=metadata.get("topic"),
         difficulty=metadata.get("difficulty"),
+
+        # Semantic text (analytics / reporting)
         question_text=question_text,
-        question_blocks={
-            "sentence": sentence,
-            "selectable_words": selectable_words,
-        },
+
+        # 🔒 Renderer-authoritative structure
+        question_blocks=question_blocks,
+
         options=None,
         correct_answer={"value": correct_answer},
+        has_stem_images=has_stem_images,
     )
 
     db.add(record)
     db.commit()
     db.refresh(record)
+
     summary.saved += 1
+
     print(
         f"[{request_id}] ✅ SAVED Type 7 WORD_SELECTION "
         f"(id={record.id})"
     )
 
     return record
+
+
 def is_word_selection_exam(block: str) -> bool:
     """
     Detects whether a full exam block represents
