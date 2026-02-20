@@ -20706,16 +20706,17 @@ async def process_exam_block(
             request_id=request_id,
         )
         
+        
+    
+        # 🔹 Sentence and rest of parsing
+        sentence = ws_extract_sentence(ctx)
+        selectable_words = ws_extract_selectable_words(ctx)
         # 🔒 ADD THE SEMANTIC WORD-SELECTION BLOCK
         question_blocks.append({
             "type": "word-selection",
             "sentence": sentence,
             "selectable_words": selectable_words,
         })
-    
-        # 🔹 Sentence and rest of parsing
-        sentence = ws_extract_sentence(ctx)
-        selectable_words = ws_extract_selectable_words(ctx)
         while ctx.peek() and not ctx.peek().strip().upper().startswith("CORRECT_ANSWER"):
             ctx.next()
 
