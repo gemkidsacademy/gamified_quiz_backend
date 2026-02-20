@@ -19165,7 +19165,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     print("🧩 [PARSE] ===== START DOCX → ORDERED BLOCKS (NUMERACY) =====")
 
     blocks = []
-    current_mode = None   # None | "cloze" | "options" | "images"
+    current_mode = None   # None | "cloze" | "options" | "option_images" | "reference_images"
     buffer = []
     images_emitted = False
 
@@ -19272,32 +19272,29 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # IMAGES declaration (MUST be global)
         # --------------------------------------------------
         if upper == "IMAGES:" or upper.startswith("IMAGES:"):
-            flush_buffer()
-            print(f"🧩 [PARSE] IMAGES declaration detected: {text}")
-
-            trailing = text.split(":", 1)[1].strip()
-
-            # Case 1: filenames on same line
-            if trailing:
-                for img in trailing.split(","):
-                    name = img.strip()
-                    if not name:
-                        raise ValueError(
-                            "[PARSE] Empty image name in IMAGES declaration"
-                        )
-
-                    print(f"🧩 [PARSE] → Emitting image block: {name}")
-                    blocks.append({
-                        "type": "image",
-                        "name": name
-                    })
-                continue
-
-            # Case 2: filenames on subsequent lines
-            print("🧩 [PARSE] IMAGES filenames expected on subsequent lines")
-            current_mode = "images"
-            images_emitted = False
-            continue
+           flush_buffer()
+           print(f"🧩 [PARSE] OPTION IMAGES declaration detected: {text}")
+       
+           trailing = text.split(":", 1)[1].strip()
+       
+           # Case 1: filenames on same line
+           if trailing:
+               for img in trailing.split(","):
+                   name = img.strip()
+                   if not name:
+                       raise ValueError("[PARSE] Empty image name in IMAGES declaration")
+       
+                   blocks.append({
+                       "type": "image",
+                       "name": name,
+                       "role": "option"   # ⭐ KEY FIX
+                   })
+               continue
+       
+           # Case 2: filenames on subsequent lines
+           current_mode = "option_images"
+           continue
+         
         # --------------------------------------------------
         # REFERENCE_IMAGE declaration (semantic stem image)
         # --------------------------------------------------
@@ -19370,19 +19367,25 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # --------------------------------------------------
         # Inside IMAGES / REFERENCE_IMAGES section
         # --------------------------------------------------
-        if current_mode in {"images", "reference_images"}:
+        if current_mode in {"option_images", "reference_images"}:
             if not re.search(r"\.(png|jpg|jpeg|webp|svg)$", text, re.IGNORECASE):
                 print("🧩 [PARSE] Exiting image mode (non-filename encountered)")
                 current_mode = None
                 images_emitted = False
                 # re-process this paragraph normally
             else:
-                role = "reference" if current_mode == "reference_images" else None
+                if current_mode == "reference_images":
+                    role = "reference"
+                elif current_mode == "option_images":
+                    role = "option"
+                else:
+                    role = None
         
                 print(f"🧩 [PARSE] → Emitting image block: {text}")
                 block = {
                     "type": "image",
-                    "name": text
+                    "name": text,
+                    "role": role
                 }
                 if role:
                     block["role"] = role
