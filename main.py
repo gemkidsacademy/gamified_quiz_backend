@@ -10026,6 +10026,39 @@ def normalize_type6_remove_text_options(blocks: list[dict]) -> list[dict]:
         cleaned.append(block)
 
     return cleaned
+
+import re
+
+def normalize_type6_question_text(question: dict):
+    """
+    Remove inline OPTIONS leakage from question_text for Type 6 questions.
+    """
+
+    if question.get("question_type") != 6:
+        return question
+
+    text = question.get("question_text") or ""
+
+    # Remove everything starting from OPTIONS or first A:/B:/C:/D:
+    lines = text.splitlines()
+    cleaned = []
+
+    for line in lines:
+        upper = line.strip().upper()
+
+        if upper == "OPTIONS:":
+            break
+
+        if re.match(r".*\b[A-D]\s*[:.]\s*", line):
+            # Inline options detected → cut here
+            break
+
+        cleaned.append(line)
+
+    question["question_text"] = " ".join(cleaned).strip()
+    return question
+ 
+
 def normalize_naplan_language_conventions_questions_live(
     raw_questions,
     image_map: dict
@@ -10040,6 +10073,7 @@ def normalize_naplan_language_conventions_questions_live(
     normalized = []
 
     for q in raw_questions or []:
+        normalize_type6_question_text(q)
         blocks = q.get("question_blocks") or []
     
         # ✅ TYPE 6 — remove text-based OPTIONS at exam start
