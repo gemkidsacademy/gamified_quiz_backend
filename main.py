@@ -20480,6 +20480,32 @@ def ws_extract_metadata_from_block(block_text: str) -> dict:
 
     print("🧪 META FINAL DICT:", metadata)
     return metadata
+def resolve_stem_images(
+    image_names: list[str],
+    db,
+    request_id: str,
+) -> list[str]:
+    resolved = []
+
+    for name in image_names:
+        record = (
+            db.query(UploadedImage)
+            .filter(UploadedImage.original_name == name)
+            .first()
+        )
+
+        if not record:
+            raise ValueError(
+                f"Stem image '{name}' not found in uploaded_images"
+            )
+
+        resolved.append(record.gcs_url)
+
+        print(
+            f"[{request_id}] 🖼️ STEM: resolved {name} → {record.gcs_url}"
+        )
+
+    return resolved
 def ws_extract_question_text_blocks(
     question_block,
     db,
@@ -20522,10 +20548,8 @@ def ws_extract_question_text_blocks(
         # IMAGE BLOCKS
         # -----------------------------
         elif b.get("type") == "image" and in_question_text:
-            # Resolve image name → GCS URL (reuse existing resolver)
-            resolved = vc_resolve_option_images(
+            resolved = resolve_stem_images(
                 [b["name"]],
-                image_map=None,   # or your existing map if available
                 db=db,
                 request_id=request_id,
             )
