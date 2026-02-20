@@ -20522,10 +20522,19 @@ def ws_extract_question_text_blocks(
         # IMAGE BLOCKS
         # -----------------------------
         elif b.get("type") == "image" and in_question_text:
-            image_block = dict(b)  # shallow copy, no mutation
-            image_block["role"] = "stem"
-            blocks.append(image_block)
-
+            # Resolve image name → GCS URL (reuse existing resolver)
+            resolved = vc_resolve_option_images(
+                [b["name"]],
+                image_map=None,   # or your existing map if available
+                db=db,
+                request_id=request_id,
+            )
+        
+            blocks.append({
+                "type": "image",
+                "src": resolved[0],
+                "role": "stem",
+            })
     return blocks
 async def process_exam_block(
     block_idx,
