@@ -20522,11 +20522,9 @@ def ws_extract_question_text_blocks(
         # IMAGE BLOCKS
         # -----------------------------
         elif b.get("type") == "image" and in_question_text:
-            blocks.append({
-                "type": "image",
-                "src": b["src"],
-                "role": "stem"
-            })
+            image_block = dict(b)  # shallow copy, no mutation
+            image_block["role"] = "stem"
+            blocks.append(image_block)
 
     return blocks
 async def process_exam_block(
