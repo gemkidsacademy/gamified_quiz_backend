@@ -20827,8 +20827,9 @@ async def process_exam_block(
                 raise ValueError("Legacy question missing question_type")
 
             # 🔒 Attach structured stem blocks
-            q["question_blocks"] = stem_blocks
-            q["has_stem_images"] = has_stem_images
+            if question_type != 2:
+                q["question_blocks"] = stem_blocks
+                q["has_stem_images"] = has_stem_images
             # Optional but useful
             if any(b["type"] == "image" for b in stem_blocks):
                 q["requires_image"] = True
