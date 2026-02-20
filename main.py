@@ -3570,15 +3570,32 @@ def build_question_blocks(q):
                     "content": content
                 })
 
-        # 2️⃣ Collect image blocks
-        images = [
+        # 2️⃣ Separate reference and option images (DO NOT INFER)
+        reference_images = [
             block["src"]
             for block in q.question_blocks or []
-            if block.get("type") == "image" and block.get("src")
+            if block.get("type") == "image"
+            and block.get("role") == "reference"
+            and block.get("src")
         ]
-
-        # 3️⃣ Emit image-multi-select block
-        if images:
+        
+        option_images = [
+            block["src"]
+            for block in q.question_blocks or []
+            if block.get("type") == "image"
+            and block.get("role") == "option"
+            and block.get("src")
+        ]
+        
+        # 3️⃣ Emit reference images as normal images
+        for src in reference_images:
+            blocks.append({
+                "type": "image",
+                "src": src
+            })
+        
+        # 4️⃣ Emit image-multi-select ONLY from option images
+        if option_images:
             blocks.append({
                 "type": "image-multi-select",
                 "options": [
@@ -3587,11 +3604,12 @@ def build_question_blocks(q):
                         "image": img,
                         "label": f"Option {chr(ord('A') + i)}"
                     }
-                    for i, img in enumerate(images)
+                    for i, img in enumerate(option_images)
                 ],
                 "maxSelections": 2
             })
-
+        else:
+            raise ValueError("Type 2 exam generation: no option images found")
         return blocks
 
     # ==================================================
