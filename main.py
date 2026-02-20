@@ -10027,9 +10027,6 @@ def normalize_type6_remove_text_options(blocks: list[dict]) -> list[dict]:
 
     return cleaned
 
-import re
- 
-import re
 
 def normalize_type6_question_text(question: dict):
     """
@@ -10066,7 +10063,7 @@ def normalize_type6_question_text(question: dict):
     return question
 
 
- def normalize_naplan_language_conventions_questions_live(
+def normalize_naplan_language_conventions_questions_live(
     raw_questions,
     image_map: dict
 ):
