@@ -19298,7 +19298,27 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             current_mode = "images"
             images_emitted = False
             continue
-
+        # --------------------------------------------------
+        # REFERENCE_IMAGE declaration (semantic stem image)
+        # --------------------------------------------------
+        if upper == "REFERENCE_IMAGE:" or upper.startswith("REFERENCE_IMAGE:"):
+            flush_buffer()
+            print(f"🧩 [PARSE] REFERENCE_IMAGE detected: {text}")
+        
+            trailing = text.split(":", 1)[1].strip()
+        
+            # Case 1: filename on same line
+            if trailing:
+                blocks.append({
+                    "type": "image",
+                    "name": trailing,
+                    "role": "reference"
+                })
+                continue
+        
+            # Case 2: filenames on subsequent lines
+            current_mode = "reference_images"
+            continue
         # --------------------------------------------------
         # Section headers
         # --------------------------------------------------
@@ -19348,24 +19368,28 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 continue
 
         # --------------------------------------------------
-        # Inside IMAGES section
+        # Inside IMAGES / REFERENCE_IMAGES section
         # --------------------------------------------------
-        if current_mode == "images":
-            # Accept only real filenames
+        if current_mode in {"images", "reference_images"}:
             if not re.search(r"\.(png|jpg|jpeg|webp|svg)$", text, re.IGNORECASE):
-                print("🧩 [PARSE] Exiting IMAGES mode (non-filename encountered)")
+                print("🧩 [PARSE] Exiting image mode (non-filename encountered)")
                 current_mode = None
                 images_emitted = False
                 # re-process this paragraph normally
             else:
+                role = "reference" if current_mode == "reference_images" else None
+        
                 print(f"🧩 [PARSE] → Emitting image block: {text}")
-                blocks.append({
+                block = {
                     "type": "image",
                     "name": text
-                })
+                }
+                if role:
+                    block["role"] = role
+        
+                blocks.append(block)
                 images_emitted = True
                 continue
-
         
         # --------------------------------------------------
         # Default text (cleaned)
