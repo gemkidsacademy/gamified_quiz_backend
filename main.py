@@ -16791,36 +16791,32 @@ def normalize_type4_text_input_question(question: dict):
 
     return question
 
-def normalize_type6_visual_counting_question(question: dict):
- 
-    """
-    Normalize Type 6 (Visual Counting) questions for exam runtime.
 
-    - Remove inline option text (A:, B:, C:, D:)
-    - Keep only the question stem
-    - Do NOT touch question_blocks
-    """
-    print("\n🟢 ENTER normalize_type6_visual_counting_question")
-    print("   question_id:", question.get("id"))
-    print("   question_type:", question.get("question_type"), type(question.get("question_type")))
-    print("   BEFORE text:", question.get("question_text"))
+
+def normalize_type6_visual_counting_question(question: dict):
     if int(question.get("question_type", -1)) != 6:
         return question
 
-    text = question.get("question_text") or ""
+    blocks = question.get("question_blocks") or []
 
-    # Remove inline options like: A: image_8.png
-    text = re.sub(
-        r"\s*[A-D]:\s*\S+",
-        "",
-        text
-    )
+    for block in blocks:
+        if block.get("type") == "text":
+            raw = block.get("content") or ""
 
-    question["question_text"] = text.strip()
-    print("🔵 FINAL stored text:", question["question_text"])
-    print("🟢 EXIT normalize_type6_visual_counting_question")
+            # Remove inline options like: A: image_8.png
+            cleaned = re.sub(
+                r"\s*[A-D]:\s*\S+",
+                "",
+                raw
+            ).strip()
+
+            block["content"] = cleaned
+
+            print("🧹 TYPE 6 cleaned text block:", cleaned)
 
     return question
+
+     
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
