@@ -21199,11 +21199,7 @@ async def process_exam_block(
             else:
                 q["question_blocks"] = stem_blocks
                 q["has_stem_images"] = has_stem_images
-            # 🚨 Safety check for Type 2
-            if question_type == 2 and not option_image_blocks:
-                raise ValueError(
-                    f"[{request_id}] ❌ Type 2 question has no option images"
-                )
+            
             # Optional but useful
             if any(b["type"] == "image" for b in stem_blocks):
                 q["requires_image"] = True
