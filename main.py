@@ -16894,7 +16894,7 @@ def start_naplan_numeracy_exam(
             normalize_type2_correct_answer(q)
             normalize_type3_numeric_input_question(q)
             normalize_type4_text_input_question(q)
-            normalize_type6_visual_counting_question
+            normalize_type6_visual_counting_question(q)
             normalized_questions.append(q)
 
         return {
@@ -16929,7 +16929,7 @@ def start_naplan_numeracy_exam(
         normalize_type2_correct_answer(q)
         normalize_type3_numeric_input_question(q)
         normalize_type4_text_input_question(q)
-        normalize_type6_visual_counting_question
+        normalize_type6_visual_counting_question(q)
 
         normalized_questions.append(q)
 
