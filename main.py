@@ -16792,6 +16792,7 @@ def normalize_type4_text_input_question(question: dict):
     return question
 
 def normalize_type6_visual_counting_question(question: dict):
+ 
     """
     Normalize Type 6 (Visual Counting) questions for exam runtime.
 
@@ -16799,7 +16800,10 @@ def normalize_type6_visual_counting_question(question: dict):
     - Keep only the question stem
     - Do NOT touch question_blocks
     """
-
+    print("\n🟢 ENTER normalize_type6_visual_counting_question")
+    print("   question_id:", question.get("id"))
+    print("   question_type:", question.get("question_type"), type(question.get("question_type")))
+    print("   BEFORE text:", question.get("question_text"))
     if int(question.get("question_type", -1)) != 6:
         return question
 
@@ -16813,6 +16817,8 @@ def normalize_type6_visual_counting_question(question: dict):
     )
 
     question["question_text"] = text.strip()
+    print("🔵 FINAL stored text:", question["question_text"])
+    print("🟢 EXIT normalize_type6_visual_counting_question")
 
     return question
 @app.post("/api/student/start-exam/naplan-numeracy")
@@ -16890,6 +16896,7 @@ def start_naplan_numeracy_exam(
             normalize_type3_numeric_input_question(q)
             normalize_type4_text_input_question(q)
             normalize_type6_visual_counting_question(q)
+            print("📦 ENDPOINT sees question_text:", q.get("question_text"))
             normalized_questions.append(q)
 
         return {
@@ -16925,6 +16932,7 @@ def start_naplan_numeracy_exam(
         normalize_type3_numeric_input_question(q)
         normalize_type4_text_input_question(q)
         normalize_type6_visual_counting_question(q)
+        print("📦 ENDPOINT sees question_text:", q.get("question_text"))
 
         normalized_questions.append(q)
 
