@@ -3613,8 +3613,7 @@ def build_question_blocks(q):
                 ],
                 "maxSelections": len(q.correct_answer or [])
             })
-        else:
-            raise ValueError("Type 2 exam generation: no option images found")
+                    
         return blocks
 
     # ==================================================
