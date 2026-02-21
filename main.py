@@ -16790,34 +16790,29 @@ def normalize_type4_text_input_question(question: dict):
     question["options"] = None
 
     return question
+
 def normalize_type6_visual_counting_question(question: dict):
     """
     Normalize Type 6 (Visual Counting) questions for exam runtime.
 
-    Responsibilities:
-    - Remove OPTIONS text leakage from question_text
-    - Ensure question_text contains only the stem
-    - Do NOT touch question_blocks (images are already structured)
+    - Remove inline option text (A:, B:, C:, D:)
+    - Keep only the question stem
+    - Do NOT touch question_blocks
     """
 
-    if question.get("question_type") != 6:
+    if int(question.get("question_type", -1)) != 6:
         return question
 
     text = question.get("question_text") or ""
 
-    cleaned_lines = []
-    for line in text.splitlines():
-        upper = line.strip().upper()
+    # Remove inline options like: A: image_8.png
+    text = re.sub(
+        r"\s*[A-D]:\s*\S+",
+        "",
+        text
+    )
 
-        # Remove OPTIONS section and option lines
-        if upper == "OPTIONS:":
-            break
-        if upper.startswith(("A:", "B:", "C:", "D:")):
-            continue
-
-        cleaned_lines.append(line)
-
-    question["question_text"] = "\n".join(cleaned_lines).strip()
+    question["question_text"] = text.strip()
 
     return question
 @app.post("/api/student/start-exam/naplan-numeracy")
