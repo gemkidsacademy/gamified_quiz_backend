@@ -3596,17 +3596,22 @@ def build_question_blocks(q):
         
         # 4️⃣ Emit image-multi-select ONLY from option images
         if option_images:
+            stored_labels = q.options or {}
+
             blocks.append({
                 "type": "image-multi-select",
                 "options": [
                     {
                         "id": chr(ord("A") + i),
                         "image": img,
-                        "label": f"Option {chr(ord('A') + i)}"
+                        "label": stored_labels.get(
+                            chr(ord("A") + i),
+                            f"Option {chr(ord('A') + i)}"
+                        )
                     }
                     for i, img in enumerate(option_images)
                 ],
-                "maxSelections": 2
+                "maxSelections": len(q.correct_answer or [])
             })
         else:
             raise ValueError("Type 2 exam generation: no option images found")
@@ -16812,7 +16817,7 @@ def normalize_type6_visual_counting_question(question: dict):
 
             block["content"] = cleaned
 
-            print("🧹 TYPE 6 cleaned text block:", cleaned)
+            
 
     return question
 
@@ -16892,7 +16897,7 @@ def start_naplan_numeracy_exam(
             normalize_type3_numeric_input_question(q)
             normalize_type4_text_input_question(q)
             normalize_type6_visual_counting_question(q)
-            print("📦 ENDPOINT sees question_text:", q.get("question_text"))
+            
             normalized_questions.append(q)
 
         return {
@@ -16928,7 +16933,7 @@ def start_naplan_numeracy_exam(
         normalize_type3_numeric_input_question(q)
         normalize_type4_text_input_question(q)
         normalize_type6_visual_counting_question(q)
-        print("📦 ENDPOINT sees question_text:", q.get("question_text"))
+        
 
         normalized_questions.append(q)
 
