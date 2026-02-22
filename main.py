@@ -17537,7 +17537,7 @@ def start_naplan_reading_exam(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
-                q_id=original_q["id"],
+                q_id=original_q.get("passage_id"),
                 topic=original_q.get("topic"),
                 selected_option=None,
                 correct_option=normalized_correct_option,
