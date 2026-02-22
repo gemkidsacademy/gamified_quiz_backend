@@ -17429,58 +17429,67 @@ def start_naplan_reading_exam(
     image_map = {img.original_name: img.gcs_url for img in uploaded_images}
 
     if attempt:
-        started_at = attempt.started_at
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-
-        expires_at = started_at + MAX_DURATION
-        elapsed = int((now - started_at).total_seconds())
-
-        # ⛔ expired but not submitted
-        if attempt.completed_at is None and now > expires_at:
-            attempt.completed_at = expires_at
-            db.commit()
-            return {"completed": True}
-
-        # ✅ already finished
-        if attempt.completed_at is not None:
-            return {"completed": True}
-
-        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
-
-        exam = (
-            db.query(ExamNaplanReading)
-            .filter(
-                func.lower(ExamNaplanReading.class_name) ==
-                func.lower(student.class_name),
-                func.lower(ExamNaplanReading.subject) == "reading"
-            )
-            .order_by(ExamNaplanReading.created_at.desc())
-            .first()
-        )
-
-        raw_questions = exam.questions or []
-
-        normalized_questions = []
-        for q in raw_questions:
-           # 1. Images inside reading extracts / options
+       responses = (
+           db.query(StudentExamResponseNaplanReading)
+           .filter(
+               StudentExamResponseNaplanReading.exam_attempt_id == attempt.id
+           )
+           .all()
+       )
+   
+       answers = {
+           str(r.q_id): r.selected_option
+           for r in responses
+           if r.selected_option is not None
+       }
+   
+       started_at = attempt.started_at
+       if started_at.tzinfo is None:
+           started_at = started_at.replace(tzinfo=timezone.utc)
+   
+       expires_at = started_at + MAX_DURATION
+       elapsed = int((now - started_at).total_seconds())
+   
+       # ⛔ expired but not submitted
+       if attempt.completed_at is None and now > expires_at:
+           attempt.completed_at = expires_at
+           db.commit()
+           return {"completed": True}
+   
+       # ✅ already finished
+       if attempt.completed_at is not None:
+           return {"completed": True}
+   
+       remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+   
+       exam = (
+           db.query(ExamNaplanReading)
+           .filter(
+               func.lower(ExamNaplanReading.class_name) ==
+               func.lower(student.class_name),
+               func.lower(ExamNaplanReading.subject) == "reading"
+           )
+           .order_by(ExamNaplanReading.created_at.desc())
+           .first()
+       )
+   
+       raw_questions = exam.questions or []
+   
+       normalized_questions = []
+       for q in raw_questions:
            normalize_images_in_question(q, image_map)
-       
-           # 2. Multi-select answers (arrays vs strings)
            normalize_type2_correct_answer(q)
-       
-           # 3. Gap fill / single gap consistency
            normalize_reading_gap_questions(q)
-       
-           # 4. True / False normalization
            normalize_true_false_questions(q)
-       
            normalized_questions.append(q)
-        return {
-            "completed": False,
-            "questions": normalized_questions,
-            "remaining_time": remaining
-        }
+   
+       return {
+           "completed": False,
+           "is_resumed": True,
+           "answers": answers,
+           "questions": normalized_questions,
+           "remaining_time": remaining
+       }
 
     # --------------------------------------------------
     # 🆕 FIRST ATTEMPT
@@ -17549,6 +17558,8 @@ def start_naplan_reading_exam(
 
     return {
         "completed": False,
+        "is_resumed": False,
+        "answers": {},
         "questions": normalized_questions,
         "remaining_time": new_attempt.duration_minutes * 60
     }
