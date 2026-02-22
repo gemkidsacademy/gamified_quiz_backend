@@ -17366,6 +17366,29 @@ def normalize_type6_visual_counting_question(question: dict):
 
     return question
 
+def normalize_reading_gap_questions(q: dict):
+    if q.get("question_type") not in (3, 6):
+        return
+
+    if isinstance(q.get("correct_answer"), list):
+        # Preserve list if multiple blanks ever appear
+        if len(q["correct_answer"]) == 1:
+            q["correct_answer"] = q["correct_answer"][0]
+             
+def normalize_true_false_questions(q: dict):
+    if q.get("question_type") != 5:
+        return
+
+    ans = q.get("correct_answer")
+
+    if isinstance(ans, str):
+        try:
+            parsed = json.loads(ans)
+            if isinstance(parsed, list):
+                q["correct_answer"] = parsed
+        except Exception:
+            pass
+         
 @app.post("/api/student/start-exam/naplan-reading")
 def start_naplan_reading_exam(
     req: StartExamRequest = Body(...),
@@ -17436,19 +17459,23 @@ def start_naplan_reading_exam(
             .first()
         )
 
-        raw_questions = normalize_naplan_reading_questions_live(
-            exam.questions or []
-        )
+        raw_questions = exam.questions or []
 
         normalized_questions = []
         for q in raw_questions:
-            normalize_images_in_question(q, image_map)
-            normalize_type2_correct_answer(q)
-            normalize_type3_numeric_input_question(q)
-            normalize_type4_text_input_question(q)
-            normalize_type6_visual_counting_question(q)
-            normalized_questions.append(q)
-
+           # 1. Images inside reading extracts / options
+           normalize_images_in_question(q, image_map)
+       
+           # 2. Multi-select answers (arrays vs strings)
+           normalize_type2_correct_answer(q)
+       
+           # 3. Gap fill / single gap consistency
+           normalize_reading_gap_questions(q)
+       
+           # 4. True / False normalization
+           normalize_true_false_questions(q)
+       
+           normalized_questions.append(q)
         return {
             "completed": False,
             "questions": normalized_questions,
@@ -17469,19 +17496,23 @@ def start_naplan_reading_exam(
         .first()
     )
 
-    raw_questions = normalize_naplan_reading_questions_live(
-        exam.questions or []
-    )
+    raw_questions = exam.questions or []
 
     normalized_questions = []
     for q in raw_questions:
+        # 1. Images inside reading extracts / options
         normalize_images_in_question(q, image_map)
+    
+        # 2. Multi-select answers (arrays vs strings)
         normalize_type2_correct_answer(q)
-        normalize_type3_numeric_input_question(q)
-        normalize_type4_text_input_question(q)
-        normalize_type6_visual_counting_question(q)
+    
+        # 3. Gap fill / single gap consistency
+        normalize_reading_gap_questions(q)
+    
+        # 4. True / False normalization
+        normalize_true_false_questions(q)
+    
         normalized_questions.append(q)
-
     new_attempt = StudentExamNaplanReading(
         student_id=student.id,
         exam_id=exam.id,
