@@ -549,57 +549,7 @@ class StudentExamThinkingSkills(Base):
     )
 
 
-class StudentExamNaplanReading(Base):
-    __tablename__ = "student_exam_naplan_reading"
 
-    id = Column(Integer, primary_key=True, index=True)
-
-    # -----------------------------
-    # Foreign keys
-    # -----------------------------
-    student_id = Column(
-        String,
-        ForeignKey("students.id"),
-        nullable=False
-    )
-
-    exam_id = Column(
-        Integer,
-        ForeignKey("exam_naplan_reading.id"),
-        nullable=False
-    )
-
-    # -----------------------------
-    # Timing
-    # -----------------------------
-    started_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False
-    )
-
-    completed_at = Column(
-        DateTime(timezone=True),
-        nullable=True
-    )
-
-    duration_minutes = Column(
-        Integer,
-        nullable=False
-    )
-
-    # -----------------------------
-    # Relationships
-    # -----------------------------
-    student = relationship("Student")
-
-    exam = relationship("ExamNaplanReading")
-
-    responses = relationship(
-        "StudentExamResponseNaplanReading",
-        back_populates="attempt",
-        cascade="all, delete-orphan"
-    )
 class StudentExamNaplanLanguageConventions(Base):
     __tablename__ = "student_exam_naplan_language_conventions"
 
