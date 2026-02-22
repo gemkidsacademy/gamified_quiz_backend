@@ -1881,6 +1881,24 @@ class ExamNaplanNumeracy(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class ExamNaplanReading(Base):
+    __tablename__ = "exam_naplan_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # just a number, NO foreign key
+    quiz_id = Column(Integer, nullable=True)
+
+    class_name = Column(String, nullable=False)   # e.g. "year 3"
+    subject = Column(String, nullable=False)      # "reading"
+    difficulty = Column(String, nullable=False)   # easy | medium | hard
+
+    questions = Column(JSON, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 class ExamNaplanLanguageConventions(Base):
     __tablename__ = "exam_naplan_language_conventions"
 
