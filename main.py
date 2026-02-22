@@ -6127,20 +6127,33 @@ def get_naplan_reading_topics(
     Used by exam creation UI.
     """
 
+    # -----------------------------
+    # Debug input values
+    # -----------------------------
+    print("🔍 FILTER VALUES")
+    print("subject:", subject)
+    print("year:", year)
+    print("difficulty:", difficulty)
+
+    # -----------------------------
+    # Case-insensitive, safe query
+    # -----------------------------
     topics = (
         db.query(distinct(QuestionNaplanReading.topic))
         .filter(
-            QuestionNaplanReading.subject == subject,
+            func.lower(QuestionNaplanReading.subject) == subject.lower(),
             QuestionNaplanReading.year == year,
-            QuestionNaplanReading.difficulty == difficulty
+            func.lower(QuestionNaplanReading.difficulty) == difficulty.lower(),
         )
         .order_by(QuestionNaplanReading.topic.asc())
         .all()
     )
 
+    print("🧮 Topics found:", len(topics))
+
     # SQLAlchemy returns tuples like: [("Topic A",), ("Topic B",)]
     return [t[0] for t in topics]
-
+ 
 @app.get("/api/topics-naplan")
 def get_naplan_topics(
     subject: str,
