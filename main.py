@@ -599,6 +599,57 @@ class StudentExamNaplanLanguageConventions(Base):
         cascade="all, delete-orphan"
     )
 
+class StudentExamNaplanReading(Base):
+    __tablename__ = "student_exam_naplan_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # -----------------------------
+    # Foreign keys
+    # -----------------------------
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey("exam_naplan_reading.id"),
+        nullable=False
+    )
+
+    # -----------------------------
+    # Timing
+    # -----------------------------
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(
+        Integer,
+        nullable=False
+    )
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship("Student")
+
+    exam = relationship("ExamNaplanReading")
+
+    responses = relationship(
+        "StudentExamResponseNaplanReading",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
 class StudentExamNaplanNumeracy(Base):
     __tablename__ = "student_exam_naplan_numeracy"
 
@@ -3886,6 +3937,99 @@ def generate_naplan_numeracy_exam(
         "total_questions": len(assembled_questions),
     }
 
+@app.get("/api/admin/question-bank-reading/naplan")
+def get_naplan_reading_question_bank(
+    subject: str = Query(...),   # reading
+    year: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    print("\n=== READING QUESTION BANK DEBUG START ===")
+    print(f"[INPUT] subject (raw): {subject}")
+    print(f"[INPUT] year: {year}")
+
+    subject_key = subject.lower().strip()
+
+    if subject_key != "reading":
+        print("[ERROR] Invalid subject received")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid subject: {subject}",
+        )
+
+    # -----------------------------
+    # DEBUG STEP 1: Raw rows check
+    # -----------------------------
+    raw_rows = (
+        db.query(QuestionNaplanReading)
+        .filter(
+            QuestionNaplanReading.subject == "reading",
+            QuestionNaplanReading.year == year,
+        )
+        .all()
+    )
+
+    print(f"[RAW QUERY] rows found: {len(raw_rows)}")
+
+    if not raw_rows:
+        print("[RAW QUERY] No rows matched filters:")
+        print("  subject = reading")
+        print(f"  year    = {year}")
+        print("=== READING QUESTION BANK DEBUG END (NO DATA) ===\n")
+        return []
+
+    for i, row in enumerate(raw_rows[:5]):
+        print(
+            f"[RAW ROW {i}] "
+            f"id={row.id}, "
+            f"difficulty={row.difficulty}, "
+            f"topic={row.topic}, "
+            f"passage_id={row.passage_id}"
+        )
+
+    # -----------------------------
+    # DEBUG STEP 2: Aggregated query
+    # -----------------------------
+    results = (
+        db.query(
+            func.lower(QuestionNaplanReading.difficulty).label("difficulty"),
+            QuestionNaplanReading.topic,
+            func.count(QuestionNaplanReading.id).label("total_questions"),
+        )
+        .filter(
+            QuestionNaplanReading.subject == "reading",
+            QuestionNaplanReading.year == year,
+        )
+        .group_by(
+            func.lower(QuestionNaplanReading.difficulty),
+            QuestionNaplanReading.topic,
+        )
+        .order_by(
+            func.lower(QuestionNaplanReading.difficulty),
+            QuestionNaplanReading.topic,
+        )
+        .all()
+    )
+
+    print(f"[AGG QUERY] grouped rows returned: {len(results)}")
+
+    for i, r in enumerate(results):
+        print(
+            f"[AGG ROW {i}] "
+            f"difficulty={r.difficulty}, "
+            f"topic={r.topic}, "
+            f"total={r.total_questions}"
+        )
+
+    print("=== READING QUESTION BANK DEBUG END (SUCCESS) ===\n")
+
+    return [
+        {
+            "difficulty": r.difficulty,   # easy | medium | hard
+            "topic": r.topic,
+            "total_questions": r.total_questions,
+        }
+        for r in results
+    ]
 @app.get("/api/admin/question-bank/naplan")
 def get_naplan_question_bank(
     subject: str = Query(...),  # numeracy | language_conventions
@@ -5889,6 +6033,32 @@ def fetch_classes(db: Session = Depends(get_db)):
     return {
         "classes": classes
     }
+
+@app.get("/topics-naplan-reading")
+def get_naplan_reading_topics(
+    subject: str = Query(...),
+    year: int = Query(...),
+    difficulty: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns distinct Reading topics for the given year & difficulty.
+    Used by exam creation UI.
+    """
+
+    topics = (
+        db.query(distinct(QuestionNaplanReading.topic))
+        .filter(
+            QuestionNaplanReading.subject == subject,
+            QuestionNaplanReading.year == year,
+            QuestionNaplanReading.difficulty == difficulty
+        )
+        .order_by(QuestionNaplanReading.topic.asc())
+        .all()
+    )
+
+    # SQLAlchemy returns tuples like: [("Topic A",), ("Topic B",)]
+    return [t[0] for t in topics]
 
 @app.get("/api/topics-naplan")
 def get_naplan_topics(
