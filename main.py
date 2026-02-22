@@ -3818,6 +3818,209 @@ def build_question_blocks(q):
     return blocks
 
 
+@app.post("/naplan/reading/generate-exam")
+def generate_naplan_reading_exam(
+    db: Session = Depends(get_db)
+):
+    print("\n=== START: Generate NAPLAN Reading Exam ===")
+
+    # 1. Load latest quiz config
+    quiz = (
+        db.query(QuizNaplanReading)
+        .order_by(QuizNaplanReading.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        print("❌ ERROR: No QuizNaplanReading found")
+        raise HTTPException(
+            status_code=404,
+            detail="NAPLAN Reading quiz not found"
+        )
+
+    normalized_difficulty = quiz.difficulty.strip().lower()
+    normalized_subject = "reading"
+
+    print(
+        f"✅ Quiz loaded | id={quiz.id}, "
+        f"year={quiz.year}, difficulty='{quiz.difficulty}' "
+        f"(normalized='{normalized_difficulty}')"
+    )
+    print(f"📘 Topics config: {quiz.topics}")
+    print(f"📌 Expected total questions: {quiz.total_questions}")
+
+    assembled_questions = []
+
+    # 2. Iterate topics
+    for idx, topic_cfg in enumerate(quiz.topics):
+        print(f"\n--- Processing topic {idx + 1} ---")
+        print(f"Raw topic config: {topic_cfg}")
+
+        topic_name = topic_cfg.get("name")
+        db_count = topic_cfg.get("db")
+
+        if not topic_name or not db_count:
+            print("⚠️ Skipping topic due to missing name or db count")
+            continue
+
+        print(f"➡️ Topic: {topic_name}")
+        print(f"➡️ Required DB questions: {db_count}")
+
+        # 3. Diagnostic: topic + subject + year existence
+        topic_only_count = (
+            db.query(QuestionNaplanReading)
+            .filter(
+                QuestionNaplanReading.topic == topic_name,
+                QuestionNaplanReading.year == quiz.year,
+                func.lower(func.trim(QuestionNaplanReading.subject)) == normalized_subject,
+            )
+            .count()
+        )
+
+        print(f"🔍 Topic+subject+year match count: {topic_only_count}")
+
+        if topic_only_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"No Reading questions found for topic "
+                    f"'{topic_name}' (Year {quiz.year})"
+                )
+            )
+
+        # 4. Strict difficulty + subject + year
+        question_rows = (
+            db.query(QuestionNaplanReading)
+            .filter(
+                QuestionNaplanReading.topic == topic_name,
+                QuestionNaplanReading.year == quiz.year,
+                func.lower(func.trim(QuestionNaplanReading.subject)) == normalized_subject,
+                func.lower(func.trim(QuestionNaplanReading.difficulty)) == normalized_difficulty,
+            )
+            .all()
+        )
+
+        print(
+            f"🔎 Rows after strict difficulty filter "
+            f"('{normalized_difficulty}'): {len(question_rows)}"
+        )
+
+        # 5. Fallback (subject + year)
+        if len(question_rows) < db_count:
+            print(
+                "⚠️ WARNING: Not enough rows after difficulty filter. "
+                "Attempting subject+year fallback."
+            )
+
+            fallback_rows = (
+                db.query(QuestionNaplanReading)
+                .filter(
+                    QuestionNaplanReading.topic == topic_name,
+                    QuestionNaplanReading.year == quiz.year,
+                    func.lower(func.trim(QuestionNaplanReading.subject)) == normalized_subject,
+                )
+                .all()
+            )
+
+            print(
+                f"🔎 Rows after fallback (subject+year): "
+                f"{len(fallback_rows)}"
+            )
+
+            if len(fallback_rows) < db_count:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Not enough Reading passages for topic "
+                        f"'{topic_name}' (Year {quiz.year}). "
+                        f"Required={db_count}, Found={len(fallback_rows)}"
+                    )
+                )
+
+            question_rows = fallback_rows
+
+        # 6. Random sampling of passages
+        selected_rows = random.sample(question_rows, db_count)
+        print(f"🎯 Selected {len(selected_rows)} passages for topic '{topic_name}'")
+
+        # 7. Expand exam_bundle into exam questions
+        for row in selected_rows:
+            bundle = row.exam_bundle
+
+            assembled_questions.append({
+                "passage_id": row.passage_id,
+                "topic": row.topic,
+                "difficulty": row.difficulty,
+                "question_type": row.question_type,
+                "exam_bundle": bundle,
+            })
+
+    # 8. Final validation (count individual questions)
+    total_question_count = sum(
+        len(q["exam_bundle"].get("questions", []))
+        for q in assembled_questions
+    )
+
+    print("\n=== FINAL CHECK ===")
+    print(f"Total assembled question items: {total_question_count}")
+
+    if total_question_count != quiz.total_questions:
+        print(
+            f"❌ ERROR: Question count mismatch | "
+            f"Expected={quiz.total_questions}, "
+            f"Got={total_question_count}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Generated question count does not match quiz total"
+        )
+
+    print("✅ Question count validated")
+
+    # 9. Delete previous exams & attempts
+    db.query(StudentExamResponseNaplanReading).delete()
+    db.commit()
+
+    db.query(StudentExamNaplanReading).delete()
+    db.commit()
+
+    print("🧹 Deleting existing NAPLAN Reading exams...")
+
+    deleted_count = (
+        db.query(ExamNaplanReading)
+        .delete()
+    )
+
+    print(f"🗑️ Deleted {deleted_count} previous exam(s)")
+
+    # 10. Persist exam
+    print("💾 Saving exam to exam_naplan_reading table...")
+
+    exam = ExamNaplanReading(
+        quiz_id=quiz.id,
+        class_name=quiz.class_name,
+        subject="reading",
+        difficulty=quiz.difficulty,
+        questions=assembled_questions,
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print(
+        f"🎉 SUCCESS: Reading exam generated | "
+        f"exam_id={exam.id}"
+    )
+    print("=== END: Generate NAPLAN Reading Exam ===\n")
+
+    return {
+        "message": "NAPLAN Reading exam generated successfully",
+        "exam_id": exam.id,
+        "total_questions": total_question_count,
+    }
+
+
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
     db: Session = Depends(get_db)
