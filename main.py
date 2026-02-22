@@ -3956,14 +3956,13 @@ def generate_naplan_reading_exam(
             })
 
     # 8. Final validation (count individual questions)
-    total_question_count = sum(
-        len(q["exam_bundle"].get("questions", []))
-        for q in assembled_questions
-    )
-
+    # 8. Final validation (count questions — 1 row = 1 question)
     print("\n=== FINAL CHECK ===")
+    
+    total_question_count = len(assembled_questions)
+    
     print(f"Total assembled question items: {total_question_count}")
-
+    
     if total_question_count != quiz.total_questions:
         print(
             f"❌ ERROR: Question count mismatch | "
@@ -3974,9 +3973,8 @@ def generate_naplan_reading_exam(
             status_code=400,
             detail="Generated question count does not match quiz total"
         )
-
+    
     print("✅ Question count validated")
-
     # 9. Delete previous exams & attempts
     db.query(StudentExamResponseNaplanReading).delete()
     db.commit()
