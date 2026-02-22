@@ -872,6 +872,22 @@ class QuizNaplanNumeracy(Base):
     # Stores topic configs as JSON
     topics = Column(JSON, nullable=False)
 
+class QuizNaplanReading(Base):
+    __tablename__ = "quiz_naplan_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)   # e.g. "Reading"
+    year = Column(Integer, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+    total_questions = Column(Integer, nullable=False)
+
+    # Stores topic configs as JSON
+    topics = Column(JSON, nullable=False)
+
 class QuizNaplanLanguageConventions(Base):
     __tablename__ = "quiz_naplan_Language_Conventions"
 
@@ -7420,6 +7436,87 @@ def generate_exam_mathematical_reasoning(
         "questions": questions
     }
 
+
+@app.post("/api/quizzes-naplan-reading")
+def create_naplan_reading_quiz(
+    quiz: NaplanQuizCreate,
+    db: Session = Depends(get_db),
+):
+    print("\n========== NAPLAN READING QUIZ CREATION START ==========")
+
+    print("🔍 Incoming payload:", quiz)
+
+    try:
+        quiz_dict = quiz.dict()
+        print("📦 Parsed quiz payload:", quiz_dict)
+    except Exception as e:
+        print("❌ Failed to parse payload:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail="Invalid quiz payload")
+
+    print("➡️ class_name:", quiz.class_name)
+    print("➡️ subject:", quiz.subject)
+    print("➡️ year:", quiz.year)
+    print("➡️ difficulty:", quiz.difficulty)
+    print("➡️ num_topics:", quiz.num_topics)
+    print("➡️ total_questions:", quiz.total_questions)
+
+    # -----------------------------
+    # Basic validation
+    # -----------------------------
+    if quiz.subject.lower() != "reading":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid subject for reading quiz: {quiz.subject}",
+        )
+
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(status_code=400, detail="topics must be a list")
+
+    print("📝 Topics:")
+    for i, t in enumerate(quiz.topics):
+        print(f"   └─ Topic {i + 1}: {t}")
+
+    try:
+        # 🔥 DELETE PREVIOUS QUIZ CONFIG(S)
+        print("\n🧹 Deleting existing NAPLAN Reading quiz configs...")
+
+        deleted_count = (
+            db.query(QuizNaplanReading)
+            .delete()
+        )
+
+        print(f"🗑️ Deleted {deleted_count} existing quiz config(s)")
+        print("\n--- Creating quiz_naplan_reading row ---")
+
+        new_quiz = QuizNaplanReading(
+            class_name=quiz.class_name,        # e.g. "year 3"
+            subject="reading",
+            year=quiz.year,
+            difficulty=quiz.difficulty,
+            num_topics=quiz.num_topics,
+            total_questions=quiz.total_questions,
+            topics=[t.dict() for t in quiz.topics],
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        print("✅ NAPLAN READING QUIZ CREATED:", new_quiz)
+        print("========== NAPLAN READING QUIZ CREATION COMPLETE ==========\n")
+
+        return {
+            "message": "NAPLAN Reading quiz created successfully",
+            "quiz_id": new_quiz.id,
+        }
+
+    except Exception as e:
+        print("\n❌ EXCEPTION DURING QUIZ CREATION ❌")
+        print("Error:", str(e))
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/quizzes-naplan-language-conventions")
 def create_naplan_language_conventions_quiz(
