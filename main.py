@@ -17366,7 +17366,163 @@ def normalize_type6_visual_counting_question(question: dict):
 
     return question
 
-     
+@app.post("/api/student/start-exam/naplan-reading")
+def start_naplan_reading_exam(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ START NAPLAN READING EXAM =================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # STUDENT
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # EXISTING ATTEMPT
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanReading)
+        .filter(StudentExamNaplanReading.student_id == student.id)
+        .order_by(StudentExamNaplanReading.started_at.desc())
+        .first()
+    )
+
+    MAX_DURATION = timedelta(minutes=40)
+    now = datetime.now(timezone.utc)
+
+    uploaded_images = db.query(UploadedImage).all()
+    image_map = {img.original_name: img.gcs_url for img in uploaded_images}
+
+    if attempt:
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        expires_at = started_at + MAX_DURATION
+        elapsed = int((now - started_at).total_seconds())
+
+        # ⛔ expired but not submitted
+        if attempt.completed_at is None and now > expires_at:
+            attempt.completed_at = expires_at
+            db.commit()
+            return {"completed": True}
+
+        # ✅ already finished
+        if attempt.completed_at is not None:
+            return {"completed": True}
+
+        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+
+        exam = (
+            db.query(ExamNaplanReading)
+            .filter(
+                func.lower(ExamNaplanReading.class_name) ==
+                func.lower(student.class_name),
+                func.lower(ExamNaplanReading.subject) == "reading"
+            )
+            .order_by(ExamNaplanReading.created_at.desc())
+            .first()
+        )
+
+        raw_questions = normalize_naplan_reading_questions_live(
+            exam.questions or []
+        )
+
+        normalized_questions = []
+        for q in raw_questions:
+            normalize_images_in_question(q, image_map)
+            normalize_type2_correct_answer(q)
+            normalize_type3_numeric_input_question(q)
+            normalize_type4_text_input_question(q)
+            normalize_type6_visual_counting_question(q)
+            normalized_questions.append(q)
+
+        return {
+            "completed": False,
+            "questions": normalized_questions,
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 🆕 FIRST ATTEMPT
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanReading)
+        .filter(
+            func.lower(ExamNaplanReading.class_name) ==
+            func.lower(student.class_name),
+            func.lower(ExamNaplanReading.subject) == "reading"
+        )
+        .order_by(ExamNaplanReading.created_at.desc())
+        .first()
+    )
+
+    raw_questions = normalize_naplan_reading_questions_live(
+        exam.questions or []
+    )
+
+    normalized_questions = []
+    for q in raw_questions:
+        normalize_images_in_question(q, image_map)
+        normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
+        normalize_type6_visual_counting_question(q)
+        normalized_questions.append(q)
+
+    new_attempt = StudentExamNaplanReading(
+        student_id=student.id,
+        exam_id=exam.id,
+        started_at=now,
+        duration_minutes=40
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    # --------------------------------------------------
+    # SEED RESPONSE ROWS
+    # --------------------------------------------------
+    for original_q in exam.questions or []:
+        normalized_correct_option = normalize_correct_option_for_db(
+            original_q.get("correct_answer")
+        )
+
+        db.add(
+            StudentExamResponseNaplanReading(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=new_attempt.id,
+                q_id=original_q["id"],
+                topic=original_q.get("topic"),
+                selected_option=None,
+                correct_option=normalized_correct_option,
+                is_correct=None
+            )
+        )
+
+    db.commit()
+
+    return {
+        "completed": False,
+        "questions": normalized_questions,
+        "remaining_time": new_attempt.duration_minutes * 60
+    }
+
+
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
