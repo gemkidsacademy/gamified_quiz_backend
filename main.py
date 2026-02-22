@@ -547,6 +547,59 @@ class StudentExamThinkingSkills(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+
+
+class StudentExamNaplanReading(Base):
+    __tablename__ = "student_exam_naplan_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # -----------------------------
+    # Foreign keys
+    # -----------------------------
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey("exam_naplan_reading.id"),
+        nullable=False
+    )
+
+    # -----------------------------
+    # Timing
+    # -----------------------------
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(
+        Integer,
+        nullable=False
+    )
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship("Student")
+
+    exam = relationship("ExamNaplanReading")
+
+    responses = relationship(
+        "StudentExamResponseNaplanReading",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
 class StudentExamNaplanLanguageConventions(Base):
     __tablename__ = "student_exam_naplan_language_conventions"
 
@@ -777,6 +830,50 @@ class StudentExamResponseNaplanLanguageConventions(Base):
 
     exam = relationship("ExamNaplanLanguageConventions")
 
+
+class StudentExamResponseNaplanReading(Base):
+    __tablename__ = "student_exam_response_naplan_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey("exam_naplan_reading.id"),
+        nullable=False
+    )
+
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_naplan_reading.id"),
+        nullable=False
+    )
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentExamNaplanReading",
+        back_populates="responses"
+    )
+
+    student = relationship("Student")
+
+    exam = relationship("ExamNaplanReading")
+ 
 class StudentExamResponseNaplanNumeracy(Base):
     __tablename__ = "student_exam_response_naplan_numeracy"
 
