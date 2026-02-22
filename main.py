@@ -804,7 +804,7 @@ class StudentExamResponseNaplanReading(Base):
         nullable=False
     )
 
-    q_id = Column(Integer, nullable=False)
+    q_id = Column(String, nullable=False)
     topic = Column(String, nullable=True)
 
     selected_option = Column(String, nullable=True)
