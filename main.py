@@ -3948,6 +3948,7 @@ def generate_naplan_reading_exam(
             bundle = row.exam_bundle
 
             assembled_questions.append({
+                "question_id": str(uuid.uuid4()),  # ✅ NEW
                 "passage_id": row.passage_id,
                 "topic": row.topic,
                 "difficulty": row.difficulty,
