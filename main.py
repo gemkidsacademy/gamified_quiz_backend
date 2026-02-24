@@ -14585,6 +14585,52 @@ class InstructionAwareHandler(QuestionHandler):
 # 1️⃣ Single MCQ
 # --------------------------------------------------
 
+
+def read_block(ctx, header):
+    """
+    Reads a named multiline block from the ParseContext.
+
+    Example:
+    QUESTION_TEXT:
+    line 1
+    line 2
+
+    Stops when the next section starts.
+    """
+
+    # Ensure we are at the expected header
+    line = ctx.next()
+    if not line.upper().startswith(header.upper()):
+        raise ValueError(f"EXPECTED_{header.replace(':', '')}")
+
+    lines = []
+
+    while ctx.peek():
+        peek = ctx.peek().strip()
+
+        # Stop conditions
+        if peek.endswith(":"):
+            break
+        if peek.startswith("---"):
+            break
+
+        lines.append(ctx.next().strip())
+
+    return " ".join(lines)
+
+def read_list_block(ctx):
+    """
+    Reads a dash-prefixed list:
+    - item
+    - item
+    """
+    items = []
+
+    while ctx.peek() and ctx.peek().lstrip().startswith("-"):
+        line = ctx.next()
+        items.append(line.split("-", 1)[1].strip())
+
+    return items
 @register
 class SingleMCQHandler(InstructionAwareHandler):
     question_type = 1
@@ -14910,39 +14956,37 @@ class NaplanReadingType7:
     question_type = 7
 
     def parse(self, ctx):
-        instruction_text = read_block(ctx, "QUESTION_TEXT")
-        sentence_block = read_block(ctx, "SENTENCE")
+        question_text = read_block(ctx, "QUESTION_TEXT:")
+        sentence = read_block(ctx, "SENTENCE:")
+        options = read_list_block(ctx)
 
-        selectable_words = read_list_block(ctx, "SELECTABLE_WORDS")
-        correct_answers = read_list_block(ctx, "CORRECT_ANSWER")
+        # Expect CORRECT_ANSWER:
+        ctx.next()
+        correct_answers = read_list_block(ctx)
 
         return {
-            "instruction": instruction_text.strip(),
-            "sentence": normalize_sentence(sentence_block),
-            "options": [w.strip() for w in selectable_words if w.strip()],
-            "correct_answers": [a.strip() for a in correct_answers if a.strip()]
+            "instruction": question_text,
+            "sentence": sentence,
+            "options": options,
+            "correct_answers": correct_answers,
         }
 
     def validate(self, parsed, context=None):
-        # optional: you can leave this empty
-        # validation is already centralized
-        pass
+        validate_type7_naplan_reading(parsed)
 
     def build_exam_bundle(self, parsed):
-        # temporary smoke-test bundle
         return {
-            "question_type": 7,
             "question_blocks": [
                 {
                     "type": "instruction",
-                    "text": parsed["instruction"]
+                    "text": parsed["instruction"],
                 },
                 {
                     "type": "word_select",
                     "text": parsed["sentence"],
                     "options": parsed["options"],
-                    "correct_answers": parsed["correct_answers"]
-                }
+                    "correct_answers": parsed["correct_answers"],
+                },
             ]
         }
 def parse_common_sections_naplan_reading(ctx):
@@ -15835,7 +15879,8 @@ def validate_type7_naplan_reading(parsed, context=None):
             print("❌ [TYPE 7] answer not in options:", ans)
             raise ValueError(f"TYPE_7_INVALID_ANSWER: {ans}")
 
-    print("✅ [TYPE 7] Validation passed")         
+    print("✅ [TYPE 7] Validation passed")      
+
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
     file: UploadFile = File(...),
