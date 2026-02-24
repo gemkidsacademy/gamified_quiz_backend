@@ -14620,15 +14620,26 @@ def read_block(ctx, header):
 
 def read_list_block(ctx):
     """
-    Reads a dash-prefixed list:
-    - item
-    - item
+    Reads a dash-prefixed list block.
+    Stops at section headers or QUESTION END.
     """
     items = []
 
-    while ctx.peek() and ctx.peek().lstrip().startswith("-"):
-        line = ctx.next()
-        items.append(line.split("-", 1)[1].strip())
+    while ctx.peek():
+        line = ctx.peek().rstrip()
+
+        # Stop conditions (CRITICAL)
+        if line.startswith("---"):
+            break
+        if line.endswith(":"):
+            break
+
+        # Valid list item must be "- " (dash + space)
+        if not line.startswith("- "):
+            break
+
+        ctx.next()  # consume line
+        items.append(line[2:].strip())
 
     return items
 @register
