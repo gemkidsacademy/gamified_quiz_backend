@@ -14956,16 +14956,25 @@ class NaplanReadingType7:
     question_type = 7
 
     def parse(self, ctx):
-        question_text = read_block(ctx, "QUESTION_TEXT:")
+        instruction = read_block(ctx, "QUESTION_TEXT:")
         sentence = read_block(ctx, "SENTENCE:")
+
+        # --- SELECTABLE_WORDS ---
+        line = ctx.next()
+        if not line.upper().startswith("SELECTABLE_WORDS"):
+            raise ValueError("EXPECTED_SELECTABLE_WORDS")
+
         options = read_list_block(ctx)
 
-        # Expect CORRECT_ANSWER:
-        ctx.next()
+        # --- CORRECT_ANSWER ---
+        line = ctx.next()
+        if not line.upper().startswith("CORRECT_ANSWER"):
+            raise ValueError("EXPECTED_CORRECT_ANSWER")
+
         correct_answers = read_list_block(ctx)
 
         return {
-            "instruction": question_text,
+            "instruction": instruction,
             "sentence": sentence,
             "options": options,
             "correct_answers": correct_answers,
@@ -14989,6 +14998,8 @@ class NaplanReadingType7:
                 },
             ]
         }
+     
+     
 def parse_common_sections_naplan_reading(ctx):
     """
     Parses shared NAPLAN Reading sections:
