@@ -176,6 +176,33 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+#for naplan reading
+class QuestionType7Handler:
+    def parse(self, ctx):
+        instruction_text = read_block(ctx, "QUESTION_TEXT")
+        sentence_block = read_block(ctx, "SENTENCE")
+
+        selectable_words = read_list_block(ctx, "SELECTABLE_WORDS")
+        correct_answers = read_list_block(ctx, "CORRECT_ANSWER")
+
+        return {
+            "instruction": instruction_text.strip(),
+            "sentence": normalize_sentence(sentence_block),
+            "options": [w.strip() for w in selectable_words if w.strip()],
+            "correct_answers": [a.strip() for a in correct_answers if a.strip()]
+        }
+
+    def validate(self, parsed, context=None):
+        # 🔴 THIS is where your helper is actually used
+        validate_type7_naplan_reading(parsed, context)
+
+    def build_exam_bundle(self, parsed):
+        # temporary stub is fine for now
+        return {
+            "question_type": 7,
+            "debug": "type_7_save_smoke_test",
+            "parsed": parsed
+        }
 class ParsingCursor:
     def __init__(self, lines):
         self.lines = lines
@@ -15733,7 +15760,27 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
     print("🔍 [CLOZE PARSER] END")
     return data
 
+def validate_type7_naplan_reading(self, parsed, context=None):
+    if not parsed.get("options"):
+        raise ValueError("TYPE_7_NO_OPTIONS")
 
+    if not parsed.get("correct_answers"):
+        raise ValueError("TYPE_7_NO_CORRECT_ANSWER")
+
+    options = parsed["options"]
+
+    # Allow strings OR {id, label}
+    option_ids = {
+        o if isinstance(o, str) else o.get("id")
+        for o in options
+    }
+
+    for ans in parsed["correct_answers"]:
+        if ans not in option_ids:
+            raise ValueError(
+                f"TYPE_7_INVALID_ANSWER: {ans}"
+            )
+         
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
     file: UploadFile = File(...),
