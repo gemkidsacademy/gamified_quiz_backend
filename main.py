@@ -22284,6 +22284,8 @@ def validate_question_by_type(qt: int, q: dict):
 
         if not q.get("correct_answer"):
             raise ValueError("question_type=5 requires correct_answer")
+    elif qt == 7:
+       validate_type7_naplan_reading(q)
 
     # --------------------------------------------------
     # Unsupported
