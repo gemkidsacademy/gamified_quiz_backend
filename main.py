@@ -15760,27 +15760,43 @@ def parse_cloze_from_document(block_elements: list[dict]) -> dict:
     print("🔍 [CLOZE PARSER] END")
     return data
 
-def validate_type7_naplan_reading(self, parsed, context=None):
-    if not parsed.get("options"):
+def validate_type7_naplan_reading(parsed, context=None):
+    print("🔎 [TYPE 7] Validation started")
+    print("🔎 [TYPE 7] Raw payload:", parsed)
+
+    options = parsed.get("options")
+    correct_answers = parsed.get("correct_answers")
+
+    print("🔎 [TYPE 7] options:", options)
+    print("🔎 [TYPE 7] correct_answers:", correct_answers)
+
+    if not options:
+        print("❌ [TYPE 7] options missing or empty")
         raise ValueError("TYPE_7_NO_OPTIONS")
 
-    if not parsed.get("correct_answers"):
+    if not correct_answers:
+        print("❌ [TYPE 7] correct_answers missing or empty")
         raise ValueError("TYPE_7_NO_CORRECT_ANSWER")
 
-    options = parsed["options"]
+    # Normalize option ids
+    option_ids = set()
+    for o in options:
+        if isinstance(o, str):
+            option_ids.add(o)
+        elif isinstance(o, dict):
+            option_ids.add(o.get("id"))
+        else:
+            print("⚠️ [TYPE 7] Unexpected option type:", type(o), o)
 
-    # Allow strings OR {id, label}
-    option_ids = {
-        o if isinstance(o, str) else o.get("id")
-        for o in options
-    }
+    print("🔎 [TYPE 7] normalized option_ids:", option_ids)
 
-    for ans in parsed["correct_answers"]:
+    for ans in correct_answers:
+        print(f"🔎 [TYPE 7] validating answer: {ans}")
         if ans not in option_ids:
-            raise ValueError(
-                f"TYPE_7_INVALID_ANSWER: {ans}"
-            )
-         
+            print("❌ [TYPE 7] answer not in options:", ans)
+            raise ValueError(f"TYPE_7_INVALID_ANSWER: {ans}")
+
+    print("✅ [TYPE 7] Validation passed")         
 @app.post("/upload-word-naplan-reading")
 async def upload_word_naplan_reading(
     file: UploadFile = File(...),
