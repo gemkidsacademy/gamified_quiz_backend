@@ -17390,6 +17390,21 @@ def normalize_true_false_questions(q: dict):
         except Exception:
             pass
          
+def strip_correct_answers_from_question(question: dict) -> dict:
+    """
+    Removes all correct-answer related fields before sending to frontend.
+    Mutates a copy, never the original.
+    """
+    q = dict(question)
+
+    exam_bundle = q.get("exam_bundle")
+    if exam_bundle and isinstance(exam_bundle, dict):
+        exam_bundle = dict(exam_bundle)
+        exam_bundle.pop("correct_answer", None)
+        q["exam_bundle"] = exam_bundle
+
+    return q
+ 
 @app.post("/api/student/start-exam/naplan-reading")
 def start_naplan_reading_exam(
     req: StartExamRequest = Body(...),
@@ -17482,7 +17497,8 @@ def start_naplan_reading_exam(
            normalize_type2_correct_answer(q)
            normalize_reading_gap_questions(q)
            normalize_true_false_questions(q)
-           normalized_questions.append(q)
+           sanitized_q = strip_correct_answers_from_question(q)
+           normalized_questions.append(sanitized_q)
    
        return {
            "completed": False,
@@ -17522,7 +17538,8 @@ def start_naplan_reading_exam(
         # 4. True / False normalization
         normalize_true_false_questions(q)
     
-        normalized_questions.append(q)
+        sanitized_q = strip_correct_answers_from_question(q)
+        normalized_questions.append(sanitized_q)
     new_attempt = StudentExamNaplanReading(
         student_id=student.id,
         exam_id=exam.id,
