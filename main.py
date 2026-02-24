@@ -14905,7 +14905,46 @@ class GapFillHandler(InstructionAwareHandler):
             ),
             "correct_answer": parsed["correct"]
         }
+@register
+class NaplanReadingType7:
+    question_type = 7
 
+    def parse(self, ctx):
+        instruction_text = read_block(ctx, "QUESTION_TEXT")
+        sentence_block = read_block(ctx, "SENTENCE")
+
+        selectable_words = read_list_block(ctx, "SELECTABLE_WORDS")
+        correct_answers = read_list_block(ctx, "CORRECT_ANSWER")
+
+        return {
+            "instruction": instruction_text.strip(),
+            "sentence": normalize_sentence(sentence_block),
+            "options": [w.strip() for w in selectable_words if w.strip()],
+            "correct_answers": [a.strip() for a in correct_answers if a.strip()]
+        }
+
+    def validate(self, parsed, context=None):
+        # optional: you can leave this empty
+        # validation is already centralized
+        pass
+
+    def build_exam_bundle(self, parsed):
+        # temporary smoke-test bundle
+        return {
+            "question_type": 7,
+            "question_blocks": [
+                {
+                    "type": "instruction",
+                    "text": parsed["instruction"]
+                },
+                {
+                    "type": "word_select",
+                    "text": parsed["sentence"],
+                    "options": parsed["options"],
+                    "correct_answers": parsed["correct_answers"]
+                }
+            ]
+        }
 def parse_common_sections_naplan_reading(ctx):
     """
     Parses shared NAPLAN Reading sections:
