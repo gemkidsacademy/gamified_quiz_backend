@@ -8799,7 +8799,7 @@ def add_student_exam_module(
         id=payload.id,
         student_id=payload.student_id,
         name=payload.name,
-        student_year=payload.student_year,  # ✅ NEW FIELD
+        year=payload.student_year,
         parent_email=payload.parent_email,
         class_name=payload.class_name,
         class_day=payload.class_day,
