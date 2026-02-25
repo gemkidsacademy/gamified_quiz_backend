@@ -18770,25 +18770,35 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     print(f"📝 Answers received: {answers}")
 
     # --------------------------------------------------
-    # 1. Fetch active exam attempt
+    # 1. Fetch latest exam attempt (idempotent)
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamNaplanNumeracy)
-        .filter(
-            StudentExamNaplanNumeracy.student_id == student_id,
-            StudentExamNaplanNumeracy.completed_at.is_(None)
-        )
+        .filter(StudentExamNaplanNumeracy.student_id == student_id)
         .order_by(StudentExamNaplanNumeracy.started_at.desc())
         .first()
     )
 
     if not attempt:
-        print("❌ No active exam attempt found")
-        raise HTTPException(status_code=404, detail="No active exam attempt found")
+        print("❌ No exam attempt found at all")
+        raise HTTPException(status_code=404, detail="No exam attempt found")
 
-    print(f"✅ Exam Attempt ID: {attempt.id}")
-    print(f"🧪 Exam ID on attempt: {attempt.exam_id}")
+    print(f"📌 Found attempt ID: {attempt.id}")
+    print(f"📌 completed_at: {attempt.completed_at}")
 
+    # --------------------------------------------------
+    # 2. Already completed → return safely
+    # --------------------------------------------------
+    if attempt.completed_at is not None:
+        print("⚠️ Exam already completed, returning success (idempotent)")
+        return {
+            "status": "already_completed",
+            "exam_attempt_id": attempt.id
+        }
+
+    print("✅ Active attempt confirmed, proceeding with evaluation")
+
+    # ⬇️ continue with evaluation logic here
     # --------------------------------------------------
     # 2. Fetch student (for year)
     # --------------------------------------------------
