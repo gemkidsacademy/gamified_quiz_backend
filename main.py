@@ -1610,7 +1610,7 @@ class Student(Base):
     class_name = Column(String, nullable=False)
     class_day = Column(String, nullable=True)
      # ✅ NAPLAN year (e.g. 3, 5)
-    year = Column(Integer, nullable=False)
+    student_year = Column(String, nullable=False)
 class TopicInput(BaseModel):
     name: str
     ai: int
@@ -8799,7 +8799,7 @@ def add_student_exam_module(
         id=payload.id,
         student_id=payload.student_id,
         name=payload.name,
-        year=payload.student_year,
+        student_year=payload.student_year,
         parent_email=payload.parent_email,
         class_name=payload.class_name,
         class_day=payload.class_day,
