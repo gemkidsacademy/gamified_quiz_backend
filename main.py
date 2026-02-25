@@ -18905,6 +18905,12 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
            status_code=404,
            detail="Exam not found for student's year"
        )
+    print(
+        "🧠 DEBUG:",
+        "exam_id =", exam.id,
+        "questions_len =", len(exam.questions),
+        "attempt_id =", attempt.id
+    )
     questions = exam.questions or []
     print(f"📊 Total questions: {len(questions)}")
 
