@@ -18881,23 +18881,31 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     # --------------------------------------------------
     # 4. Fetch exam by student year
     # --------------------------------------------------
-    exam_year_label = student.student_year
+    # --------------------------------------------------
+    # 4. Fetch exam by student year (INT)
+    # --------------------------------------------------
+    exam_year_int = student_year_to_int(student.student_year)
     
-    if not exam_year_label or exam_year_label == "N/A":
+    if exam_year_int is None:
         print("❌ Student not eligible for NAPLAN exam:", student.student_year)
         raise HTTPException(
             status_code=400,
             detail="Student is not assigned a valid NAPLAN year"
         )
     
+    print(f"🔎 Looking for exam with year = {exam_year_int}")
+    
     exam = (
         db.query(ExamNaplanNumeracy)
-        .filter(ExamNaplanNumeracy.year == exam_year_label)
+        .filter(ExamNaplanNumeracy.year == exam_year_int)
         .first()
     )
     if not exam:
-        print("❌ No exam found for year:", student.student_year)
-        raise HTTPException(status_code=404, detail="Exam not found")
+       print("❌ No exam found for year:", exam_year_int)
+       raise HTTPException(
+           status_code=404,
+           detail="Exam not found for student's year"
+       )
     questions = exam.questions or []
     print(f"📊 Total questions: {len(questions)}")
 
