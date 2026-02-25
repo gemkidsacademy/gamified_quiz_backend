@@ -7945,14 +7945,15 @@ def create_naplan_numeracy_quiz(
 
     try:
          # 🔥 DELETE PREVIOUS QUIZ CONFIG(S)
-        print("\n🧹 Deleting existing NAPLAN Numeracy quiz configs...")
+        print("\n🧹 Deleting existing NAPLAN Numeracy quiz configs for year:", quiz.year)
 
         deleted_count = (
             db.query(QuizNaplanNumeracy)
-            .delete()
+            .filter(QuizNaplanNumeracy.year == quiz.year)
+            .delete(synchronize_session=False)
         )
-
-        print(f"🗑️ Deleted {deleted_count} existing quiz config(s)")
+        
+        print(f"🗑️ Deleted {deleted_count} quiz config(s) for year {quiz.year}")
         print("\n--- Creating quizzes_naplan_numeracy row ---")
 
         new_quiz = QuizNaplanNumeracy(
