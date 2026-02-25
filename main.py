@@ -18839,7 +18839,7 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Student not found")
 
     print(f"👤 Resolved DB Student ID: {student.id}")
-    print(f"🎓 Student Year: {student.year}")
+    print(f"🎓 Student Year: {student.student_year}")
 
     # --------------------------------------------------
     # 2. Fetch latest exam attempt
@@ -18873,14 +18873,13 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     # --------------------------------------------------
     exam = (
         db.query(ExamNaplanNumeracy)
-        .filter(ExamNaplanNumeracy.year == student.year)
+        .filter(ExamNaplanNumeracy.year == student.student_year)
         .first()
     )
 
     if not exam:
-        print("❌ No exam found for year:", student.year)
+        print("❌ No exam found for year:", student.student_year)
         raise HTTPException(status_code=404, detail="Exam not found")
-
     questions = exam.questions or []
     print(f"📊 Total questions: {len(questions)}")
 
