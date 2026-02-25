@@ -3390,7 +3390,7 @@ def normalize_question_blocks(raw_blocks):
                 if "type" in item:
                     normalized.append(item)
             else:
-                # optional debug
+                # optional debug"
                 # print(f"⚠️ Ignoring invalid block item: {item}")
                 pass
 
@@ -3404,18 +3404,16 @@ def normalize_question_blocks(raw_blocks):
 @app.get("/api/naplan/numeracy/available-years")
 def get_available_naplan_numeracy_years(db: Session = Depends(get_db)):
     years = (
-        db.query(ExamNaplanNumeracy.year)
+        db.query(QuizNaplanNumeracy.year)
         .distinct()
-        .order_by(ExamNaplanNumeracy.year)
+        .order_by(QuizNaplanNumeracy.year)
         .all()
     )
 
-    # unpack [(3,), (5,), ...] → [3, 5, ...]
-    year_list = [y[0] for y in years]
-
     return {
-        "years": year_list
+        "years": [y[0] for y in years]
     }
+ 
 @app.post("/naplan/language-conventions/generate-exam")
 def generate_naplan_language_conventions_exam(
     db: Session = Depends(get_db)
