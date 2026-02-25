@@ -903,6 +903,7 @@ class StudentExamResponseNaplanNumeracy(Base):
 
     q_id = Column(Integer, nullable=False)
     topic = Column(String, nullable=True)
+    year = Column(Integer, nullable=False, index=True)
 
     selected_option = Column(String, nullable=True)
     correct_option = Column(String, nullable=True)
@@ -918,6 +919,7 @@ class StudentExamResponseNaplanNumeracy(Base):
     )
     student = relationship("Student")
     exam = relationship("ExamNaplanNumeracy")
+    
 
 
  
@@ -4235,21 +4237,43 @@ def generate_naplan_numeracy_exam(
     print("✅ Question count validated")
 
     # 8. Delete previous exams
-    db.query(StudentExamResponseNaplanNumeracy).delete()
-    db.commit()
-    db.query(StudentExamNaplanNumeracy).delete()
-    db.commit()
+    print("🧹 Deleting student exams and responses for year:", quiz.year)
 
+    if quiz.year is None:
+        raise HTTPException(
+            status_code=400,
+            detail="year is required to delete student exams"
+        )
     
-    print("🧹 Deleting existing NAPLAN Numeracy exams...")
+    try:
+        db.query(StudentExamResponseNaplanNumeracy) \
+          .filter(StudentExamResponseNaplanNumeracy.year == quiz.year) \
+          .delete(synchronize_session=False)
+    
+        db.query(StudentExamNaplanNumeracy) \
+          .filter(StudentExamNaplanNumeracy.year == quiz.year) \
+          .delete(synchronize_session=False)
+    
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    
+    print("🧹 Deleting existing NAPLAN Numeracy exams for year:", quiz.year)
 
+    if quiz.year is None:
+        raise HTTPException(
+            status_code=400,
+            detail="year is required to regenerate NAPLAN numeracy exams"
+        )
+    
     deleted_count = (
         db.query(ExamNaplanNumeracy)
-        .delete()
+        .filter(ExamNaplanNumeracy.year == quiz.year)
+        .delete(synchronize_session=False)
     )
-
-    print(f"🗑️ Deleted {deleted_count} previous exam(s)")
-
+    
+    print(f"🗑️ Deleted {deleted_count} exam(s) for year {quiz.year}")
     # 9. Persist exam
     print("💾 Saving exam to exam_naplan_numeracy table...")
 
@@ -19176,9 +19200,10 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=attempt.id,
+                year=exam.year,                 # ✅ ADD THIS
                 q_id=int(q_id),
                 topic=topic,
-                selected_option=selected_option,   # NULL if unanswered
+                selected_option=selected_option,
                 correct_option=str(correct_answer),
                 is_correct=is_correct
             )
