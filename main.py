@@ -1992,7 +1992,7 @@ class ExamNaplanNumeracy(Base):
 
     # just a number, NO foreign key
     quiz_id = Column(Integer, nullable=True)
-    year = Column(Integer, nullable=False) 
+    year = Column(String, nullable=False) 
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
@@ -18804,6 +18804,13 @@ def normalize_thinking_skills_questions(raw_questions, db):
 
     return normalized
 
+def student_year_to_int(student_year: str | None) -> int | None:
+    if student_year == "Year 3":
+        return 3
+    if student_year == "Year 5":
+        return 5
+    return None
+ 
 @app.post("/api/student/finish-exam/naplan-numeracy")
 def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     print("🔔 FINISH NAPLAN NUMERACY EXAM CALLED")
@@ -18871,9 +18878,18 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     # --------------------------------------------------
     # 4. Fetch exam by student year
     # --------------------------------------------------
+    exam_year = student_year_to_int(student.student_year)
+
+    if exam_year is None:
+        print("❌ Student not eligible for NAPLAN exam:", student.student_year)
+        raise HTTPException(
+            status_code=400,
+            detail="Student is not assigned a valid NAPLAN year"
+        )
+    
     exam = (
         db.query(ExamNaplanNumeracy)
-        .filter(ExamNaplanNumeracy.year == student.student_year)
+        .filter(ExamNaplanNumeracy.year == exam_year)
         .first()
     )
 
