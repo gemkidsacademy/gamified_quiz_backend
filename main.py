@@ -18805,58 +18805,67 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     print("🔔 FINISH NAPLAN NUMERACY EXAM CALLED")
     print("📦 RAW PAYLOAD:", payload)
 
-    student_id = payload.get("student_id")
+    # --------------------------------------------------
+    # 0. Extract + validate student_id
+    # --------------------------------------------------
+    external_student_id = payload.get("student_id")
     answers = payload.get("answers", {})
 
-    if not student_id:
+    if not external_student_id:
         print("❌ Missing student_id")
         raise HTTPException(status_code=400, detail="student_id is required")
 
-    print(f"👤 Student ID: {student_id}")
+    print(f"👤 External Student ID: {external_student_id}")
     print(f"📝 Answers received: {answers}")
 
     # --------------------------------------------------
-    # 1. Fetch latest exam attempt (idempotent)
+    # 1. Resolve Student (external → DB)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(external_student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found in finish-exam")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"👤 Resolved DB Student ID: {student.id}")
+    print(f"🎓 Student Year: {student.year}")
+
+    # --------------------------------------------------
+    # 2. Fetch latest exam attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamNaplanNumeracy)
-        .filter(StudentExamNaplanNumeracy.student_id == student_id)
+        .filter(StudentExamNaplanNumeracy.student_id == student.id)
         .order_by(StudentExamNaplanNumeracy.started_at.desc())
         .first()
     )
 
     if not attempt:
-        print("❌ No exam attempt found at all")
+        print("❌ No exam attempt found for student.id =", student.id)
         raise HTTPException(status_code=404, detail="No exam attempt found")
 
     print(f"📌 Found attempt ID: {attempt.id}")
     print(f"📌 completed_at: {attempt.completed_at}")
 
     # --------------------------------------------------
-    # 2. Already completed → return safely
+    # 3. Idempotent completion guard
     # --------------------------------------------------
     if attempt.completed_at is not None:
-        print("⚠️ Exam already completed, returning success (idempotent)")
+        print("⚠️ Exam already completed, returning success")
         return {
             "status": "already_completed",
             "exam_attempt_id": attempt.id
         }
 
-    print("✅ Active attempt confirmed, proceeding with evaluation")
-
-    # ⬇️ continue with evaluation logic here
     # --------------------------------------------------
-    # 2. Fetch student (for year)
-    # --------------------------------------------------
-    student = db.query(Student).filter(Student.id == student_id).first()
-    if not student:
-        print("❌ Student not found")
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    print(f"🎓 Student Year: {student.year}")
-
-    # --------------------------------------------------
-    # 3. Fetch correct exam (by year only)
+    # 4. Fetch exam by student year
     # --------------------------------------------------
     exam = (
         db.query(ExamNaplanNumeracy)
@@ -18866,21 +18875,17 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
 
     if not exam:
         print("❌ No exam found for year:", student.year)
-        raise HTTPException(status_code=404, detail="Exam not found for student's year")
-
-    print(f"📘 Exam ID: {exam.id}, Year: {exam.year}")
+        raise HTTPException(status_code=404, detail="Exam not found")
 
     questions = exam.questions or []
-    print(f"📊 Total questions in exam JSON: {len(questions)}")
+    print(f"📊 Total questions: {len(questions)}")
 
     # --------------------------------------------------
-    # 4. Clear existing responses (safety)
+    # 5. Clear previous responses (optional safety)
     # --------------------------------------------------
     deleted = (
         db.query(StudentExamResponseNaplanNumeracy)
-        .filter(
-            StudentExamResponseNaplanNumeracy.exam_attempt_id == attempt.id
-        )
+        .filter(StudentExamResponseNaplanNumeracy.exam_attempt_id == attempt.id)
         .delete()
     )
     print(f"🧹 Cleared previous responses: {deleted}")
@@ -18889,7 +18894,7 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     wrong_count = 0
 
     # --------------------------------------------------
-    # 5. Process each question
+    # 6. Evaluate answers
     # --------------------------------------------------
     for q in questions:
         q_id = str(q.get("id"))
@@ -18898,70 +18903,50 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
 
         student_answer = answers.get(q_id)
 
-        print("\n------------------------------")
-        print(f"❓ Question ID: {q_id}")
-        print(f"🎯 Correct Answer: {correct_answer}")
-        print(f"✍️ Student Answer: {student_answer}")
-
-        is_correct = False
-
-        # Normalize comparison
-        if isinstance(correct_answer, list):
-            is_correct = (
-                isinstance(student_answer, list)
-                and sorted(correct_answer) == sorted(student_answer)
-            )
-        else:
-            is_correct = (
-                student_answer is not None
-                and str(student_answer).strip() == str(correct_answer).strip()
-            )
-
-        print(f"✅ Is Correct? {is_correct}")
+        is_correct = (
+            sorted(correct_answer) == sorted(student_answer)
+            if isinstance(correct_answer, list)
+            else student_answer is not None
+            and str(student_answer).strip() == str(correct_answer).strip()
+        )
 
         if is_correct:
             correct_count += 1
         else:
             wrong_count += 1
 
-        response = StudentExamResponseNaplanNumeracy(
-            student_id=student_id,
-            exam_id=exam.id,
-            exam_attempt_id=attempt.id,
-            q_id=int(q_id),
-            topic=topic,
-            selected_option=str(student_answer) if student_answer is not None else None,
-            correct_option=str(correct_answer),
-            is_correct=is_correct
+        db.add(
+            StudentExamResponseNaplanNumeracy(
+                student_id=student.id,  # ✅ DB ID
+                exam_id=exam.id,
+                exam_attempt_id=attempt.id,
+                q_id=int(q_id),
+                topic=topic,
+                selected_option=str(student_answer) if student_answer else None,
+                correct_option=str(correct_answer),
+                is_correct=is_correct
+            )
         )
 
-        db.add(response)
-
     # --------------------------------------------------
-    # 6. Save exam results
+    # 7. Save results
     # --------------------------------------------------
     total_questions = len(questions)
-    accuracy = round((correct_count / total_questions) * 100, 2) if total_questions else 0
+    accuracy = round(
+        (correct_count / total_questions) * 100, 2
+    ) if total_questions else 0
 
-    print("\n📈 EXAM SUMMARY")
-    print(f"✔ Correct: {correct_count}")
-    print(f"✖ Wrong: {wrong_count}")
-    print(f"🎯 Accuracy: {accuracy}%")
-
-    results = StudentExamResultsNaplanNumeracy(
-        student_id=student_id,
-        exam_attempt_id=attempt.id,
-        total_questions=total_questions,
-        correct_answers=correct_count,
-        wrong_answers=wrong_count,
-        accuracy_percent=accuracy
+    db.add(
+        StudentExamResultsNaplanNumeracy(
+            student_id=student.id,  # ✅ DB ID
+            exam_attempt_id=attempt.id,
+            total_questions=total_questions,
+            correct_answers=correct_count,
+            wrong_answers=wrong_count,
+            accuracy_percent=accuracy
+        )
     )
 
-    db.add(results)
-
-    # --------------------------------------------------
-    # 7. Mark attempt completed
-    # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
     db.commit()
 
@@ -18970,12 +18955,8 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     return {
         "status": "success",
         "exam_attempt_id": attempt.id,
-        "total_questions": total_questions,
-        "correct": correct_count,
-        "wrong": wrong_count,
         "accuracy_percent": accuracy
-    }
- 
+    } 
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
     req: FinishExamRequest,
