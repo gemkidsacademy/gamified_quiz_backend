@@ -17951,30 +17951,7 @@ def start_naplan_numeracy_exam(
 
     print(f"✅ New attempt created with ID: {new_attempt.id}")
 
-    # --------------------------------------------------
-    # 4. Pre-create response rows (original behavior)
-    # --------------------------------------------------
-    for original_q in exam.questions or []:
-        normalized_correct_option = normalize_correct_option_for_db(
-            original_q.get("correct_answer")
-        )
-
-        db.add(
-            StudentExamResponseNaplanNumeracy(
-                student_id=student.id,
-                exam_id=exam.id,
-                exam_attempt_id=new_attempt.id,
-                q_id=original_q["id"],
-                topic=original_q.get("topic"),
-                selected_option=None,
-                correct_option=normalized_correct_option,
-                is_correct=None
-            )
-        )
-
-    db.commit()
-    print("📝 Response placeholders created")
-
+    
     return {
         "completed": False,
         "questions": normalized_questions,
@@ -18943,26 +18920,34 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
 
         student_answer = answers.get(q_id)
 
-        is_correct = (
-            sorted(correct_answer) == sorted(student_answer)
-            if isinstance(correct_answer, list)
-            else student_answer is not None
-            and str(student_answer).strip() == str(correct_answer).strip()
-        )
-
+        # 1️⃣ Normalize unanswered
+        if student_answer in (None, "", [], {}):
+            selected_option = None
+            is_correct = False
+        else:
+            selected_option = str(student_answer)
+        
+            # 2️⃣ Evaluate correctness
+            if isinstance(correct_answer, list):
+                is_correct = sorted(correct_answer) == sorted(student_answer)
+            else:
+                is_correct = str(student_answer).strip() == str(correct_answer).strip()
+        
+        # 3️⃣ Count
         if is_correct:
             correct_count += 1
         else:
             wrong_count += 1
-
+        
+        # 4️⃣ Save
         db.add(
             StudentExamResponseNaplanNumeracy(
-                student_id=student.id,  # ✅ DB ID
+                student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=attempt.id,
                 q_id=int(q_id),
                 topic=topic,
-                selected_option=str(student_answer) if student_answer else None,
+                selected_option=selected_option,   # NULL if unanswered
                 correct_option=str(correct_answer),
                 is_correct=is_correct
             )
