@@ -1457,6 +1457,7 @@ class AddStudentExamModuleRequest(BaseModel):
     parent_email: EmailStr
     class_name: str
     class_day: str
+    student_year: str
 
 class GeneratedExamReading(Base):
     __tablename__ = "generated_exams_reading"
@@ -1608,6 +1609,8 @@ class Student(Base):
 
     class_name = Column(String, nullable=False)
     class_day = Column(String, nullable=True)
+     # ✅ NAPLAN year (e.g. 3, 5)
+    year = Column(Integer, nullable=False)
 class TopicInput(BaseModel):
     name: str
     ai: int
@@ -8790,12 +8793,13 @@ def add_student_exam_module(
         )
 
     # ⚠️ Plain text password (as requested)
-    plain_password = payload.student_id  # or any value you choose
+    plain_password = payload.student_id
 
     student = Student(
         id=payload.id,
         student_id=payload.student_id,
         name=payload.name,
+        student_year=payload.student_year,  # ✅ NEW FIELD
         parent_email=payload.parent_email,
         class_name=payload.class_name,
         class_day=payload.class_day,
@@ -8809,9 +8813,9 @@ def add_student_exam_module(
     return {
         "message": "Student added successfully",
         "student_id": student.student_id,
+        "student_year": student.student_year,  # ✅ optional but useful
         "password": plain_password
-    }
-#here
+    }#here
 def generate_admin_exam_report_reading(
     db: Session,
     student: Student,
