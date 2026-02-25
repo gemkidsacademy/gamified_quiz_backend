@@ -551,9 +551,8 @@ class StudentExamResultsNaplanNumeracy(Base):
     student_id = Column(String, ForeignKey("students.id"), nullable=False)
     exam_attempt_id = Column(
         Integer,
-        ForeignKey("student_exams.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True
+        ForeignKey("student_exam_naplan_numeracy.id", ondelete="CASCADE"),
+        nullable=False
     )
 
     total_questions = Column(Integer, nullable=False)
@@ -568,7 +567,7 @@ class StudentExamResultsNaplanNumeracy(Base):
     )
 
     # relationships
-    attempt = relationship("StudentExam")
+    attempt = relationship("StudentExamNaplanNumeracy")
     student = relationship("Student")
 class StudentExamThinkingSkills(Base):
     __tablename__ = "student_exam_thinking_skills"
