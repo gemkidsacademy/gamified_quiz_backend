@@ -18754,7 +18754,7 @@ def normalize_thinking_skills_questions(raw_questions, db):
 
     return normalized
 
-@router.post("/api/student/finish-exam/naplan-numeracy")
+@app.post("/api/student/finish-exam/naplan-numeracy")
 def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     print("🔔 FINISH NAPLAN NUMERACY EXAM CALLED")
     print("📦 RAW PAYLOAD:", payload)
