@@ -18850,17 +18850,23 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     # --------------------------------------------------
     # 2. Fetch latest exam attempt
     # --------------------------------------------------
+    # ✅ CORRECT: only unfinished attempt
     attempt = (
         db.query(StudentExamNaplanNumeracy)
-        .filter(StudentExamNaplanNumeracy.student_id == student.id)
+        .filter(
+            StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.completed_at.is_(None)
+        )
         .order_by(StudentExamNaplanNumeracy.started_at.desc())
         .first()
     )
-
+    
     if not attempt:
-        print("❌ No exam attempt found for student.id =", student.id)
-        raise HTTPException(status_code=404, detail="No exam attempt found")
-
+        print("❌ No active exam attempt to finish for student.id =", student.id)
+        raise HTTPException(
+            status_code=400,
+            detail="No active exam attempt to finish"
+        )
     print(f"📌 Found attempt ID: {attempt.id}")
     print(f"📌 completed_at: {attempt.completed_at}")
 
