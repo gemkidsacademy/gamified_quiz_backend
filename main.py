@@ -1992,7 +1992,7 @@ class ExamNaplanNumeracy(Base):
 
     # just a number, NO foreign key
     quiz_id = Column(Integer, nullable=True)
-    year = Column(String, nullable=False) 
+    year = Column(Integer, nullable=False) 
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
