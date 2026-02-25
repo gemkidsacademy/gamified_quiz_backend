@@ -1962,6 +1962,7 @@ class ExamNaplanNumeracy(Base):
 
     # just a number, NO foreign key
     quiz_id = Column(Integer, nullable=True)
+    year = Column(Integer, nullable=False) 
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
@@ -4225,6 +4226,7 @@ def generate_naplan_numeracy_exam(
 
     exam = ExamNaplanNumeracy(
         quiz_id=quiz.id,
+        year=quiz.year,
         class_name="NAPLAN",
         subject="Numeracy",
         difficulty=quiz.difficulty,
