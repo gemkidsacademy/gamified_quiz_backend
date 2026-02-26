@@ -23447,6 +23447,7 @@ async def process_exam_block(
     )
 
     validate_single_question_type(question_block)
+    question_type = int(next(iter(detected_types)))  # 👈 ADD HERE
 
     # --------------------------------------------------
     # Extract ordered stem blocks (TEXT + IMAGE only)
@@ -23488,10 +23489,26 @@ async def process_exam_block(
     # --------------------------------------------------
     # Extract option image blocks (TYPE 2)
     # --------------------------------------------------
-    option_image_blocks = [
-        b for b in question_block
-        if b.get("type") == "image" and b.get("role") == "option"
-    ]
+    option_image_blocks = []
+
+    if question_type == 2:
+        in_question_blocks = False
+    
+        for b in question_block:
+            if b.get("type") == "text":
+                marker = b["content"].strip().upper()
+    
+                if marker == "QUESTION_BLOCKS:":
+                    in_question_blocks = True
+                    continue
+    
+                if marker in {"OPTIONS:", "CORRECT_ANSWER:"}:
+                    in_question_blocks = False
+    
+            if in_question_blocks and b.get("type") == "image":
+                b = dict(b)               # defensive copy
+                b["role"] = "option"      # semantic tagging
+                option_image_blocks.append(b)
 
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
