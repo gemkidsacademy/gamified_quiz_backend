@@ -23859,11 +23859,18 @@ def resolve_images(q: dict, db: Session, request_id: str):
         if block.get("type") != "image":
             continue
 
+        # ✅ Skip images already resolved to GCS
+        src = block.get("src", "")
+        if src.startswith("https://storage.googleapis.com/"):
+            print(
+                f"[{request_id}] 🖼️ Image already resolved, skipping: {src}"
+            )
+            continue
+
         raw_name = (
             block.get("name")
-            or block.get("src")
             or ""
-        ).strip()   # ✅ KEEP ORIGINAL CASING
+        ).strip()
 
         print(f"[{request_id}] 🖼️ Resolving image: '{raw_name}'")
 
@@ -23886,7 +23893,6 @@ def resolve_images(q: dict, db: Session, request_id: str):
         print(
             f"[{request_id}] ✅ Image resolved → {record.gcs_url}"
         )
-
 def is_cloze_exam(exam_block: list[dict]) -> bool:
     for el in exam_block:
         text = el.get("content", "")
