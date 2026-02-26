@@ -23771,7 +23771,9 @@ def persist_question(
     summary=None,
     block_idx=None,
     stem_blocks=None,
+    question_blocks=None,   # 👈 ADD THIS
 ):
+ 
     """
     Persist a question safely.
 
@@ -23791,24 +23793,26 @@ def persist_question(
         # --------------------------------------------------
         # 2. Decide which blocks are safe to persist
         # --------------------------------------------------
-        if question_type == 2:
-            # Type 2 provides pre-built semantic blocks
-            display_blocks = q["question_blocks"]
+        if question_blocks is not None:
+            display_blocks = question_blocks
         elif stem_blocks is not None:
             display_blocks = stem_blocks
         else:
             display_blocks = question_block
-
+         
         # --------------------------------------------------
         # 3. Resolve images against chosen blocks
         # --------------------------------------------------
         resolve_images(display_blocks, db, request_id)
+        has_stem_images = any(
+            b.get("type") == "image"
+            for b in display_blocks
+        )
 
         # --------------------------------------------------
         # 4. Stem image metadata (Type 5 safe)
         # --------------------------------------------------
-        reference_images = reference_images or []
-        has_stem_images = bool(reference_images)
+        
 
         # --------------------------------------------------
         # 5. Build student-visible question text
@@ -23859,6 +23863,7 @@ def persist_question(
             f"(type={question_type}) | error={e}"
         )
         raise     
+     
 def log_start(request_id, file):
     print("\n" + "=" * 70)
     print(f"🚀 GPT-UPLOAD-NAPLAN START | request_id={request_id}")
