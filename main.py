@@ -23702,15 +23702,18 @@ def persist_question(
         # Build student-visible question text
         # --------------------------------------------------
         if question_type == 5:
-            # CLOZE has its own canonical text
-            question_text = q.get("cloze_text")
+            # ✅ CLOZE = full stem + cloze line
+            question_text = "\n\n".join(
+                b["content"]
+                for b in display_blocks
+                if b.get("type") == "text"
+            )
         else:
             question_text = "\n\n".join(
                 b["content"]
                 for b in display_blocks
                 if b.get("type") == "text"
             )
-
         # --------------------------------------------------
         # Persist
         # --------------------------------------------------
