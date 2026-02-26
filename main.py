@@ -3909,31 +3909,43 @@ def build_question_blocks(q):
     if q.question_type == 5:
         instruction = None
         sentence = None
-
+        images = []
+    
         for block in q.question_blocks or []:
+    
+            if block.get("type") == "image":
+                images.append({
+                    "type": "image",
+                    "src": block.get("src"),
+                    "role": block.get("role", "reference")
+                })
+                continue
+    
             content = block.get("content", "").strip()
-
+    
             if content == "Choose the word to correctly complete this sentence.":
                 instruction = content
-
+    
             if "{{dropdown}}" in content:
                 sentence = content
-
+    
         if instruction:
             blocks.append({
                 "type": "text",
                 "content": instruction
             })
-
+    
+        # ✅ emit images BEFORE the cloze sentence
+        blocks.extend(images)
+    
         if sentence and q.options:
             blocks.append({
                 "type": "cloze-dropdown",
                 "sentence": sentence.strip(),
                 "options": list(q.options.values())
             })
-
+    
         return blocks
-
     # ==================================================
     # ALL OTHER TYPES (SAFE FALLBACK)
     # ==================================================
