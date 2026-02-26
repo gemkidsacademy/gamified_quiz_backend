@@ -18608,7 +18608,78 @@ def start_naplan_reading_exam(
         "remaining_time": new_attempt.duration_minutes * 60
     }
 
+def hydrate_naplan_question_structure(raw_questions):
+    """
+    Converts legacy / blob-style question_text into structured question_blocks.
+    Safe to run before normalize_naplan_numeracy_questions_live.
+    """
 
+    hydrated = []
+
+    for q in raw_questions or []:
+        question_type = q.get("question_type")
+        question_text = q.get("question_text") or ""
+        blocks = list(q.get("question_blocks") or [])
+
+        # --------------------------------------------------
+        # Only hydrate if we DON'T already have text blocks
+        # --------------------------------------------------
+        has_text_block = any(
+            b.get("type") == "text" for b in blocks
+        )
+
+        if not has_text_block and question_text:
+            text_blocks = []
+
+            lines = [
+                line.strip()
+                for line in question_text.splitlines()
+                if line.strip()
+            ]
+
+            for line in lines:
+                lowered = line.lower()
+
+                # Skip metadata / noise
+                if lowered.startswith("question_type"):
+                    continue
+                if lowered.startswith("question"):
+                    continue
+                if lowered.startswith("metadata"):
+                    continue
+                if lowered.startswith("class:"):
+                    continue
+                if lowered.startswith("year:"):
+                    continue
+                if lowered.startswith("subject:"):
+                    continue
+                if lowered.startswith("topic:"):
+                    continue
+                if lowered.startswith("difficulty:"):
+                    continue
+                if lowered.startswith("answer_type"):
+                    continue
+                if lowered.startswith("correct_answer"):
+                    continue
+
+                # Skip option labels (A:, B:, C:)
+                if len(line) >= 2 and line[1] == ":":
+                    continue
+
+                text_blocks.append({
+                    "type": "text",
+                    "content": line
+                })
+
+            # Prepend extracted text blocks before structured blocks
+            blocks = text_blocks + blocks
+
+        hydrated.append({
+            **q,
+            "question_blocks": blocks
+        })
+
+    return hydrated
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
@@ -18699,9 +18770,11 @@ def start_naplan_numeracy_exam(
             print("❌ Exam not found")
             raise HTTPException(status_code=404, detail="Exam not found")
 
-        raw_questions = normalize_naplan_numeracy_questions_live(
+        raw_questions = hydrate_naplan_question_structure(
             exam.questions or []
         )
+        
+        raw_questions = normalize_naplan_numeracy_questions_live(raw_questions)
 
         normalized_questions = []
         for q in raw_questions:
@@ -18745,9 +18818,11 @@ def start_naplan_numeracy_exam(
         print("❌ Exam not found")
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    raw_questions = normalize_naplan_numeracy_questions_live(
-        exam.questions or []
-    )
+    raw_questions = hydrate_naplan_question_structure(
+            exam.questions or []
+        )
+        
+    raw_questions = normalize_naplan_numeracy_questions_live(raw_questions)
 
     normalized_questions = []
     for q in raw_questions:
