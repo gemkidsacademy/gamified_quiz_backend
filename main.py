@@ -22028,6 +22028,11 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             continue
 
         text = " ".join("".join(texts).split())
+        text = re.sub(
+            r"([A-Z])\s*[\:\.\)]\s*([^A-Z]+)(?=[A-Z]\s*[\:\.\)])",
+            r"\1: \2\n",
+            text
+        )
         upper = text.upper()
 
         print(f"🧩 [PARSE] Paragraph[{idx}]: {repr(text)}")
@@ -22129,7 +22134,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 # fall through to re-process this line
             else:
                 print(f"🧩 [PARSE] Buffering option line: {text}")
-                buffer.append(text)
+                buffer.extend(text.splitlines())
                 continue
 
         
