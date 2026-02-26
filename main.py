@@ -4149,7 +4149,6 @@ def generate_naplan_reading_exam(
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
-    payload: dict = Body(...),
     db: Session = Depends(get_db)
 ): 
     print("\n=== START: Generate NAPLAN Numeracy Exam ===")
