@@ -18091,42 +18091,70 @@ def start_exam(
         "questions": normalize_questions(exam.questions),
         "remaining_time": 40 * 60
     }
- 
+
 def normalize_naplan_numeracy_questions_live(raw_questions):
+    """
+    Prepare questions for live exam delivery.
+
+    Rules:
+    - Frontend should primarily render from question_blocks
+    - question_text is a CLEAN fallback only
+    - CLOZE (type 5) must never expose metadata, options, or answers
+    """
+
     normalized = []
 
     for q in raw_questions or []:
+        q_type = q.get("question_type")
         blocks = q.get("question_blocks") or []
-        correct_answer = str(q.get("correct_answer")).strip()
+
+        # --------------------------------------------------
+        # 1. Clean question_blocks (remove legacy junk)
+        # --------------------------------------------------
         display_blocks = []
 
         for block in blocks:
-            content = (block.get("content") or "").strip()
-            lowered = content.lower()
+            # Only text blocks can contain legacy pollution
+            if block.get("type") == "text":
+                content = (block.get("content") or "").strip()
+                lowered = content.lower()
 
-            if lowered.startswith("question_type"):
-                continue
-            if lowered.startswith("year:"):
-                continue
-            if lowered.startswith("answer_type"):
-                continue
-            if lowered.startswith("correct_answer"):
-                continue
-            if content == correct_answer:
-                continue
+                if lowered.startswith("question_type"):
+                    continue
+                if lowered.startswith("year:"):
+                    continue
+                if lowered.startswith("answer_type"):
+                    continue
+                if lowered.startswith("correct_answer"):
+                    continue
 
             display_blocks.append(block)
 
+        # --------------------------------------------------
+        # 2. Build CLEAN question_text (fallback only)
+        # --------------------------------------------------
+        if q_type == 5:
+            # ✅ CLOZE: derive text ONLY from text blocks
+            text_parts = [
+                b["content"]
+                for b in display_blocks
+                if b.get("type") == "text"
+            ]
+            question_text = "\n\n".join(text_parts) if text_parts else None
+        else:
+            # Other types: keep existing question_text
+            question_text = q.get("question_text")
+
+        # --------------------------------------------------
+        # 3. Assemble normalized payload
+        # --------------------------------------------------
         normalized.append({
             "id": q["id"],
-            "question_type": q.get("question_type"),
+            "question_type": q_type,
             "topic": q.get("topic"),
             "difficulty": q.get("difficulty"),
-
-            # ✅ FIX: preserve question_text
-            "question_text": q.get("question_text"),
-
-            "question_blocks": display_blocks,
+            "question_text": question_text,          # ✅ CLEAN
+            "question_blocks": display_blocks,       # ✅ AUTHORITATIVE
             "options": q.get("options"),
             "correct_answer": q.get("correct_answer"),
         })
