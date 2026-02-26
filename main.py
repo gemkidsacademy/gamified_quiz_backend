@@ -4153,37 +4153,26 @@ def generate_naplan_numeracy_exam(
     db: Session = Depends(get_db)
 ): 
     print("\n=== START: Generate NAPLAN Numeracy Exam ===")
-    requested_year = payload.get("year")
-
-    if not requested_year:
-        raise HTTPException(
-            status_code=400,
-            detail="year is required to generate exam"
-        )
-
+    
+    
     # 1. Load latest quiz config
     quiz = (
         db.query(QuizNaplanNumeracy)
-        .filter(QuizNaplanNumeracy.year == requested_year)
         .order_by(QuizNaplanNumeracy.id.desc())
         .first()
     )
-
+    
     if not quiz:
-        print("❌ ERROR: No QuizNaplanNumeracy found")
         raise HTTPException(
             status_code=404,
             detail="NAPLAN Numeracy quiz not found"
         )
-
+    
+    
     normalized_difficulty = quiz.difficulty.strip().lower()
     normalized_subject = "numeracy"
 
-    print(
-        f"✅ Quiz loaded | id={quiz.id}, "
-        f"year={requested_year}, difficulty='{quiz.difficulty}' "
-        f"(normalized='{normalized_difficulty}')"
-    )
+    
     print(f"📘 Topics config: {quiz.topics}")
     print(f"📌 Expected total questions: {quiz.total_questions}")
 
@@ -4204,12 +4193,11 @@ def generate_naplan_numeracy_exam(
         print(f"➡️ Topic: {topic_name}")
         print(f"➡️ Required DB questions: {db_count}")
 
-        # 3. Diagnostic: strict topic + subject + year existence
+        
         topic_only_count = (
             db.query(QuestionNumeracyLC)
             .filter(
                 QuestionNumeracyLC.topic == topic_name,
-                QuestionNumeracyLC.year == requested_year,
                 func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
             )
             .count()
@@ -4224,7 +4212,7 @@ def generate_naplan_numeracy_exam(
                 status_code=400,
                 detail=(
                     f"No Numeracy questions found for topic "
-                    f"'{topic_name}' (Year {requested_year})"
+                    
                 )
             )
 
@@ -4233,13 +4221,11 @@ def generate_naplan_numeracy_exam(
             db.query(QuestionNumeracyLC)
             .filter(
                 QuestionNumeracyLC.topic == topic_name,
-                QuestionNumeracyLC.year == requested_year,
                 func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject,
                 func.lower(func.trim(QuestionNumeracyLC.difficulty)) == normalized_difficulty
             )
             .all()
         )
-
         print(
             f"🔎 Questions after strict difficulty filter "
             f"('{normalized_difficulty}'): {len(questions)}"
@@ -4256,12 +4242,10 @@ def generate_naplan_numeracy_exam(
                 db.query(QuestionNumeracyLC)
                 .filter(
                     QuestionNumeracyLC.topic == topic_name,
-                    QuestionNumeracyLC.year == requested_year,
                     func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
                 )
                 .all()
             )
-
             print(
                 f"🔎 Questions after fallback (subject+year): "
                 f"{len(fallback_questions)}"
@@ -4272,7 +4256,7 @@ def generate_naplan_numeracy_exam(
                     status_code=400,
                     detail=(
                         f"Not enough Numeracy questions for topic "
-                        f"'{topic_name}' (Year {requested_year}). "
+                        
                         f"Required={db_count}, Found={len(fallback_questions)}"
                     )
                 )
@@ -4314,38 +4298,34 @@ def generate_naplan_numeracy_exam(
     print("✅ Question count validated")
 
     # 8. Delete previous exams
-    print("🧹 Deleting student exams and responses for year:", requested_year)
+    
 
-    if requested_year is None:
-        raise HTTPException(
-            status_code=400,
-            detail="year is required to delete student exams"
-        )
+    
     
     try:
+    # Delete responses linked to attempts for this quiz
         db.query(StudentExamResponseNaplanNumeracy) \
-          .filter(StudentExamResponseNaplanNumeracy.year == requested_year) \
+          .filter(
+              StudentExamResponseNaplanNumeracy.exam_attempt_id.in_(
+                  db.query(StudentExamNaplanNumeracy.id)
+                  .filter(StudentExamNaplanNumeracy.quiz_id == quiz.id)
+              )
+          ) \
           .delete(synchronize_session=False)
     
+        # Delete exam attempts for this quiz
         db.query(StudentExamNaplanNumeracy) \
-          .filter(StudentExamNaplanNumeracy.year == requested_year) \
+          .filter(StudentExamNaplanNumeracy.quiz_id == quiz.id) \
           .delete(synchronize_session=False)
     
         db.commit()
+    
     except Exception:
         db.rollback()
         raise
     
-    print("🧹 Deleting existing NAPLAN Numeracy exams for year:", requested_year)
-
-    if requested_year is None:
-        raise HTTPException(
-            status_code=400,
-            detail="year is required to regenerate NAPLAN numeracy exams"
-        )
     
-    print("🧹 Deleting ALL existing NAPLAN Numeracy exams (all years)")
-
+    
     deleted_count = (
         db.query(ExamNaplanNumeracy)
         .delete(synchronize_session=False)
@@ -4359,7 +4339,6 @@ def generate_naplan_numeracy_exam(
 
     exam = ExamNaplanNumeracy(
         quiz_id=quiz.id,
-        year=requested_year,
         class_name="NAPLAN",
         subject="Numeracy",
         difficulty=quiz.difficulty,
