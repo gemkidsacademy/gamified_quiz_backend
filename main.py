@@ -4318,13 +4318,16 @@ def generate_naplan_numeracy_exam(
             detail="year is required to regenerate NAPLAN numeracy exams"
         )
     
+    print("🧹 Deleting ALL existing NAPLAN Numeracy exams (all years)")
+
     deleted_count = (
         db.query(ExamNaplanNumeracy)
-        .filter(ExamNaplanNumeracy.year == requested_year)
         .delete(synchronize_session=False)
     )
     
-    print(f"🗑️ Deleted {deleted_count} exam(s) for year {requested_year}")
+    print(f"🗑️ Deleted {deleted_count} exam(s) from exam_naplan_numeracy")
+    
+    
     # 9. Persist exam
     print("💾 Saving exam to exam_naplan_numeracy table...")
 
@@ -8394,6 +8397,241 @@ def get_reading_report(
         "answer_count": answer_count
     }
 
+
+@app.get("/api/student/exam-report/naplan-language-conventions")
+def get_naplan_language_conventions_report(
+    student_id: str = Query(..., description="External student id e.g. Gem_001_naplan"),
+    db: Session = Depends(get_db)
+):
+    print("\n================ NAPLAN LANGUAGE CONVENTIONS REPORT =================")
+    print("📥 Incoming request for student_id:", student_id)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found for student_id:", student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"👤 Resolved student: db_id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Latest completed Language Conventions attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanLanguageConventions)
+        .filter(
+            StudentExamNaplanLanguageConventions.student_id == student.id,
+            StudentExamNaplanLanguageConventions.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventions.completed_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No completed Language Conventions attempt found for student_id:", student.id)
+        raise HTTPException(
+            status_code=404,
+            detail="No completed NAPLAN Language Conventions exam found"
+        )
+
+    print(
+        "📌 Using exam attempt:",
+        "attempt_id =", attempt.id,
+        "completed_at =", attempt.completed_at
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Load responses (single source of truth)
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseNaplanLanguageConventions)
+        .filter(
+            StudentExamResponseNaplanLanguageConventions.exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        print("❌ No responses found for attempt_id:", attempt.id)
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for NAPLAN Language Conventions exam"
+        )
+
+    print(f"🧠 Loaded responses: {len(responses)} rows")
+
+    # --------------------------------------------------
+    # 4️⃣ OVERALL SUMMARY (Report B)
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.selected_option is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+
+    incorrect = sum(
+        1 for r in responses
+        if r.is_correct is False and r.selected_option is not None
+    )
+
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
+
+    score_percent = (
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    print("📊 OVERALL SUMMARY")
+    print("   total_questions:", total_questions)
+    print("   attempted:", attempted)
+    print("   correct:", correct)
+    print("   incorrect:", incorrect)
+    print("   not_attempted:", not_attempted)
+    print("   accuracy_percent:", accuracy_percent)
+    print("   score_percent:", score_percent)
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent,
+        "pass": None
+    }
+
+    # --------------------------------------------------
+    # 5️⃣ TOPIC-WISE PERFORMANCE (Report A)
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic or "Unknown"
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        topic_map[topic]["total"] += 1
+
+        if r.selected_option is None:
+            topic_map[topic]["not_attempted"] += 1
+        else:
+            topic_map[topic]["attempted"] += 1
+            if r.is_correct:
+                topic_map[topic]["correct"] += 1
+            else:
+                topic_map[topic]["incorrect"] += 1
+
+    topic_wise_performance = list(topic_map.values())
+
+    print("📚 TOPIC-WISE PERFORMANCE")
+    for t in topic_wise_performance:
+        print(
+            f"   {t['topic']} → "
+            f"total={t['total']}, "
+            f"attempted={t['attempted']}, "
+            f"correct={t['correct']}, "
+            f"incorrect={t['incorrect']}, "
+            f"not_attempted={t['not_attempted']}"
+        )
+
+    # --------------------------------------------------
+    # 6️⃣ TOPIC ACCURACY & RESULT (Report C)
+    # --------------------------------------------------
+    topic_accuracy = []
+
+    for t in topic_wise_performance:
+        attempted_t = t["attempted"]
+
+        accuracy_t = (
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
+        )
+
+        score_t = (
+            round((t["correct"] / t["total"]) * 100, 2)
+            if t["total"] else 0
+        )
+
+        topic_accuracy.append({
+            "topic": t["topic"],
+            "total_questions": t["total"],
+            "attempted": attempted_t,
+            "correct": t["correct"],
+            "incorrect": t["incorrect"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": score_t,
+            "pass": None
+        })
+
+    # --------------------------------------------------
+    # 7️⃣ IMPROVEMENT AREAS (Report D)
+    # --------------------------------------------------
+    improvement_areas = []
+
+    for t in topic_accuracy:
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy_percent": t["accuracy_percent"],
+            "score_percent": t["score_percent"],
+            "total_questions": t["total_questions"],
+            "limited_data": t["total_questions"] < 5
+        })
+
+    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+
+    print("📉 IMPROVEMENT AREAS (sorted by accuracy)")
+    for i in improvement_areas:
+        print(
+            f"   {i['topic']} → "
+            f"accuracy={i['accuracy_percent']}%, "
+            f"score={i['score_percent']}%, "
+            f"total={i['total_questions']}"
+        )
+
+    print("================ END LANGUAGE CONVENTIONS REPORT =================\n")
+
+    # --------------------------------------------------
+    # 8️⃣ Final response
+    # --------------------------------------------------
+    return {
+        "overall": overall,                                 # Report B
+        "topic_wise_performance": topic_wise_performance,   # Report A
+        "topic_accuracy": topic_accuracy,                   # Report C
+        "improvement_areas": improvement_areas              # Report D
+    }
 @app.get("/api/student/exam-report/naplan-numeracy")
 def get_naplan_numeracy_report(
     student_id: str = Query(..., description="External student id e.g. Gem_001_naplan"),
