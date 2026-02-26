@@ -543,7 +543,33 @@ class StudentExamResultsMathematicalReasoning(Base):
     # relationships (optional but recommended)
     attempt = relationship("StudentExam")
     student = relationship("Student")
-class StudentExamResultsNaplanNumeracy(Base):
+class StudentExamResultsNaplanReading(Base):
+    __tablename__ = "student_exam_results_naplan_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_naplan_reading.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    total_questions = Column(Integer, nullable=False)
+    correct_answers = Column(Integer, nullable=False)
+    wrong_answers = Column(Integer, nullable=False)
+    accuracy_percent = Column(Numeric(5, 2), nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # relationships
+    attempt = relationship("StudentExamNaplanReading")
+    student = relationship("Student")
+ class StudentExamResultsNaplanNumeracy(Base):
     __tablename__ = "student_exam_results_naplan_numeracy"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -19750,6 +19776,196 @@ def finish_naplan_language_conventions_exam(
         "exam_attempt_id": attempt.id,
         "accuracy_percent": accuracy
     }
+@app.post("/api/student/finish-exam/naplan-reading")
+def finish_naplan_reading_exam(
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    print("🔔 FINISH NAPLAN READING EXAM CALLED")
+    print("📦 RAW PAYLOAD:", payload)
+
+    # --------------------------------------------------
+    # 0️⃣ Extract + validate student_id
+    # --------------------------------------------------
+    external_student_id = payload.get("student_id")
+    answers = payload.get("answers", {})
+
+    if not external_student_id:
+        print("❌ Missing student_id")
+        raise HTTPException(status_code=400, detail="student_id is required")
+
+    print(f"👤 External Student ID: {external_student_id}")
+    print(f"📝 Answers received: {answers}")
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve Student (external → DB)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(external_student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found in finish-exam")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"👤 Resolved DB Student ID: {student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch latest unfinished Reading attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanReading)
+        .filter(
+            StudentExamNaplanReading.student_id == student.id,
+            StudentExamNaplanReading.completed_at.is_(None)
+        )
+        .order_by(StudentExamNaplanReading.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No active Reading attempt to finish for student.id =", student.id)
+        raise HTTPException(
+            status_code=400,
+            detail="No active NAPLAN Reading exam attempt to finish"
+        )
+
+    print(f"📌 Found attempt ID: {attempt.id}")
+    print(f"📌 completed_at: {attempt.completed_at}")
+
+    # --------------------------------------------------
+    # 3️⃣ Idempotent completion guard
+    # --------------------------------------------------
+    if attempt.completed_at is not None:
+        print("⚠️ Reading exam already completed, returning success")
+        return {
+            "status": "already_completed",
+            "exam_attempt_id": attempt.id
+        }
+
+    # --------------------------------------------------
+    # 4️⃣ Fetch linked Reading exam
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanReading)
+        .filter(ExamNaplanReading.id == attempt.exam_id)
+        .first()
+    )
+
+    if not exam:
+        print("❌ No Reading exam found for attempt.exam_id =", attempt.exam_id)
+        raise HTTPException(
+            status_code=404,
+            detail="NAPLAN Reading exam not found for attempt"
+        )
+
+    questions = exam.questions or []
+
+    print(
+        "🧠 DEBUG:",
+        "exam_id =", exam.id,
+        "questions_len =", len(questions),
+        "attempt_id =", attempt.id
+    )
+
+    # --------------------------------------------------
+    # 5️⃣ Clear previous responses (safety)
+    # --------------------------------------------------
+    deleted = (
+        db.query(StudentExamResponseNaplanReading)
+        .filter(
+            StudentExamResponseNaplanReading.exam_attempt_id == attempt.id
+        )
+        .delete()
+    )
+    print(f"🧹 Cleared previous Reading responses: {deleted}")
+
+    correct_count = 0
+    wrong_count = 0
+
+    # --------------------------------------------------
+    # 6️⃣ Evaluate answers
+    # --------------------------------------------------
+    for q in questions:
+        q_id = str(q.get("question_id") or q.get("id"))
+        correct_answer = q.get("correct_answer")
+        topic = q.get("topic")
+
+        student_answer = answers.get(q_id)
+
+        # 1️⃣ Normalize unanswered
+        if student_answer in (None, "", [], {}):
+            selected_option = None
+            is_correct = False
+        else:
+            selected_option = str(student_answer)
+
+            # 2️⃣ Evaluate correctness
+            if isinstance(correct_answer, list):
+                is_correct = sorted(correct_answer) == sorted(student_answer)
+            else:
+                is_correct = (
+                    str(student_answer).strip()
+                    == str(correct_answer).strip()
+                )
+
+        # 3️⃣ Count
+        if is_correct:
+            correct_count += 1
+        else:
+            wrong_count += 1
+
+        # 4️⃣ Persist response
+        db.add(
+            StudentExamResponseNaplanReading(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=attempt.id,
+                q_id=q_id,
+                topic=topic,
+                selected_option=selected_option,
+                correct_option=str(correct_answer),
+                is_correct=is_correct
+            )
+        )
+
+    # --------------------------------------------------
+    # 7️⃣ Save Reading results
+    # --------------------------------------------------
+    total_questions = len(questions)
+    accuracy = round(
+        (correct_count / total_questions) * 100, 2
+    ) if total_questions else 0
+
+    db.add(
+        StudentExamResultsNaplanReading(
+            student_id=student.id,
+            exam_attempt_id=attempt.id,
+            total_questions=total_questions,
+            correct_answers=correct_count,
+            wrong_answers=wrong_count,
+            accuracy_percent=accuracy
+        )
+    )
+
+    # 🔑 THIS IS THE CRITICAL LINE FOR YOUR 404 BUG
+    attempt.completed_at = datetime.now(timezone.utc)
+
+    db.commit()
+
+    print("🏁 NAPLAN Reading exam successfully completed")
+
+    return {
+        "status": "success",
+        "exam_attempt_id": attempt.id,
+        "accuracy_percent": accuracy
+    }
+ 
 @app.post("/api/student/finish-exam/naplan-numeracy")
 def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     print("🔔 FINISH NAPLAN NUMERACY EXAM CALLED")
