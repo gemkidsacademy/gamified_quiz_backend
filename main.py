@@ -569,7 +569,7 @@ class StudentExamResultsNaplanReading(Base):
     # relationships
     attempt = relationship("StudentExamNaplanReading")
     student = relationship("Student")
- class StudentExamResultsNaplanNumeracy(Base):
+class StudentExamResultsNaplanNumeracy(Base):
     __tablename__ = "student_exam_results_naplan_numeracy"
 
     id = Column(Integer, primary_key=True, index=True)
