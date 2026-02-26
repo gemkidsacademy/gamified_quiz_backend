@@ -23764,26 +23764,19 @@ def persist_question(
 
     Responsibilities:
     - Validate semantic correctness by question type
-    - Resolve image references
     - Decide safe display blocks
+    - Resolve image references
     - Persist question + stem image metadata
     """
 
     try:
         # --------------------------------------------------
-        # Validation + image resolution
+        # 1. Validation
         # --------------------------------------------------
         validate_question_by_type(question_type, q)
-        resolve_images(display_blocks, db, request_id)
 
         # --------------------------------------------------
-        # Normalize reference images (Type 5-safe)
-        # --------------------------------------------------
-        reference_images = reference_images or []
-        has_stem_images = bool(reference_images)
-
-        # --------------------------------------------------
-        # Decide which blocks are safe to persist
+        # 2. Decide which blocks are safe to persist
         # --------------------------------------------------
         if question_type == 2:
             # Type 2 provides pre-built semantic blocks
@@ -23794,7 +23787,18 @@ def persist_question(
             display_blocks = question_block
 
         # --------------------------------------------------
-        # Build student-visible question text
+        # 3. Resolve images against chosen blocks
+        # --------------------------------------------------
+        resolve_images(display_blocks, db, request_id)
+
+        # --------------------------------------------------
+        # 4. Stem image metadata (Type 5 safe)
+        # --------------------------------------------------
+        reference_images = reference_images or []
+        has_stem_images = bool(reference_images)
+
+        # --------------------------------------------------
+        # 5. Build student-visible question text
         # --------------------------------------------------
         question_text = "\n\n".join(
             b["content"]
@@ -23803,7 +23807,7 @@ def persist_question(
         )
 
         # --------------------------------------------------
-        # Persist question
+        # 6. Persist
         # --------------------------------------------------
         obj = QuestionNumeracyLC(
             question_type=question_type,
@@ -23817,8 +23821,6 @@ def persist_question(
             options=q.get("options"),
             correct_answer=str(q["correct_answer"]).strip(),
             has_stem_images=has_stem_images,
-            # ✅ Uncomment ONLY if your model has this column
-            # reference_images=reference_images,
         )
 
         db.add(obj)
@@ -23836,9 +23838,6 @@ def persist_question(
         return obj
 
     except Exception as e:
-        # --------------------------------------------------
-        # CRITICAL: rollback to avoid poisoned session
-        # --------------------------------------------------
         if db:
             db.rollback()
 
@@ -23846,8 +23845,7 @@ def persist_question(
             f"[{request_id}] ❌ FAILED to persist question "
             f"(type={question_type}) | error={e}"
         )
-        raise
-     
+        raise     
 def log_start(request_id, file):
     print("\n" + "=" * 70)
     print(f"🚀 GPT-UPLOAD-NAPLAN START | request_id={request_id}")
