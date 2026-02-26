@@ -4272,7 +4272,14 @@ def generate_naplan_numeracy_exam(
                 "question_type": q.question_type,
                 "topic": q.topic,
                 "difficulty": q.difficulty,
+            
+                # ✅ ADD THIS
+                "question_text": q.question_text,
+            
+                # Interactive content
                 "question_blocks": build_question_blocks(q),
+            
+                # Evaluation
                 "options": q.options,
                 "correct_answer": q.correct_answer,
             })
