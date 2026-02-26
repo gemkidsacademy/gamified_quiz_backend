@@ -8053,7 +8053,6 @@ def create_naplan_numeracy_quiz(
 
         deleted_count = (
             db.query(QuizNaplanNumeracy)
-            .filter(QuizNaplanNumeracy.year == quiz.year)
             .delete(synchronize_session=False)
         )
         
