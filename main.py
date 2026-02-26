@@ -23997,14 +23997,15 @@ def ws_validate_block(parsed: dict) -> None:
         )
 
     # Rule 7: Every selectable word must appear in sentence (word-boundary safe)
+    normalized_sentence = normalize_ws_word(sentence)
+
     for word in normalized_words:
         pattern = rf"\b{re.escape(word)}\b"
-        if not re.search(pattern, sentence, flags=re.IGNORECASE):
+        if not re.search(pattern, normalized_sentence, flags=re.IGNORECASE):
             raise ValueError(
                 f"WORD_SELECTION validation failed: "
                 f"Selectable word '{word}' does not appear as a standalone word in SENTENCE"
             )
-
 
 
 def persist_word_selection_question(
