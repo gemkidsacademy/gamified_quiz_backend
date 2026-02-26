@@ -4302,19 +4302,34 @@ def generate_naplan_numeracy_exam(
     
     
     try:
-    # Delete responses linked to attempts for this quiz
+    # 1️⃣ Find exams generated from this quiz
+        exam_ids_subquery = (
+            db.query(ExamNaplanNumeracy.id)
+            .filter(ExamNaplanNumeracy.quiz_id == quiz.id)
+        )
+    
+        # 2️⃣ Delete student responses
         db.query(StudentExamResponseNaplanNumeracy) \
           .filter(
               StudentExamResponseNaplanNumeracy.exam_attempt_id.in_(
                   db.query(StudentExamNaplanNumeracy.id)
-                  .filter(StudentExamNaplanNumeracy.quiz_id == quiz.id)
+                  .filter(
+                      StudentExamNaplanNumeracy.exam_id.in_(exam_ids_subquery)
+                  )
               )
           ) \
           .delete(synchronize_session=False)
     
-        # Delete exam attempts for this quiz
+        # 3️⃣ Delete student exam attempts
         db.query(StudentExamNaplanNumeracy) \
-          .filter(StudentExamNaplanNumeracy.quiz_id == quiz.id) \
+          .filter(
+              StudentExamNaplanNumeracy.exam_id.in_(exam_ids_subquery)
+          ) \
+          .delete(synchronize_session=False)
+    
+        # 4️⃣ Delete exams
+        db.query(ExamNaplanNumeracy) \
+          .filter(ExamNaplanNumeracy.quiz_id == quiz.id) \
           .delete(synchronize_session=False)
     
         db.commit()
@@ -4325,13 +4340,7 @@ def generate_naplan_numeracy_exam(
     
     
     
-    deleted_count = (
-        db.query(ExamNaplanNumeracy)
-        .delete(synchronize_session=False)
-    )
-    
-    print(f"🗑️ Deleted {deleted_count} exam(s) from exam_naplan_numeracy")
-    
+        
     
     # 9. Persist exam
     print("💾 Saving exam to exam_naplan_numeracy table...")
