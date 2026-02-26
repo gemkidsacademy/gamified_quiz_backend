@@ -23135,7 +23135,21 @@ def is_header_line(line: str) -> bool:
     if not line:
         return False
     return bool(HEADER_RE.match(line.strip()))
+def normalize_word_from_docx(value: str) -> str:
+    """
+    Normalizes text coming from Word documents:
+    - removes non-breaking spaces
+    - trims whitespace
+    - collapses weird Word artifacts
+    """
+    if not value:
+        return ""
 
+    return (
+        value
+        .replace("\u00A0", " ")  # non-breaking space
+        .strip()
+    )
 def ws_extract_selectable_words(ctx):
     """
     Extracts and normalizes SELECTABLE_WORDS using a ParsingCursor.
@@ -24246,9 +24260,9 @@ def ws_extract_correct_answer(ctx):
         lines.append(current)
         ctx.next()
 
-    answer = " ".join(lines).strip()
+    raw_answer = " ".join(lines)
+    answer = normalize_ws_word(raw_answer)
     return answer if answer else None
-
 
 def validate_single_question_type(exam_block):
     found = set()
