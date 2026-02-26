@@ -16369,6 +16369,7 @@ def handle_cloze_question(
         question_type=5,
         question_block=question_block,
         meta=meta,
+        reference_images=q.get("reference_images", []),
         db=db,
         request_id=request_id,
         summary=summary,
@@ -16412,11 +16413,23 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
     - Options are A:, B:, C: (Word whitespace tolerant)
     - CORRECT_ANSWER follows CORRECT_ANSWER:
     - Order independent
+    - Reference images are supported
     """
 
     print("🔍 [CLOZE] START extract_cloze_from_exam_block")
 
     try:
+        # --------------------------------------------------
+        # 0. Extract reference images (Type 5 only)
+        # --------------------------------------------------
+        reference_images = [
+            el["name"]
+            for el in block_elements
+            if el.get("type") == "image" and el.get("role") == "reference"
+        ]
+
+        print(f"🖼️ [CLOZE] reference_images = {reference_images}")
+
         # --------------------------------------------------
         # 1. Flatten exam block into normalized text lines
         # --------------------------------------------------
@@ -16428,20 +16441,15 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
                 continue
 
             for raw_line in text.splitlines():
-                # Normalize Word weirdness
-                line = raw_line.replace("\u00a0", " ")  # non-breaking space
-                line = re.sub(r"\s+", " ", line)        # collapse whitespace
+                line = raw_line.replace("\u00a0", " ")
+                line = re.sub(r"\s+", " ", line)
                 line = line.strip()
 
                 if line:
                     lines.append(line)
 
-        print(f"🔍 [CLOZE] Flattened lines ({len(lines)}):")
-        for l in lines:
-            print(f"   • {repr(l)}")
-
         # --------------------------------------------------
-        # 2. Extract CLOZE text (must be exactly one)
+        # 2. Extract CLOZE text
         # --------------------------------------------------
         cloze_lines = [l for l in lines if "{{dropdown}}" in l]
 
@@ -16452,10 +16460,9 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
             )
 
         cloze_text = cloze_lines[0]
-        print(f"🧩 [CLOZE] cloze_text = {cloze_text}")
 
         # --------------------------------------------------
-        # 3. Extract OPTIONS (Word-proof)
+        # 3. Extract OPTIONS
         # --------------------------------------------------
         option_pattern = re.compile(r"^([A-Z])\s*:\s*(.+)$")
         options: dict[str, str] = {}
@@ -16463,10 +16470,7 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
         for line in lines:
             match = option_pattern.match(line)
             if match:
-                key = match.group(1)
-                value = match.group(2).strip()
-                options[key] = value
-                print(f"🅾️ [CLOZE] option {key} = {value}")
+                options[match.group(1)] = match.group(2).strip()
 
         if not options:
             raise ValueError("CLOZE missing options")
@@ -16491,10 +16495,8 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
                 f"Correct answer '{correct_answer}' not in options {list(options.keys())}"
             )
 
-        print(f"🎯 [CLOZE] correct_answer = {correct_answer}")
-
         # --------------------------------------------------
-        # 5. Extract METADATA (order-agnostic)
+        # 5. Extract METADATA
         # --------------------------------------------------
         meta = {
             "class_name": None,
@@ -16523,8 +16525,6 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
             elif key == "difficulty":
                 meta["difficulty"] = value
 
-        print("📦 [CLOZE] metadata =", meta)
-
         # --------------------------------------------------
         # 6. Final payload
         # --------------------------------------------------
@@ -16539,23 +16539,15 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
             "correct_answer": correct_answer,
             "answer_type": "CLOZE_DROPDOWN",
             "options_source": "document",
+            "reference_images": reference_images,  # ⭐ NEW
         }
 
-        print("✅ [CLOZE] FINAL EXTRACTED QUESTION:")
-        for k, v in result.items():
-            print(f"   {k}: {v}")
-
-        print("🔍 [CLOZE] END extract_cloze_from_exam_block")
+        print("✅ [CLOZE] FINAL EXTRACTED QUESTION:", result)
         return result
 
-    except Exception as e:
+    except Exception:
         print("❌ [CLOZE] EXTRACTOR FAILED")
-        print(f"❌ [CLOZE] Error: {e}")
-        print("❌ [CLOZE] Raw block contents:")
-        for el in block_elements:
-            print(repr(el.get("content")))
         raise
-
 def parse_cloze_from_document(block_elements: list[dict]) -> dict:
     """
     Deterministic CLOZE (type 5) parser.
@@ -21976,65 +21968,49 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
 
     def flush_buffer():
         nonlocal buffer, current_mode
-
+    
         if not buffer or not current_mode:
             buffer = []
             current_mode = None
             return
-
+    
         print(f"🧩 [PARSE] Flushing buffer | mode={current_mode} | lines={len(buffer)}")
-
+    
         if current_mode == "cloze":
             content = " ".join(buffer).strip()
             if not content:
                 raise ValueError("[PARSE] Empty CLOZE content detected")
-
+    
             blocks.append({
                 "type": "cloze",
                 "content": content
             })
-
+    
         elif current_mode == "options":
             options = []
-
+    
             for line in buffer:
-                
                 match = re.match(r"^([A-Za-z])[\.\:\)]\s*(.+)$", line)
-
-                
                 if not match:
                     raise ValueError(
-                        f"[PARSE] Invalid option format: {repr(line)} "
-                        "(expected A: 1 or A. 1 or A) 1)"
+                        f"[PARSE] Invalid option format: {repr(line)}"
                     )
-                
-                label = match.group(1).upper()
-                text = match.group(2).strip()
-
-                label = label.strip()
-                text = text.strip()
-
-                if not label or not text:
-                    raise ValueError(
-                        f"[PARSE] Invalid option entry: {repr(line)}"
-                    )
-
+    
                 options.append({
-                    "id": label,
-                    "text": text
+                    "id": match.group(1).upper().strip(),
+                    "text": match.group(2).strip()
                 })
-
+    
             if not options:
                 raise ValueError("[PARSE] OPTIONS section declared but no options found")
-
+    
             blocks.append({
                 "type": "options",
                 "options": options
             })
-
+    
         buffer = []
         current_mode = None
-
     # --------------------------------------------------
     # Walk DOCX paragraphs in order
     # --------------------------------------------------
@@ -22077,28 +22053,27 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # IMAGES declaration (MUST be global)
         # --------------------------------------------------
         if upper == "IMAGES:" or upper.startswith("IMAGES:"):
-           flush_buffer()
-           print(f"🧩 [PARSE] OPTION IMAGES declaration detected: {text}")
-       
-           trailing = text.split(":", 1)[1].strip()
-       
-           # Case 1: filenames on same line
-           if trailing:
-               for img in trailing.split(","):
-                   name = img.strip()
-                   if not name:
-                       raise ValueError("[PARSE] Empty image name in IMAGES declaration")
-       
-                   blocks.append({
-                       "type": "image",
-                       "name": name,
-                       "role": "option"   # ⭐ KEY FIX
-                   })
-               continue
-       
-           # Case 2: filenames on subsequent lines
-           current_mode = "option_images"
-           continue
+            prev_mode = current_mode
+            flush_buffer()
+            
+            trailing = text.split(":", 1)[1].strip()
+            
+            role = "option" if prev_mode == "options" else "reference"        
+            if trailing:
+                for img in trailing.split(","):
+                    name = img.strip()
+                    if not name:
+                        raise ValueError("[PARSE] Empty image name in IMAGES declaration")
+        
+                    blocks.append({
+                        "type": "image",
+                        "name": name,
+                        "role": role
+                    })
+                continue
+        
+            current_mode = "option_images" if role == "option" else "reference_images"
+            continue
          
         # --------------------------------------------------
         # REFERENCE_IMAGE declaration (semantic stem image)
@@ -23772,17 +23747,21 @@ def persist_question(
     question_type,
     question_block,
     meta,
-    db,
-    request_id,
-    summary,
-    block_idx,
-    stem_blocks=None,   # optional, non-breaking
+    reference_images=None,
+    db=None,
+    request_id=None,
+    summary=None,
+    block_idx=None,
+    stem_blocks=None,
 ):
     """
     Persist a question safely.
 
-    - question_block: raw parsed exam block (unsafe by default)
-    - stem_blocks: exam-safe blocks (text + images only, optional)
+    Responsibilities:
+    - Validate semantic correctness by question type
+    - Resolve image references
+    - Decide safe display blocks
+    - Persist question + stem image metadata
     """
 
     try:
@@ -23790,39 +23769,36 @@ def persist_question(
         # Validation + image resolution
         # --------------------------------------------------
         validate_question_by_type(question_type, q)
-        resolve_images(q, db, request_id)
+        resolve_images(display_blocks, db, request_id)
+
+        # --------------------------------------------------
+        # Normalize reference images (Type 5-safe)
+        # --------------------------------------------------
+        reference_images = reference_images or []
+        has_stem_images = bool(reference_images)
 
         # --------------------------------------------------
         # Decide which blocks are safe to persist
         # --------------------------------------------------
-        # --------------------------------------------------
-        # Decide which blocks are safe to persist
-        # --------------------------------------------------
         if question_type == 2:
-            # Type 2 has fully-constructed semantic blocks upstream
+            # Type 2 provides pre-built semantic blocks
             display_blocks = q["question_blocks"]
         elif stem_blocks is not None:
             display_blocks = stem_blocks
         else:
             display_blocks = question_block
+
         # --------------------------------------------------
         # Build student-visible question text
         # --------------------------------------------------
-        if question_type == 5:
-            # ✅ CLOZE = full stem + cloze line
-            question_text = "\n\n".join(
-                b["content"]
-                for b in display_blocks
-                if b.get("type") == "text"
-            )
-        else:
-            question_text = "\n\n".join(
-                b["content"]
-                for b in display_blocks
-                if b.get("type") == "text"
-            )
+        question_text = "\n\n".join(
+            b["content"]
+            for b in display_blocks
+            if b.get("type") == "text"
+        )
+
         # --------------------------------------------------
-        # Persist
+        # Persist question
         # --------------------------------------------------
         obj = QuestionNumeracyLC(
             question_type=question_type,
@@ -23835,17 +23811,21 @@ def persist_question(
             question_blocks=filter_display_blocks(display_blocks),
             options=q.get("options"),
             correct_answer=str(q["correct_answer"]).strip(),
-            has_stem_images=q.get("has_stem_images", False),
+            has_stem_images=has_stem_images,
+            # ✅ Uncomment ONLY if your model has this column
+            # reference_images=reference_images,
         )
 
         db.add(obj)
         db.commit()
         db.refresh(obj)
 
-        summary.saved += 1
+        if summary:
+            summary.saved += 1
+
         print(
             f"[{request_id}] ✅ SAVED question "
-            f"(id={obj.id}, type={question_type})"
+            f"(id={obj.id}, type={question_type}, images={has_stem_images})"
         )
 
         return obj
@@ -23854,14 +23834,15 @@ def persist_question(
         # --------------------------------------------------
         # CRITICAL: rollback to avoid poisoned session
         # --------------------------------------------------
-        db.rollback()
+        if db:
+            db.rollback()
 
         print(
             f"[{request_id}] ❌ FAILED to persist question "
             f"(type={question_type}) | error={e}"
         )
         raise
-
+     
 def log_start(request_id, file):
     print("\n" + "=" * 70)
     print(f"🚀 GPT-UPLOAD-NAPLAN START | request_id={request_id}")
@@ -23977,47 +23958,33 @@ def validate_question_by_type(qt: int, q: dict):
     else:
         raise ValueError(f"Unsupported question_type: {qt}")
 
-def resolve_images(q: dict, db: Session, request_id: str):
-    blocks = q.get("question_blocks", [])
-
+def resolve_images(blocks: list[dict], db: Session, request_id: str):
     for block in blocks:
         if block.get("type") != "image":
             continue
 
-        # ✅ Skip images already resolved to GCS
         src = block.get("src", "")
         if src.startswith("https://storage.googleapis.com/"):
-            print(
-                f"[{request_id}] 🖼️ Image already resolved, skipping: {src}"
-            )
+            print(f"[{request_id}] 🖼️ Image already resolved, skipping: {src}")
             continue
 
-        raw_name = (
-            block.get("name")
-            or ""
-        ).strip()
-
+        raw_name = (block.get("name") or "").strip()
         print(f"[{request_id}] 🖼️ Resolving image: '{raw_name}'")
 
         record = (
             db.query(UploadedImage)
-            .filter(
-                func.trim(UploadedImage.original_name) == raw_name
-            )
+            .filter(func.trim(UploadedImage.original_name) == raw_name)
             .first()
         )
 
         if not record:
-            raise ValueError(
-                f"Image '{raw_name}' not uploaded yet"
-            )
+            raise ValueError(f"Image '{raw_name}' not uploaded yet")
 
         block.pop("name", None)
         block["src"] = record.gcs_url
 
-        print(
-            f"[{request_id}] ✅ Image resolved → {record.gcs_url}"
-        )
+        print(f"[{request_id}] ✅ Image resolved → {record.gcs_url}")
+     
 def is_cloze_exam(exam_block: list[dict]) -> bool:
     for el in exam_block:
         text = el.get("content", "")
@@ -24369,8 +24336,20 @@ def ws_extract_correct_answer(ctx):
     return answer if answer else None
 
 def validate_single_question_type(exam_block):
-    found = set()
+    """
+    Validates that an exam block declares a single question_type
+    and that its structure is compatible with that type.
 
+    Currently enforced rules:
+    - Only one question_type declaration is allowed
+    - Type 5 (CLOZE) questions may only contain reference images
+    """
+
+    question_type = None
+
+    # ------------------------------
+    # Extract question_type
+    # ------------------------------
     for item in exam_block:
         if item.get("type") != "text":
             continue
@@ -24378,14 +24357,29 @@ def validate_single_question_type(exam_block):
         text = (item.get("content") or "").lower()
 
         if "question_type:" in text:
-            # extract the number crudely but safely
-            found.add(text.strip())
+            value = text.split("question_type:", 1)[1].strip()
 
-    if len(found) > 1:
-        raise ValueError(
-            f"Invalid exam block: multiple question_type declarations found: {found}"
-        )
+            if question_type is not None and value != question_type:
+                raise ValueError(
+                    f"Invalid exam block: multiple question_type declarations "
+                    f"found ({question_type}, {value})"
+                )
 
+            question_type = value
+
+    if question_type is None:
+        raise ValueError("Invalid exam block: missing question_type declaration")
+
+    # ------------------------------
+    # Validate images for Type 5
+    # ------------------------------
+    if question_type == "5":
+        for item in exam_block:
+            if item.get("type") == "image":
+                if item.get("role") != "reference":
+                    raise ValueError(
+                        "Type 5 (CLOZE) questions may only contain reference images"
+                    )
 
 
 @app.post("/upload-word-naplan")
