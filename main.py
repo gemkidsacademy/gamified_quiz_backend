@@ -18665,7 +18665,8 @@ def hydrate_naplan_question_structure(raw_questions):
                 # Skip option labels (A:, B:, C:)
                 if len(line) >= 2 and line[1] == ":":
                     continue
-
+                if line in {"A", "B", "C", "D", "E", "F"}:
+                    continue
                 text_blocks.append({
                     "type": "text",
                     "content": line
