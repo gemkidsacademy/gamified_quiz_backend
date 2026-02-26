@@ -16464,14 +16464,14 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
         # --------------------------------------------------
         # 3. Extract OPTIONS
         # --------------------------------------------------
-        option_pattern = re.compile(r"^([A-Z])\s*:\s*(.+)$")
+        option_pattern = re.compile(r"^([A-Z])\s*[\:\.\)]\s*(.+)$")
         options: dict[str, str] = {}
 
         for line in lines:
             match = option_pattern.match(line)
             if match:
                 options[match.group(1)] = match.group(2).strip()
-
+        print(f"🅾️ [CLOZE] Parsed options = {options}")
         if not options:
             raise ValueError("CLOZE missing options")
 
