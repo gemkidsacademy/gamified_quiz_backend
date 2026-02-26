@@ -23171,12 +23171,20 @@ def ws_extract_selectable_words(ctx):
         raise ValueError("SELECTABLE_WORDS cannot be empty")
 
     # Normalize words
+    # Normalize words (defensive against copy-paste / soft line breaks)
     selectable_words = []
+    
     for raw in raw_words:
-        word = normalize_ws_word(raw)
-        if word:
-            selectable_words.append(word)
-
+        # Normalize spacing
+        cleaned = normalize_ws_word(raw)
+        if not cleaned:
+            continue
+    
+        # Split on whitespace to handle cases like "Mark Sarah Leo Mia"
+        parts = cleaned.split()
+    
+        for part in parts:
+            selectable_words.append(part)
     # Validate single-word tokens
     for w in selectable_words:
         if not WORD_RE.match(w):
