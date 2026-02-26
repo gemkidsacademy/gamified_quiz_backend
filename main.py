@@ -23853,13 +23853,6 @@ def validate_question_by_type(qt: int, q: dict):
         raise ValueError(f"Unsupported question_type: {qt}")
 
 def resolve_images(q: dict, db: Session, request_id: str):
-    """
-    Resolves image blocks in q["question_blocks"] by mapping
-    original image names to stored GCS URLs.
-
-    Mutates q["question_blocks"] in place.
-    """
-
     blocks = q.get("question_blocks", [])
 
     for block in blocks:
@@ -23870,15 +23863,14 @@ def resolve_images(q: dict, db: Session, request_id: str):
             block.get("name")
             or block.get("src")
             or ""
-        ).strip().lower()
+        ).strip()   # ✅ KEEP ORIGINAL CASING
 
         print(f"[{request_id}] 🖼️ Resolving image: '{raw_name}'")
 
         record = (
             db.query(UploadedImage)
             .filter(
-                func.lower(func.trim(UploadedImage.original_name))
-                == raw_name
+                func.trim(UploadedImage.original_name) == raw_name
             )
             .first()
         )
@@ -23888,13 +23880,13 @@ def resolve_images(q: dict, db: Session, request_id: str):
                 f"Image '{raw_name}' not uploaded yet"
             )
 
-        # Replace image reference
         block.pop("name", None)
         block["src"] = record.gcs_url
 
         print(
             f"[{request_id}] ✅ Image resolved → {record.gcs_url}"
         )
+
 def is_cloze_exam(exam_block: list[dict]) -> bool:
     for el in exam_block:
         text = el.get("content", "")
