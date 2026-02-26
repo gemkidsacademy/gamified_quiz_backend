@@ -18096,7 +18096,6 @@ def normalize_naplan_numeracy_questions_live(raw_questions):
     normalized = []
 
     for q in raw_questions or []:
-
         blocks = q.get("question_blocks") or []
         correct_answer = str(q.get("correct_answer")).strip()
         display_blocks = []
@@ -18113,24 +18112,28 @@ def normalize_naplan_numeracy_questions_live(raw_questions):
                 continue
             if lowered.startswith("correct_answer"):
                 continue
-
             if content == correct_answer:
                 continue
 
             display_blocks.append(block)
 
         normalized.append({
-            "id": q["id"],  # ← FIXED
-            "question_type": q.get("question_type"),  # ← FIXED
+            "id": q["id"],
+            "question_type": q.get("question_type"),
             "topic": q.get("topic"),
             "difficulty": q.get("difficulty"),
-            "question_blocks": display_blocks,  # ← FIXED
-            "options": q.get("options")
+
+            # ✅ FIX: preserve question_text
+            "question_text": q.get("question_text"),
+
+            "question_blocks": display_blocks,
+            "options": q.get("options"),
+            "correct_answer": q.get("correct_answer"),
         })
 
     return normalized
 
-   
+
 def normalize_correct_option_for_db(correct):
     if correct is None:
         return None
