@@ -23973,7 +23973,7 @@ def ws_validate_block(parsed: dict) -> None:
             raise ValueError(
                 "WORD_SELECTION validation failed: SELECTABLE_WORDS must be single words only"
             )
-        normalized_words.append(w.strip())
+        normalized_words.append(normalize_ws_word(w))
 
     # Rule 4: CORRECT_ANSWER exists
     if not correct_answer or not correct_answer.strip():
@@ -23981,7 +23981,7 @@ def ws_validate_block(parsed: dict) -> None:
             "WORD_SELECTION validation failed: CORRECT_ANSWER is missing or empty"
         )
 
-    answer = correct_answer.strip()
+    answer = normalize_ws_word(correct_answer)
 
     # Rule 5: CORRECT_ANSWER must be a single word
     if " " in answer:
