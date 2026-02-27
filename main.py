@@ -16308,21 +16308,19 @@ def is_cloze_question(blocks: list) -> bool:
 def extract_cloze_options_from_blocks(block_elements):
     """
     Extract CLOZE options from structured OPTIONS block.
-    This runs AFTER parse_docx_blocks, not on raw text.
+    Runs AFTER parse_docx_blocks.
     """
 
     for el in block_elements:
         if el.get("type") == "options":
             opts = el.get("options", [])
-
             if not opts:
                 break
 
-            # return plain option values: ["A", "B", "C", "D"]
-            return [o["text"] for o in opts]
+            # ✅ dict shape REQUIRED by validator
+            return {o["id"]: o["text"] for o in opts}
 
-    raise ValueError("CLOZE missing options")
- 
+    raise ValueError("CLOZE missing options") 
 def handle_cloze_question(
     q,
     question_block,
