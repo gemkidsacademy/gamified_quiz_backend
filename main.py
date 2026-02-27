@@ -16451,26 +16451,14 @@ def extract_cloze_options(question_block):
     raise ValueError("CLOZE question has no OPTIONS")
  
 def strip_cloze_option_text(question_block):
-    stripped = []
-    in_options = False
-
-    for b in question_block:
-        if b.get("type") == "text":
-            line = b["content"].strip().upper()
-
-            if line == "OPTIONS:":
-                in_options = True
-                continue
-
-            if in_options:
-                if line.startswith(("ANSWER_TYPE", "CORRECT_ANSWER")):
-                    in_options = False
-                    stripped.append(b)
-                continue
-
-        stripped.append(b)
-
-    return stripped
+    """
+    Remove structured OPTIONS blocks after they have been extracted
+    for CLOZE dropdowns.
+    """
+    return [
+        b for b in question_block
+        if b.get("type") != "options"
+    ]
  
 def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
     """
