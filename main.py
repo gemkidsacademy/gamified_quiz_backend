@@ -22112,10 +22112,19 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             current_mode = "options"
             print("🧩 [PARSE] Entering OPTIONS mode")
             continue
-
+        # -------------------------------
+        # Hard section resets
+        # -------------------------------
+        if upper == "QUESTION_TEXT:":
+            flush_buffer()
+            current_mode = None
+            blocks.append({"type": "text", "content": line})
+            continue
         # -------------------------------
         # Inside OPTIONS
         # -------------------------------
+        # Only buffer options if we are explicitly inside OPTIONS
+        
         if current_mode == "options":
             if upper in {
                 "CORRECT_ANSWER:",
