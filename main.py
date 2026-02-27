@@ -16444,33 +16444,12 @@ import re
 
 import re
 def extract_cloze_options(question_block):
-    options = []
-    in_options = False
-
     for b in question_block:
-        if b.get("type") != "text":
-            continue
+        if b.get("type") == "options":
+            return b["options"]
 
-        line = b["content"].strip()
-
-        if line.upper() == "OPTIONS:":
-            in_options = True
-            continue
-
-        if in_options:
-            # stop when answer type or correct answer starts
-            if line.upper().startswith(("ANSWER_TYPE", "CORRECT_ANSWER")):
-                break
-
-            if ":" in line:
-                _, value = line.split(":", 1)
-                options.append(value.strip())
-
-    if not options:
-        raise ValueError("CLOZE question has no OPTIONS")
-
-    return options
-
+    raise ValueError("CLOZE question has no OPTIONS")
+ 
 def strip_cloze_option_text(question_block):
     stripped = []
     in_options = False
