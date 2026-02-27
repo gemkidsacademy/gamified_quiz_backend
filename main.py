@@ -22110,23 +22110,15 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
 
         raw_text = "".join(texts)
 
-        # 🔒 PRESERVE LINES IN OPTIONS MODE
-        if current_mode == "options":
-            lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
-        else:
-            text = " ".join(raw_text.split())
-
-            # 🚫 DO NOT APPLY REGEX INSIDE OPTIONS
-            # 🚫 NEVER split options before OPTIONS:
-            if current_mode not in {"options"}:
-                text = re.sub(
-                    r"([A-Z])\s*[\:\.\)]\s*([^A-Z]+)(?=[A-Z]\s*[\:\.\)])",
-                    r"\1: \2\n",
-                    text
-                )
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
-
-        for line in lines:
+        text = "\n".join(
+            " ".join(line.split())
+            for line in raw_text.splitlines()
+            if line.strip()
+        )
+    
+        upper = text.upper()
+        
+        for line in text.splitlines():
             upper = line.upper()
             print(f"🧩 [PARSE] Paragraph[{idx}]: {repr(line)}")
 
@@ -22157,7 +22149,13 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             # Inside OPTIONS
             # -------------------------------
             if current_mode == "options":
-                if re.match(r"^[A-Z_]+:", upper):
+                # Exit OPTIONS only on real section headers
+                if upper in {
+                    "CORRECT_ANSWER:",
+                    "ANSWER_TYPE:",
+                    "QUESTION_TEXT:",
+                    "CLOZE:",
+                } or upper.startswith("==="):
                     print(f"🧩 [PARSE] Exiting OPTIONS mode on: {line}")
                     flush_buffer()
                     current_mode = None
