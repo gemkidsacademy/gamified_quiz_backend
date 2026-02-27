@@ -22072,14 +22072,21 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         elif current_mode == "options":
             options = []
             for line in buffer:
+                # Skip section headers defensively
+                if re.match(r"^[A-Z_]+:", line.upper()):
+                    print(f"🧩 [PARSE] Skipping non-option line in OPTIONS buffer: {line}")
+                    continue
+             
                 match = re.match(r"^([A-Za-z])[\.\:\)]\s*(.+)$", line)
                 if not match:
                     raise ValueError(f"[PARSE] Invalid option format: {repr(line)}")
-
+             
                 options.append({
                     "id": match.group(1).upper(),
                     "text": match.group(2).strip()
                 })
+
+                
 
             if not options:
                 raise ValueError("[PARSE] OPTIONS declared but empty")
