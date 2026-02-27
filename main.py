@@ -22143,15 +22143,22 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         
         if current_mode == "options":
             if upper in {
-                "CORRECT_ANSWER:",
-                "ANSWER_TYPE:",
-                "QUESTION_TEXT:",
-                "CLOZE:",
-            } or upper.startswith("==="):
-                print(f"🧩 [PARSE] Exiting OPTIONS mode on: {line}")
-                flush_buffer()
-                current_mode = None
-                continue  # 🔴 CRITICAL
+               "CORRECT_ANSWER:",
+               "ANSWER_TYPE:",
+               "QUESTION_TEXT:",
+               "CLOZE:",
+           } or upper.startswith("==="):
+               print(f"🧩 [PARSE] Exiting OPTIONS mode on: {line}")
+               flush_buffer()
+               current_mode = None
+           
+               # ✅ PRESERVE the marker
+               blocks.append({
+                   "type": "text",
+                   "content": line
+               })
+           
+               continue
             else:
                 print(f"🧩 [PARSE] Buffering option line: {line}")
                 buffer.append(line)
