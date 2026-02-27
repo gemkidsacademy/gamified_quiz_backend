@@ -22145,6 +22145,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 print("🧩 [PARSE] Entering OPTIONS mode")
                 continue
 
+            
             # -------------------------------
             # Inside OPTIONS
             # -------------------------------
@@ -22159,11 +22160,12 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                     print(f"🧩 [PARSE] Exiting OPTIONS mode on: {line}")
                     flush_buffer()
                     current_mode = None
+                    # ⬅️ IMPORTANT: do NOT buffer this line
+                    # let it fall through and be processed normally
                 else:
                     print(f"🧩 [PARSE] Buffering option line: {line}")
                     buffer.append(line)
                     continue
-
             # -------------------------------
             # Inside CLOZE
             # -------------------------------
