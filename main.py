@@ -16518,20 +16518,7 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
 
         cloze_text = cloze_lines[0]
 
-        # --------------------------------------------------
-        # 3. Extract OPTIONS
-        # --------------------------------------------------
-        option_pattern = re.compile(r"^([A-Z])\s*[\:\.\)]\s*(.+)$")
-        options: dict[str, str] = {}
-
-        for line in lines:
-            match = option_pattern.match(line)
-            if match:
-                options[match.group(1)] = match.group(2).strip()
-        print(f"🅾️ [CLOZE] Parsed options = {options}")
-        if not options:
-            raise ValueError("CLOZE missing options")
-
+        
         # --------------------------------------------------
         # 4. Extract CORRECT_ANSWER
         # --------------------------------------------------
@@ -16547,11 +16534,7 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
         if not correct_answer:
             raise ValueError("CLOZE missing correct_answer")
 
-        if correct_answer not in options:
-            raise ValueError(
-                f"Correct answer '{correct_answer}' not in options {list(options.keys())}"
-            )
-
+        
         # --------------------------------------------------
         # 5. Extract METADATA
         # --------------------------------------------------
@@ -16592,13 +16575,10 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
             "topic": meta["topic"],
             "difficulty": meta["difficulty"],
             "cloze_text": cloze_text,
-            "options": options,
             "correct_answer": correct_answer,
             "answer_type": "CLOZE_DROPDOWN",
-            "options_source": "document",
-            "reference_images": reference_images,  # ⭐ NEW
+            "reference_images": reference_images,
         }
-
         print("✅ [CLOZE] FINAL EXTRACTED QUESTION:", result)
         return result
 
