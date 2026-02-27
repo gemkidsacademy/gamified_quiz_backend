@@ -23452,7 +23452,7 @@ async def process_exam_block(
             print(f"[{request_id}] 🧪 CLOZE correct_answer = {q['correct_answer']}")
     
             # 2️⃣ Extract and STRUCTURE options
-            cloze_options = extract_cloze_options(question_block)
+            cloze_options = extract_cloze_options_from_blocks(question_block)
             validate_cloze_correct_answer_against_options(
                 q["correct_answer"],
                 cloze_options,
