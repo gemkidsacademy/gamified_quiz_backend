@@ -23410,6 +23410,25 @@ def ws_extract_question_text_blocks(
                 "role": "stem",
             })
     return blocks
+
+def extract_cloze_correct_answer_from_exam_block(question_block):
+    for i, b in enumerate(question_block):
+        if (
+            b.get("type") == "text"
+            and b.get("content", "").strip().upper() == "CORRECT_ANSWER:"
+        ):
+            for j in range(i + 1, len(question_block)):
+                nxt = question_block[j]
+                if nxt.get("type") == "text" and nxt.get("content", "").strip():
+                    return nxt["content"].strip()
+    raise ValueError("CLOZE CORRECT_ANSWER not found")
+
+def validate_cloze_correct_answer_against_options(correct_answer, options):
+    if correct_answer not in options:
+        raise ValueError(
+            f"CLOZE correct_answer '{correct_answer}' not found in options {options}"
+        )
+     
 async def process_exam_block(
     block_idx,
     question_block,
@@ -23501,10 +23520,17 @@ async def process_exam_block(
         try:
             # 1️⃣ Extract CLOZE data
             q = extract_cloze_from_exam_block(question_block)
+            q["correct_answer"] = extract_cloze_correct_answer_from_exam_block(question_block)
             validate_cloze_deterministic(q)
+            print(f"[{request_id}] 🧪 CLOZE correct_answer = {q['correct_answer']}")
     
             # 2️⃣ Extract and STRUCTURE options
             cloze_options = extract_cloze_options(question_block)
+            validate_cloze_correct_answer_against_options(
+                q["correct_answer"],
+                cloze_options,
+            )
+            q["options"] = cloze_options
     
             # 3️⃣ Remove raw OPTIONS text
             clean_blocks = strip_cloze_option_text(question_block)
