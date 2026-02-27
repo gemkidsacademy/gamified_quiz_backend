@@ -13588,6 +13588,30 @@ def normalize_topic(raw_topic: str) -> str:
 
     return CANONICAL_READING_TOPICS[key]
 
+def normalize_question(q):
+    qt = q.get("question_type")
+
+    if qt == 4:
+        image_options = q.get("image_options")
+        if not image_options:
+            raise ValueError("Type 4 question missing image_options")
+
+        return {
+            "question_type": 4,
+            "question_text": q.get("question_text", ""),
+            "image_options": image_options,
+            "correct_answer": q.get("correct_answer"),
+        }
+
+    if qt == 1:
+        return {
+            "question_type": 1,
+            "question_text": q.get("question_text"),
+            "answer_options": q.get("answer_options"),
+            "correct_answer": q.get("correct_answer"),
+        }
+
+    raise ValueError(f"Unsupported or missing question_type: {qt}")
  
 @app.post("/upload-word-reading")
 async def upload_word_reading(
@@ -13661,16 +13685,21 @@ async def upload_word_reading(
 
         questions = []
         for q in raw_questions:
-            if not q.get("question_text") or not q.get("correct_answer"):
+            try:
+                normalized_q = normalize_question(q)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Question normalization failed: {e}"
+                )
+        
+            if not normalized_q.get("correct_answer"):
                 raise HTTPException(
                     status_code=400,
                     detail="Invalid question structure detected"
                 )
-
-            questions.append({
-                "question_text": q["question_text"],
-                "correct_answer": q["correct_answer"],
-            })
+        
+            questions.append(normalized_q)
 
         bundle = {
             "topic": topic,
