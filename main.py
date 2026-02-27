@@ -22117,11 +22117,13 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             text = " ".join(raw_text.split())
 
             # 🚫 DO NOT APPLY REGEX INSIDE OPTIONS
-            text = re.sub(
-                r"([A-Z])\s*[\:\.\)]\s*([^A-Z]+)(?=[A-Z]\s*[\:\.\)])",
-                r"\1: \2\n",
-                text
-            )
+            # 🚫 NEVER split options before OPTIONS:
+            if current_mode not in {"options"}:
+                text = re.sub(
+                    r"([A-Z])\s*[\:\.\)]\s*([^A-Z]+)(?=[A-Z]\s*[\:\.\)])",
+                    r"\1: \2\n",
+                    text
+                )
             lines = [line.strip() for line in text.splitlines() if line.strip()]
 
         for line in lines:
