@@ -22041,12 +22041,6 @@ def strip_inline_control_tokens(text: str) -> str:
 def parse_docx_to_ordered_blocks_numeracy(doc):
     """
     Returns a linear list of ordered blocks preserving DOCX order exactly.
-
-    Block types emitted:
-    - text:     {"type": "text", "content": "..."}
-    - image:    {"type": "image", "name": "..."}
-    - cloze:    {"type": "cloze", "content": "..."}
-    - options:  {"type": "options", "options": [{"id": "A", "text": "..."}]}
     """
 
     print("🧩 [PARSE] ===== START DOCX → ORDERED BLOCKS (NUMERACY) =====")
@@ -22054,55 +22048,52 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     blocks = []
     current_mode = None   # None | "cloze" | "options" | "option_images" | "reference_images"
     buffer = []
-    images_emitted = False
 
     def flush_buffer():
         nonlocal buffer, current_mode
-    
+
         if not buffer or not current_mode:
             buffer = []
             current_mode = None
             return
-    
+
         print(f"🧩 [PARSE] Flushing buffer | mode={current_mode} | lines={len(buffer)}")
-    
+
         if current_mode == "cloze":
             content = " ".join(buffer).strip()
             if not content:
                 raise ValueError("[PARSE] Empty CLOZE content detected")
-    
+
             blocks.append({
                 "type": "cloze",
                 "content": content
             })
-    
+
         elif current_mode == "options":
             options = []
-    
             for line in buffer:
                 match = re.match(r"^([A-Za-z])[\.\:\)]\s*(.+)$", line)
                 if not match:
-                    raise ValueError(
-                        f"[PARSE] Invalid option format: {repr(line)}"
-                    )
-    
+                    raise ValueError(f"[PARSE] Invalid option format: {repr(line)}")
+
                 options.append({
-                    "id": match.group(1).upper().strip(),
+                    "id": match.group(1).upper(),
                     "text": match.group(2).strip()
                 })
-    
+
             if not options:
-                raise ValueError("[PARSE] OPTIONS section declared but no options found")
-    
+                raise ValueError("[PARSE] OPTIONS declared but empty")
+
             blocks.append({
                 "type": "options",
                 "options": options
             })
-    
+
         buffer = []
         current_mode = None
+
     # --------------------------------------------------
-    # Walk DOCX paragraphs in order
+    # Walk DOCX paragraphs
     # --------------------------------------------------
     for idx, element in enumerate(doc.element.body):
 
@@ -22117,181 +22108,90 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         if not texts:
             continue
 
-        text = " ".join("".join(texts).split())
-        text = re.sub(
-            r"([A-Z])\s*[\:\.\)]\s*([^A-Z]+)(?=[A-Z]\s*[\:\.\)])",
-            r"\1: \2\n",
-            text
-        )
-        upper = text.upper()
+        raw_text = "".join(texts)
 
-        print(f"🧩 [PARSE] Paragraph[{idx}]: {repr(text)}")
+        # 🔒 PRESERVE LINES IN OPTIONS MODE
+        if current_mode == "options":
+            lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+        else:
+            text = " ".join(raw_text.split())
 
-        # --------------------------------------------------
-        # EXAM markers
-        # --------------------------------------------------
-        if upper.startswith("==="):
-            print(f"🧩 [PARSE] EXAM MARKER detected: {text}")
+            # 🚫 DO NOT APPLY REGEX INSIDE OPTIONS
+            text = re.sub(
+                r"([A-Z])\s*[\:\.\)]\s*([^A-Z]+)(?=[A-Z]\s*[\:\.\)])",
+                r"\1: \2\n",
+                text
+            )
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-            if text.strip() not in {"=== EXAM START ===", "=== EXAM END ==="}:
-                raise ValueError(
-                    f"[PARSE] Invalid EXAM marker format: {repr(text)}"
-                )
+        for line in lines:
+            upper = line.upper()
+            print(f"🧩 [PARSE] Paragraph[{idx}]: {repr(line)}")
 
-            flush_buffer()
+            # -------------------------------
+            # EXAM markers
+            # -------------------------------
+            if upper.startswith("==="):
+                flush_buffer()
+                blocks.append({"type": "text", "content": line})
+                continue
+
+            # -------------------------------
+            # Section headers
+            # -------------------------------
+            if upper == "CLOZE:":
+                flush_buffer()
+                current_mode = "cloze"
+                print("🧩 [PARSE] Entering CLOZE mode")
+                continue
+
+            if upper == "OPTIONS:":
+                flush_buffer()
+                current_mode = "options"
+                print("🧩 [PARSE] Entering OPTIONS mode")
+                continue
+
+            # -------------------------------
+            # Inside OPTIONS
+            # -------------------------------
+            if current_mode == "options":
+                if re.match(r"^[A-Z_]+:", upper):
+                    print(f"🧩 [PARSE] Exiting OPTIONS mode on: {line}")
+                    flush_buffer()
+                    current_mode = None
+                else:
+                    print(f"🧩 [PARSE] Buffering option line: {line}")
+                    buffer.append(line)
+                    continue
+
+            # -------------------------------
+            # Inside CLOZE
+            # -------------------------------
+            if current_mode == "cloze":
+                if re.match(r"^[A-Z_]+:", upper):
+                    print(f"🧩 [PARSE] Exiting CLOZE mode on: {line}")
+                    flush_buffer()
+                    current_mode = None
+                else:
+                    buffer.append(line)
+                    continue
+
+            # -------------------------------
+            # Default text
+            # -------------------------------
             blocks.append({
                 "type": "text",
-                "content": text
+                "content": line
             })
-            continue
-        # --------------------------------------------------
-        # IMAGES declaration (MUST be global)
-        # --------------------------------------------------
-        if upper == "IMAGES:" or upper.startswith("IMAGES:"):
-            prev_mode = current_mode
-            flush_buffer()
-            
-            trailing = text.split(":", 1)[1].strip()
-            
-            role = "option" if prev_mode == "options" else "reference"        
-            if trailing:
-                for img in trailing.split(","):
-                    name = img.strip()
-                    if not name:
-                        raise ValueError("[PARSE] Empty image name in IMAGES declaration")
-        
-                    blocks.append({
-                        "type": "image",
-                        "name": name,
-                        "role": role
-                    })
-                continue
-        
-            current_mode = "option_images" if role == "option" else "reference_images"
-            continue
-         
-        # --------------------------------------------------
-        # REFERENCE_IMAGE declaration (semantic stem image)
-        # --------------------------------------------------
-        if upper == "REFERENCE_IMAGE:" or upper.startswith("REFERENCE_IMAGE:"):
-            flush_buffer()
-            print(f"🧩 [PARSE] REFERENCE_IMAGE detected: {text}")
-        
-            trailing = text.split(":", 1)[1].strip()
-        
-            # Case 1: filename on same line
-            if trailing:
-                blocks.append({
-                    "type": "image",
-                    "name": trailing,
-                    "role": "reference"
-                })
-                continue
-        
-            # Case 2: filenames on subsequent lines
-            current_mode = "reference_images"
-            continue
-        # --------------------------------------------------
-        # Section headers
-        # --------------------------------------------------
-        if upper == "CLOZE:":
-            flush_buffer()
-            current_mode = "cloze"
-            print("🧩 [PARSE] Entering CLOZE mode")
-            continue
 
-        if upper == "OPTIONS:":
-            flush_buffer()
-            current_mode = "options"
-            print("🧩 [PARSE] Entering OPTIONS mode")
-            continue
-
-        
-        
-        # --------------------------------------------------
-        # Inside CLOZE / OPTIONS
-        # --------------------------------------------------
-        if current_mode == "options":
-
-            # 🚨 EXIT OPTIONS MODE on any header-like line
-            if (
-                re.match(r"^[A-Z_]+:", upper)
-                or upper.startswith("===")
-            ):
-                print(f"🧩 [PARSE] Exiting OPTIONS mode on: {text}")
-                flush_buffer()
-                current_mode = None
-                # fall through to re-process this line
-            else:
-                print(f"🧩 [PARSE] Buffering option line: {text}")
-                buffer.extend(text.splitlines())
-                continue
-
-        
-        
-        elif current_mode == "cloze":
-        
-            if upper in SECTION_HEADERS or upper.startswith("==="):
-                print(f"🧩 [PARSE] Exiting CLOZE mode on: {text}")
-                flush_buffer()
-                current_mode = None
-            else:
-                buffer.append(text)
-                continue
-
-        # --------------------------------------------------
-        # Inside IMAGES / REFERENCE_IMAGES section
-        # --------------------------------------------------
-        if current_mode in {"option_images", "reference_images"}:
-            if not re.search(r"\.(png|jpg|jpeg|webp|svg)$", text, re.IGNORECASE):
-                print("🧩 [PARSE] Exiting image mode (non-filename encountered)")
-                current_mode = None
-                images_emitted = False
-                # re-process this paragraph normally
-            else:
-                if current_mode == "reference_images":
-                    role = "reference"
-                elif current_mode == "option_images":
-                    role = "option"
-                else:
-                    role = None
-        
-                print(f"🧩 [PARSE] → Emitting image block: {text}")
-                block = {
-                    "type": "image",
-                    "name": text,
-                    "role": role
-                }
-                if role:
-                    block["role"] = role
-        
-                blocks.append(block)
-                images_emitted = True
-                continue
-        
-        # --------------------------------------------------
-        # Default text (cleaned)
-        # --------------------------------------------------
-        blocks.append({
-            "type": "text",
-            "content": text
-        })
-
-
-
-    # --------------------------------------------------
-    # Final flush
-    # --------------------------------------------------
     flush_buffer()
 
-    # --------------------------------------------------
-    # Final sanity log
-    # --------------------------------------------------
     print(f"🧩 [PARSE] ===== PARSE COMPLETE | blocks={len(blocks)} =====")
     for i, block in enumerate(blocks):
         print(f"🧩 [PARSE] Block[{i}]: {block}")
 
     return blocks
+ 
  
 def parse_docx_to_flat_text_blocks(doc):
     blocks = []
