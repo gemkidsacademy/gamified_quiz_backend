@@ -22018,51 +22018,78 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
 
     def flush_buffer():
         nonlocal buffer, current_mode
-
+    
         if not buffer or not current_mode:
             buffer = []
             current_mode = None
             return
-
+    
         print(f"🧩 [PARSE] Flushing buffer | mode={current_mode} | lines={len(buffer)}")
-
+    
+        # ===============================
+        # CLOZE
+        # ===============================
         if current_mode == "cloze":
             content = " ".join(buffer).strip()
             if not content:
                 raise ValueError("[PARSE] Empty CLOZE content detected")
-
+    
             blocks.append({
                 "type": "cloze",
                 "content": content
             })
-
+    
+        # ===============================
+        # OPTIONS
+        # ===============================
         elif current_mode == "options":
             options = []
+    
             for line in buffer:
-                # Skip section headers defensively
-                if re.match(r"^[A-Z_]+:", line.upper()):
-                    print(f"🧩 [PARSE] Skipping non-option line in OPTIONS buffer: {line}")
+                upper = line.upper()
+    
+                # Skip real section headers
+                if upper.startswith((
+                    "ANSWER_TYPE:",
+                    "CORRECT_ANSWER:",
+                    "QUESTION_TEXT:",
+                    "CLOZE:",
+                )):
                     continue
-             
-                match = re.match(r"^([A-Za-z])[\.\:\)]\s*(.+)$", line)
-                if not match:
-                    raise ValueError(f"[PARSE] Invalid option format: {repr(line)}")
-             
-                options.append({
-                    "id": match.group(1).upper(),
-                    "text": match.group(2).strip()
-                })
-
-                
-
+    
+                # --------------------------------------------------
+                # Handle BOTH normal and collapsed options
+                #
+                # Normal:
+                #   A: A
+                #
+                # Collapsed (DOCX formatting):
+                #   A: AB: BC: CD: D
+                # --------------------------------------------------
+                matches = re.findall(
+                    r"([A-Za-z])[\.\:\)]\s*([^A-Za-z]*)",
+                    line
+                )
+    
+                for opt_id, opt_text in matches:
+                    options.append({
+                        "id": opt_id.upper(),
+                        "text": opt_text.strip() or opt_id.upper()
+                    })
+    
             if not options:
                 raise ValueError("[PARSE] OPTIONS declared but empty")
-
+    
             blocks.append({
                 "type": "options",
                 "options": options
             })
-
+    
+        # ===============================
+        # RESET
+        # ===============================
+        buffer = []
+        current_mode = None
         buffer = []
         current_mode = None
 
