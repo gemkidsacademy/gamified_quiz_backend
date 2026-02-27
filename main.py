@@ -23448,16 +23448,18 @@ async def process_exam_block(
             # 1️⃣ Extract CLOZE data
             q = extract_cloze_from_exam_block(question_block)
             q["correct_answer"] = extract_cloze_correct_answer_from_exam_block(question_block)
-            validate_cloze_deterministic(q)
+            
             print(f"[{request_id}] 🧪 CLOZE correct_answer = {q['correct_answer']}")
     
             # 2️⃣ Extract and STRUCTURE options
             cloze_options = extract_cloze_options_from_blocks(question_block)
+            q["options"] = cloze_options
+            validate_cloze_deterministic(q)
             validate_cloze_correct_answer_against_options(
                 q["correct_answer"],
                 cloze_options,
             )
-            q["options"] = cloze_options
+            
     
             # 3️⃣ Remove raw OPTIONS text
             clean_blocks = strip_cloze_option_text(question_block)
