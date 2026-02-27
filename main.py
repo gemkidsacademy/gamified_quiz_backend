@@ -16522,18 +16522,27 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
         # --------------------------------------------------
         # 4. Extract CORRECT_ANSWER
         # --------------------------------------------------
+        
         correct_answer = None
-
-        for i, line in enumerate(lines):
+        found_marker = False
+        
+        for line in lines:
             if line.upper() == "CORRECT_ANSWER:":
-                if i + 1 >= len(lines):
-                    raise ValueError("CORRECT_ANSWER value missing")
-                correct_answer = lines[i + 1].strip()
+                found_marker = True
+                continue
+        
+            if found_marker:
+                # skip obvious headers / noise
+                if line.upper().endswith(":"):
+                    continue
+                if line.startswith("==="):
+                    continue
+        
+                correct_answer = line.strip()
                 break
-
+        
         if not correct_answer:
             raise ValueError("CLOZE missing correct_answer")
-
         
         # --------------------------------------------------
         # 5. Extract METADATA
