@@ -16443,7 +16443,56 @@ ClozeQuestionSchema = {
 import re
 
 import re
+def extract_cloze_options(question_block):
+    options = []
+    in_options = False
 
+    for b in question_block:
+        if b.get("type") != "text":
+            continue
+
+        line = b["content"].strip()
+
+        if line.upper() == "OPTIONS:":
+            in_options = True
+            continue
+
+        if in_options:
+            # stop when answer type or correct answer starts
+            if line.upper().startswith(("ANSWER_TYPE", "CORRECT_ANSWER")):
+                break
+
+            if ":" in line:
+                _, value = line.split(":", 1)
+                options.append(value.strip())
+
+    if not options:
+        raise ValueError("CLOZE question has no OPTIONS")
+
+    return options
+
+def strip_cloze_option_text(question_block):
+    stripped = []
+    in_options = False
+
+    for b in question_block:
+        if b.get("type") == "text":
+            line = b["content"].strip().upper()
+
+            if line == "OPTIONS:":
+                in_options = True
+                continue
+
+            if in_options:
+                if line.startswith(("ANSWER_TYPE", "CORRECT_ANSWER")):
+                    in_options = False
+                    stripped.append(b)
+                continue
+
+        stripped.append(b)
+
+    return stripped
+ 
 def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
     """
     Deterministic extractor for CLOZE (question_type = 5).
@@ -23544,25 +23593,39 @@ async def process_exam_block(
     # ==================================================
     if is_cloze_question(question_block):
         print(f"[{request_id}] 🧩 CLOZE detected | block={block_idx}")
-
+    
         try:
+            # 1️⃣ Extract CLOZE data
             q = extract_cloze_from_exam_block(question_block)
             validate_cloze_deterministic(q)
-
+    
+            # 2️⃣ Extract and STRUCTURE options
+            cloze_options = extract_cloze_options(question_block)
+    
+            # 3️⃣ Remove raw OPTIONS text
+            clean_blocks = strip_cloze_option_text(question_block)
+    
+            # 4️⃣ Attach structured dropdown block
+            clean_blocks.append({
+                "type": "cloze-dropdown",
+                "options": cloze_options
+            })
+    
+            # 5️⃣ Persist using clean blocks
             handle_cloze_question(
                 q=q,
-                question_block=question_block,
+                question_block=clean_blocks,
                 meta=q,
                 db=db,
                 request_id=request_id,
                 summary=summary,
                 block_idx=block_idx,
             )
-
+    
             summary.block_success(block_idx, [q])
             print(f"[{request_id}] 🟢 BLOCK {block_idx} SUCCESS (CLOZE)")
             return
-
+    
         except Exception as e:
             error_msg = str(e)
             print(
@@ -23571,7 +23634,6 @@ async def process_exam_block(
             )
             summary.block_failure(block_idx, error_msg)
             return
-
     # ==================================================
     # 🖼️ TYPE 6 — VISUAL COUNTING (SEALED)
     # ==================================================
