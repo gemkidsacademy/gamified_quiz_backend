@@ -22046,7 +22046,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     print("🧩 [PARSE] ===== START DOCX → ORDERED BLOCKS (NUMERACY) =====")
 
     blocks = []
-    current_mode = None   # None | "cloze" | "options" | "option_images" | "reference_images"
+    current_mode = None   # None | "cloze" | "options"
     buffer = []
 
     def flush_buffer():
@@ -22093,7 +22093,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         current_mode = None
 
     # --------------------------------------------------
-    # Walk DOCX paragraphs
+    # Walk DOCX paragraphs (ONE paragraph = ONE line)
     # --------------------------------------------------
     for idx, element in enumerate(doc.element.body):
 
@@ -22108,83 +22108,76 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         if not texts:
             continue
 
-        raw_text = "".join(texts)
+        # ✅ ONE semantic line per paragraph
+        line = " ".join("".join(texts).split())
+        if not line:
+            continue
 
-        text = "\n".join(
-            " ".join(line.split())
-            for line in raw_text.splitlines()
-            if line.strip()
-        )
-    
-        upper = text.upper()
-        
-        for line in text.splitlines():
-            upper = line.upper()
-            print(f"🧩 [PARSE] Paragraph[{idx}]: {repr(line)}")
+        upper = line.upper()
+        print(f"🧩 [PARSE] Paragraph[{idx}]: {repr(line)}")
 
-            # -------------------------------
-            # EXAM markers
-            # -------------------------------
-            if upper.startswith("==="):
+        # -------------------------------
+        # EXAM markers
+        # -------------------------------
+        if upper.startswith("==="):
+            flush_buffer()
+            blocks.append({"type": "text", "content": line})
+            continue
+
+        # -------------------------------
+        # Section headers
+        # -------------------------------
+        if upper == "CLOZE:":
+            flush_buffer()
+            current_mode = "cloze"
+            print("🧩 [PARSE] Entering CLOZE mode")
+            continue
+
+        if upper == "OPTIONS:":
+            flush_buffer()
+            current_mode = "options"
+            print("🧩 [PARSE] Entering OPTIONS mode")
+            continue
+
+        # -------------------------------
+        # Inside OPTIONS
+        # -------------------------------
+        if current_mode == "options":
+            if upper in {
+                "CORRECT_ANSWER:",
+                "ANSWER_TYPE:",
+                "QUESTION_TEXT:",
+                "CLOZE:",
+            } or upper.startswith("==="):
+                print(f"🧩 [PARSE] Exiting OPTIONS mode on: {line}")
                 flush_buffer()
-                blocks.append({"type": "text", "content": line})
+                current_mode = None
+                continue  # 🔴 CRITICAL
+            else:
+                print(f"🧩 [PARSE] Buffering option line: {line}")
+                buffer.append(line)
                 continue
 
-            # -------------------------------
-            # Section headers
-            # -------------------------------
-            if upper == "CLOZE:":
+        # -------------------------------
+        # Inside CLOZE
+        # -------------------------------
+        if current_mode == "cloze":
+            if re.match(r"^[A-Z_]+:", upper):
+                print(f"🧩 [PARSE] Exiting CLOZE mode on: {line}")
                 flush_buffer()
-                current_mode = "cloze"
-                print("🧩 [PARSE] Entering CLOZE mode")
+                current_mode = None
+                # fall through
+            else:
+                buffer.append(line)
                 continue
 
-            if upper == "OPTIONS:":
-                flush_buffer()
-                current_mode = "options"
-                print("🧩 [PARSE] Entering OPTIONS mode")
-                continue
-
-            
-            # -------------------------------
-            # Inside OPTIONS
-            # -------------------------------
-            if current_mode == "options":
-                # Exit OPTIONS only on real section headers
-                if upper in {
-                    "CORRECT_ANSWER:",
-                    "ANSWER_TYPE:",
-                    "QUESTION_TEXT:",
-                    "CLOZE:",
-                } or upper.startswith("==="):
-                    print(f"🧩 [PARSE] Exiting OPTIONS mode on: {line}")
-                    flush_buffer()
-                    current_mode = None
-                    # ⬅️ IMPORTANT: do NOT buffer this line
-                    # let it fall through and be processed normally
-                else:
-                    print(f"🧩 [PARSE] Buffering option line: {line}")
-                    buffer.append(line)
-                    continue
-            # -------------------------------
-            # Inside CLOZE
-            # -------------------------------
-            if current_mode == "cloze":
-                if re.match(r"^[A-Z_]+:", upper):
-                    print(f"🧩 [PARSE] Exiting CLOZE mode on: {line}")
-                    flush_buffer()
-                    current_mode = None
-                else:
-                    buffer.append(line)
-                    continue
-
-            # -------------------------------
-            # Default text
-            # -------------------------------
-            blocks.append({
-                "type": "text",
-                "content": line
-            })
+        # -------------------------------
+        # Default text
+        # -------------------------------
+        blocks.append({
+            "type": "text",
+            "content": line
+        })
 
     flush_buffer()
 
@@ -22192,8 +22185,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     for i, block in enumerate(blocks):
         print(f"🧩 [PARSE] Block[{i}]: {block}")
 
-    return blocks
- 
+    return blocks 
  
 def parse_docx_to_flat_text_blocks(doc):
     blocks = []
