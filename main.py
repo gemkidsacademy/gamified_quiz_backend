@@ -16446,10 +16446,10 @@ import re
 def extract_cloze_options(question_block):
     for b in question_block:
         if b.get("type") == "options":
-            return b["options"]
+            # return plain values only
+            return [o["text"] for o in b.get("options", [])]
 
-    raise ValueError("CLOZE question has no OPTIONS")
- 
+    raise ValueError("CLOZE question has no OPTIONS") 
 def strip_cloze_option_text(question_block):
     """
     Remove structured OPTIONS blocks after they have been extracted
