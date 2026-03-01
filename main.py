@@ -21447,7 +21447,17 @@ def is_exam_end(block):
 
     text = block.get("content", "")
     return bool(EXAM_END_PATTERN.search(text))
- 
+
+
+def strip_exam_markers(text: str) -> str:
+    return (
+        text
+        .replace("=== EXAM START ===", "")
+        .replace("=== EXAM END ===", "")
+        .strip()
+    )
+
+
 def chunk_by_exam(blocks):
     print("CHUNK_BY_EXAM: blocks received =", len(blocks))
 
@@ -21456,32 +21466,34 @@ def chunk_by_exam(blocks):
     inside_exam = False
 
     for block in blocks:
-        if block["type"] == "text":
-            print("TEXT BLOCK:", repr(block["content"]))
-
+        # --- Detect markers FIRST (before stripping) ---
         if is_exam_start(block):
-            print("EXAM START DETECTED:", repr(block.get("content")))
             current = []
             inside_exam = True
             continue
 
         if is_exam_end(block):
-            print("EXAM END DETECTED:", repr(block.get("content")))
             if inside_exam and current:
                 exams.append(current)
             current = []
             inside_exam = False
             continue
 
+        # --- Now clean content ---
         if inside_exam:
+            if block["type"] == "text":
+                block = {
+                    **block,
+                    "content": strip_exam_markers(block["content"])
+                }
             current.append(block)
 
+    # EOF safety
     if inside_exam and current:
         exams.append(current)
 
     print("TOTAL EXAMS CHUNKED:", len(exams))
-    return exams
- 
+    return exams 
  
 def count_question_markers(blocks):
     count = 0
