@@ -21751,110 +21751,52 @@ async def upload_word(
 
 
 def chunk_by_exam_markers(blocks: list[dict]) -> list[list[dict]]:
-    
     exams = []
     current_exam = []
     in_exam = False
 
-    for idx, block in enumerate(blocks):
-        
+    for block in blocks:
+
+        # Non-text blocks
         if block.get("type") != "text":
             if in_exam:
-                print(
-                    f"🧩 [CHUNK] → Non-text block added to current exam: "
-                    f"{block.get('type')}"
-                )
                 current_exam.append(block)
-            else:
-                print(
-                    f"🧩 [CHUNK] → Non-text block ignored (outside exam)"
-                )
             continue
 
         raw = block.get("content", "")
         lines = [line.strip() for line in raw.splitlines() if line.strip()]
 
-        print(
-            f"🧩 [CHUNK] Text block split into {len(lines)} line(s): {lines}"
-        )
+        for text in lines:
 
-        for line_idx, text in enumerate(lines):
-            print(
-                f"🧩 [CHUNK] Line[{idx}.{line_idx}] = {repr(text)}"
-            )
-
-            # ----------------------------------------------
             # EXAM START
-            # ----------------------------------------------
             if text == "=== EXAM START ===":
-                print("🧩 [CHUNK] EXAM START detected")
-
                 if in_exam:
-                    raise ValueError(
-                        "[CHUNK] Nested EXAM START detected"
-                    )
+                    raise ValueError("Nested EXAM START detected")
 
                 in_exam = True
                 current_exam = []
                 continue
 
-            # ----------------------------------------------
             # EXAM END
-            # ----------------------------------------------
             if text == "=== EXAM END ===":
-                print("🧩 [CHUNK] EXAM END detected")
-
                 if not in_exam:
-                    raise ValueError(
-                        "[CHUNK] EXAM END detected without EXAM START"
-                    )
-
-                print(
-                    f"🧩 [CHUNK] Finalizing exam with "
-                    f"{len(current_exam)} block(s)"
-                )
+                    raise ValueError("EXAM END without EXAM START")
 
                 exams.append(current_exam)
                 current_exam = []
                 in_exam = False
                 continue
 
-            # ----------------------------------------------
-            # Normal content inside exam
-            # ----------------------------------------------
+            # Normal content
             if in_exam:
-                print(
-                    f"🧩 [CHUNK] → Adding content to current exam: {text}"
-                )
                 current_exam.append({
                     "type": "text",
                     "content": text
                 })
-            else:
-                print(
-                    f"🧩 [CHUNK] → Ignoring content outside exam: {text}"
-                )
 
-    # ----------------------------------------------
     # Final consistency check
-    # ----------------------------------------------
     if in_exam:
-        raise ValueError(
-            "[CHUNK] Missing EXAM END at end of document"
-        )
-
-    print(
-        f"🧩 [CHUNK] ===== CHUNKING COMPLETE | "
-        f"exams_detected={len(exams)} ====="
-    )
-
-    for i, exam in enumerate(exams, start=1):
-        preview = [b.get("type") for b in exam[:5]]
-        print(
-            f"🧩 [CHUNK] Exam {i}: "
-            f"blocks={len(exam)} | "
-            f"preview_types={preview}"
-        )
+        raise ValueError("Missing EXAM END at end of document")
 
     return exams
 
