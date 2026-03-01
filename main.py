@@ -21591,11 +21591,15 @@ async def upload_word(
             gpt_result = await parse_with_gpt({
                 "blocks": gpt_blocks
             })
+            
         
             question = (
                 gpt_result.get("question")
                 if isinstance(gpt_result, dict)
                 else None
+            )
+            print(
+                f"[DEBUG] GPT question for exam {exam_idx}: {question}"
             )
         
         except Exception as e:
