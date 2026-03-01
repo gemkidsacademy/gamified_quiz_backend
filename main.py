@@ -21436,17 +21436,17 @@ def is_exam_start(block):
     if block.get("type") != "text":
         return False
 
-    text = block.get("content", "").strip()
-    return bool(EXAM_START_PATTERN.match(text))
+    text = block.get("content", "")
+    return bool(EXAM_START_PATTERN.search(text))
 
 
 def is_exam_end(block):
     if block.get("type") != "text":
         return False
 
-    text = block.get("content", "").strip()
-    return bool(EXAM_END_PATTERN.match(text))
-
+    text = block.get("content", "")
+    return bool(EXAM_END_PATTERN.search(text))
+ 
 def chunk_by_exam(blocks):
     print("CHUNK_BY_EXAM: blocks received =", len(blocks))
 
