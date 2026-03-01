@@ -21508,6 +21508,26 @@ def normalize_options_text(text: str) -> str:
     text = re.sub(r"([A-D])\.", r"\n\1.", text)
     text = text.replace("CORRECT_ANSWER:", "\nCORRECT_ANSWER:")
     return text
+
+def extract_options_and_answer(blocks):
+    text = "\n".join(
+        b["content"] for b in blocks if b["type"] == "text"
+    )
+
+    # Extract options A–D
+    options = dict(
+        re.findall(
+            r"\b([A-D])\.\s*([^A-D]+)(?=\b[A-D]\.|CORRECT_ANSWER:|$)",
+            text
+        )
+    )
+
+    # Extract correct answer
+    m = re.search(r"CORRECT_ANSWER:\s*\"?([A-D])\"?", text)
+    correct = m.group(1) if m else None
+
+    return options or None, correct
+ 
 #new upload-word code
 #new upload-word code
 @app.post("/upload-word")
@@ -21635,6 +21655,15 @@ async def upload_word(
         # -----------------------------
         # Validate required fields
         # -----------------------------
+        # -----------------------------
+        # Validate required fields
+        # -----------------------------
+        if not question.get("options") or not question.get("correct_answer"):
+            extracted_options, extracted_answer = extract_options_and_answer(gpt_blocks)
+        
+            question["options"] = extracted_options
+            question["correct_answer"] = extracted_answer
+        
         if not question.get("options") or not question.get("correct_answer"):
             skipped += 1
             report.append({
