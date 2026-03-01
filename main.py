@@ -2547,10 +2547,10 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
     serialized = serialize_blocks_for_gpt(payload["blocks"])
 
     # 🔍 DEBUG: input size + preview
-    print("[GPT DEBUG] Serialized length:", len(serialized))
+    
     
     for attempt in range(retries + 1):
-        print(f"\n[GPT DEBUG] Attempt {attempt}")
+        
 
         completion = await client_save_questions.chat.completions.create(
             model="gpt-4o-mini",
@@ -21492,10 +21492,7 @@ async def upload_word(
     request_id = str(uuid.uuid4())[:8]
     report = []
 
-    print(f"\n========== GPT-UPLOAD-WORD START [{request_id}] ==========")
-    print(f"[{request_id}] 📄 Incoming file: {file.filename}")
-    print(f"[{request_id}] 📄 Content-Type: {file.content_type}")
-
+    
     # -------------------------------------------------
     # Validate file type
     # -------------------------------------------------
@@ -21928,8 +21925,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
     Returns a linear list of ordered blocks preserving DOCX order exactly.
     """
 
-    print("🧩 [PARSE] ===== START DOCX → ORDERED BLOCKS (NUMERACY) =====")
-
+    
     blocks = []
     current_mode = None   # None | "cloze" | "options"
     buffer = []
@@ -21942,7 +21938,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             current_mode = None
             return
     
-        print(f"🧩 [PARSE] Flushing buffer | mode={current_mode} | lines={len(buffer)}")
+        
     
         # ===============================
         # CLOZE
@@ -22033,8 +22029,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             continue
 
         upper = line.upper()
-        print(f"🧩 [PARSE] Paragraph[{idx}]: {repr(line)}")
-
+        
         # -------------------------------
         # EXAM markers
         # -------------------------------
@@ -22055,7 +22050,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         if upper == "OPTIONS:":
             flush_buffer()
             current_mode = "options"
-            print("🧩 [PARSE] Entering OPTIONS mode")
+            
             continue
         # -------------------------------
         # Hard section resets
@@ -22077,7 +22072,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                "QUESTION_TEXT:",
                "CLOZE:",
            } or upper.startswith("==="):
-               print(f"🧩 [PARSE] Exiting OPTIONS mode on: {line}")
+               
                flush_buffer()
                current_mode = None
            
@@ -22089,7 +22084,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
            
                continue
             else:
-                print(f"🧩 [PARSE] Buffering option line: {line}")
+                
                 buffer.append(line)
                 continue
 
@@ -22098,7 +22093,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # -------------------------------
         if current_mode == "cloze":
             if re.match(r"^[A-Z_]+:", upper):
-                print(f"🧩 [PARSE] Exiting CLOZE mode on: {line}")
+                
                 flush_buffer()
                 current_mode = None
                 # fall through
@@ -22116,9 +22111,8 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
 
     flush_buffer()
 
-    print(f"🧩 [PARSE] ===== PARSE COMPLETE | blocks={len(blocks)} =====")
-    for i, block in enumerate(blocks):
-        print(f"🧩 [PARSE] Block[{i}]: {block}")
+    
+    
 
     return blocks 
  
