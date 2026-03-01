@@ -21513,7 +21513,9 @@ def extract_options_and_answer(blocks):
     text = "\n".join(
         b["content"] for b in blocks if b["type"] == "text"
     )
-
+    print("🧪 [DEBUG] RAW TEXT FOR OPTION EXTRACTION ↓↓↓")
+    print(text)
+    print("🧪 [DEBUG] RAW TEXT END ↑↑↑")
     # Extract options A–D
     options = dict(
         re.findall(
