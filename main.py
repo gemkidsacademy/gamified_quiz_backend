@@ -21448,17 +21448,24 @@ def is_exam_end(block):
     return bool(EXAM_END_PATTERN.match(text))
 
 def chunk_by_exam(blocks):
+    print("CHUNK_BY_EXAM: blocks received =", len(blocks))
+
     exams = []
     current = []
     inside_exam = False
 
     for block in blocks:
+        if block["type"] == "text":
+            print("TEXT BLOCK:", repr(block["content"]))
+
         if is_exam_start(block):
+            print("EXAM START DETECTED:", repr(block.get("content")))
             current = []
             inside_exam = True
             continue
 
         if is_exam_end(block):
+            print("EXAM END DETECTED:", repr(block.get("content")))
             if inside_exam and current:
                 exams.append(current)
             current = []
@@ -21468,11 +21475,13 @@ def chunk_by_exam(blocks):
         if inside_exam:
             current.append(block)
 
-    # Handle missing EXAM END at EOF
     if inside_exam and current:
         exams.append(current)
 
+    print("TOTAL EXAMS CHUNKED:", len(exams))
     return exams
+ 
+ 
 def count_question_markers(blocks):
     count = 0
     for block in blocks:
@@ -21510,6 +21519,10 @@ async def upload_word(
         content = await file.read()
         doc = docx.Document(BytesIO(content))
         ordered_blocks = parse_docx_to_ordered_blocks(doc)
+        print("TOTAL BLOCKS:", len(ordered_blocks))
+        print("FIRST 15 BLOCKS:")
+        for b in ordered_blocks[:15]:
+            print(b)
     except Exception as e:
         raise HTTPException(status_code=400, detail="Failed to read file")
 
@@ -21517,7 +21530,7 @@ async def upload_word(
     # EXAM = SOURCE OF TRUTH
     # -------------------------------------------------
     exam_blocks = chunk_by_exam(ordered_blocks)
-
+    print("EXAMS FOUND:", len(exam_blocks))
     saved = 0
     skipped = 0
 
