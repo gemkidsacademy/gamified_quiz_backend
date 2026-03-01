@@ -21641,6 +21641,9 @@ async def upload_word(
             })
 
         if missing_image:
+            print(
+                f"[SKIPPED] Exam {exam_idx} → IMAGE_NOT_UPLOADED → {missing_image}"
+            )
             skipped += 1
             report.append({
                 "exam": exam_idx,
