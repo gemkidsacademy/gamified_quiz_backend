@@ -21663,6 +21663,11 @@ async def upload_word(
         
             question["options"] = extracted_options
             question["correct_answer"] = extracted_answer
+            print(
+                f"[DEBUG] Fallback extraction for exam {exam_idx}: "
+                f"options={question.get('options')}, "
+                f"correct={question.get('correct_answer')}"
+            )
         
         if not question.get("options") or not question.get("correct_answer"):
             skipped += 1
