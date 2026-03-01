@@ -21428,9 +21428,10 @@ def extract_exam_block(ordered_blocks):
         raise ValueError("No EXAM block found")
 
     return exam_blocks
-EXAM_START_PATTERN = re.compile(r"^={3,}\s*exam\s+start\s*={3,}$", re.IGNORECASE)
-EXAM_END_PATTERN = re.compile(r"^={3,}\s*exam\s+end\s*={3,}$", re.IGNORECASE)
+import re
 
+EXAM_START_PATTERN = re.compile(r"===\s*EXAM\s*START\s*===")
+EXAM_END_PATTERN   = re.compile(r"===\s*EXAM\s*END\s*===")
 
 def is_exam_start(block):
     if block.get("type") != "text":
