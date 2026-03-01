@@ -21503,7 +21503,11 @@ def count_question_markers(blocks):
             if text.strip().startswith("question "):
                 count += 1
     return count
-
+def normalize_options_text(text: str) -> str:
+    text = text.replace("OPTIONS:", "OPTIONS:\n")
+    text = re.sub(r"([A-D])\.", r"\n\1.", text)
+    text = text.replace("CORRECT_ANSWER:", "\nCORRECT_ANSWER:")
+    return text
 #new upload-word code
 #new upload-word code
 @app.post("/upload-word")
@@ -21569,10 +21573,34 @@ async def upload_word(
         # -----------------------------
         # GPT parse (expect ONE question)
         # -----------------------------
+        # -----------------------------
+        # GPT parse (expect ONE question)
+        # -----------------------------
         try:
-            result = await parse_with_gpt({"blocks": exam_block})
-            question = result.get("question")
+            # Normalize text blocks for GPT (do NOT mutate exam_block)
+            gpt_blocks = []
+            for b in exam_block:
+                if b["type"] == "text":
+                    gpt_blocks.append({
+                        **b,
+                        "content": normalize_options_text(b["content"])
+                    })
+                else:
+                    gpt_blocks.append(b)
+        
+            gpt_result = await parse_with_gpt({
+                "blocks": gpt_blocks
+            })
+        
+            question = (
+                gpt_result.get("question")
+                if isinstance(gpt_result, dict)
+                else None
+            )
+        
         except Exception as e:
+            print(f"[SKIPPED] Exam {exam_idx} → GPT_ERROR → {e}")
+        
             skipped += 1
             report.append({
                 "exam": exam_idx,
