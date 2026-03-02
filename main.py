@@ -19595,85 +19595,69 @@ def normalize_thinking_skills_questions(raw_questions, db):
     normalized = []
 
     for q in raw_questions or []:
-        fixed = dict(q)
-        qid = fixed.get("q_id")
+        try:
+            fixed = dict(q)
 
-        # -----------------------------
-        # Normalize OPTIONS
-        # -----------------------------
-        opts = fixed.get("options")
-        normalized_opts = {}
+            # ---------- q_id ----------
+            q_id = fixed.get("q_id")
+            if q_id is None:
+                continue
 
-        if isinstance(opts, dict):
-           for key, raw_opt in opts.items():
-               normalized_opts[key] = resolve_option_value(raw_opt, db)
+            # ---------- topic ----------
+            topic = fixed.get("topic")
 
-        elif isinstance(opts, list):
-            if opts and isinstance(opts[0], str) and ")" in opts[0]:
-                for raw in opts:
-                    key, payload = raw.split(")", 1)
-                    key = key.strip()
+            # ---------- blocks ----------
+            blocks = fixed.get("blocks") or fixed.get("question_blocks") or []
+            safe_blocks = []
 
-                    try:
-                        option_obj = ast.literal_eval(payload.strip())
-                        if isinstance(option_obj, dict):
-                            normalized_opts[key] = resolve_option_value(option_obj, db)
+            for block in blocks:
+                if not isinstance(block, dict):
+                    continue
 
-                    except Exception:
-                        normalized_opts[key] = {
-                            "type": "text",
-                            "content": payload.strip()
-                        }
-            else:
-                for idx, text in enumerate(opts):
-                    key = chr(ord("A") + idx)
-                    normalized_opts[key] = {
+                btype = block.get("type")
+
+                if btype == "text" and "content" in block:
+                    safe_blocks.append({
                         "type": "text",
-                        "content": text
-                    }
+                        "content": str(block["content"])
+                    })
 
-        fixed["options"] = normalized_opts
+                elif btype == "image" and block.get("src"):
+                    safe_blocks.append({
+                        "type": "image",
+                        "src": str(block["src"]).strip()
+                    })
 
-        # -----------------------------
-        # Normalize CORRECT ANSWER
-        # -----------------------------
-        fixed["correct_answer"] = (
-            fixed.get("correct_answer") or fixed.get("correct")
-        )
+            # ---------- options ----------
+            options = fixed.get("options") or {}
+            safe_options = {}
 
-        # -----------------------------
-        # Normalize BLOCKS (images)
-        # -----------------------------
-        blocks = fixed.get("blocks") or fixed.get("question_blocks") or []
+            if isinstance(options, dict):
+                for k, v in options.items():
+                    if isinstance(v, dict):
+                        safe_options[k] = v
+                    else:
+                        safe_options[k] = {
+                            "type": "text",
+                            "content": str(v)
+                        }
 
-        for block in blocks:
-            if block.get("type") != "image":
-                continue
-        
-            src = block.get("src")
-            if not src:
-                continue
-        
-            # If already a full URL, leave it untouched
-            if src.startswith("http"):
-                block["src"] = src.strip()
-                continue
-        
-            # Otherwise keep filename only (frontend handles IMAGE_BASE)
-            block["src"] = src.strip()
+            # ---------- correct answer ----------
+            correct_answer = fixed.get("correct_answer") or fixed.get("correct")
 
-        fixed["blocks"] = blocks
-        clean = {
-            "q_id": fixed.get("q_id"),
-            "topic": fixed.get("topic"),
-            "blocks": fixed.get("blocks", []),
-            "options": fixed.get("options", {}),
-            "correct_answer": fixed.get("correct_answer"),
-        }
-        normalized.append(clean)
+            normalized.append({
+                "q_id": q_id,
+                "topic": topic,
+                "blocks": safe_blocks,
+                "options": safe_options,
+                "correct_answer": correct_answer
+            })
+
+        except Exception as e:
+            print("⚠️ Skipping bad question:", repr(e))
+            continue
 
     return normalized
-
 def student_year_to_int(student_year: str | None) -> int | None:
     if student_year == "Year 3":
         return 3
