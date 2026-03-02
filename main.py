@@ -19246,7 +19246,12 @@ def start_exam(
             )
         )
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception as e:
+        print("🔥 DB COMMIT ERROR:", repr(e))
+        db.rollback()
+        raise
 
     print(
         "➡️ Returning: new exam started | "
