@@ -19590,7 +19590,14 @@ def resolve_option_value(raw_opt, db):
         "content": raw_opt
     }
 
- 
+def all_options_look_like_images(options: dict) -> bool:
+    if not isinstance(options, dict):
+        return False
+
+    return all(
+        isinstance(v, str) and v.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+        for v in options.values()
+    )
 def normalize_thinking_skills_questions(raw_questions, db):
     normalized = []
 
@@ -19631,17 +19638,38 @@ def normalize_thinking_skills_questions(raw_questions, db):
             # ---------- options ----------
             options = fixed.get("options") or {}
             safe_options = {}
-
+            
             if isinstance(options, dict):
-                for k, v in options.items():
-                    if isinstance(v, dict):
-                        safe_options[k] = v
-                    else:
-                        safe_options[k] = {
+            
+                # 🖼️ Case 1: ALL options are images
+                if all_options_look_like_images(options):
+                    try:
+                        resolved_images = resolve_image_options(options, db)
+            
+                        for key, gcs_url in resolved_images.items():
+                            safe_options[key] = {
+                                "type": "image",
+                                "src": gcs_url
+                            }
+            
+                    except Exception as e:
+                        # 🚨 Never crash the exam
+                        print("⚠️ Image option resolution failed:", repr(e))
+            
+                        # fallback to text
+                        for key, value in options.items():
+                            safe_options[key] = {
+                                "type": "text",
+                                "content": value
+                            }
+            
+                # 📝 Case 2: mixed or text options
+                else:
+                    for key, value in options.items():
+                        safe_options[key] = {
                             "type": "text",
-                            "content": str(v)
+                            "content": str(value)
                         }
-
             # ---------- correct answer ----------
             correct_answer = fixed.get("correct_answer") or fixed.get("correct")
 
