@@ -20264,7 +20264,6 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=attempt.id,
-                year=exam.year,                 # ✅ ADD THIS
                 q_id=int(q_id),
                 topic=topic,
                 selected_option=selected_option,
