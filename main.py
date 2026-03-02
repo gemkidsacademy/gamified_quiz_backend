@@ -18682,6 +18682,24 @@ def start_naplan_numeracy_exam(
         raise HTTPException(status_code=404, detail="Student not found")
 
     print(f"👤 Student DB ID: {student.id}, Class: {student.class_name}")
+    # --------------------------------------------------
+    #  Load exam (same logic as before)
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanNumeracy)
+        .filter(
+            func.lower(ExamNaplanNumeracy.class_name)
+            == func.lower(student.class_name),
+            func.lower(ExamNaplanNumeracy.subject) == "numeracy"
+        )
+        .order_by(ExamNaplanNumeracy.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        print("❌ Exam not found")
+        raise HTTPException(status_code=404, detail="Exam not found")
+
 
     # --------------------------------------------------
     # 1. Constants & helpers
@@ -18691,6 +18709,28 @@ def start_naplan_numeracy_exam(
 
     uploaded_images = db.query(UploadedImage).all()
     image_map = {img.original_name: img.gcs_url for img in uploaded_images}
+
+
+
+    # --------------------------------------------------
+    # 1.5 Block if exam already completed
+    # --------------------------------------------------
+    existing_completed_attempt = (
+        db.query(StudentExamNaplanNumeracy)
+        .filter(
+            StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.exam_id == exam.id,
+            StudentExamNaplanNumeracy.completed_at.isnot(None)
+        )
+        .first()
+    )
+    
+    if existing_completed_attempt:
+        print("🚫 Exam already completed — blocking restart")
+        return {
+            "completed": True,
+            "message": "Exam already completed"
+        }
 
     # --------------------------------------------------
     # 2. Look for an ACTIVE attempt only
@@ -18729,24 +18769,7 @@ def start_naplan_numeracy_exam(
             attempt.duration_minutes * 60 - elapsed_seconds
         )
 
-        # --------------------------------------------------
-        # 2b. Load exam (same logic as before)
-        # --------------------------------------------------
-        exam = (
-            db.query(ExamNaplanNumeracy)
-            .filter(
-                func.lower(ExamNaplanNumeracy.class_name)
-                == func.lower(student.class_name),
-                func.lower(ExamNaplanNumeracy.subject) == "numeracy"
-            )
-            .order_by(ExamNaplanNumeracy.created_at.desc())
-            .first()
-        )
-
-        if not exam:
-            print("❌ Exam not found")
-            raise HTTPException(status_code=404, detail="Exam not found")
-
+        
         raw_questions = hydrate_naplan_question_structure(
             exam.questions or []
         )
