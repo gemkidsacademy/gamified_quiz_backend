@@ -19167,10 +19167,17 @@ def start_exam(
                 detail="Thinking Skills exam not found"
             )
 
-        normalized_questions = normalize_thinking_skills_questions(
-            exam.questions or [],
-            db
-        )
+        try:
+            normalized_questions = normalize_thinking_skills_questions(
+                exam.questions or [],
+                db
+            )
+        except Exception as e:
+            print("🔥 NORMALIZATION ERROR:", repr(e))
+            raise HTTPException(
+                status_code=500,
+                detail="Exam data normalization failed"
+            )
 
         print(
             "➡️ Returning: resume exam | "
