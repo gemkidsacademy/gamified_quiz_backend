@@ -19633,19 +19633,18 @@ def normalize_thinking_skills_questions(raw_questions, db):
         for block in blocks:
             if block.get("type") != "image":
                 continue
-
+        
             src = block.get("src")
-            if not src or src.startswith("http"):
+            if not src:
                 continue
-
-            record = (
-                db.query(UploadedImage)
-                .filter(func.lower(UploadedImage.original_name) == src.strip().lower())
-                .first()
-            )
-
-            if record:
-                block["src"] = record.gcs_url
+        
+            # If already a full URL, leave it untouched
+            if src.startswith("http"):
+                block["src"] = src.strip()
+                continue
+        
+            # Otherwise keep filename only (frontend handles IMAGE_BASE)
+            block["src"] = src.strip()
 
         fixed["blocks"] = blocks
         clean = {
