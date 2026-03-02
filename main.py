@@ -19045,7 +19045,6 @@ def start_naplan_numeracy_exam(
 #         "remaining_time": new_attempt.duration_minutes * 60
 #     }
     
-
 @app.post("/api/student/start-exam-thinkingskills")
 def start_exam(
     req: StartExamRequest = Body(...),
@@ -19644,7 +19643,14 @@ def normalize_thinking_skills_questions(raw_questions, db):
                 block["src"] = record.gcs_url
 
         fixed["blocks"] = blocks
-        normalized.append(fixed)
+        clean = {
+            "q_id": fixed.get("q_id"),
+            "topic": fixed.get("topic"),
+            "blocks": fixed.get("blocks", []),
+            "options": fixed.get("options", {}),
+            "correct_answer": fixed.get("correct_answer"),
+        }
+        normalized.append(clean)
 
     return normalized
 
