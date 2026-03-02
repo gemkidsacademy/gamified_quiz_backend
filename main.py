@@ -19146,18 +19146,18 @@ def start_exam(
             print("➡️ Returning: completed=true (already completed)")
             return {"completed": True}
 
+        
         # --------------------------------------------------
         # ▶ Resume active attempt
         # --------------------------------------------------
         remaining = max(0, attempt.duration_minutes * 60 - elapsed)
-
+        
         print(
             "▶ Resuming active attempt | "
             f"attempt_id={attempt.id} | "
             f"remaining_seconds={remaining}"
         )
-
-        # Load exam only when resuming
+        
         exam = (
             db.query(Exam)
             .filter(
@@ -19168,38 +19168,68 @@ def start_exam(
             .order_by(Exam.created_at.desc())
             .first()
         )
-
+        
         if not exam:
-            print("❌ Exam not found while resuming")
             raise HTTPException(
                 status_code=404,
                 detail="Thinking Skills exam not found"
             )
-
-        try:
-            normalized_questions = normalize_thinking_skills_questions(
-                exam.questions or [],
-                db
+        
+        normalized_questions = normalize_thinking_skills_questions(
+            exam.questions or [],
+            db
+        )
+        
+        # --------------------------------------------------
+        # 🛠️ BACKFILL MISSING RESPONSE ROWS (CRITICAL FIX)
+        # --------------------------------------------------
+        existing_qids = {
+            r.q_id
+            for (r,) in db.query(StudentExamResponseThinkingSkills.q_id)
+            .filter(
+                StudentExamResponseThinkingSkills.exam_attempt_id == attempt.id
             )
-        except Exception as e:
-            print("🔥 NORMALIZATION ERROR:", repr(e))
-            raise HTTPException(
-                status_code=500,
-                detail="Exam data normalization failed"
+            .all()
+        }
+        
+        missing_questions = [
+            q for q in normalized_questions
+            if q["q_id"] not in existing_qids
+        ]
+        
+        if missing_questions:
+            print(
+                f"🛠️ Backfilling {len(missing_questions)} response rows "
+                f"for attempt_id={attempt.id}"
             )
-
+        
+            for q in missing_questions:
+                db.add(
+                    StudentExamResponseThinkingSkills(
+                        student_id=student.id,
+                        exam_id=exam.id,
+                        exam_attempt_id=attempt.id,
+                        q_id=q["q_id"],
+                        topic=q.get("topic"),
+                        selected_option=None,
+                        correct_option=q["correct_answer"],
+                        is_correct=None
+                    )
+                )
+        
+            db.commit()
+        
         print(
             "➡️ Returning: resume exam | "
             f"questions={len(normalized_questions)} | "
             f"remaining_seconds={remaining}"
         )
-
+        
         return jsonable_encoder({
             "completed": False,
             "questions": normalized_questions,
             "remaining_time": remaining
         })
-
     # --------------------------------------------------
     # 🆕 FIRST AND ONLY ATTEMPT (no attempt exists)
     # --------------------------------------------------
