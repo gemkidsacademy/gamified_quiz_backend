@@ -20199,15 +20199,14 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     
     exam = (
         db.query(ExamNaplanNumeracy)
-        .filter(ExamNaplanNumeracy.year == exam_year_int)
+        .filter(ExamNaplanNumeracy.id == attempt.exam_id)
         .first()
     )
     if not exam:
-       print("❌ No exam found for year:", exam_year_int)
-       raise HTTPException(
-           status_code=404,
-           detail="Exam not found for student's year"
-       )
+        raise HTTPException(
+            status_code=500,
+            detail="Exam linked to attempt no longer exists"
+        )
     print(
         "🧠 DEBUG:",
         "exam_id =", exam.id,
