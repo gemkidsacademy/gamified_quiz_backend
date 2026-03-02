@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 import docx
 from datetime import date
- 
+from fastapi.encoders import jsonable_encoder 
 from io import BytesIO 
 from typing import List
 from sendgrid import SendGridAPIClient
@@ -19178,11 +19178,11 @@ def start_exam(
             f"remaining_seconds={remaining}"
         )
 
-        return {
+        return jsonable_encoder({
             "completed": False,
             "questions": normalized_questions,
             "remaining_time": remaining
-        }
+        })
 
     # --------------------------------------------------
     # 🆕 FIRST AND ONLY ATTEMPT (no attempt exists)
@@ -19257,11 +19257,11 @@ def start_exam(
 
     print("================ END START THINKING SKILLS EXAM ================\n")
 
-    return {
+    return jsonable_encoder({
         "completed": False,
         "questions": normalized_questions,
         "remaining_time": new_attempt.duration_minutes * 60
-    }
+    })
 
 
 
