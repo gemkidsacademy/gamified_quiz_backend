@@ -19253,14 +19253,29 @@ def start_exam(
 #     print("🔥 DB INSERT ERROR:", repr(e))
 #     db.rollback()
 #     raise
- 
+    print(
+        "➡️ Returning: new exam started | "
+        f"attempt_id={new_attempt.id} | "
+        f"questions={len(normalized_questions)} | "
+        f"remaining_seconds={new_attempt.duration_minutes * 60}"
+    )
+    
+    print("🧪 SERIALIZED PREVIEW:")
+    print(
+        json.dumps(
+            jsonable_encoder(normalized_questions),
+            indent=2
+        )
+    )
     print("================ END START THINKING SKILLS EXAM ================\n")
 
-    return jsonable_encoder({
+    safe_questions = jsonable_encoder(normalized_questions)
+
+    return {
         "completed": False,
-        "questions": normalized_questions,
-        "remaining_time": new_attempt.duration_minutes * 60
-    })
+        "questions": safe_questions,
+        "remaining_time": int(new_attempt.duration_minutes * 60)
+    }
 
 
 
