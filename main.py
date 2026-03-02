@@ -16174,27 +16174,36 @@ def parse_image_options(ctx):
 
     return options
 
+def normalize_filename(name: str) -> str:
+    return (
+        name.strip()
+        .lower()
+        .replace(" ", "")      # 🔥 remove ALL spaces
+    )
 def resolve_image_options(image_options, db):
     resolved = {}
-    missing = None
 
     for key, img in image_options.items():
+        normalized_img = normalize_filename(img)
+
         record = (
             db.query(UploadedImage)
-            .filter(func.lower(func.trim(UploadedImage.original_name)) == img)
+            .filter(
+                func.lower(
+                    func.replace(UploadedImage.original_name, " ", "")
+                ) == normalized_img
+            )
             .first()
         )
 
         if not record:
-            missing = img
-            break
+            raise ValueError(f"IMAGE_OPTION_NOT_UPLOADED: {img}")
 
         resolved[key] = record.gcs_url
 
-    if missing:
-        raise ValueError(f"IMAGE_OPTION_NOT_UPLOADED: {missing}")
-
     return resolved
+ 
+ 
 def parse_statements(ctx):
     statements = []
 
