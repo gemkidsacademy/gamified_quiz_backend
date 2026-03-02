@@ -19232,27 +19232,27 @@ def start_exam(
     # --------------------------------------------------
     # Pre-create response rows (ONLY here)
     # --------------------------------------------------
-    for q in normalized_questions:
-        db.add(
-            StudentExamResponseThinkingSkills(
-                student_id=student.id,
-                exam_id=exam.id,
-                exam_attempt_id=new_attempt.id,
-                q_id=q["q_id"],
-                topic=q.get("topic"),
-                selected_option=None,
-                correct_option=q["correct_answer"],
-                is_correct=None
-            )
-        )
-
     try:
+        for q in normalized_questions:
+            db.add(
+                StudentExamResponseThinkingSkills(
+                    student_id=student.id,
+                    exam_id=exam.id,
+                    exam_attempt_id=new_attempt.id,
+                    q_id=q["q_id"],
+                    topic=q.get("topic"),
+                    selected_option=None,
+                    correct_option=q["correct_answer"],
+                    is_correct=None
+                )
+            )
+    
         db.commit()
+    
     except Exception as e:
-        print("🔥 DB COMMIT ERROR:", repr(e))
+        print("🔥 DB INSERT ERROR:", repr(e))
         db.rollback()
         raise
-
     print(
         "➡️ Returning: new exam started | "
         f"attempt_id={new_attempt.id} | "
