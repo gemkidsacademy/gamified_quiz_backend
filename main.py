@@ -20423,18 +20423,28 @@ def get_naplan_numeracy_review(
 
     student_answers = {}
 
+    response_map = {}
+    
     for r in responses:
         qid = str(r.q_id)
-
-        # Multi-select answers were stored as string,
-        # so we try to parse if needed
+    
+        # student answer
         try:
             value = json.loads(r.selected_option)
         except Exception:
             value = r.selected_option
-
+    
         student_answers[qid] = value
-
+    
+        # correct answer
+        response_map[qid] = r.correct_option
+    
+    
+    # Inject correct_answer into questions
+    for q in normalized_questions:
+        qid = str(q.get("id"))
+        if qid in response_map:
+            q["correct_answer"] = response_map[qid]
     # --------------------------------------------------
     # 6. Return review payload
     # --------------------------------------------------
