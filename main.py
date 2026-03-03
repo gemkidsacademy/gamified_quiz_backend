@@ -20324,6 +20324,124 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         "exam_attempt_id": attempt.id,
         "accuracy_percent": accuracy
     } 
+
+
+
+@app.get("/api/student/exam-review/naplan-numeracy")
+def get_naplan_numeracy_review(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n================ NAPLAN NUMERACY REVIEW =================")
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2. Get completed attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanNumeracy)
+        .filter(
+            StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.completed_at.isnot(None)
+        )
+        .order_by(StudentExamNaplanNumeracy.completed_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail="No completed exam attempt found"
+        )
+
+    # --------------------------------------------------
+    # 3. Fetch exam
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanNumeracy)
+        .filter(ExamNaplanNumeracy.id == attempt.exam_id)
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=500,
+            detail="Exam linked to attempt not found"
+        )
+
+    # --------------------------------------------------
+    # 4. Normalize questions (same as start-exam)
+    # --------------------------------------------------
+    uploaded_images = db.query(UploadedImage).all()
+    image_map = {img.original_name: img.gcs_url for img in uploaded_images}
+
+    raw_questions = hydrate_naplan_question_structure(
+        exam.questions or []
+    )
+
+    raw_questions = normalize_naplan_numeracy_questions_live(raw_questions)
+
+    normalized_questions = []
+    for q in raw_questions:
+        if q.get("question_type") == 1:
+            q = serialize_type1_question_for_exam(q)
+
+        normalize_images_in_question(q, image_map)
+        normalize_type2_image_multiselect(q)
+        normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
+        normalize_type6_visual_counting_question(q)
+
+        normalized_questions.append(q)
+
+    # --------------------------------------------------
+    # 5. Fetch student responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseNaplanNumeracy)
+        .filter(
+            StudentExamResponseNaplanNumeracy.exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    student_answers = {}
+
+    for r in responses:
+        qid = str(r.q_id)
+
+        # Multi-select answers were stored as string,
+        # so we try to parse if needed
+        try:
+            value = json.loads(r.selected_option)
+        except Exception:
+            value = r.selected_option
+
+        student_answers[qid] = value
+
+    # --------------------------------------------------
+    # 6. Return review payload
+    # --------------------------------------------------
+    return {
+        "questions": normalized_questions,
+        "student_answers": student_answers
+    }
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
     req: FinishExamRequest,
