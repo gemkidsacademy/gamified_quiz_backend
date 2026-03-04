@@ -20327,6 +20327,145 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
 
 
 
+
+
+@app.get("/api/student/exam-review/naplan-language-conventions")
+def get_naplan_language_conventions_review(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n================ NAPLAN LANGUAGE CONVENTIONS REVIEW =================")
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2. Get completed attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanLanguageConventions)
+        .filter(
+            StudentExamNaplanLanguageConventions.student_id == student.id,
+            StudentExamNaplanLanguageConventions.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventions.completed_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail="No completed exam attempt found"
+        )
+
+    # --------------------------------------------------
+    # 3. Fetch exam
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanLanguageConventions)
+        .filter(ExamNaplanLanguageConventions.id == attempt.exam_id)
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=500,
+            detail="Exam linked to attempt not found"
+        )
+
+    # --------------------------------------------------
+    # 4. Normalize questions
+    # (same pipeline used for numeracy)
+    # --------------------------------------------------
+    uploaded_images = db.query(UploadedImage).all()
+    image_map = {
+        img.original_name: img.gcs_url
+        for img in uploaded_images
+    }
+
+    raw_questions = hydrate_naplan_question_structure(
+        exam.questions or []
+    )
+
+    # Same normalization because question types are identical
+    raw_questions = normalize_naplan_numeracy_questions_live(raw_questions)
+
+    normalized_questions = []
+
+    for q in raw_questions:
+
+        if q.get("question_type") == 1:
+            q = serialize_type1_question_for_exam(q)
+
+        normalize_images_in_question(q, image_map)
+        normalize_type2_image_multiselect(q)
+        normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
+        normalize_type6_visual_counting_question(q)
+
+        normalized_questions.append(q)
+
+    # --------------------------------------------------
+    # 5. Fetch student responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseNaplanLanguageConventions)
+        .filter(
+            StudentExamResponseNaplanLanguageConventions.exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    student_answers = {}
+    response_map = {}
+
+    for r in responses:
+        qid = str(r.q_id)
+
+        # student answer
+        try:
+            value = json.loads(r.selected_option)
+        except Exception:
+            value = r.selected_option
+
+        student_answers[qid] = value
+
+        # correct answer
+        response_map[qid] = r.correct_option
+
+    # --------------------------------------------------
+    # 6. Inject correct_answer into questions
+    # --------------------------------------------------
+    for q in normalized_questions:
+        qid = str(q.get("id"))
+
+        if qid in response_map:
+            q["correct_answer"] = response_map[qid]
+
+    # --------------------------------------------------
+    # 7. Return review payload
+    # --------------------------------------------------
+    return {
+        "questions": normalized_questions,
+        "student_answers": student_answers
+    }
+
 @app.get("/api/student/exam-review/naplan-numeracy")
 def get_naplan_numeracy_review(
     student_id: str,
