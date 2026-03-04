@@ -20412,11 +20412,30 @@ def get_naplan_reading_review(
         normalize_type3_numeric_input_question(q)
         normalize_type4_text_input_question(q)
         normalize_type6_visual_counting_question(q)
+        
         bundle = q.get("exam_bundle", {})
 
+        # --------------------------------------------------
+        # Ensure correct_answer always exists
+        # --------------------------------------------------
+        
+        # Case 1 — standard correct_answers list
         if "correct_answers" in bundle and bundle["correct_answers"]:
             bundle["correct_answer"] = bundle["correct_answers"][0]
-
+        
+        # Case 2 — already present
+        elif "correct_answer" in bundle:
+            pass
+        
+        # Case 3 — word_select questions (answer inside block)
+        else:
+            blocks = bundle.get("question_blocks", [])
+        
+            for b in blocks:
+                if b.get("type") == "word_select":
+                    if b.get("answer"):
+                        bundle["correct_answer"] = b["answer"]
+                        break
 
         normalized_questions.append(q)
 
