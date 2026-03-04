@@ -20327,7 +20327,131 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
 
 
 
+@app.get("/api/student/exam-review/naplan-reading")
+def get_naplan_reading_review(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n================ NAPLAN READING REVIEW =================")
 
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2. Get latest completed attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanReading)
+        .filter(
+            StudentExamNaplanReading.student_id == student.id,
+            StudentExamNaplanReading.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanReading.completed_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail="No completed exam attempt found"
+        )
+
+    # --------------------------------------------------
+    # 3. Fetch exam definition
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanReading)
+        .filter(ExamNaplanReading.id == attempt.exam_id)
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=500,
+            detail="Exam linked to attempt not found"
+        )
+
+    # --------------------------------------------------
+    # 4. Hydrate + normalize question structure
+    # --------------------------------------------------
+    uploaded_images = db.query(UploadedImage).all()
+
+    image_map = {
+        img.original_name: img.gcs_url
+        for img in uploaded_images
+    }
+
+    raw_questions = hydrate_naplan_question_structure(
+        exam.questions or []
+    )
+
+    normalized_questions = []
+
+    for q in raw_questions:
+
+        # normalize images
+        normalize_images_in_question(q, image_map)
+
+        # normalize common structures used by Reading
+        normalize_type2_image_multiselect(q)
+        normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
+        normalize_type6_visual_counting_question(q)
+        bundle = q.get("exam_bundle", {})
+
+        if "correct_answers" in bundle and bundle["correct_answers"]:
+            bundle["correct_answer"] = bundle["correct_answers"][0]
+
+
+        normalized_questions.append(q)
+
+    # --------------------------------------------------
+    # 5. Fetch student responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseNaplanReading)
+        .filter(
+            StudentExamResponseNaplanReading.exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    student_answers = {}
+
+    for r in responses:
+
+        qid = str(r.q_id)
+
+        try:
+            value = json.loads(r.selected_option)
+        except Exception:
+            value = r.selected_option
+
+        student_answers[qid] = value
+
+    # --------------------------------------------------
+    # 6. Return review payload
+    # --------------------------------------------------
+    return {
+        "questions": normalized_questions,
+        "student_answers": student_answers
+    }
 
 @app.get("/api/student/exam-review/naplan-language-conventions")
 def get_naplan_language_conventions_review(
