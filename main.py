@@ -20438,13 +20438,23 @@ def get_naplan_reading_review(
 
         qid = str(r.q_id)
 
-        try:
-            value = json.loads(r.selected_option)
-        except Exception:
-            value = r.selected_option
+        raw = r.selected_option
 
+        if raw is None:
+            value = None
+        
+        elif isinstance(raw, str):
+        
+            cleaned = raw.replace("'", '"')
+        
+            try:
+                value = json.loads(cleaned)
+            except Exception:
+                value = raw
+        
+        else:
+            value = raw
         student_answers[qid] = value
-
     # --------------------------------------------------
     # 6. Return review payload
     # --------------------------------------------------
