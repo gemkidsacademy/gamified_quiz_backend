@@ -20402,6 +20402,7 @@ def get_naplan_reading_review(
     normalized_questions = []
 
     for q in raw_questions:
+        print("FULL BUNDLE:", q.get("exam_bundle"))
 
         # normalize images
         normalize_images_in_question(q, image_map)
