@@ -20434,10 +20434,9 @@ def get_naplan_reading_review(
         
             for b in blocks:
                 if b.get("type") == "word_select":
-                    if b.get("answer"):
-                        bundle["correct_answer"] = b["answer"]
+                    if b.get("correct_answers"):
+                        bundle["correct_answer"] = b["correct_answers"][0]
                         break
-
         normalized_questions.append(q)
 
     # --------------------------------------------------
