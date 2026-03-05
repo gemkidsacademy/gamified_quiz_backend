@@ -22819,7 +22819,9 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # -------------------------------
         # Reference / stem images
         # -------------------------------
-        if upper.startswith(("REFERENCE_IMAGE:", "IMAGES:", "IMAGE:")):
+        image_prefixes = ("REFERENCE_IMAGE", "IMAGES", "IMAGE")
+
+        if any(upper.startswith(prefix) for prefix in image_prefixes) and ":" in line:
             filename = line.split(":", 1)[1].strip()
         
             blocks.append({
