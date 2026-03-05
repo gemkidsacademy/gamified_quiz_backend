@@ -24097,9 +24097,7 @@ async def process_exam_block(
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
-    print("\nBLOCK CONTENTS:")
-    for item in question_block:
-        print(item)
+
     detected_types = debug_detect_question_types(question_block)
     print(
         f"[{request_id}] 🧪 Block {block_idx} detected question_types = {detected_types}"
@@ -24133,16 +24131,9 @@ async def process_exam_block(
                 continue
     
             # 🚫 Skip IMAGES header
-            if upper.startswith(("IMAGES:", "REFERENCE_IMAGE:", "IMAGE:")):
-                filename = content.split(":", 1)[1].strip()
-            
-                stem_blocks.append({
-                    "type": "image",
-                    "image_ref": filename,
-                    "role": "reference"
-                })
-            
-                continue    
+            if upper == "IMAGES:":
+                continue
+    
             stem_blocks.append(b)
     
         elif b.get("type") == "image" and in_question_text:
@@ -24152,10 +24143,6 @@ async def process_exam_block(
         b.get("type") == "image"
         for b in stem_blocks
     )
-    # 🔍 DEBUG: inspect what stem extraction produced
-    print("\nSTEM BLOCKS:")
-    for b in stem_blocks:
-        print(b)
     # --------------------------------------------------
     # Extract option image blocks (TYPE 2)
     # --------------------------------------------------
@@ -24183,7 +24170,7 @@ async def process_exam_block(
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
     # ==================================================
-    if question_type == 5:
+    if is_cloze_question(question_block):
         print(f"[{request_id}] 🧩 CLOZE detected | block={block_idx}")
     
         try:
@@ -24238,7 +24225,7 @@ async def process_exam_block(
     # ==================================================
     # 🖼️ TYPE 6 — VISUAL COUNTING (SEALED)
     # ==================================================
-    if question_type == 6:
+    if is_visual_counting_exam(question_block):
         print(
             f"[{request_id}] 🖼️ TYPE 6 detected | "
             f"processing visual counting question"
@@ -24424,7 +24411,6 @@ async def process_exam_block(
             f"error={error_msg}"
         )
         summary.block_failure(block_idx, error_msg)
-
 
 def validate_cloze_dropdown(q: dict):
     if q.get("answer_type") != "CLOZE_DROPDOWN":
