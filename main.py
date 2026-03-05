@@ -24513,49 +24513,44 @@ def persist_question(
         # --------------------------------------------------
         # 3. Resolve images against chosen blocks
         # --------------------------------------------------
+        
         print("\nDISPLAY BLOCKS BEFORE CLEAN:")
         for b in display_blocks:
-            print(b)
-        display_blocks = [
-            b for b in display_blocks
-            if not (
-                b.get("type") == "image"
-                and not (
-                    (b.get("content") or "").strip()
-                    or (b.get("image_ref") or "").strip()
-                )
-            )
-        ]
+           print(b)
+        
         clean_blocks = []
-
+        
         for b in display_blocks:
         
-            if b.get("type") == "image":
-
-            filename = (
-                (b.get("content") or "").strip()
-                or (b.get("image_ref") or "").strip()
-            )
+           if b.get("type") == "image":
         
-            if not filename:
-                raise ValueError("Image block missing filename")
+               filename = (
+                   (b.get("content") or "").strip()
+                   or (b.get("image_ref") or "").strip()
+               )
         
-            # normalize schema for resolver
-            b["content"] = filename
+               if not filename:
+                   raise ValueError("Image block missing filename")
         
-            # remove parser-specific field
-            b.pop("image_ref", None)
+               # normalize schema for resolver
+               b["content"] = filename
         
-            clean_blocks.append(b)
-            continue
+               # remove parser-specific field
+               b.pop("image_ref", None)
         
-            clean_blocks.append(b)
+               clean_blocks.append(b)
+               continue
+        
+           # normal text blocks
+           clean_blocks.append(b)
         
         display_blocks = clean_blocks
+        
         resolve_images(display_blocks, db, request_id)
+        
         has_stem_images = any(
-            b.get("type") == "image"
-            for b in display_blocks
+           b.get("type") == "image"
+           for b in display_blocks
         )
 
         # --------------------------------------------------
