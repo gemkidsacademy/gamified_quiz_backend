@@ -3989,13 +3989,24 @@ def get_available_naplan_reading_years(
 
 @app.post("/naplan/reading/generate-exam")
 def generate_naplan_reading_exam(
+    payload: dict = Body(...),
     db: Session = Depends(get_db)
-):
+): 
+    requested_year = payload.get("year")
+
+    if not requested_year:
+        raise HTTPException(
+            status_code=400,
+            detail="Year is required to generate exam"
+        )
+    
+    print(f"📘 Requested year: {requested_year}")
     print("\n=== START: Generate NAPLAN Reading Exam ===")
 
     # 1. Load latest quiz config
     quiz = (
         db.query(QuizNaplanReading)
+        .filter(QuizNaplanReading.year == requested_year)
         .order_by(QuizNaplanReading.id.desc())
         .first()
     )
@@ -4146,17 +4157,20 @@ def generate_naplan_reading_exam(
     
     print("✅ Question count validated")
     # 9. Delete previous exams & attempts
-    db.query(StudentExamResponseNaplanReading).delete()
-    db.commit()
-
-    db.query(StudentExamNaplanReading).delete()
-    db.commit()
+    db.query(StudentExamResponseNaplanReading)\
+        .filter(StudentExamResponseNaplanReading.year == requested_year)\
+        .delete()
+    
+    db.query(StudentExamNaplanReading)\
+        .filter(StudentExamNaplanReading.year == requested_year)\
+        .delete()
 
     print("🧹 Deleting existing NAPLAN Reading exams...")
 
     deleted_count = (
-        db.query(ExamNaplanReading)
-        .delete()
+        db.query(ExamNaplanReading)\
+            .filter(ExamNaplanReading.year == requested_year)\
+            .delete()
     )
 
     print(f"🗑️ Deleted {deleted_count} previous exam(s)")
@@ -4168,6 +4182,7 @@ def generate_naplan_reading_exam(
         quiz_id=quiz.id,
         class_name=quiz.class_name,
         subject="reading",
+        year=quiz.year,
         difficulty=quiz.difficulty,
         questions=assembled_questions,
     )
