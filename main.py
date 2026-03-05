@@ -24525,18 +24525,22 @@ def persist_question(
         for b in display_blocks:
         
             if b.get("type") == "image":
-        
-                # prefer content
-                filename = (b.get("content") or "").strip()
-        
+
+                # accept both schemas
+                filename = (
+                    (b.get("content") or "").strip()
+                    or (b.get("image_ref") or "").strip()
+                )
+            
                 # if already resolved image exists
                 if not filename and b.get("src"):
                     clean_blocks.append(b)
                     continue
-        
+            
                 if not filename:
                     continue
-        
+            
+                # normalize to DB schema
                 b["content"] = filename
         
             clean_blocks.append(b)
