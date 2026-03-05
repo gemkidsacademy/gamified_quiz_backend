@@ -24144,6 +24144,9 @@ async def process_exam_block(
     # --------------------------------------------------
     # Extract option image blocks (TYPE 2)
     # --------------------------------------------------
+    print(f"[{request_id}] RAW QUESTION BLOCK:")
+    for b in question_block:
+        print(b)
     option_image_blocks = []
 
     if question_type == 2:
@@ -24160,10 +24163,22 @@ async def process_exam_block(
                 if marker in {"OPTIONS:", "CORRECT_ANSWER:"}:
                     in_question_blocks = False
     
-            if in_question_blocks and b.get("type") == "image":
-                b = dict(b)               # defensive copy
-                b["role"] = "option"      # semantic tagging
-                option_image_blocks.append(b)
+            if in_question_blocks:
+
+                if b.get("type") == "image":
+                    b = dict(b)
+                    b["role"] = "option"
+                    option_image_blocks.append(b)
+            
+                elif b.get("type") == "text":
+                    text = b.get("content", "").lower().strip()
+            
+                    if text.endswith(".png") or text.endswith(".jpg"):
+                        option_image_blocks.append({
+                            "type": "image",
+                            "content": text,
+                            "role": "option"
+                        })
 
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
@@ -24422,7 +24437,8 @@ async def process_exam_block(
             # Resolve image options for TYPE 2
             # --------------------------------------------------
             if q_type == 2:
-            
+                print(f"[{request_id}] 🔍 ENTERED TYPE 2 OPTION RESOLUTION")
+                print(f"[{request_id}] OPTION IMAGE BLOCKS:", option_image_blocks)
                 image_options = {}
             
                 for idx, img_block in enumerate(option_image_blocks):
