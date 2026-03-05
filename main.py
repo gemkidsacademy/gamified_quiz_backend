@@ -24734,7 +24734,11 @@ def resolve_images(blocks: list[dict], db: Session, request_id: str):
             print(f"[{request_id}] 🖼️ Image already resolved, skipping: {src}")
             continue
 
-        raw_name = (block.get("name") or "").strip()
+        raw_name = (
+            (block.get("content") or "").strip()
+            or (block.get("image_ref") or "").strip()
+            or (block.get("name") or "").strip()
+        )
         print(f"[{request_id}] 🖼️ Resolving image: '{raw_name}'")
 
         record = (
