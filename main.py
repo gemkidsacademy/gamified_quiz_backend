@@ -24132,7 +24132,7 @@ async def process_exam_block(
                 continue
     
             # 🚫 Skip IMAGES header
-            if upper.startswith("IMAGES:"):
+            if upper.startswith(("IMAGES:", "REFERENCE_IMAGE:", "IMAGE:")):
                 filename = content.split(":", 1)[1].strip()
             
                 stem_blocks.append({
@@ -24178,7 +24178,7 @@ async def process_exam_block(
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
     # ==================================================
-    if is_cloze_question(question_block):
+    if question_type == 5:
         print(f"[{request_id}] 🧩 CLOZE detected | block={block_idx}")
     
         try:
@@ -24233,7 +24233,7 @@ async def process_exam_block(
     # ==================================================
     # 🖼️ TYPE 6 — VISUAL COUNTING (SEALED)
     # ==================================================
-    if is_visual_counting_exam(question_block):
+    if question_type == 6:
         print(
             f"[{request_id}] 🖼️ TYPE 6 detected | "
             f"processing visual counting question"
