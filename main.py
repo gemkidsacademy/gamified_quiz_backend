@@ -16264,15 +16264,6 @@ def resolve_image_options(image_options, db):
     resolved = {}
 
     for key, img in image_options.items():
-
-        if not img or not img.strip():
-            print(f"⚠️ Skipping empty image option for {key}")
-            continue
-
-        if img.startswith("http"):
-            resolved[key] = img
-            continue
-
         normalized_img = normalize_filename(img)
 
         record = (
@@ -24718,6 +24709,7 @@ def resolve_images(blocks: list[dict], db: Session, request_id: str):
         block["src"] = record.gcs_url
 
         print(f"[{request_id}] ✅ Image resolved → {record.gcs_url}")
+
      
 def is_cloze_exam(exam_block: list[dict]) -> bool:
     for el in exam_block:
