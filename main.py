@@ -24307,7 +24307,11 @@ async def process_exam_block(
             f"[{request_id}] 🤖 Calling legacy GPT parser "
             f"for block {block_idx}"
         )
+        print(f"[{request_id}] 📤 TEXT BLOCK SENT TO GPT")
 
+        for b in question_block:
+            if isinstance(b, dict) and b.get("type") == "text":
+                print(f"[{request_id}] GPT_INPUT → {b['content']}")
         questions = await parse_questions_with_gpt_naplan_numeracy_lc(
             question_block=question_block,
             request_id=request_id
@@ -24497,7 +24501,8 @@ def persist_question(
             for b in display_blocks
             if b.get("type") == "text"
         )
-
+        print(f"[{request_id}] 💾 OPTIONS BEFORE SAVE: {q.get('options')}")
+        print(f"[{request_id}] 💾 CORRECT ANSWER BEFORE SAVE: {q.get('correct_answer')}")
         # --------------------------------------------------
         # 6. Persist
         # --------------------------------------------------
