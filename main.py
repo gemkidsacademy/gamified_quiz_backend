@@ -7913,6 +7913,7 @@ def create_naplan_reading_quiz(
 
         deleted_count = (
             db.query(QuizNaplanReading)
+            .filter(QuizNaplanReading.year == quiz.year)
             .delete()
         )
 
