@@ -729,7 +729,8 @@ class StudentExamNaplanReading(Base):
         ForeignKey("exam_naplan_reading.id"),
         nullable=False
     )
-
+    year = Column(Integer, nullable=False)
+  
     # -----------------------------
     # Timing
     # -----------------------------
@@ -753,7 +754,7 @@ class StudentExamNaplanReading(Base):
     # Relationships
     # -----------------------------
     student = relationship("Student")
-
+    
     exam = relationship("ExamNaplanReading")
 
     responses = relationship(
@@ -911,6 +912,7 @@ class StudentExamResponseNaplanReading(Base):
         ForeignKey("student_exam_naplan_reading.id"),
         nullable=False
     )
+    year = Column(Integer, nullable=False) 
 
     q_id = Column(String, nullable=False)
     topic = Column(String, nullable=True)
