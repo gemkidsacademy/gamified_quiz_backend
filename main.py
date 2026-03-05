@@ -16264,6 +16264,15 @@ def resolve_image_options(image_options, db):
     resolved = {}
 
     for key, img in image_options.items():
+
+        if not img or not img.strip():
+            print(f"⚠️ Skipping empty image option for {key}")
+            continue
+
+        if img.startswith("http"):
+            resolved[key] = img
+            continue
+
         normalized_img = normalize_filename(img)
 
         record = (
@@ -16282,7 +16291,6 @@ def resolve_image_options(image_options, db):
         resolved[key] = record.gcs_url
 
     return resolved
- 
  
 def parse_statements(ctx):
     statements = []
@@ -24220,15 +24228,16 @@ async def process_exam_block(
                 elif b.get("type") == "text":
                     text = b.get("content", "").lower().strip()
                 
-                    if text.endswith((".png", ".jpg", ".jpeg")):
-                
+                    if ".png" in text or ".jpg" in text or ".jpeg" in text:
+
                         filename = text.split(":")[-1].strip()
-                
-                        option_image_blocks.append({
-                            "type": "image",
-                            "content": filename,
-                            "role": "option"
-                        })
+                    
+                        if filename.endswith((".png", ".jpg", ".jpeg")):
+                            option_image_blocks.append({
+                                "type": "image",
+                                "content": filename,
+                                "role": "option"
+                            })
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
     # ==================================================
