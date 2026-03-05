@@ -24522,7 +24522,7 @@ def persist_question(
 
         for b in display_blocks:
         
-            if b.get("type") == "image":
+            if b.get("type") == "image" and question_type == 2:
         
                 filename = (
                     (b.get("content") or "").strip()
