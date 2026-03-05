@@ -24481,9 +24481,8 @@ def persist_question(
     summary=None,
     block_idx=None,
     stem_blocks=None,
-    question_blocks=None,   # 👈 ADD THIS
+    question_blocks=None,
 ):
- 
     """
     Persist a question safely.
 
@@ -24509,54 +24508,46 @@ def persist_question(
             display_blocks = stem_blocks
         else:
             display_blocks = question_block
-         
-        # --------------------------------------------------
-        # 3. Resolve images against chosen blocks
-        # --------------------------------------------------
-        
-        print("\nDISPLAY BLOCKS BEFORE CLEAN:")
-        for b in display_blocks:
-           print(b)
-        
-        clean_blocks = []
 
-        for b in display_blocks:
-        
-            if b.get("type") == "image" and question_type == 2:
-        
-                filename = (
-                    (b.get("content") or "").strip()
-                    or (b.get("image_ref") or "").strip()
-                )
-        
-                if not filename:
-                    raise ValueError("Image block missing filename")
-        
-                # normalize schema for resolver
-                b["name"] = filename
-                b["content"] = filename
-        
-                # remove parser-specific field
-                b.pop("image_ref", None)
-        
-                clean_blocks.append(b)
-                continue
-        
-            clean_blocks.append(b)
-        
-        display_blocks = clean_blocks
-        
+
+        # --------------------------------------------------
+        # 3. Normalize image blocks ONLY for Type 2
+        # --------------------------------------------------
+        if question_type == 2:
+
+            normalized_blocks = []
+
+            for b in display_blocks:
+
+                if b.get("type") == "image":
+
+                    filename = (
+                        (b.get("name") or "").strip()
+                        or (b.get("image_ref") or "").strip()
+                        or (b.get("content") or "").strip()
+                    )
+
+                    if not filename:
+                        raise ValueError("Image block missing filename")
+
+                    # ensure resolver field exists
+                    b["name"] = filename
+
+                normalized_blocks.append(b)
+
+            display_blocks = normalized_blocks
+
+
+        # --------------------------------------------------
+        # 4. Resolve images
+        # --------------------------------------------------
         resolve_images(display_blocks, db, request_id)
-        
+
         has_stem_images = any(
-           b.get("type") == "image"
-           for b in display_blocks
+            b.get("type") == "image"
+            for b in display_blocks
         )
 
-        # --------------------------------------------------
-        # 4. Stem image metadata (Type 5 safe)
-        # --------------------------------------------------
-        
 
         # --------------------------------------------------
         # 5. Build student-visible question text
@@ -24566,8 +24557,8 @@ def persist_question(
             for b in display_blocks
             if b.get("type") == "text"
         )
-        print(f"[{request_id}] 💾 OPTIONS BEFORE SAVE: {q.get('options')}")
-        print(f"[{request_id}] 💾 CORRECT ANSWER BEFORE SAVE: {q.get('correct_answer')}")
+
+
         # --------------------------------------------------
         # 6. Persist
         # --------------------------------------------------
@@ -24599,6 +24590,7 @@ def persist_question(
 
         return obj
 
+
     except Exception as e:
         if db:
             db.rollback()
@@ -24607,7 +24599,7 @@ def persist_question(
             f"[{request_id}] ❌ FAILED to persist question "
             f"(type={question_type}) | error={e}"
         )
-        raise     
+        raise
      
 def log_start(request_id, file):
     print("\n" + "=" * 70)
