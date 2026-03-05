@@ -22912,12 +22912,16 @@ async def parse_questions_with_gpt_naplan_numeracy_lc(
     )
 
     if questions:
+        q = questions[0]
+    
         print(
             f"[{request_id}] 🧠 First question preview | "
-            f"answer_type={questions[0].get('answer_type')} | "
-            f"keys={list(questions[0].keys())}"
+            f"answer_type={q.get('answer_type')} | "
+            f"keys={list(q.keys())}"
         )
-
+    
+        print(f"[{request_id}] 🧪 OPTIONS RETURNED BY GPT: {q.get('options')}")
+        print(f"[{request_id}] 🧪 CORRECT ANSWER: {q.get('correct_answer')}")
 
     return questions
 
