@@ -2065,7 +2065,7 @@ class ExamNaplanReading(Base):
 
     # just a number, NO foreign key
     quiz_id = Column(Integer, nullable=True)
-
+    year = Column(Integer, nullable=False)
     class_name = Column(String, nullable=False)   # e.g. "year 3"
     subject = Column(String, nullable=False)      # "reading"
     difficulty = Column(String, nullable=False)   # easy | medium | hard
