@@ -24172,14 +24172,16 @@ async def process_exam_block(
             
                 elif b.get("type") == "text":
                     text = b.get("content", "").lower().strip()
-            
-                    if text.endswith(".png") or text.endswith(".jpg"):
+                
+                    if ".png" in text or ".jpg" in text:
+                
+                        filename = text.split(":")[-1].strip()
+                
                         option_image_blocks.append({
                             "type": "image",
-                            "content": text,
+                            "content": filename,
                             "role": "option"
                         })
-
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
     # ==================================================
