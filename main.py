@@ -24676,6 +24676,7 @@ def validate_question_by_type(qt: int, q: dict):
     else:
         raise ValueError(f"Unsupported question_type: {qt}")
 
+
 def resolve_images(blocks: list[dict], db: Session, request_id: str):
     for block in blocks:
         if block.get("type") != "image":
@@ -24701,8 +24702,7 @@ def resolve_images(blocks: list[dict], db: Session, request_id: str):
         block.pop("name", None)
         block["src"] = record.gcs_url
 
-        print(f"[{request_id}] ✅ Image resolved → {record.gcs_url}")
-     
+        print(f"[{request_id}] ✅ Image resolved → {record.gcs_url}")     
 def is_cloze_exam(exam_block: list[dict]) -> bool:
     for el in exam_block:
         text = el.get("content", "")
