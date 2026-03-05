@@ -3602,7 +3602,7 @@ def generate_naplan_language_conventions_exam(
                 "question_type": q.question_type,
                 "topic": q.topic,
                 "difficulty": q.difficulty,
-                "question_blocks": build_question_blocks(q),
+                "question_blocks": build_question_blocks(q,db),
                 "options": q.options,
                 "correct_answer": q.correct_answer,
             })
@@ -3791,13 +3791,32 @@ def normalize_question_blocks_backend(blocks):
 
     return []
 
-def build_question_blocks(q):
+def build_question_blocks(q, db):
     """
     Build render-safe question_blocks for exam delivery.
-    This function is used ONLY at exam generation time.
+    Resolves image_ref → GCS URL and returns frontend-ready blocks.
     """
 
     blocks = []
+
+    # --------------------------------------------------
+    # Work on a COPY of DB blocks (never mutate DB JSON)
+    # --------------------------------------------------
+    question_blocks = [dict(b) for b in (q.question_blocks or [])]
+
+    # --------------------------------------------------
+    # Resolve image_ref → src (GCS URL)
+    # --------------------------------------------------
+    for block in question_blocks:
+        if block.get("type") == "image" and block.get("image_ref") and not block.get("src"):
+            record = (
+                db.query(UploadedImage)
+                .filter(UploadedImage.original_name == block["image_ref"])
+                .first()
+            )
+
+            if record:
+                block["src"] = record.gcs_url
 
     # ==================================================
     # Include question_text for NON-inline types
@@ -3812,8 +3831,9 @@ def build_question_blocks(q):
     # TYPE 2 — IMAGE MULTI SELECT
     # ==================================================
     if q.question_type == 2:
-        # 1️⃣ Instruction text (text blocks only)
-        for block in q.question_blocks or []:
+
+        # 1️⃣ Instruction text
+        for block in question_blocks:
             if block.get("type") == "text":
                 content = block.get("content", "").strip()
 
@@ -3831,31 +3851,31 @@ def build_question_blocks(q):
                     "content": content
                 })
 
-        # 2️⃣ Separate reference and option images (DO NOT INFER)
+        # 2️⃣ Separate reference and option images
         reference_images = [
             block["src"]
-            for block in q.question_blocks or []
+            for block in question_blocks
             if block.get("type") == "image"
             and block.get("role") == "reference"
             and block.get("src")
         ]
-        
+
         option_images = [
             block["src"]
-            for block in q.question_blocks or []
+            for block in question_blocks
             if block.get("type") == "image"
             and block.get("role") == "option"
             and block.get("src")
         ]
-        
-        # 3️⃣ Emit reference images as normal images
+
+        # 3️⃣ Emit reference images
         for src in reference_images:
             blocks.append({
                 "type": "image",
                 "src": src
             })
-        
-        # 4️⃣ Emit image-multi-select ONLY from option images
+
+        # 4️⃣ Emit image multi select
         if option_images:
             stored_labels = q.options or {}
 
@@ -3874,47 +3894,49 @@ def build_question_blocks(q):
                 ],
                 "maxSelections": len(q.correct_answer or [])
             })
-                    
+
         return blocks
 
     # ==================================================
     # TYPE 7 — WORD SELECTION
     # ==================================================
     if q.question_type == 7:
-    
-        for block in q.question_blocks or []:
-    
+
+        for block in question_blocks:
+
             if block.get("type") == "text":
                 blocks.append({
                     "type": "text",
                     "content": block.get("content", "").strip()
                 })
-    
+
             elif block.get("type") == "image":
                 blocks.append({
                     "type": "image",
                     "src": block.get("src"),
                     "role": block.get("role", "stem")
                 })
-    
+
             elif block.get("type") == "word-selection":
                 blocks.append({
                     "type": "word-selection",
                     "sentence": block["sentence"].strip(),
                     "selectable_words": block["selectable_words"]
                 })
-    
+
         return blocks
+
     # ==================================================
     # TYPE 5 — CLOZE DROPDOWN
     # ==================================================
     if q.question_type == 5:
+
         instruction = None
         sentence = None
         images = []
-    
-        for block in q.question_blocks or []:
-    
+
+        for block in question_blocks:
+
             if block.get("type") == "image":
                 images.append({
                     "type": "image",
@@ -3922,42 +3944,42 @@ def build_question_blocks(q):
                     "role": block.get("role", "reference")
                 })
                 continue
-    
+
             content = block.get("content", "").strip()
-    
+
             if content == "Choose the word to correctly complete this sentence.":
                 instruction = content
-    
+
             if "{{dropdown}}" in content:
                 sentence = content
-    
+
         if instruction:
             blocks.append({
                 "type": "text",
                 "content": instruction
             })
-    
-        # ✅ emit images BEFORE the cloze sentence
+
+        # emit images before sentence
         blocks.extend(images)
-    
+
         if sentence and q.options:
             blocks.append({
                 "type": "cloze-dropdown",
                 "sentence": sentence.strip(),
                 "options": list(q.options.values())
             })
-    
+
         return blocks
+
     # ==================================================
-    # ALL OTHER TYPES (SAFE FALLBACK)
+    # SAFE FALLBACK
     # ==================================================
-    if q.question_blocks:
+    if question_blocks:
         blocks.extend(
-            normalize_question_blocks_backend(q.question_blocks)
+            normalize_question_blocks_backend(question_blocks)
         )
 
     return blocks
-
 @app.get("/naplan/reading/available-years")
 def get_available_naplan_reading_years(
     db: Session = Depends(get_db)
@@ -4368,7 +4390,7 @@ def generate_naplan_numeracy_exam(
                 "question_text": q.question_text,
             
                 # Interactive content
-                "question_blocks": build_question_blocks(q),
+                "question_blocks": build_question_blocks(q,db),
             
                 # Evaluation
                 "options": q.options,
@@ -24097,9 +24119,16 @@ async def process_exam_block(
                 continue
     
             # 🚫 Skip IMAGES header
-            if upper == "IMAGES:":
-                continue
-    
+            if upper.startswith("IMAGES:"):
+                filename = content.split(":", 1)[1].strip()
+            
+                stem_blocks.append({
+                    "type": "image",
+                    "image_ref": filename,
+                    "role": "reference"
+                })
+            
+                continue    
             stem_blocks.append(b)
     
         elif b.get("type") == "image" and in_question_text:
