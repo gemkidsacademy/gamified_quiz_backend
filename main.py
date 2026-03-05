@@ -24390,19 +24390,18 @@ async def process_exam_block(
         
 
         for i, q in enumerate(questions, start=1):
-            question_type = q.get("question_type")
+            q_type = q.get("question_type")
+
             print(
                 f"[{request_id}] 🔎 Persisting legacy question "
-                f"type={question_type}"
+                f"type={q_type}"
             )
-
-
-            if not question_type:
+            
+            if not q_type:
                 raise ValueError("Legacy question missing question_type")
-
             # 🔒 Attach structured stem blocks
             # 🔒 Attach structured question blocks
-            if question_type == 2:
+            if q_type == 2:
                 q["question_blocks"] = stem_blocks + option_image_blocks
                 q["has_stem_images"] = has_stem_images
             else:
@@ -24416,16 +24415,34 @@ async def process_exam_block(
             
             print(
                 f"[{request_id}] ➕ Persisting question "
-                f"{i}/{len(questions)} (type={question_type}) | "
+                f"{i}/{len(questions)} (type={q_type}) | "
                 f"blocks={len(stem_blocks)}"
             )
-
+            # --------------------------------------------------
+            # Resolve image options for TYPE 2
+            # --------------------------------------------------
+            if q_type == 2:
+            
+                image_options = {}
+            
+                for idx, img_block in enumerate(option_image_blocks):
+                    label = chr(ord("A") + idx)
+            
+                    image_options[label] = img_block.get("src") or img_block.get("content")
+            
+                print(f"[{request_id}] 🖼️ TYPE 2 image_options =", image_options)
+            
+                resolved_options = resolve_image_options(image_options, db)
+            
+                print(f"[{request_id}] 🖼️ TYPE 2 resolved_options =", resolved_options)
+            
+                q["options"] = resolved_options
             persist_question(
                 q=q,
-                question_type=question_type,
+                question_type=q_type,
                 question_block=question_block,
                 stem_blocks=stem_blocks,
-                question_blocks=q["question_blocks"],  # 👈 ADD THIS
+                question_blocks=q["question_blocks"],
                 meta=meta,
                 db=db,
                 request_id=request_id,
