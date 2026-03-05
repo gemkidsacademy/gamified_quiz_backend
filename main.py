@@ -22693,7 +22693,7 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
                 #   A: AB: BC: CD: D
                 # --------------------------------------------------
                 matches = re.findall(
-                    r"([A-Za-z])[\.\:\)]\s*([^A-Za-z]*)",
+                    r"([A-Za-z])[\.\:\)]\s*(.*?)(?=(?:\s+[A-Za-z][\.\:\)])|$)",
                     line
                 )
     
