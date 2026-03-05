@@ -24102,7 +24102,7 @@ async def process_exam_block(
                 continue
     
             # Stop stem
-            if upper in {"QUESTION_BLOCKS:", "OPTIONS:", "CORRECT_ANSWER:"}:
+            if upper in {"QUESTION_BLOCKS:", "CORRECT_ANSWER:"}:
                 break
 
     
