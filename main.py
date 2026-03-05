@@ -18458,11 +18458,12 @@ def start_naplan_reading_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
+
     print("\n================ START NAPLAN READING EXAM =================")
     print("📥 Incoming payload:", req.dict())
 
     # --------------------------------------------------
-    # STUDENT
+    # STUDENT LOOKUP
     # --------------------------------------------------
     student = (
         db.query(Student)
@@ -18474,14 +18475,40 @@ def start_naplan_reading_exam(
     )
 
     if not student:
+        print("❌ Student not found")
         raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"✅ Student found: {student.student_id}")
+    print(f"📚 Student class_name in DB: '{student.class_name}'")
+
+    # --------------------------------------------------
+    # EXTRACT YEAR FROM CLASS NAME
+    # --------------------------------------------------
+    try:
+        student_year = int(student.class_name.lower().replace("year", "").strip())
+    except Exception:
+        print("❌ Failed to parse year from class_name:", student.class_name)
+        raise HTTPException(status_code=400, detail="Invalid student class_name format")
+
+    print(f"🎓 Parsed student year: {student_year}")
+
+    # --------------------------------------------------
+    # DEBUG: WHAT EXAMS EXIST
+    # --------------------------------------------------
+    available_exams = db.query(ExamNaplanReading.year).distinct().all()
+    available_years = [y[0] for y in available_exams]
+
+    print("📊 Available exam years in exam_naplan_reading:", available_years)
 
     # --------------------------------------------------
     # EXISTING ATTEMPT
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamNaplanReading)
-        .filter(StudentExamNaplanReading.student_id == student.id)
+        .filter(
+            StudentExamNaplanReading.student_id == student.id,
+            StudentExamNaplanReading.year == student_year
+        )
         .order_by(StudentExamNaplanReading.started_at.desc())
         .first()
     )
@@ -18492,105 +18519,137 @@ def start_naplan_reading_exam(
     uploaded_images = db.query(UploadedImage).all()
     image_map = {img.original_name: img.gcs_url for img in uploaded_images}
 
+    # --------------------------------------------------
+    # RESUME ATTEMPT
+    # --------------------------------------------------
     if attempt:
-       responses = (
-           db.query(StudentExamResponseNaplanReading)
-           .filter(
-               StudentExamResponseNaplanReading.exam_attempt_id == attempt.id
-           )
-           .all()
-       )
-   
-       answers = {
-           str(r.q_id): r.selected_option
-           for r in responses
-           if r.selected_option is not None
-       }
-   
-       started_at = attempt.started_at
-       if started_at.tzinfo is None:
-           started_at = started_at.replace(tzinfo=timezone.utc)
-   
-       expires_at = started_at + MAX_DURATION
-       elapsed = int((now - started_at).total_seconds())
-   
-       # ⛔ expired but not submitted
-       if attempt.completed_at is None and now > expires_at:
-           attempt.completed_at = expires_at
-           db.commit()
-           return {"completed": True}
-   
-       # ✅ already finished
-       if attempt.completed_at is not None:
-           return {"completed": True}
-   
-       remaining = max(0, attempt.duration_minutes * 60 - elapsed)
-   
-       exam = (
-           db.query(ExamNaplanReading)
-           .filter(
-               func.lower(ExamNaplanReading.class_name) ==
-               func.lower(student.class_name),
-               func.lower(ExamNaplanReading.subject) == "reading"
-           )
-           .order_by(ExamNaplanReading.created_at.desc())
-           .first()
-       )
-   
-       raw_questions = exam.questions or []
-   
-       normalized_questions = []
-       for q in raw_questions:
-           normalize_images_in_question(q, image_map)
-           normalize_type2_correct_answer(q)
-           normalize_reading_gap_questions(q)
-           normalize_true_false_questions(q)
-           sanitized_q = strip_correct_answers_from_question(q)
-           normalized_questions.append(sanitized_q)
-   
-       return {
-           "completed": False,
-           "is_resumed": True,
-           "answers": answers,
-           "questions": normalized_questions,
-           "remaining_time": remaining
-       }
+
+        print(f"🔁 Resuming attempt id={attempt.id} for year {student_year}")
+
+        responses = (
+            db.query(StudentExamResponseNaplanReading)
+            .filter(
+                StudentExamResponseNaplanReading.exam_attempt_id == attempt.id
+            )
+            .all()
+        )
+
+        answers = {
+            str(r.q_id): r.selected_option
+            for r in responses
+            if r.selected_option is not None
+        }
+
+        started_at = attempt.started_at
+
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        expires_at = started_at + MAX_DURATION
+        elapsed = int((now - started_at).total_seconds())
+
+        if attempt.completed_at is None and now > expires_at:
+            print("⏱ Attempt expired automatically")
+            attempt.completed_at = expires_at
+            db.commit()
+            return {"completed": True}
+
+        if attempt.completed_at is not None:
+            print("✅ Attempt already completed")
+            return {"completed": True}
+
+        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+
+        # --------------------------------------------------
+        # LOAD EXAM BY YEAR
+        # --------------------------------------------------
+        exam = (
+            db.query(ExamNaplanReading)
+            .filter(
+                ExamNaplanReading.year == student_year,
+                func.lower(ExamNaplanReading.subject) == "reading"
+            )
+            .order_by(ExamNaplanReading.created_at.desc())
+            .first()
+        )
+
+        if not exam:
+            print("❌ No exam found for year:", student_year)
+            raise HTTPException(
+                status_code=404,
+                detail=f"No Reading exam available for Year {student_year}"
+            )
+
+        print(f"📘 Serving exam id={exam.id} for year={exam.year}")
+
+        raw_questions = exam.questions or []
+
+        normalized_questions = []
+
+        for q in raw_questions:
+            normalize_images_in_question(q, image_map)
+            normalize_type2_correct_answer(q)
+            normalize_reading_gap_questions(q)
+            normalize_true_false_questions(q)
+
+            sanitized_q = strip_correct_answers_from_question(q)
+
+            normalized_questions.append(sanitized_q)
+
+        return {
+            "completed": False,
+            "is_resumed": True,
+            "answers": answers,
+            "questions": normalized_questions,
+            "remaining_time": remaining
+        }
 
     # --------------------------------------------------
     # 🆕 FIRST ATTEMPT
     # --------------------------------------------------
+    print("🆕 No existing attempt — creating new attempt")
+
     exam = (
         db.query(ExamNaplanReading)
         .filter(
-            func.lower(ExamNaplanReading.class_name) ==
-            func.lower(student.class_name),
+            ExamNaplanReading.year == student_year,
             func.lower(ExamNaplanReading.subject) == "reading"
         )
         .order_by(ExamNaplanReading.created_at.desc())
         .first()
     )
 
+    if not exam:
+        print("❌ No exam found for year:", student_year)
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Reading exam available for Year {student_year}"
+        )
+
+    print(f"📘 Selected exam id={exam.id} for year={exam.year}")
+
     raw_questions = exam.questions or []
 
     normalized_questions = []
+
     for q in raw_questions:
-        # 1. Images inside reading extracts / options
+
         normalize_images_in_question(q, image_map)
-    
-        # 2. Multi-select answers (arrays vs strings)
         normalize_type2_correct_answer(q)
-    
-        # 3. Gap fill / single gap consistency
         normalize_reading_gap_questions(q)
-    
-        # 4. True / False normalization
         normalize_true_false_questions(q)
-    
+
         sanitized_q = strip_correct_answers_from_question(q)
+
         normalized_questions.append(sanitized_q)
+
+    # --------------------------------------------------
+    # CREATE ATTEMPT
+    # --------------------------------------------------
     new_attempt = StudentExamNaplanReading(
         student_id=student.id,
         exam_id=exam.id,
+        year=student_year,
         started_at=now,
         duration_minutes=40
     )
@@ -18599,10 +18658,13 @@ def start_naplan_reading_exam(
     db.commit()
     db.refresh(new_attempt)
 
+    print(f"🧾 Created new attempt id={new_attempt.id} for year={student_year}")
+
     # --------------------------------------------------
-    # SEED RESPONSE ROWS
+    # SEED RESPONSES
     # --------------------------------------------------
     for original_q in exam.questions or []:
+
         normalized_correct_option = normalize_correct_option_for_db(
             original_q.get("correct_answer")
         )
@@ -18612,6 +18674,7 @@ def start_naplan_reading_exam(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
+                year=student_year,
                 q_id=original_q.get("passage_id"),
                 topic=original_q.get("topic"),
                 selected_option=None,
@@ -18622,6 +18685,8 @@ def start_naplan_reading_exam(
 
     db.commit()
 
+    print("✅ Response rows seeded")
+
     return {
         "completed": False,
         "is_resumed": False,
@@ -18629,7 +18694,7 @@ def start_naplan_reading_exam(
         "questions": normalized_questions,
         "remaining_time": new_attempt.duration_minutes * 60
     }
-
+ 
 def hydrate_naplan_question_structure(raw_questions):
     """
     Converts legacy / blob-style question_text into structured question_blocks.
