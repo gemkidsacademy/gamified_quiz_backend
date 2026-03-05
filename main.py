@@ -24703,8 +24703,12 @@ def resolve_images(blocks: list[dict], db: Session, request_id: str):
             print(f"[{request_id}] 🖼️ Image already resolved, skipping: {src}")
             continue
 
-        raw_name = (block.get("name") or "").strip()
+        raw_name = (block.get("image_ref") or block.get("name") or "").strip()
+
         print(f"[{request_id}] 🖼️ Resolving image: '{raw_name}'")
+
+        if not raw_name:
+            raise ValueError("Image block missing filename")
 
         record = (
             db.query(UploadedImage)
@@ -24716,10 +24720,10 @@ def resolve_images(blocks: list[dict], db: Session, request_id: str):
             raise ValueError(f"Image '{raw_name}' not uploaded yet")
 
         block.pop("name", None)
+        block.pop("image_ref", None)
         block["src"] = record.gcs_url
 
         print(f"[{request_id}] ✅ Image resolved → {record.gcs_url}")
-
 
 def is_cloze_exam(exam_block: list[dict]) -> bool:
     for el in exam_block:
