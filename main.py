@@ -24072,6 +24072,8 @@ def validate_cloze_correct_answer_against_options(correct_answer, options):
             f"CLOZE correct_answer '{correct_answer}' not found in options {options}"
         )
      
+
+
 async def process_exam_block(
     block_idx,
     question_block,
@@ -24092,17 +24094,6 @@ async def process_exam_block(
 
     validate_single_question_type(question_block)
     question_type = int(next(iter(detected_types)))  # 👈 ADD HERE
-    # --------------------------------------------------
-    # DEBUG: Show option lines in block
-    # --------------------------------------------------
-    print(f"[{request_id}] 🔍 RAW OPTION LINES IN BLOCK")
-    
-    for item in question_block:
-        if item.get("type") == "text":
-            text = item["content"].strip()
-    
-            if text.startswith(("A.", "B.", "C.", "D.", "E.", "F.")):
-                print(f"[{request_id}] OPTION LINE -> {text}")
 
     # --------------------------------------------------
     # Extract ordered stem blocks (TEXT + IMAGE only)
@@ -24110,10 +24101,8 @@ async def process_exam_block(
     stem_blocks = []
     in_question_text = False
     
-    for i, b in enumerate(question_block):
-
+    for b in question_block:
         if b.get("type") == "text":
-    
             content = b["content"].strip()
             upper = content.upper()
     
@@ -24125,109 +24114,27 @@ async def process_exam_block(
             # Stop stem
             if upper in {"QUESTION_BLOCKS:", "OPTIONS:", "CORRECT_ANSWER:"}:
                 break
+
     
             if not in_question_text:
                 continue
     
-            # ---------------------------------------
-            # Handle REFERENCE_IMAGE
-            # ---------------------------------------
-            if "REFERENCE_IMAGE" in upper:
-    
-                filename = content.split(":")[-1].strip()
-    
-                if not filename:
-                    continue
-    
-                record = (
-                    db.query(UploadedImage)
-                    .filter(func.lower(UploadedImage.original_name) == filename.lower())
-                    .first()
-                )
-    
-                if not record:
-                    raise ValueError(f"Image '{filename}' not uploaded yet")
-    
-                stem_blocks.append({
-                    "type": "image",
-                    "src": record.gcs_url
-                })
-    
+            # 🚫 Skip IMAGES header
+            if upper == "IMAGES:":
                 continue
     
-            # ---------------------------------------
-            # Handle IMAGES:
-            # ---------------------------------------
-            if upper.startswith("IMAGES"):
+            stem_blocks.append(b)
     
-               # Case 1: IMAGES: image.png
-               if ":" in content:
-                   filename = content.split(":")[-1].strip().lower()
-           
-               # Case 2: IMAGES: then next line
-               else:
-                   filename = ""
-                   if i + 1 < len(question_block):
-                       filename = question_block[i + 1].get("content", "").strip().lower()
-           
-               if filename.endswith((".png", ".jpg", ".jpeg")):
-           
-                   record = (
-                       db.query(UploadedImage)
-                       .filter(func.lower(UploadedImage.original_name) == filename)
-                       .first()
-                   )
-           
-                   if not record:
-                       raise ValueError(f"Image '{filename}' not uploaded yet")
-           
-                   stem_blocks.append({
-                       "type": "image",
-                       "src": record.gcs_url
-                   })
-           
-               continue
-            # ---------------------------------------
-            # Handle standalone image filenames
-            # ---------------------------------------
-            if content.lower().endswith((".png", ".jpg", ".jpeg")):
-    
-                record = (
-                    db.query(UploadedImage)
-                    .filter(func.lower(UploadedImage.original_name) == content.lower())
-                    .first()
-                )
-    
-                if record:
-                    stem_blocks.append({
-                        "type": "image",
-                        "src": record.gcs_url
-                    })
-                    continue
-    
-            # ---------------------------------------
-            # Normal text
-            # ---------------------------------------
-            stem_blocks.append(b)     
-         
+        elif b.get("type") == "image" and in_question_text:
+            stem_blocks.append(b)
+
     has_stem_images = any(
         b.get("type") == "image"
         for b in stem_blocks
     )
-    print(f"[{request_id}] 🧠 STEM BLOCKS EXTRACTED")
-
-    for b in stem_blocks:
-        if b["type"] == "text":
-            print(f"[{request_id}] STEM TEXT -> {b['content']}")
-        else:
-            print(f"[{request_id}] STEM IMAGE -> {b}")
-    
     # --------------------------------------------------
     # Extract option image blocks (TYPE 2)
     # --------------------------------------------------
-    print(f"[{request_id}] RAW QUESTION BLOCK:")
-    for b in question_block:
-        print(b)
     option_image_blocks = []
 
     if question_type == 2:
@@ -24244,26 +24151,11 @@ async def process_exam_block(
                 if marker in {"OPTIONS:", "CORRECT_ANSWER:"}:
                     in_question_blocks = False
     
-            if in_question_blocks:
+            if in_question_blocks and b.get("type") == "image":
+                b = dict(b)               # defensive copy
+                b["role"] = "option"      # semantic tagging
+                option_image_blocks.append(b)
 
-                if b.get("type") == "image":
-                    b = dict(b)
-                    b["role"] = "option"
-                    option_image_blocks.append(b)
-            
-                elif b.get("type") == "text":
-                    text = b.get("content", "").lower().strip()
-                
-                    if any(ext in text for ext in (".png", ".jpg", ".jpeg")):
-
-                        filename = text.split(":")[-1].strip()
-                    
-                        if filename.endswith((".png", ".jpg", ".jpeg")):
-                            option_image_blocks.append({
-                                "type": "image",
-                                "content": filename,
-                                "role": "option"
-                            })
     # ==================================================
     # 🧩 TYPE 5 — CLOZE (DETERMINISTIC)
     # ==================================================
@@ -24416,34 +24308,7 @@ async def process_exam_block(
 
         summary.block_success(block_idx, [1])
         return  # 🚨 DO NOT FALL THROUGH
-    # --------------------------------------------------
-    # NORMALIZE OPTION BLOCKS FOR GPT
-    # --------------------------------------------------
-    normalized_block = []
-    
-    for item in question_block:
-    
-        # If parser produced structured options
-        if isinstance(item, dict) and item.get("type") == "options":
-    
-            normalized_block.append({
-                "type": "text",
-                "content": "OPTIONS:"
-            })
-    
-            for opt in item["options"]:
-                normalized_block.append({
-                    "type": "text",
-                    "content": f"{opt['id']}. {opt['text']}"
-                })
-    
-        else:
-            normalized_block.append(item)
-    print(f"[{request_id}] 🔧 NORMALIZED BLOCK CREATED")
 
-    for i, item in enumerate(normalized_block):
-        if item.get("type") == "text":
-            print(f"[{request_id}] NORM[{i}] TEXT -> {item['content']}")
     # ==================================================
     # 🧠 LEGACY BRANCH — QUESTION TYPES 1–4
     # ==================================================
@@ -24452,16 +24317,9 @@ async def process_exam_block(
             f"[{request_id}] 🤖 Calling legacy GPT parser "
             f"for block {block_idx}"
         )
-        print(f"[{request_id}] 🔍 FULL BLOCK SENT TO GPT")
-
-        for i, item in enumerate(normalized_block):
-            if item.get("type") == "text":
-                print(f"[{request_id}] BLOCK[{i}] TEXT -> {item['content']}")
-            else:
-                print(f"[{request_id}] BLOCK[{i}] NON-TEXT -> {item}")
 
         questions = await parse_questions_with_gpt_naplan_numeracy_lc(
-            question_block=normalized_block,
+            question_block=question_block,
             request_id=request_id
         )
 
@@ -24489,18 +24347,19 @@ async def process_exam_block(
         
 
         for i, q in enumerate(questions, start=1):
-            q_type = q.get("question_type")
-
+            question_type = q.get("question_type")
             print(
                 f"[{request_id}] 🔎 Persisting legacy question "
-                f"type={q_type}"
+                f"type={question_type}"
             )
-            
-            if not q_type:
+
+
+            if not question_type:
                 raise ValueError("Legacy question missing question_type")
+
             # 🔒 Attach structured stem blocks
             # 🔒 Attach structured question blocks
-            if q_type == 2:
+            if question_type == 2:
                 q["question_blocks"] = stem_blocks + option_image_blocks
                 q["has_stem_images"] = has_stem_images
             else:
@@ -24514,35 +24373,16 @@ async def process_exam_block(
             
             print(
                 f"[{request_id}] ➕ Persisting question "
-                f"{i}/{len(questions)} (type={q_type}) | "
+                f"{i}/{len(questions)} (type={question_type}) | "
                 f"blocks={len(stem_blocks)}"
             )
-            # --------------------------------------------------
-            # Resolve image options for TYPE 2
-            # --------------------------------------------------
-            if q_type == 2:
-                print(f"[{request_id}] 🔍 ENTERED TYPE 2 OPTION RESOLUTION")
-                print(f"[{request_id}] OPTION IMAGE BLOCKS:", option_image_blocks)
-                image_options = {}
-            
-                for idx, img_block in enumerate(option_image_blocks):
-                    label = chr(ord("A") + idx)
-            
-                    image_options[label] = img_block.get("src") or img_block.get("content")
-            
-                print(f"[{request_id}] 🖼️ TYPE 2 image_options =", image_options)
-            
-                resolved_options = resolve_image_options(image_options, db)
-            
-                print(f"[{request_id}] 🖼️ TYPE 2 resolved_options =", resolved_options)
-            
-                q["options"] = resolved_options
+
             persist_question(
                 q=q,
-                question_type=q_type,
+                question_type=question_type,
                 question_block=question_block,
                 stem_blocks=stem_blocks,
-                question_blocks=q["question_blocks"],
+                question_blocks=q["question_blocks"],  # 👈 ADD THIS
                 meta=meta,
                 db=db,
                 request_id=request_id,
@@ -24560,6 +24400,7 @@ async def process_exam_block(
             f"error={error_msg}"
         )
         summary.block_failure(block_idx, error_msg)
+
 
 def validate_cloze_dropdown(q: dict):
     if q.get("answer_type") != "CLOZE_DROPDOWN":
