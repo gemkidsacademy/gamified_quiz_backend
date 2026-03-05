@@ -23839,14 +23839,13 @@ def debug_detect_question_types(question_block):
         if not isinstance(item, dict):
             continue
 
-        text = (item.get("content") or "")
+        text = (item.get("content") or "").strip().lower()
 
-        match = re.search(r"question_type\s*:\s*(\d+)", text, re.IGNORECASE)
+        match = re.search(r"question_type\s*:\s*(\d+)", text)
         if match:
             types.add(match.group(1))
 
-    return types
- 
+    return types 
 WORD_RE = re.compile(r"^[A-Za-z]+$")
 
 def normalize_ws_word(raw: str) -> str:
