@@ -4157,56 +4157,23 @@ def generate_naplan_reading_exam(
     
     print("✅ Question count validated")
     # 9. Delete previous exams & attempts
-    print("🧹 Cleaning previous attempts for year:", requested_year)
+    db.query(StudentExamResponseNaplanReading)\
+        .filter(StudentExamResponseNaplanReading.year == requested_year)\
+        .delete()
+    
+    db.query(StudentExamNaplanReading)\
+        .filter(StudentExamNaplanReading.year == requested_year)\
+        .delete()
 
-    # --------------------------------------------------
-    # 1️⃣ Find attempts for this year
-    # --------------------------------------------------
-    attempt_rows = (
-        db.query(StudentExamNaplanReading.id)
-        .filter(StudentExamNaplanReading.year == requested_year)
-        .all()
+    print("🧹 Deleting existing NAPLAN Reading exams...")
+
+    deleted_count = (
+        db.query(ExamNaplanReading)\
+            .filter(ExamNaplanReading.year == requested_year)\
+            .delete()
     )
-    
-    attempt_ids = [row.id for row in attempt_rows]
-    
-    print(f"🔎 Found {len(attempt_ids)} attempts for year {requested_year}")
-    
-    # --------------------------------------------------
-    # 2️⃣ Delete responses linked to those attempts
-    # --------------------------------------------------
-    if attempt_ids:
-        deleted_responses = (
-            db.query(StudentExamResponseNaplanReading)
-            .filter(StudentExamResponseNaplanReading.exam_attempt_id.in_(attempt_ids))
-            .delete(synchronize_session=False)
-        )
-    
-        print(f"🗑 Deleted {deleted_responses} responses")
-    
-    # --------------------------------------------------
-    # 3️⃣ Delete exam attempts
-    # --------------------------------------------------
-    deleted_attempts = (
-        db.query(StudentExamNaplanReading)
-        .filter(StudentExamNaplanReading.year == requested_year)
-        .delete(synchronize_session=False)
-    )
-    
-    print(f"🗑 Deleted {deleted_attempts} attempts")
-    
-    # --------------------------------------------------
-    # 4️⃣ Delete generated exams
-    # --------------------------------------------------
-    deleted_exams = (
-        db.query(ExamNaplanReading)
-        .filter(ExamNaplanReading.year == requested_year)
-        .delete(synchronize_session=False)
-    )
-    
-    print(f"🗑 Deleted {deleted_exams} previous exam(s)")
-    
-    db.commit()
+
+    print(f"🗑️ Deleted {deleted_count} previous exam(s)")
 
     # 10. Persist exam
     print("💾 Saving exam to exam_naplan_reading table...")
@@ -4235,6 +4202,7 @@ def generate_naplan_reading_exam(
         "exam_id": exam.id,
         "total_questions": total_question_count,
     }
+
 
 
 @app.post("/naplan/numeracy/generate-exam")
