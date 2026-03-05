@@ -24102,7 +24102,7 @@ async def process_exam_block(
                 continue
     
             # Stop stem
-            if upper == "QUESTION_BLOCKS:":
+            if upper in {"QUESTION_BLOCKS:", "OPTIONS:", "CORRECT_ANSWER:"}:
                 break
 
     
@@ -24307,11 +24307,7 @@ async def process_exam_block(
             f"[{request_id}] 🤖 Calling legacy GPT parser "
             f"for block {block_idx}"
         )
-        print(f"[{request_id}] 📤 TEXT BLOCK SENT TO GPT")
 
-        for b in question_block:
-            if isinstance(b, dict) and b.get("type") == "text":
-                print(f"[{request_id}] GPT_INPUT → {b['content']}")
         questions = await parse_questions_with_gpt_naplan_numeracy_lc(
             question_block=question_block,
             request_id=request_id
@@ -24353,11 +24349,12 @@ async def process_exam_block(
 
             # 🔒 Attach structured stem blocks
             # 🔒 Attach structured question blocks
-            q["question_blocks"] = question_block
-            q["has_stem_images"] = any(
-                b.get("type") == "image"
-                for b in question_block
-            )
+            if question_type == 2:
+                q["question_blocks"] = stem_blocks + option_image_blocks
+                q["has_stem_images"] = has_stem_images
+            else:
+                q["question_blocks"] = stem_blocks
+                q["has_stem_images"] = has_stem_images
             
             # Optional but useful
             if any(b["type"] == "image" for b in stem_blocks):
