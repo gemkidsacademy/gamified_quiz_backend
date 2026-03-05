@@ -16481,6 +16481,11 @@ def strip_cloze_option_text(question_block):
         b for b in question_block
         if b.get("type") != "options"
     ]
+
+
+
+def get_image_name(block):
+    return block.get("image_ref") or block.get("name")
  
 def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
     """
@@ -16502,7 +16507,7 @@ def extract_cloze_from_exam_block(block_elements: list[dict]) -> dict:
         # 0. Extract reference images (Type 5 only)
         # --------------------------------------------------
         reference_images = [
-            el["name"]
+            get_image_name(el)
             for el in block_elements
             if el.get("type") == "image" and el.get("role") == "reference"
         ]
