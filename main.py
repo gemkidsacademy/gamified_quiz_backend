@@ -24097,7 +24097,9 @@ async def process_exam_block(
     print("\n" + "-" * 60)
     print(f"[{request_id}] ▶️ BLOCK {block_idx} START")
     print(f"[{request_id}] 📦 Block elements = {len(question_block)}")
-
+    print("\nBLOCK CONTENTS:")
+    for item in question_block:
+        print(item)
     detected_types = debug_detect_question_types(question_block)
     print(
         f"[{request_id}] 🧪 Block {block_idx} detected question_types = {detected_types}"
