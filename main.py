@@ -23661,7 +23661,7 @@ def extract_reference_images(
 
     for b in question_block:
         if b.get("type") == "image" and b.get("role") == "reference":
-            image_name = b.get("name")
+            image_name = b.get("image_ref") or b.get("name")
 
             image_url = upload_exam_image(
                 image_ref=image_name,
