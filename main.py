@@ -24110,7 +24110,8 @@ async def process_exam_block(
     stem_blocks = []
     in_question_text = False
     
-    for b in question_block:
+    for i, b in enumerate(question_block):
+
         if b.get("type") == "text":
     
             content = b["content"].strip()
@@ -24132,29 +24133,60 @@ async def process_exam_block(
             # Handle REFERENCE_IMAGE
             # ---------------------------------------
             if "REFERENCE_IMAGE" in upper:
-
+    
                 filename = content.split(":")[-1].strip()
-            
+    
                 if not filename:
                     continue
-            
-                filename = filename.strip()
-            
+    
                 record = (
                     db.query(UploadedImage)
                     .filter(func.lower(UploadedImage.original_name) == filename.lower())
                     .first()
                 )
-            
+    
                 if not record:
                     raise ValueError(f"Image '{filename}' not uploaded yet")
-            
+    
                 stem_blocks.append({
                     "type": "image",
                     "src": record.gcs_url
                 })
-            
-                continue    
+    
+                continue
+    
+            # ---------------------------------------
+            # Handle IMAGES:
+            # ---------------------------------------
+            if upper.startswith("IMAGES"):
+    
+               # Case 1: IMAGES: image.png
+               if ":" in content:
+                   filename = content.split(":")[-1].strip().lower()
+           
+               # Case 2: IMAGES: then next line
+               else:
+                   filename = ""
+                   if i + 1 < len(question_block):
+                       filename = question_block[i + 1].get("content", "").strip().lower()
+           
+               if filename.endswith((".png", ".jpg", ".jpeg")):
+           
+                   record = (
+                       db.query(UploadedImage)
+                       .filter(func.lower(UploadedImage.original_name) == filename)
+                       .first()
+                   )
+           
+                   if not record:
+                       raise ValueError(f"Image '{filename}' not uploaded yet")
+           
+                   stem_blocks.append({
+                       "type": "image",
+                       "src": record.gcs_url
+                   })
+           
+               continue
             # ---------------------------------------
             # Handle standalone image filenames
             # ---------------------------------------
@@ -24172,12 +24204,6 @@ async def process_exam_block(
                         "src": record.gcs_url
                     })
                     continue
-    
-            # ---------------------------------------
-            # Skip header
-            # ---------------------------------------
-            if upper == "IMAGES:":
-                continue
     
             # ---------------------------------------
             # Normal text
@@ -24228,7 +24254,7 @@ async def process_exam_block(
                 elif b.get("type") == "text":
                     text = b.get("content", "").lower().strip()
                 
-                    if ".png" in text or ".jpg" in text or ".jpeg" in text:
+                    if any(ext in text for ext in (".png", ".jpg", ".jpeg")):
 
                         filename = text.split(":")[-1].strip()
                     
