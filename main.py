@@ -24317,7 +24317,34 @@ async def process_exam_block(
 
         summary.block_success(block_idx, [1])
         return  # 🚨 DO NOT FALL THROUGH
+    # --------------------------------------------------
+    # NORMALIZE OPTION BLOCKS FOR GPT
+    # --------------------------------------------------
+    normalized_block = []
+    
+    for item in question_block:
+    
+        # If parser produced structured options
+        if isinstance(item, dict) and item.get("type") == "options":
+    
+            normalized_block.append({
+                "type": "text",
+                "content": "OPTIONS:"
+            })
+    
+            for opt in item["options"]:
+                normalized_block.append({
+                    "type": "text",
+                    "content": f"{opt['id']}. {opt['text']}"
+                })
+    
+        else:
+            normalized_block.append(item)
+    print(f"[{request_id}] 🔧 NORMALIZED BLOCK CREATED")
 
+    for i, item in enumerate(normalized_block):
+        if item.get("type") == "text":
+            print(f"[{request_id}] NORM[{i}] TEXT -> {item['content']}")
     # ==================================================
     # 🧠 LEGACY BRANCH — QUESTION TYPES 1–4
     # ==================================================
@@ -24328,14 +24355,14 @@ async def process_exam_block(
         )
         print(f"[{request_id}] 🔍 FULL BLOCK SENT TO GPT")
 
-        for i, item in enumerate(question_block):
+        for i, item in enumerate(normalized_block):
             if item.get("type") == "text":
                 print(f"[{request_id}] BLOCK[{i}] TEXT -> {item['content']}")
             else:
-                print(f"[{request_id}] BLOCK[{i}] IMAGE -> {item}")
+                print(f"[{request_id}] BLOCK[{i}] NON-TEXT -> {item}")
 
         questions = await parse_questions_with_gpt_naplan_numeracy_lc(
-            question_block=question_block,
+            question_block=normalized_block,
             request_id=request_id
         )
 
