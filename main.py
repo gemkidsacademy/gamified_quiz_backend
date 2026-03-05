@@ -24518,7 +24518,13 @@ def persist_question(
             print(b)
         display_blocks = [
             b for b in display_blocks
-            if not (b.get("type") == "image" and not (b.get("content") or "").strip())
+            if not (
+                b.get("type") == "image"
+                and not (
+                    (b.get("content") or "").strip()
+                    or (b.get("image_ref") or "").strip()
+                )
+            )
         ]
         clean_blocks = []
 
