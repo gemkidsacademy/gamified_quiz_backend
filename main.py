@@ -3956,6 +3956,34 @@ def build_question_blocks(q):
 
     return blocks
 
+@app.get("/naplan/reading/available-years")
+def get_available_naplan_reading_years(
+    db: Session = Depends(get_db)
+):
+    print("\n📚 Fetching available NAPLAN Reading years")
+
+    try:
+        years = (
+            db.query(QuizNaplanReading.year)
+            .distinct()
+            .order_by(QuizNaplanReading.year)
+            .all()
+        )
+
+        # SQLAlchemy returns tuples like [(3,), (5,), (7,)]
+        year_list = [y[0] for y in years]
+
+        print("✅ Available years:", year_list)
+
+        return {
+            "years": year_list
+        }
+
+    except Exception as e:
+        print("❌ Failed to fetch available years:", str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+     
 
 @app.post("/naplan/reading/generate-exam")
 def generate_naplan_reading_exam(
