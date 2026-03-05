@@ -24084,6 +24084,17 @@ async def process_exam_block(
 
     validate_single_question_type(question_block)
     question_type = int(next(iter(detected_types)))  # 👈 ADD HERE
+    # --------------------------------------------------
+    # DEBUG: Show option lines in block
+    # --------------------------------------------------
+    print(f"[{request_id}] 🔍 RAW OPTION LINES IN BLOCK")
+    
+    for item in question_block:
+        if item.get("type") == "text":
+            text = item["content"].strip()
+    
+            if text.startswith(("A.", "B.", "C.", "D.", "E.", "F.")):
+                print(f"[{request_id}] OPTION LINE -> {text}")
 
     # --------------------------------------------------
     # Extract ordered stem blocks (TEXT + IMAGE only)
@@ -24122,6 +24133,14 @@ async def process_exam_block(
         b.get("type") == "image"
         for b in stem_blocks
     )
+    print(f"[{request_id}] 🧠 STEM BLOCKS EXTRACTED")
+
+    for b in stem_blocks:
+        if b["type"] == "text":
+            print(f"[{request_id}] STEM TEXT -> {b['content']}")
+        else:
+            print(f"[{request_id}] STEM IMAGE -> {b}")
+    
     # --------------------------------------------------
     # Extract option image blocks (TYPE 2)
     # --------------------------------------------------
@@ -24307,6 +24326,13 @@ async def process_exam_block(
             f"[{request_id}] 🤖 Calling legacy GPT parser "
             f"for block {block_idx}"
         )
+        print(f"[{request_id}] 🔍 FULL BLOCK SENT TO GPT")
+
+        for i, item in enumerate(question_block):
+            if item.get("type") == "text":
+                print(f"[{request_id}] BLOCK[{i}] TEXT -> {item['content']}")
+            else:
+                print(f"[{request_id}] BLOCK[{i}] IMAGE -> {item}")
 
         questions = await parse_questions_with_gpt_naplan_numeracy_lc(
             question_block=question_block,
