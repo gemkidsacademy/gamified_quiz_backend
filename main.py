@@ -24532,22 +24532,22 @@ def persist_question(
         
             if b.get("type") == "image":
 
-                # accept both schemas
-                filename = (
-                    (b.get("content") or "").strip()
-                    or (b.get("image_ref") or "").strip()
-                )
-            
-                # if already resolved image exists
-                if not filename and b.get("src"):
-                    clean_blocks.append(b)
-                    continue
-            
-                if not filename:
-                    continue
-            
-                # normalize to DB schema
-                b["content"] = filename
+            filename = (
+                (b.get("content") or "").strip()
+                or (b.get("image_ref") or "").strip()
+            )
+        
+            if not filename:
+                raise ValueError("Image block missing filename")
+        
+            # normalize schema for resolver
+            b["content"] = filename
+        
+            # remove parser-specific field
+            b.pop("image_ref", None)
+        
+            clean_blocks.append(b)
+            continue
         
             clean_blocks.append(b)
         
