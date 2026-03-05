@@ -24152,6 +24152,10 @@ async def process_exam_block(
         b.get("type") == "image"
         for b in stem_blocks
     )
+    # 🔍 DEBUG: inspect what stem extraction produced
+    print("\nSTEM BLOCKS:")
+    for b in stem_blocks:
+        print(b)
     # --------------------------------------------------
     # Extract option image blocks (TYPE 2)
     # --------------------------------------------------
