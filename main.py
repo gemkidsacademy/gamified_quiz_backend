@@ -24648,6 +24648,21 @@ def persist_question(
         # --------------------------------------------------
         # 3. Resolve images against chosen blocks
         # --------------------------------------------------
+        display_blocks = [
+            b for b in display_blocks
+            if not (b.get("type") == "image" and not (b.get("content") or "").strip())
+        ]
+        clean_blocks = []
+        
+        for b in display_blocks:
+            if b.get("type") == "image":
+                filename = (b.get("content") or "").strip()
+                if not filename:
+                    continue
+                b["content"] = filename
+            clean_blocks.append(b)
+        
+        display_blocks = clean_blocks
         resolve_images(display_blocks, db, request_id)
         has_stem_images = any(
             b.get("type") == "image"
