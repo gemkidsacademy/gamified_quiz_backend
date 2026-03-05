@@ -23553,6 +23553,7 @@ def vc_resolve_option_images(
         )
 
     return resolved
+ 
 def vc_extract_options_from_block(question_block):
     options = []
 
@@ -23560,14 +23561,15 @@ def vc_extract_options_from_block(question_block):
         if not isinstance(item, dict):
             continue
 
-        text = (item.get("content") or "").strip()
-
-        match = re.match(r"^([A-D])\s*[:.]\s*(.+)$", text)
-        if match:
-            options.append({
-                "label": match.group(1),
-                "image_ref": match.group(2),
-            })
+        # --------------------------------------------------
+        # NEW: read structured OPTIONS block from parser
+        # --------------------------------------------------
+        if item.get("type") == "options":
+            for opt in item.get("options", []):
+                options.append({
+                    "label": opt["id"],
+                    "image_ref": opt["text"],
+                })
 
     if len(options) != 4:
         raise ValueError(
@@ -23575,6 +23577,7 @@ def vc_extract_options_from_block(question_block):
         )
 
     return options
+ 
 def vc_extract_correct_answer_from_block(question_block):
     """
     Extracts correct answer for Visual Counting (Type 6)
