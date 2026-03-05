@@ -4407,28 +4407,11 @@ def generate_naplan_numeracy_exam(
         )
     
         # 2️⃣ Delete student responses
-        db.query(StudentExamResponseNaplanNumeracy) \
-          .filter(
-              StudentExamResponseNaplanNumeracy.exam_attempt_id.in_(
-                  db.query(StudentExamNaplanNumeracy.id)
-                  .filter(
-                      StudentExamNaplanNumeracy.exam_id.in_(exam_ids_subquery)
-                  )
-              )
-          ) \
-          .delete(synchronize_session=False)
-    
+        db.query(StudentExamResponseNaplanNumeracy).delete(synchronize_session=False)    
         # 3️⃣ Delete student exam attempts
-        db.query(StudentExamNaplanNumeracy) \
-          .filter(
-              StudentExamNaplanNumeracy.exam_id.in_(exam_ids_subquery)
-          ) \
-          .delete(synchronize_session=False)
-    
+        db.query(StudentExamNaplanNumeracy).delete()
         # 4️⃣ Delete exams
-        db.query(ExamNaplanNumeracy) \
-          .filter(ExamNaplanNumeracy.quiz_id == quiz.id) \
-          .delete(synchronize_session=False)
+        db.query(ExamNaplanNumeracy).delete(synchronize_session=False)
     
         db.commit()
     
