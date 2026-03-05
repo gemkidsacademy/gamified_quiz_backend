@@ -24519,30 +24519,30 @@ def persist_question(
            print(b)
         
         clean_blocks = []
-        
+
         for b in display_blocks:
         
-           if b.get("type") == "image":
+            if b.get("type") == "image":
         
-               filename = (
-                   (b.get("content") or "").strip()
-                   or (b.get("image_ref") or "").strip()
-               )
+                filename = (
+                    (b.get("content") or "").strip()
+                    or (b.get("image_ref") or "").strip()
+                )
         
-               if not filename:
-                   raise ValueError("Image block missing filename")
+                if not filename:
+                    raise ValueError("Image block missing filename")
         
-               # normalize schema for resolver
-               b["content"] = filename
+                # normalize schema for resolver
+                b["name"] = filename
+                b["content"] = filename
         
-               # remove parser-specific field
-               b.pop("image_ref", None)
+                # remove parser-specific field
+                b.pop("image_ref", None)
         
-               clean_blocks.append(b)
-               continue
+                clean_blocks.append(b)
+                continue
         
-           # normal text blocks
-           clean_blocks.append(b)
+            clean_blocks.append(b)
         
         display_blocks = clean_blocks
         
@@ -24734,11 +24734,7 @@ def resolve_images(blocks: list[dict], db: Session, request_id: str):
             print(f"[{request_id}] 🖼️ Image already resolved, skipping: {src}")
             continue
 
-        raw_name = (
-            (block.get("content") or "").strip()
-            or (block.get("image_ref") or "").strip()
-            or (block.get("name") or "").strip()
-        )
+        raw_name = (block.get("name") or "").strip()
         print(f"[{request_id}] 🖼️ Resolving image: '{raw_name}'")
 
         record = (
@@ -24754,7 +24750,6 @@ def resolve_images(blocks: list[dict], db: Session, request_id: str):
         block["src"] = record.gcs_url
 
         print(f"[{request_id}] ✅ Image resolved → {record.gcs_url}")
-
      
 def is_cloze_exam(exam_block: list[dict]) -> bool:
     for el in exam_block:
