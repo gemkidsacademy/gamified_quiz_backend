@@ -24513,6 +24513,9 @@ def persist_question(
         # --------------------------------------------------
         # 3. Resolve images against chosen blocks
         # --------------------------------------------------
+        print("\nDISPLAY BLOCKS BEFORE CLEAN:")
+        for b in display_blocks:
+            print(b)
         display_blocks = [
             b for b in display_blocks
             if not (b.get("type") == "image" and not (b.get("content") or "").strip())
