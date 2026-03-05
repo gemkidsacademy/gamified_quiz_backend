@@ -24353,12 +24353,11 @@ async def process_exam_block(
 
             # 🔒 Attach structured stem blocks
             # 🔒 Attach structured question blocks
-            if question_type == 2:
-                q["question_blocks"] = stem_blocks + option_image_blocks
-                q["has_stem_images"] = has_stem_images
-            else:
-                q["question_blocks"] = stem_blocks
-                q["has_stem_images"] = has_stem_images
+            q["question_blocks"] = question_block
+            q["has_stem_images"] = any(
+                b.get("type") == "image"
+                for b in question_block
+            )
             
             # Optional but useful
             if any(b["type"] == "image" for b in stem_blocks):
