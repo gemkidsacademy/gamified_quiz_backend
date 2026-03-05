@@ -18480,16 +18480,18 @@ def start_naplan_reading_exam(
 
     print(f"✅ Student found: {student.student_id}")
     print(f"📚 Student class_name in DB: '{student.class_name}'")
-
-    # --------------------------------------------------
-    # EXTRACT YEAR FROM CLASS NAME
-    # --------------------------------------------------
+    print(f"🎓 Student student_year column: '{student.student_year}'")
+    
     try:
-        student_year = int(student.class_name.lower().replace("year", "").strip())
+        student_year = int(student.student_year.lower().replace("year", "").strip())
     except Exception:
-        print("❌ Failed to parse year from class_name:", student.class_name)
-        raise HTTPException(status_code=400, detail="Invalid student class_name format")
-
+        print("❌ Failed to parse year from student_year:", student.student_year)
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid student_year format"
+        )
+    
+    print(f"✅ Parsed student year: {student_year}")
     print(f"🎓 Parsed student year: {student_year}")
 
     # --------------------------------------------------
