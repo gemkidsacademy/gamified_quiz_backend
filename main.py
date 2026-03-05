@@ -22816,7 +22816,19 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
             else:
                 buffer.append(line)
                 continue
-
+        # -------------------------------
+        # Reference / stem images
+        # -------------------------------
+        if upper.startswith(("REFERENCE_IMAGE:", "IMAGES:", "IMAGE:")):
+            filename = line.split(":", 1)[1].strip()
+        
+            blocks.append({
+                "type": "image",
+                "image_ref": filename,
+                "role": "reference"
+            })
+        
+            continue
         # -------------------------------
         # Default text
         # -------------------------------
