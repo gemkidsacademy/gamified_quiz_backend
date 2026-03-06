@@ -20058,7 +20058,15 @@ def finish_naplan_language_conventions_exam(
     
             if isinstance(normalized_correct, dict) and "value" in normalized_correct:
                 normalized_correct = normalized_correct["value"]
-    
+            # ⭐ NEW: resolve MCQ key → text
+            options = q.get("options")
+            
+            if (
+                options
+                and isinstance(normalized_correct, str)
+                and normalized_correct in options
+            ):
+                normalized_correct = options[normalized_correct]
             # 3️⃣ Compare answers
             if isinstance(normalized_correct, list):
                 if isinstance(student_answer, list):
