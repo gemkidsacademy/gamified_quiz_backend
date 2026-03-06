@@ -20230,13 +20230,23 @@ def finish_naplan_reading_exam(
     # --------------------------------------------------
     for q in questions:
         q_id = str(q.get("question_id") or q.get("id"))
-        correct_answer = q.get("correct_answer")
+        correct_answer = (
+            q.get("correct_answer")
+            or (q.get("exam_bundle") or {}).get("correct_answer")
+        )
         topic = q.get("topic")
 
         student_answer = answers.get(q_id)
 
         # 1️⃣ Normalize unanswered
         student_answer = normalize_student_answer(student_answer)
+        print(
+            "DEBUG:",
+            q_id,
+            "raw_student:", answers.get(q_id),
+            "normalized_student:", student_answer,
+            "correct:", correct_answer
+        )
 
         # unanswered
         if student_answer in (None, "", [], {}):
