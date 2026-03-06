@@ -20497,6 +20497,10 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         topic = q.get("topic")
     
         student_answer = answers.get(q_id)
+
+        # normalize numeric answers
+        if isinstance(student_answer, str) and student_answer.isdigit():
+            student_answer = int(student_answer)
     
         # ensure variable always exists for logging
         normalized_correct = correct_answer
@@ -20511,44 +20515,29 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
                 if isinstance(student_answer, list)
                 else str(student_answer)
             )
-    
-            # handle "{'value':'...'}"
-            if isinstance(normalized_correct, str) and "value" in normalized_correct:
-                try:
-                    normalized_correct = json.loads(
-                        normalized_correct.replace("'", '"')
-                    )["value"]
-                except:
-                    pass
-    
-            # handle {"value": "..."}
-            if isinstance(normalized_correct, dict) and "value" in normalized_correct:
-                normalized_correct = normalized_correct["value"]
-    
-            # resolve MCQ key → option text
-            options = q.get("options")
-    
-            if (
-                options
-                and isinstance(normalized_correct, str)
-                and normalized_correct in options
-            ):
-                normalized_correct = options[normalized_correct]
-    
+        
+            # normalize correct answer
+            if isinstance(correct_answer, dict):
+                normalized_correct = correct_answer.get("value")
+            else:
+                normalized_correct = correct_answer
+        
+            # normalize numeric correct answers
+            if isinstance(normalized_correct, str) and normalized_correct.isdigit():
+                normalized_correct = int(normalized_correct)
+        
             # evaluate
             if isinstance(normalized_correct, list):
                 if isinstance(student_answer, list):
-                    is_correct = sorted(normalized_correct) == sorted(student_answer)
+                    is_correct = sorted(map(str, normalized_correct)) == sorted(map(str, student_answer))
                 else:
                     is_correct = False
             else:
-                is_correct = (
-                    str(student_answer).strip().lower()
-                    == str(normalized_correct).strip().lower()
-                )
-    
+                is_correct = str(student_answer).strip() == str(normalized_correct).strip()
+        
         print(
             "🔍 EVAL DEBUG |",
+            "type =", q.get("question_type"),
             "q_id =", q_id,
             "| student_answer =", student_answer,
             "| correct_answer_raw =", correct_answer,
@@ -20570,7 +20559,7 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
                 q_id=int(q_id),
                 topic=topic,
                 selected_option=selected_option,
-                correct_option=str(correct_answer),
+                correct_option=str(normalized_correct),
                 is_correct=is_correct
             )
         )
