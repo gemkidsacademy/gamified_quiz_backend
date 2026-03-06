@@ -20257,8 +20257,15 @@ def finish_naplan_reading_exam(
         
             # multi select / true false
             if isinstance(correct_answer, list):
-                if isinstance(student_answer, list):
+
+                # single-answer list like ['C']
+                if len(correct_answer) == 1 and not isinstance(student_answer, list):
+                    is_correct = str(student_answer).strip() == str(correct_answer[0]).strip()
+            
+                # multi-select / true-false
+                elif isinstance(student_answer, list):
                     is_correct = sorted(correct_answer) == sorted(student_answer)
+            
                 else:
                     is_correct = False
             else:
