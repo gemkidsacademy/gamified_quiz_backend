@@ -20025,27 +20025,60 @@ def finish_naplan_language_conventions_exam(
     # 6. Evaluate answers
     # --------------------------------------------------
     for q in questions:
+
         q_id = str(q.get("id"))
         correct_answer = q.get("correct_answer")
         topic = q.get("topic")
-
+    
         student_answer = answers.get(q_id)
-
+    
+        # define early so debug log always works
+        normalized_correct = correct_answer
+    
         # 1️⃣ Normalize unanswered
         if student_answer in (None, "", [], {}):
             selected_option = None
             is_correct = False
+    
         else:
-            selected_option = str(student_answer)
-
-            # 2️⃣ Evaluate correctness
-            if isinstance(correct_answer, list):
-                is_correct = sorted(correct_answer) == sorted(student_answer)
+            selected_option = (
+                json.dumps(student_answer)
+                if isinstance(student_answer, list)
+                else str(student_answer)
+            )
+    
+            # 2️⃣ Normalize correct_answer
+            if isinstance(normalized_correct, str) and "value" in normalized_correct:
+                try:
+                    normalized_correct = json.loads(
+                        normalized_correct.replace("'", '"')
+                    )["value"]
+                except:
+                    pass
+    
+            if isinstance(normalized_correct, dict) and "value" in normalized_correct:
+                normalized_correct = normalized_correct["value"]
+    
+            # 3️⃣ Compare answers
+            if isinstance(normalized_correct, list):
+                if isinstance(student_answer, list):
+                    is_correct = sorted(normalized_correct) == sorted(student_answer)
+                else:
+                    is_correct = False
             else:
                 is_correct = (
                     str(student_answer).strip()
-                    == str(correct_answer).strip()
+                    == str(normalized_correct).strip()
                 )
+    
+        print(
+            "🔍 EVAL DEBUG |",
+            "q_id =", q_id,
+            "| student_answer =", student_answer,
+            "| correct_answer_raw =", correct_answer,
+            "| normalized_correct =", normalized_correct,
+            "| is_correct =", is_correct
+        )
 
         # 3️⃣ Count
         if is_correct:
