@@ -20503,13 +20503,50 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
             selected_option = None
             is_correct = False
         else:
-            selected_option = str(student_answer)
+            selected_option = (
+                json.dumps(student_answer)
+                if isinstance(student_answer, list)
+                else str(student_answer)
+            )
         
             # 2️⃣ Evaluate correctness
-            if isinstance(correct_answer, list):
-                is_correct = sorted(correct_answer) == sorted(student_answer)
+            # normalize correct answer
+            normalized_correct = correct_answer
+            
+            # handle "{'value':'...'}"
+            if isinstance(normalized_correct, str) and "value" in normalized_correct:
+                try:
+                    normalized_correct = json.loads(
+                        normalized_correct.replace("'", '"')
+                    )["value"]
+                except:
+                    pass
+            
+            # handle {"value": "..."}
+            if isinstance(normalized_correct, dict) and "value" in normalized_correct:
+                normalized_correct = normalized_correct["value"]
+            
+            # resolve MCQ key → option text
+            options = q.get("options")
+            
+            if (
+                options
+                and isinstance(normalized_correct, str)
+                and normalized_correct in options
+            ):
+                normalized_correct = options[normalized_correct]
+            
+            # evaluate
+            if isinstance(normalized_correct, list):
+                if isinstance(student_answer, list):
+                    is_correct = sorted(normalized_correct) == sorted(student_answer)
+                else:
+                    is_correct = False
             else:
-                is_correct = str(student_answer).strip() == str(correct_answer).strip()
+                is_correct = (
+                    str(student_answer).strip().lower()
+                    == str(normalized_correct).strip().lower()
+                )
         
         # 3️⃣ Count
         if is_correct:
