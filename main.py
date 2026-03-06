@@ -20525,7 +20525,16 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
             # normalize numeric correct answers
             if isinstance(normalized_correct, str) and normalized_correct.isdigit():
                 normalized_correct = int(normalized_correct)
-        
+            options = q.get("options")
+
+            # Only map key → text for dropdown (type 5) questions
+            if (
+                q.get("question_type") == 5
+                and options
+                and isinstance(normalized_correct, str)
+                and normalized_correct in options
+            ):
+                normalized_correct = options[normalized_correct]
             # evaluate
             if isinstance(normalized_correct, list):
                 if isinstance(student_answer, list):
