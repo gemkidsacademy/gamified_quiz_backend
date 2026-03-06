@@ -20495,9 +20495,12 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         q_id = str(q.get("id"))
         correct_answer = q.get("correct_answer")
         topic = q.get("topic")
-
+    
         student_answer = answers.get(q_id)
-
+    
+        # ensure variable always exists for logging
+        normalized_correct = correct_answer
+    
         # 1️⃣ Normalize unanswered
         if student_answer in (None, "", [], {}):
             selected_option = None
@@ -20508,11 +20511,7 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
                 if isinstance(student_answer, list)
                 else str(student_answer)
             )
-        
-            # 2️⃣ Evaluate correctness
-            # normalize correct answer
-            normalized_correct = correct_answer
-            
+    
             # handle "{'value':'...'}"
             if isinstance(normalized_correct, str) and "value" in normalized_correct:
                 try:
@@ -20521,21 +20520,21 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
                     )["value"]
                 except:
                     pass
-            
+    
             # handle {"value": "..."}
             if isinstance(normalized_correct, dict) and "value" in normalized_correct:
                 normalized_correct = normalized_correct["value"]
-            
+    
             # resolve MCQ key → option text
             options = q.get("options")
-            
+    
             if (
                 options
                 and isinstance(normalized_correct, str)
                 and normalized_correct in options
             ):
                 normalized_correct = options[normalized_correct]
-            
+    
             # evaluate
             if isinstance(normalized_correct, list):
                 if isinstance(student_answer, list):
@@ -20547,7 +20546,15 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
                     str(student_answer).strip().lower()
                     == str(normalized_correct).strip().lower()
                 )
-        
+    
+        print(
+            "🔍 EVAL DEBUG |",
+            "q_id =", q_id,
+            "| student_answer =", student_answer,
+            "| correct_answer_raw =", correct_answer,
+            "| normalized_correct =", normalized_correct,
+            "| is_correct =", is_correct
+        )
         # 3️⃣ Count
         if is_correct:
             correct_count += 1
