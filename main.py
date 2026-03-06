@@ -20096,6 +20096,23 @@ def finish_naplan_language_conventions_exam(
         "exam_attempt_id": attempt.id,
         "accuracy_percent": accuracy
     }
+def normalize_student_answer(answer):
+    if answer is None:
+        return None
+
+    # If already list
+    if isinstance(answer, list):
+        return answer
+
+    # If JSON string list
+    if isinstance(answer, str) and answer.startswith("["):
+        try:
+            return json.loads(answer)
+        except:
+            return answer
+
+    return answer
+ 
 @app.post("/api/student/finish-exam/naplan-reading")
 def finish_naplan_reading_exam(
     payload: dict,
@@ -20219,21 +20236,26 @@ def finish_naplan_reading_exam(
         student_answer = answers.get(q_id)
 
         # 1️⃣ Normalize unanswered
+        student_answer = normalize_student_answer(student_answer)
+
+        # unanswered
         if student_answer in (None, "", [], {}):
             selected_option = None
             is_correct = False
         else:
             selected_option = str(student_answer)
-
-            # 2️⃣ Evaluate correctness
+        
+            # multi select / true false
             if isinstance(correct_answer, list):
-                is_correct = sorted(correct_answer) == sorted(student_answer)
+                if isinstance(student_answer, list):
+                    is_correct = sorted(correct_answer) == sorted(student_answer)
+                else:
+                    is_correct = False
             else:
                 is_correct = (
                     str(student_answer).strip()
                     == str(correct_answer).strip()
                 )
-
         # 3️⃣ Count
         if is_correct:
             correct_count += 1
