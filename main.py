@@ -20305,7 +20305,11 @@ def finish_naplan_reading_exam(
             
                 # multi-select / true-false
                 elif isinstance(student_answer, list):
-                    is_correct = sorted(correct_answer) == sorted(student_answer)
+
+                    safe_correct = [str(x).strip() for x in (correct_answer or []) if x not in (None, "")]
+                    safe_student = [str(x).strip() for x in (student_answer or []) if x not in (None, "")]
+                
+                    is_correct = sorted(safe_correct) == sorted(safe_student)
             
                 else:
                     is_correct = False
