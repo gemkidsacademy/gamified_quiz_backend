@@ -11940,6 +11940,14 @@ def start_naplan_language_conventions_exam(
     if not student:
         print("❌ Student not found:", repr(req.student_id))
         raise HTTPException(status_code=404, detail="Student not found")
+    student_year = student.student_year
+
+    if not student_year:
+        print("❌ Student year missing")
+        raise HTTPException(
+            status_code=400,
+            detail="Student year not set"
+        )
 
     print(
         f"✅ Student resolved | "
@@ -11953,7 +11961,8 @@ def start_naplan_language_conventions_exam(
     attempt = (
         db.query(StudentExamNaplanLanguageConventions)
         .filter(
-            StudentExamNaplanLanguageConventions.student_id == student.id
+            StudentExamNaplanLanguageConventions.student_id == student.id,
+            StudentExamNaplanLanguageConventions.year == student_year
         )
         .order_by(
             StudentExamNaplanLanguageConventions.started_at.desc()
@@ -12011,7 +12020,8 @@ def start_naplan_language_conventions_exam(
                 func.lower(ExamNaplanLanguageConventions.class_name) ==
                 func.lower(student.class_name),
                 func.lower(ExamNaplanLanguageConventions.subject) ==
-                "language conventions"
+                "language conventions",
+                ExamNaplanLanguageConventions.year == student_year
             )
             .order_by(
                 ExamNaplanLanguageConventions.created_at.desc()
@@ -12050,14 +12060,14 @@ def start_naplan_language_conventions_exam(
             func.lower(ExamNaplanLanguageConventions.class_name) ==
             func.lower(student.class_name),
             func.lower(ExamNaplanLanguageConventions.subject) ==
-            "language conventions"
+            "language conventions",
+            ExamNaplanLanguageConventions.year == student_year
         )
         .order_by(
             ExamNaplanLanguageConventions.created_at.desc()
         )
         .first()
     )
-
     if not exam:
         raise HTTPException(
             status_code=404,
@@ -12073,6 +12083,7 @@ def start_naplan_language_conventions_exam(
     new_attempt = StudentExamNaplanLanguageConventions(
         student_id=student.id,
         exam_id=exam.id,
+        year=student_year,
         started_at=now,
         duration_minutes=40
     )
@@ -12099,6 +12110,7 @@ def start_naplan_language_conventions_exam(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
+                year=student_year,
                 q_id=original_q["id"],
                 topic=original_q.get("topic"),
                 selected_option=None,
