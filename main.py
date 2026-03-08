@@ -18888,16 +18888,18 @@ def hydrate_naplan_question_structure(raw_questions):
         })
 
     return hydrated
+ 
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
+
     print("\n================ START NAPLAN NUMERACY EXAM =================")
     print("📥 Incoming payload:", req.dict())
 
     # --------------------------------------------------
-    # 0. Fetch student
+    # 1. Fetch student
     # --------------------------------------------------
     student = (
         db.query(Student)
@@ -18912,28 +18914,32 @@ def start_naplan_numeracy_exam(
         print("❌ Student not found")
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"👤 Student DB ID: {student.id}, Class: {student.class_name}")
+    student_year = student.year
+
+    print(f"👤 Student DB ID: {student.id}")
+    print(f"📅 Student year: {student_year}")
+
     # --------------------------------------------------
-    #  Load exam (same logic as before)
+    # 2. Load exam for student's year
     # --------------------------------------------------
     exam = (
         db.query(ExamNaplanNumeracy)
         .filter(
-            func.lower(ExamNaplanNumeracy.class_name)
-            == func.lower(student.class_name),
-            func.lower(ExamNaplanNumeracy.subject) == "numeracy"
+            ExamNaplanNumeracy.year == student_year,
+            func.lower(func.trim(ExamNaplanNumeracy.subject)) == "numeracy"
         )
         .order_by(ExamNaplanNumeracy.created_at.desc())
         .first()
     )
 
     if not exam:
-        print("❌ Exam not found")
+        print(f"❌ No exam found for year {student_year}")
         raise HTTPException(status_code=404, detail="Exam not found")
 
+    print(f"📘 Loaded exam id={exam.id} for year {exam.year}")
 
     # --------------------------------------------------
-    # 1. Constants & helpers
+    # 3. Constants
     # --------------------------------------------------
     MAX_DURATION = timedelta(minutes=40)
     now = datetime.now(timezone.utc)
@@ -18941,35 +18947,39 @@ def start_naplan_numeracy_exam(
     uploaded_images = db.query(UploadedImage).all()
     image_map = {img.original_name: img.gcs_url for img in uploaded_images}
 
-
-
     # --------------------------------------------------
-    # 1.5 Block if exam already completed
+    # 4. Block restart if exam already completed
     # --------------------------------------------------
     existing_completed_attempt = (
         db.query(StudentExamNaplanNumeracy)
         .filter(
             StudentExamNaplanNumeracy.student_id == student.id,
             StudentExamNaplanNumeracy.exam_id == exam.id,
+            StudentExamNaplanNumeracy.year == student_year,
             StudentExamNaplanNumeracy.completed_at.isnot(None)
         )
         .first()
     )
-    
+
     if existing_completed_attempt:
-        print("🚫 Exam already completed — blocking restart")
+
+        print(f"🚫 Exam already completed for year {student_year}")
+
         return {
             "completed": True,
-            "message": "Exam already completed"
+            "year": student_year,
+            "message": "Exam already completed for this year"
         }
 
     # --------------------------------------------------
-    # 2. Look for an ACTIVE attempt only
+    # 5. Look for ACTIVE attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamNaplanNumeracy)
         .filter(
             StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.exam_id == exam.id,
+            StudentExamNaplanNumeracy.year == student_year,
             StudentExamNaplanNumeracy.completed_at.is_(None)
         )
         .order_by(StudentExamNaplanNumeracy.started_at.desc())
@@ -18977,9 +18987,11 @@ def start_naplan_numeracy_exam(
     )
 
     if attempt:
+
         print(f"♻️ Reusing active attempt ID: {attempt.id}")
 
         started_at = attempt.started_at
+
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
 
@@ -18987,12 +18999,15 @@ def start_naplan_numeracy_exam(
         elapsed_seconds = int((now - started_at).total_seconds())
 
         # --------------------------------------------------
-        # 2a. Auto-complete expired attempt
+        # Auto-complete expired attempt
         # --------------------------------------------------
         if now > expires_at:
+
             print("⏱️ Attempt expired — marking completed")
+
             attempt.completed_at = expires_at
             db.commit()
+
             return {"completed": True}
 
         remaining_seconds = max(
@@ -19000,15 +19015,19 @@ def start_naplan_numeracy_exam(
             attempt.duration_minutes * 60 - elapsed_seconds
         )
 
-        
+        # --------------------------------------------------
+        # Prepare questions
+        # --------------------------------------------------
         raw_questions = hydrate_naplan_question_structure(
             exam.questions or []
         )
-        
+
         raw_questions = normalize_naplan_numeracy_questions_live(raw_questions)
 
         normalized_questions = []
+
         for q in raw_questions:
+
             if q.get("question_type") == 1:
                 q = serialize_type1_question_for_exam(q)
 
@@ -19030,33 +19049,20 @@ def start_naplan_numeracy_exam(
         }
 
     # --------------------------------------------------
-    # 3. NO ACTIVE ATTEMPT → CREATE NEW ONE
+    # 6. Create NEW attempt
     # --------------------------------------------------
     print("🆕 Creating new exam attempt")
 
-    exam = (
-        db.query(ExamNaplanNumeracy)
-        .filter(
-            func.lower(ExamNaplanNumeracy.class_name)
-            == func.lower(student.class_name),
-            func.lower(ExamNaplanNumeracy.subject) == "numeracy"
-        )
-        .order_by(ExamNaplanNumeracy.created_at.desc())
-        .first()
+    raw_questions = hydrate_naplan_question_structure(
+        exam.questions or []
     )
 
-    if not exam:
-        print("❌ Exam not found")
-        raise HTTPException(status_code=404, detail="Exam not found")
-
-    raw_questions = hydrate_naplan_question_structure(
-            exam.questions or []
-        )
-        
     raw_questions = normalize_naplan_numeracy_questions_live(raw_questions)
 
     normalized_questions = []
+
     for q in raw_questions:
+
         if q.get("question_type") == 1:
             q = serialize_type1_question_for_exam(q)
 
@@ -19072,6 +19078,7 @@ def start_naplan_numeracy_exam(
     new_attempt = StudentExamNaplanNumeracy(
         student_id=student.id,
         exam_id=exam.id,
+        year=student_year,
         started_at=now,
         duration_minutes=40
     )
@@ -19082,13 +19089,11 @@ def start_naplan_numeracy_exam(
 
     print(f"✅ New attempt created with ID: {new_attempt.id}")
 
-    
     return {
         "completed": False,
         "questions": normalized_questions,
         "remaining_time": new_attempt.duration_minutes * 60
-    }
-  
+    }  
 # @app.post("/api/student/start-exam-thinkingskills")
 # def start_exam(
 #     req: StartExamRequest = Body(...),
