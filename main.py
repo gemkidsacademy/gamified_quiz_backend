@@ -3458,6 +3458,24 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 
+@router.get("/api/naplan-years", response_model=List[int])
+def get_naplan_years(db: Session = Depends(get_db)):
+    """
+    Returns all unique NAPLAN years available in the question bank.
+    Example response:
+    [3, 5, 7, 9]
+    """
+
+    rows = (
+        db.query(distinct(QuestionNumeracyLC.year))
+        .order_by(QuestionNumeracyLC.year)
+        .all()
+    )
+
+    years = [r[0] for r in rows]
+
+    return years
+ 
 @app.get("/api/naplan/numeracy/available-years")
 def get_available_naplan_numeracy_years(db: Session = Depends(get_db)):
     years = (
