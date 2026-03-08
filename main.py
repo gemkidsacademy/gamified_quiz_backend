@@ -8145,6 +8145,7 @@ def create_naplan_language_conventions_quiz(
 
         deleted_count = (
             db.query(QuizNaplanLanguageConventions)
+            .filter(QuizNaplanLanguageConventions.year == quiz.year)
             .delete()
         )
 
