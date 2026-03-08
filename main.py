@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body 
+from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body, Request
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
@@ -3521,7 +3521,7 @@ async def generate_naplan_language_conventions_exam(
     print("\n=== START: Generate NAPLAN Language Conventions Exam ===")
 
     body = await request.json()
-    year = body.get("year")
+    year = int(body.get("year"))
 
     print(f"📅 Requested year: {year}")
 
