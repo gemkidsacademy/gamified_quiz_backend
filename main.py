@@ -3458,7 +3458,7 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 
-@router.get("/api/naplan-years", response_model=List[int])
+@app.get("/api/naplan-years", response_model=List[int])
 def get_naplan_years(db: Session = Depends(get_db)):
     """
     Returns all unique NAPLAN years available in the question bank.
