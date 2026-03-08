@@ -11940,7 +11940,7 @@ def start_naplan_language_conventions_exam(
     if not student:
         print("❌ Student not found:", repr(req.student_id))
         raise HTTPException(status_code=404, detail="Student not found")
-    student_year = student.student_year
+    student_year = int(student.student_year.replace("Year", "").strip())
 
     if not student_year:
         print("❌ Student year missing")
@@ -20094,6 +20094,19 @@ def finish_naplan_language_conventions_exam(
     if not student:
         print("❌ Student not found in finish-exam")
         raise HTTPException(status_code=404, detail="Student not found")
+    student_year = int(student.student_year.replace("Year", "").strip())
+
+    if student_year is None:
+        print("❌ Student year missing in finish-exam")
+        raise HTTPException(
+            status_code=400,
+            detail="Student year not set"
+        )
+
+    print(
+        f"👤 Resolved DB Student ID: {student.id} | "
+        f"year={student_year}"
+    )
 
     print(f"👤 Resolved DB Student ID: {student.id}")
 
@@ -20104,12 +20117,12 @@ def finish_naplan_language_conventions_exam(
         db.query(StudentExamNaplanLanguageConventions)
         .filter(
             StudentExamNaplanLanguageConventions.student_id == student.id,
+            StudentExamNaplanLanguageConventions.year == student_year,
             StudentExamNaplanLanguageConventions.completed_at.is_(None)
         )
         .order_by(StudentExamNaplanLanguageConventions.started_at.desc())
         .first()
     )
-
     if not attempt:
         print("❌ No active exam attempt to finish for student.id =", student.id)
         raise HTTPException(
@@ -20135,7 +20148,10 @@ def finish_naplan_language_conventions_exam(
     # --------------------------------------------------
     exam = (
         db.query(ExamNaplanLanguageConventions)
-        .filter(ExamNaplanLanguageConventions.id == attempt.exam_id)
+        .filter(
+            ExamNaplanLanguageConventions.id == attempt.exam_id,
+            ExamNaplanLanguageConventions.year == student_year
+        )
         .first()
     )
 
@@ -20161,8 +20177,8 @@ def finish_naplan_language_conventions_exam(
     deleted = (
         db.query(StudentExamResponseNaplanLanguageConventions)
         .filter(
-            StudentExamResponseNaplanLanguageConventions.exam_attempt_id
-            == attempt.id
+            StudentExamResponseNaplanLanguageConventions.exam_attempt_id == attempt.id,
+            StudentExamResponseNaplanLanguageConventions.year == student_year
         )
         .delete()
     )
@@ -20250,6 +20266,7 @@ def finish_naplan_language_conventions_exam(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=attempt.id,
+                year=student_year,
                 q_id=int(q_id),
                 topic=topic,
                 selected_option=selected_option,
@@ -20270,6 +20287,7 @@ def finish_naplan_language_conventions_exam(
         StudentExamResultsNaplanLanguageConventions(
             student_id=student.id,
             exam_attempt_id=attempt.id,
+            year=student_year,
             total_questions=total_questions,
             correct_answers=correct_count,
             wrong_answers=wrong_count,
