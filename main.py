@@ -678,7 +678,8 @@ class StudentExamNaplanLanguageConventions(Base):
         ForeignKey("exam_naplan_language_conventions.id"),
         nullable=False
     )
-
+    # NEW COLUMN
+    year = Column(Integer, nullable=False, index=True)
     # -----------------------------
     # Timing
     # -----------------------------
@@ -874,6 +875,7 @@ class StudentExamResponseNaplanLanguageConventions(Base):
         ForeignKey("student_exam_naplan_language_conventions.id"),
         nullable=False
     )
+    year = Column(Integer, nullable=False, index=True)
 
     q_id = Column(Integer, nullable=False)
     topic = Column(String, nullable=True)
@@ -2095,6 +2097,7 @@ class ExamNaplanLanguageConventions(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
+    year = Column(Integer, nullable=False, index=True)
 
     questions = Column(JSON, nullable=False)
 
@@ -3509,26 +3512,43 @@ def get_available_naplan_numeracy_years(db: Session = Depends(get_db)):
         "years": [y[0] for y in years]
     }
  
+
 @app.post("/naplan/language-conventions/generate-exam")
-def generate_naplan_language_conventions_exam(
+async def generate_naplan_language_conventions_exam(
+    request: Request,
     db: Session = Depends(get_db)
 ):
     print("\n=== START: Generate NAPLAN Language Conventions Exam ===")
 
-    # 1. Load latest quiz config
+    body = await request.json()
+    year = body.get("year")
+
+    print(f"📅 Requested year: {year}")
+
+    if not year:
+        raise HTTPException(
+            status_code=400,
+            detail="Year is required"
+        )
+
+    # 1. Load quiz config filtered by year
     quiz = (
         db.query(QuizNaplanLanguageConventions)
+        .filter(QuizNaplanLanguageConventions.year == year)
         .order_by(QuizNaplanLanguageConventions.id.desc())
         .first()
     )
 
     if not quiz:
-        print("❌ ERROR: No QuizNaplanLanguageConventions found")
+        print(f"❌ ERROR: No QuizNaplanLanguageConventions found for year {year}")
         raise HTTPException(
             status_code=404,
-            detail="NAPLAN Language Conventions quiz not found"
+            detail=f"NAPLAN Language Conventions quiz not found for year {year}"
         )
 
+    print(f"✅ Loaded quiz config ID: {quiz.id} (Year {quiz.year})")
+
+    
     normalized_difficulty = quiz.difficulty.strip().lower()
     normalized_subject = "language conventions"
 
@@ -3666,16 +3686,30 @@ def generate_naplan_language_conventions_exam(
     # 8. Delete previous exams
     print("🧹 Resetting NAPLAN Language Conventions data...")
 
-    db.query(StudentExamResponseNaplanLanguageConventions).delete()
-    db.commit()
-
-    db.query(StudentExamNaplanLanguageConventions).delete()
-    db.commit()
-
+    # Delete student responses for this year
+    db.query(StudentExamResponseNaplanLanguageConventions) \
+        .filter(
+            StudentExamResponseNaplanLanguageConventions.year == quiz.year
+        ) \
+        .delete()
+    
+    # Delete student exam attempts for this year
+    db.query(StudentExamNaplanLanguageConventions) \
+        .filter(
+            StudentExamNaplanLanguageConventions.year == quiz.year
+        ) \
+        .delete()
+    
+    # Delete generated exams for this year
     deleted_exams = (
         db.query(ExamNaplanLanguageConventions)
+        .filter(
+            ExamNaplanLanguageConventions.year == quiz.year
+        )
         .delete()
     )
+    
+    db.commit()
     print(f"🗑️ Deleted {deleted_exams} previous exam record(s)")
 
     # 9. Persist exam
@@ -3686,6 +3720,7 @@ def generate_naplan_language_conventions_exam(
         class_name="NAPLAN",
         subject="Language Conventions",
         difficulty=quiz.difficulty,
+        year=quiz.year,
         questions=assembled_questions,
     )
 
