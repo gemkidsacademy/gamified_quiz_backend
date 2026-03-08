@@ -8123,8 +8123,6 @@ def create_naplan_language_conventions_quiz(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-
-
 @app.post("/api/quizzes-naplan-numeracy")
 def create_naplan_numeracy_quiz(
     quiz: NaplanQuizCreate,
@@ -8157,15 +8155,17 @@ def create_naplan_numeracy_quiz(
         print(f"   └─ Topic {i + 1}: {t}")
 
     try:
-         # 🔥 DELETE PREVIOUS QUIZ CONFIG(S)
+        # 🔥 DELETE PREVIOUS QUIZ CONFIG(S) FOR SAME YEAR
         print("\n🧹 Deleting existing NAPLAN Numeracy quiz configs for year:", quiz.year)
 
         deleted_count = (
             db.query(QuizNaplanNumeracy)
+            .filter(QuizNaplanNumeracy.year == quiz.year)
             .delete(synchronize_session=False)
         )
-        
-        print(f"🗑️ Deleted {deleted_count} quiz config(s) for year {quiz.year}")
+
+        print(f"🧹 Deleted {deleted_count} existing quiz config(s) for year {quiz.year}")
+
         print("\n--- Creating quizzes_naplan_numeracy row ---")
 
         new_quiz = QuizNaplanNumeracy(
@@ -8175,7 +8175,7 @@ def create_naplan_numeracy_quiz(
             difficulty=quiz.difficulty,
             num_topics=quiz.num_topics,
             total_questions=quiz.total_questions,
-            topics=[t.dict() for t in quiz.topics],  # JSON column
+            topics=[t.dict() for t in quiz.topics],
         )
 
         db.add(new_quiz)
@@ -8196,6 +8196,7 @@ def create_naplan_numeracy_quiz(
         traceback.print_exc()
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+     
 
 @app.get("/api/quizzes/thinking-skills/difficulty")
 def get_thinking_skills_difficulty(db: Session = Depends(get_db)):
