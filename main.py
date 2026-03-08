@@ -18889,6 +18889,14 @@ def hydrate_naplan_question_structure(raw_questions):
 
     return hydrated
  
+def student_year_to_int(student_year: str):
+    if not student_year:
+        return None
+
+    try:
+        return int(student_year.split()[-1])
+    except Exception:
+        return None 
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
@@ -18914,10 +18922,11 @@ def start_naplan_numeracy_exam(
         print("❌ Student not found")
         raise HTTPException(status_code=404, detail="Student not found")
 
-    student_year = student.student_year
+    student_year_str = student.student_year
+    student_year = student_year_to_int(student_year_str)
 
-    print(f"👤 Student DB ID: {student.id}")
-    print(f"📅 Student year: {student_year}")
+    print(f"📅 Student year string: {student_year_str}")
+    print(f"📅 Student year int: {student_year}")
 
     # --------------------------------------------------
     # 2. Load exam for student's year
@@ -20482,10 +20491,11 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         print("❌ Student not found")
         raise HTTPException(status_code=404, detail="Student not found")
 
-    student_year = student.student_year
-
-    print(f"👤 DB Student ID: {student.id}")
-    print(f"🎓 Student Year: {student_year}")
+    student_year_str = student.student_year
+    student_year = student_year_to_int(student_year_str)
+    
+    print(f"📅 Student year string: {student_year_str}")
+    print(f"📅 Student year int: {student_year}")
 
     # --------------------------------------------------
     # 2. Fetch ACTIVE attempt (year-safe)
