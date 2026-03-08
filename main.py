@@ -4018,6 +4018,18 @@ def build_question_blocks(q, db):
         )
 
     return blocks
+
+
+@app.get("/naplan/language-conventions/available-years")
+def get_available_years(db: Session = Depends(get_db)):
+    years = (
+        db.query(QuizNaplanLanguageConventions.year)
+        .distinct()
+        .order_by(QuizNaplanLanguageConventions.year)
+        .all()
+    )
+
+    return {"years": [y[0] for y in years]}
 @app.get("/naplan/reading/available-years")
 def get_available_naplan_reading_years(
     db: Session = Depends(get_db)
