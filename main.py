@@ -610,6 +610,7 @@ class StudentExamResultsNaplanLanguageConventions(Base):
         ),
         nullable=False
     )
+    year = Column(Integer, nullable=False, index=True)
 
     total_questions = Column(Integer, nullable=False)
     correct_answers = Column(Integer, nullable=False)
