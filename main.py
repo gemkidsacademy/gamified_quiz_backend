@@ -781,6 +781,11 @@ class StudentExamNaplanNumeracy(Base):
         ForeignKey("exam_naplan_numeracy.id"),
         nullable=False
     )
+    year = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
 
     # -----------------------------
     # Timing
@@ -4292,38 +4297,58 @@ def generate_naplan_reading_exam(
 
 
 
+
+
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
+    payload: dict = Body(...),
     db: Session = Depends(get_db)
-): 
+):
+
     print("\n=== START: Generate NAPLAN Numeracy Exam ===")
-    
-    
-    # 1. Load latest quiz config
+
+    # --------------------------------------------------
+    # 1. Read class year from frontend payload
+    # --------------------------------------------------
+    class_year = payload.get("class_year")
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    print(f"📅 Requested class year: {class_year}")
+
+    # --------------------------------------------------
+    # 2. Load latest quiz config FOR THIS YEAR
+    # --------------------------------------------------
     quiz = (
         db.query(QuizNaplanNumeracy)
+        .filter(QuizNaplanNumeracy.year == class_year)
         .order_by(QuizNaplanNumeracy.id.desc())
         .first()
     )
-    
+
     if not quiz:
         raise HTTPException(
             status_code=404,
-            detail="NAPLAN Numeracy quiz not found"
+            detail=f"NAPLAN Numeracy quiz not found for year {class_year}"
         )
-    
-    
+
     normalized_difficulty = quiz.difficulty.strip().lower()
     normalized_subject = "numeracy"
 
-    
     print(f"📘 Topics config: {quiz.topics}")
     print(f"📌 Expected total questions: {quiz.total_questions}")
 
     assembled_questions = []
 
-    # 2. Iterate topics
+    # --------------------------------------------------
+    # 3. Iterate topics
+    # --------------------------------------------------
     for idx, topic_cfg in enumerate(quiz.topics):
+
         print(f"\n--- Processing topic {idx + 1} ---")
         print(f"Raw topic config: {topic_cfg}")
 
@@ -4337,46 +4362,51 @@ def generate_naplan_numeracy_exam(
         print(f"➡️ Topic: {topic_name}")
         print(f"➡️ Required DB questions: {db_count}")
 
-        
+        # --------------------------------------------------
+        # 4. Validate topic questions exist (YEAR FILTER)
+        # --------------------------------------------------
         topic_only_count = (
             db.query(QuestionNumeracyLC)
             .filter(
                 QuestionNumeracyLC.topic == topic_name,
+                QuestionNumeracyLC.year == class_year,
                 func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
             )
             .count()
         )
 
-        print(
-            f"🔍 Topic+subject+year match count: {topic_only_count}"
-        )
+        print(f"🔍 Topic+subject+year match count: {topic_only_count}")
 
         if topic_only_count == 0:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"No Numeracy questions found for topic "
-                    
-                )
+                detail=f"No Numeracy questions found for topic '{topic_name}' in year {class_year}"
             )
 
-        # 4. Strict difficulty + subject + year query
+        # --------------------------------------------------
+        # 5. Strict difficulty + subject + year query
+        # --------------------------------------------------
         questions = (
             db.query(QuestionNumeracyLC)
             .filter(
                 QuestionNumeracyLC.topic == topic_name,
+                QuestionNumeracyLC.year == class_year,
                 func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject,
                 func.lower(func.trim(QuestionNumeracyLC.difficulty)) == normalized_difficulty
             )
             .all()
         )
+
         print(
             f"🔎 Questions after strict difficulty filter "
             f"('{normalized_difficulty}'): {len(questions)}"
         )
 
-        # 5. Safe fallback (subject + year still enforced)
+        # --------------------------------------------------
+        # 6. Safe fallback (subject + year enforced)
+        # --------------------------------------------------
         if len(questions) < db_count:
+
             print(
                 "⚠️ WARNING: Not enough questions after difficulty filter. "
                 "Attempting subject+year fallback."
@@ -4386,10 +4416,12 @@ def generate_naplan_numeracy_exam(
                 db.query(QuestionNumeracyLC)
                 .filter(
                     QuestionNumeracyLC.topic == topic_name,
+                    QuestionNumeracyLC.year == class_year,
                     func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
                 )
                 .all()
             )
+
             print(
                 f"🔎 Questions after fallback (subject+year): "
                 f"{len(fallback_questions)}"
@@ -4399,48 +4431,46 @@ def generate_naplan_numeracy_exam(
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough Numeracy questions for topic "
-                        
-                        f"Required={db_count}, Found={len(fallback_questions)}"
+                        f"Not enough Numeracy questions for topic '{topic_name}' "
+                        f"(Year {class_year}). Required={db_count}, Found={len(fallback_questions)}"
                     )
                 )
 
             questions = fallback_questions
 
-        # 6. Random sampling
+        # --------------------------------------------------
+        # 7. Random sampling
+        # --------------------------------------------------
         selected = random.sample(questions, db_count)
+
         print(f"🎯 Selected {len(selected)} questions for topic '{topic_name}'")
 
-        for q in selected:        
+        for q in selected:
             assembled_questions.append({
                 "id": q.id,
                 "question_type": q.question_type,
                 "topic": q.topic,
                 "difficulty": q.difficulty,
-            
-                # ✅ ADD THIS
                 "question_text": q.question_text,
-            
-                # Interactive content
-                "question_blocks": build_question_blocks(q,db),
-            
-                # Evaluation
+                "question_blocks": build_question_blocks(q, db),
                 "options": q.options,
                 "correct_answer": q.correct_answer,
             })
 
-
-
-    # 7. Final validation
+    # --------------------------------------------------
+    # 8. Final validation
+    # --------------------------------------------------
     print("\n=== FINAL CHECK ===")
     print(f"Total assembled questions: {len(assembled_questions)}")
 
     if len(assembled_questions) != quiz.total_questions:
+
         print(
             f"❌ ERROR: Question count mismatch | "
             f"Expected={quiz.total_questions}, "
             f"Got={len(assembled_questions)}"
         )
+
         raise HTTPException(
             status_code=400,
             detail="Generated question count does not match quiz total"
@@ -4448,36 +4478,30 @@ def generate_naplan_numeracy_exam(
 
     print("✅ Question count validated")
 
-    # 8. Delete previous exams
-    
-
-    
-    
+    # --------------------------------------------------
+    # 9. Delete previous exams
+    # --------------------------------------------------
     try:
-    # 1️⃣ Find exams generated from this quiz
-        exam_ids_subquery = (
-            db.query(ExamNaplanNumeracy.id)
-            .filter(ExamNaplanNumeracy.quiz_id == quiz.id)
+
+        db.query(StudentExamResponseNaplanNumeracy).delete(
+            synchronize_session=False
         )
-    
-        # 2️⃣ Delete student responses
-        db.query(StudentExamResponseNaplanNumeracy).delete(synchronize_session=False)    
-        # 3️⃣ Delete student exam attempts
+
         db.query(StudentExamNaplanNumeracy).delete()
-        # 4️⃣ Delete exams
-        db.query(ExamNaplanNumeracy).delete(synchronize_session=False)
-    
+
+        db.query(ExamNaplanNumeracy).delete(
+            synchronize_session=False
+        )
+
         db.commit()
-    
+
     except Exception:
         db.rollback()
         raise
-    
-    
-    
-        
-    
-    # 9. Persist exam
+
+    # --------------------------------------------------
+    # 10. Persist exam
+    # --------------------------------------------------
     print("💾 Saving exam to exam_naplan_numeracy table...")
 
     exam = ExamNaplanNumeracy(
@@ -4485,6 +4509,7 @@ def generate_naplan_numeracy_exam(
         class_name="NAPLAN",
         subject="Numeracy",
         difficulty=quiz.difficulty,
+        year=class_year,
         questions=assembled_questions,
     )
 
@@ -4496,14 +4521,15 @@ def generate_naplan_numeracy_exam(
         f"🎉 SUCCESS: Numeracy exam generated | "
         f"exam_id={exam.id}"
     )
+
     print("=== END: Generate NAPLAN Numeracy Exam ===\n")
 
     return {
         "message": "NAPLAN Numeracy exam generated successfully",
         "exam_id": exam.id,
+        "year": class_year,
         "total_questions": len(assembled_questions),
     }
-
 @app.get("/api/admin/question-bank-reading/naplan")
 def get_naplan_reading_question_bank(
     subject: str = Query(...),   # reading
