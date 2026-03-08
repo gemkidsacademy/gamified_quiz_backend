@@ -3458,6 +3458,20 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 
+@app.get("/naplan/numeracy/class-years")
+def get_naplan_numeracy_class_years(db: Session = Depends(get_db)):
+    years = (
+        db.query(distinct(QuizNaplanNumeracy.year))
+        .order_by(QuizNaplanNumeracy.year)
+        .all()
+    )
+
+    # SQLAlchemy returns list of tuples -> [(3,), (5,), (7,)]
+    year_list = [y[0] for y in years]
+
+    return {
+        "class_years": year_list
+    } 
 @app.get("/api/naplan-years", response_model=List[int])
 def get_naplan_years(db: Session = Depends(get_db)):
     """
