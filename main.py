@@ -3815,14 +3815,15 @@ def normalize_question_blocks_backend(blocks):
 
         if not is_authoring_blob(blocks):
 
-            text = blocks.strip()
+            raw_text = blocks.strip()
+            normalized_key = " ".join(raw_text.split()).lower()
 
-            if text not in seen_text:
-                seen_text.add(text)
+            if normalized_key not in seen_text:
+                seen_text.add(normalized_key)
 
                 normalized.append({
                     "type": "text",
-                    "content": text
+                    "content": raw_text
                 })
 
         return normalized
@@ -3839,14 +3840,15 @@ def normalize_question_blocks_backend(blocks):
             if is_authoring_blob(content):
                 return []
 
-            text = content.strip()
+            raw_text = content.strip()
+            normalized_key = " ".join(raw_text.split()).lower()
 
-            if text not in seen_text:
-                seen_text.add(text)
+            if normalized_key not in seen_text:
+                seen_text.add(normalized_key)
 
                 normalized.append({
                     "type": "text",
-                    "content": text
+                    "content": raw_text
                 })
 
         else:
@@ -3865,15 +3867,18 @@ def normalize_question_blocks_backend(blocks):
 
                 if not is_authoring_blob(b):
 
-                    text = b.strip()
+                    raw_text = b.strip()
+                    normalized_key = " ".join(raw_text.split()).lower()
 
-                    if text not in seen_text:
-                        seen_text.add(text)
+                    if normalized_key in seen_text:
+                        continue
 
-                        normalized.append({
-                            "type": "text",
-                            "content": text
-                        })
+                    seen_text.add(normalized_key)
+
+                    normalized.append({
+                        "type": "text",
+                        "content": raw_text
+                    })
 
             elif isinstance(b, dict):
 
@@ -3886,16 +3891,17 @@ def normalize_question_blocks_backend(blocks):
                     if is_authoring_blob(content):
                         continue
 
-                    text = content.strip()
+                    raw_text = content.strip()
+                    normalized_key = " ".join(raw_text.split()).lower()
 
-                    if text in seen_text:
+                    if normalized_key in seen_text:
                         continue
 
-                    seen_text.add(text)
+                    seen_text.add(normalized_key)
 
                     normalized.append({
                         "type": "text",
-                        "content": text
+                        "content": raw_text
                     })
 
                 else:
