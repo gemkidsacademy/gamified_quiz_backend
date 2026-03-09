@@ -12084,11 +12084,19 @@ def start_naplan_language_conventions_exam(
             )
 
         # 🔥 SANITIZE BEFORE RETURNING
-        normalized_questions = normalize_naplan_language_conventions_questions_live(
+        raw_questions = normalize_naplan_language_conventions_questions_live(
             exam.questions or [],
             image_map
         )
-
+        
+        normalized_questions = []
+        
+        for q in raw_questions:
+        
+            if q.get("question_type") == 1:
+                q = serialize_type1_question_for_exam(q)
+        
+            normalized_questions.append(q)
         
         return {
             "completed": False,
@@ -12122,11 +12130,19 @@ def start_naplan_language_conventions_exam(
             detail="NAPLAN Language Conventions exam not found"
         )
 
-    normalized_questions = normalize_naplan_language_conventions_questions_live(
+    raw_questions = normalize_naplan_language_conventions_questions_live(
         exam.questions or [],
         image_map
     )
-
+    
+    normalized_questions = []
+    
+    for q in raw_questions:
+    
+        if q.get("question_type") == 1:
+            q = serialize_type1_question_for_exam(q)
+    
+        normalized_questions.append(q)
 
     new_attempt = StudentExamNaplanLanguageConventions(
         student_id=student.id,
