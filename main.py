@@ -18449,39 +18449,40 @@ def serialize_type1_question_for_exam(q):
     """
     Build exam-safe payload for Type 1 (MCQ).
 
-    Works for:
-    - Numeracy (question_text + image blocks)
-    - Language Conventions (text blocks only)
-
-    Responsibilities:
-    - Remove duplicate text blocks
-    - Normalize blocks
-    - Never expose correct_answer
+    Handles NAPLAN combined + split text pattern:
+    - full question block
+    - split question blocks
     """
 
     raw_blocks = q.get("question_blocks") or []
 
+    # collect text contents
+    text_blocks = [
+        (block.get("content") or "").strip()
+        for block in raw_blocks
+        if isinstance(block, dict) and block.get("type") == "text"
+    ]
+
     filtered_blocks = []
-    seen_texts = set()
 
     for block in raw_blocks:
 
         if not isinstance(block, dict):
             continue
 
-        block_type = block.get("type")
+        if block.get("type") == "text":
 
-        if block_type == "text":
             text = (block.get("content") or "").strip()
 
             if not text:
                 continue
 
-            # remove duplicate text blocks
-            if text in seen_texts:
+            # remove fragment blocks if contained in another block
+            if any(
+                text != other and text in other
+                for other in text_blocks
+            ):
                 continue
-
-            seen_texts.add(text)
 
         filtered_blocks.append(block)
 
@@ -18494,7 +18495,6 @@ def serialize_type1_question_for_exam(q):
         "options": q.get("options"),
     }
 
-    # Include question_text only if it exists (Numeracy)
     if q.get("question_text"):
         result["question_text"] = q.get("question_text")
 
