@@ -18444,48 +18444,62 @@ def normalize_correct_option_for_db(correct):
         return correct
 
     return str(correct)
+
 def serialize_type1_question_for_exam(q):
     """
-    Build exam-safe payload for Type 1 (MCQ single).
-    Strips authoring junk and NEVER sends correct_answer.
-    Removes duplicated text blocks so question text is not repeated.
+    Build exam-safe payload for Type 1 (MCQ).
+
+    Works for:
+    - Numeracy (question_text + image blocks)
+    - Language Conventions (text blocks only)
+
+    Responsibilities:
+    - Remove duplicate text blocks
+    - Normalize blocks
+    - Never expose correct_answer
     """
 
-    question_text = (q.get("question_text") or "").strip()
     raw_blocks = q.get("question_blocks") or []
 
     filtered_blocks = []
+    seen_texts = set()
 
     for block in raw_blocks:
 
         if not isinstance(block, dict):
             continue
 
-        # remove duplicated text blocks
-        if block.get("type") == "text":
-            text_content = (block.get("content") or "").strip()
+        block_type = block.get("type")
 
-            if not text_content:
+        if block_type == "text":
+            text = (block.get("content") or "").strip()
+
+            if not text:
                 continue
 
-            # skip if block text is part of main question
-            if question_text and text_content in question_text:
+            # remove duplicate text blocks
+            if text in seen_texts:
                 continue
+
+            seen_texts.add(text)
 
         filtered_blocks.append(block)
 
-    return {
+    result = {
         "id": q["id"],
         "question_type": q["question_type"],
         "topic": q.get("topic"),
         "difficulty": q.get("difficulty"),
-    
-        "question_text": q.get("question_text"),  # add this
-    
         "question_blocks": normalize_question_blocks_backend(filtered_blocks),
-    
         "options": q.get("options"),
     }
+
+    # Include question_text only if it exists (Numeracy)
+    if q.get("question_text"):
+        result["question_text"] = q.get("question_text")
+
+    return result
+ 
 def normalize_images_in_question(question: dict, image_map: dict):
     options = question.get("options")
 
