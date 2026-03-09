@@ -18449,18 +18449,16 @@ def serialize_type1_question_for_exam(q):
     """
     Build exam-safe payload for Type 1 (MCQ).
 
-    Handles NAPLAN combined + split text pattern:
-    - full question block
-    - split question blocks
+    Handles NAPLAN combined + split text pattern so
+    the question renders only once.
     """
 
     raw_blocks = q.get("question_blocks") or []
 
-    # collect text contents
     text_blocks = [
-        (block.get("content") or "").strip()
-        for block in raw_blocks
-        if isinstance(block, dict) and block.get("type") == "text"
+        (b.get("content") or "").strip()
+        for b in raw_blocks
+        if isinstance(b, dict) and b.get("type") == "text"
     ]
 
     filtered_blocks = []
@@ -18477,11 +18475,8 @@ def serialize_type1_question_for_exam(q):
             if not text:
                 continue
 
-            # remove fragment blocks if contained in another block
-            if any(
-                text != other and text in other
-                for other in text_blocks
-            ):
+            # drop fragments if contained inside a larger block
+            if any(text != other and text in other for other in text_blocks):
                 continue
 
         filtered_blocks.append(block)
@@ -18495,11 +18490,13 @@ def serialize_type1_question_for_exam(q):
         "options": q.get("options"),
     }
 
+    # Numeracy questions may include question_text
     if q.get("question_text"):
         result["question_text"] = q.get("question_text")
 
     return result
- 
+
+
 def normalize_images_in_question(question: dict, image_map: dict):
     options = question.get("options")
 
