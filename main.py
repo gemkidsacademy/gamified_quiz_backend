@@ -18463,13 +18463,13 @@ def serialize_type1_question_for_exam(q):
         "question_type": q["question_type"],
         "topic": q.get("topic"),
         "difficulty": q.get("difficulty"),
-
-        # normalized cleaned blocks
+    
+        "question_text": q.get("question_text"),  # add this
+    
         "question_blocks": normalize_question_blocks_backend(filtered_blocks),
-
+    
         "options": q.get("options"),
     }
-
 def normalize_images_in_question(question: dict, image_map: dict):
     options = question.get("options")
 
