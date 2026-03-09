@@ -18432,22 +18432,43 @@ def serialize_type1_question_for_exam(q):
     """
     Build exam-safe payload for Type 1 (MCQ single).
     Strips authoring junk and NEVER sends correct_answer.
+    Removes duplicated text blocks so question text is not repeated.
     """
+
+    question_text = (q.get("question_text") or "").strip()
+    raw_blocks = q.get("question_blocks") or []
+
+    filtered_blocks = []
+
+    for block in raw_blocks:
+
+        if not isinstance(block, dict):
+            continue
+
+        # remove duplicated text blocks
+        if block.get("type") == "text":
+            text_content = (block.get("content") or "").strip()
+
+            if not text_content:
+                continue
+
+            # skip if block text is part of main question
+            if question_text and text_content in question_text:
+                continue
+
+        filtered_blocks.append(block)
+
     return {
         "id": q["id"],
         "question_type": q["question_type"],
         "topic": q.get("topic"),
         "difficulty": q.get("difficulty"),
 
-        # 🔑 Use ALREADY normalized blocks (do NOT rebuild)
-        "question_blocks": normalize_question_blocks_backend(
-            q.get("question_blocks")
-        ),
+        # normalized cleaned blocks
+        "question_blocks": normalize_question_blocks_backend(filtered_blocks),
 
-        # MCQ options are needed
         "options": q.get("options"),
     }
-
 
 def normalize_images_in_question(question: dict, image_map: dict):
     options = question.get("options")
