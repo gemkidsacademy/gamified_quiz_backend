@@ -20154,6 +20154,39 @@ def student_year_to_int(student_year: str | None) -> int | None:
         return 5
     return None
 
+
+def normalize_naplan_evaluation_answer_value(answer):
+    """
+    Normalize answers for NAPLAN evaluation.
+
+    Keeps MCQ answers as letters (A/B/C/etc)
+    Normalizes text answers for comparison
+    Supports drag-drop and multi-select
+    """
+
+    if answer is None:
+        return None
+
+    # drag-drop answers like {"value": "..."}
+    if isinstance(answer, dict):
+        return str(answer.get("value", "")).strip().lower()
+
+    # multi-select answers
+    if isinstance(answer, list):
+        return sorted([str(a).strip().upper() for a in answer])
+
+    # string answers
+    if isinstance(answer, str):
+        val = answer.strip()
+
+        # keep MCQ letters uppercase
+        if len(val) == 1 and val.upper() in ["A","B","C","D","E","F","G"]:
+            return val.upper()
+
+        return val.lower()
+
+    return answer
+ 
 @app.post("/api/student/finish-exam/naplan-language-conventions")
 def finish_naplan_language_conventions_exam(
     payload: dict,
@@ -20320,27 +20353,19 @@ def finish_naplan_language_conventions_exam(
     
             if isinstance(normalized_correct, dict) and "value" in normalized_correct:
                 normalized_correct = normalized_correct["value"]
-            # ⭐ NEW: resolve MCQ key → text
-            options = q.get("options")
-            
-            if (
-                options
-                and isinstance(normalized_correct, str)
-                and normalized_correct in options
-            ):
-                normalized_correct = options[normalized_correct]
+    
+            # ⭐ Normalize both answers using evaluation helper
+            normalized_student = normalize_naplan_evaluation_answer_value(student_answer)
+            normalized_correct = normalize_naplan_evaluation_answer_value(normalized_correct)
+    
             # 3️⃣ Compare answers
             if isinstance(normalized_correct, list):
-                if isinstance(student_answer, list):
-                    is_correct = sorted(normalized_correct) == sorted(student_answer)
+                if isinstance(normalized_student, list):
+                    is_correct = sorted(normalized_correct) == sorted(normalized_student)
                 else:
                     is_correct = False
             else:
-                is_correct = (
-                    str(student_answer).strip()
-                    == str(normalized_correct).strip()
-                )
-    
+                is_correct = normalized_student == normalized_correct
         print(
             "🔍 EVAL DEBUG |",
             "q_id =", q_id,
