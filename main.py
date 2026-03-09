@@ -3806,65 +3806,106 @@ def normalize_question_blocks_backend(blocks):
         return []
 
     normalized = []
+    seen_text = set()
 
     # ------------------------------
     # Case 1: single string
     # ------------------------------
     if isinstance(blocks, str):
+
         if not is_authoring_blob(blocks):
-            normalized.append({
-                "type": "text",
-                "content": blocks.strip()
-            })
+
+            text = blocks.strip()
+
+            if text not in seen_text:
+                seen_text.add(text)
+
+                normalized.append({
+                    "type": "text",
+                    "content": text
+                })
+
         return normalized
 
     # ------------------------------
     # Case 2: single dict block
     # ------------------------------
     if isinstance(blocks, dict):
+
         if blocks.get("type") == "text":
+
             content = blocks.get("content", "")
+
             if is_authoring_blob(content):
                 return []
-            normalized.append({
-                "type": "text",
-                "content": content.strip()
-            })
+
+            text = content.strip()
+
+            if text not in seen_text:
+                seen_text.add(text)
+
+                normalized.append({
+                    "type": "text",
+                    "content": text
+                })
+
         else:
             normalized.append(blocks)
+
         return normalized
 
     # ------------------------------
     # Case 3: list of blocks
     # ------------------------------
     if isinstance(blocks, list):
+
         for b in blocks:
+
             if isinstance(b, str):
+
                 if not is_authoring_blob(b):
-                    normalized.append({
-                        "type": "text",
-                        "content": b.strip()
-                    })
+
+                    text = b.strip()
+
+                    if text not in seen_text:
+                        seen_text.add(text)
+
+                        normalized.append({
+                            "type": "text",
+                            "content": text
+                        })
 
             elif isinstance(b, dict):
+
                 block_type = b.get("type", "text")
 
                 if block_type == "text":
+
                     content = b.get("content", "")
+
                     if is_authoring_blob(content):
                         continue
+
+                    text = content.strip()
+
+                    if text in seen_text:
+                        continue
+
+                    seen_text.add(text)
+
                     normalized.append({
                         "type": "text",
-                        "content": content.strip()
+                        "content": text
                     })
+
                 else:
-                    # interactive / structured blocks pass through
+                    # structured blocks pass through unchanged
                     normalized.append(b)
 
         return normalized
 
     return []
-
+ 
 def build_question_blocks(q, db):
     """
     Build render-safe question_blocks for exam delivery.
