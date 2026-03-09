@@ -5787,7 +5787,205 @@ def get_student_cumulative_report(
             status_code=500,
             detail="Internal error while generating cumulative report",
         )
+@app.get("/api/reports/student/cumulative-overall")
+def get_student_cumulative_report_overall(
+    student_id: str,
+    exam: str,
+    attempt_dates: list[str] = Query(...),
+    db: Session = Depends(get_db),
+):
+    print("\n==============================")
+    print("📥 [CUMULATIVE OVERALL] REQUEST RECEIVED")
+    print("   student_id:", student_id)
+    print("   exam:", exam)
+    print("   attempt_dates:", attempt_dates)
+    print("==============================")
 
+    try:
+
+        # --------------------------------------------------
+        # 0️⃣ Guard: attempt_dates
+        # --------------------------------------------------
+        if not attempt_dates:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one attempt date is required",
+            )
+
+        # --------------------------------------------------
+        # 1️⃣ Resolve internal student
+        # --------------------------------------------------
+        print("\n[1] Resolving student...")
+
+        student = (
+            db.query(Student)
+            .filter(Student.student_id == student_id)
+            .first()
+        )
+
+        if not student:
+            raise HTTPException(
+                status_code=404,
+                detail="Student not found",
+            )
+
+        print("✅ Student:", student.name)
+
+        # --------------------------------------------------
+        # 2️⃣ Resolve exam attempts
+        # --------------------------------------------------
+        print("\n[2] Fetching exam attempts...")
+
+        attempts = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.student_id == student_id,
+                AdminExamReport.exam_type == exam,
+                func.date(AdminExamReport.created_at).in_(attempt_dates),
+            )
+            .order_by(AdminExamReport.created_at)
+            .all()
+        )
+
+        print("attempts_found:", len(attempts))
+
+        if not attempts:
+            raise HTTPException(
+                status_code=404,
+                detail="No exam attempts found for given filters",
+            )
+
+        # --------------------------------------------------
+        # 3️⃣ Resolve response model
+        # --------------------------------------------------
+        print("\n[3] Resolving response model...")
+
+        ResponseModel = get_response_model(exam)
+
+        if not ResponseModel:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported exam type",
+            )
+
+        print(
+            "🧪 TABLE:",
+            ResponseModel.__tablename__,
+            "| MODEL:",
+            ResponseModel.__name__,
+        )
+
+        results = []
+
+        # --------------------------------------------------
+        # 4️⃣ Process each attempt
+        # --------------------------------------------------
+        print("\n[4] Processing attempts...")
+
+        for idx, attempt in enumerate(attempts, start=1):
+
+            print(f"\n▶ Attempt {idx}")
+            print("exam_attempt_id:", attempt.exam_attempt_id)
+
+            responses = (
+                db.query(ResponseModel)
+                .filter(
+                    ResponseModel.student_id == student.id,
+                    ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
+                )
+                .all()
+            )
+
+            print("responses_found:", len(responses))
+
+            if not responses:
+                print("⚠️ No responses found")
+                continue
+
+            attempted = len(responses)
+            correct = sum(1 for r in responses if r.is_correct)
+
+            accuracy = round((correct / attempted) * 100, 2)
+            score = accuracy
+
+            print("attempted:", attempted)
+            print("correct:", correct)
+            print("accuracy:", accuracy)
+
+            results.append({
+                "date": attempt.created_at.date().isoformat(),
+                "questions_attempted": attempted,
+                "correct_answers": correct,
+                "accuracy": accuracy,
+                "score": score,
+            })
+
+        # --------------------------------------------------
+        # 5️⃣ Validate results
+        # --------------------------------------------------
+        print("\n[5] Validation")
+
+        if not results:
+            raise HTTPException(
+                status_code=400,
+                detail="No data found to generate the required report.",
+            )
+
+        # --------------------------------------------------
+        # 6️⃣ Build cumulative summary
+        # --------------------------------------------------
+        print("\n[6] Building summary")
+
+        first = results[0]
+        last = results[-1]
+
+        summary = {
+            "first_attempt_score": first["score"],
+            "latest_attempt_score": last["score"],
+            "score_change": round(last["score"] - first["score"], 2),
+            "first_attempt_accuracy": first["accuracy"],
+            "latest_attempt_accuracy": last["accuracy"],
+            "accuracy_change": round(
+                last["accuracy"] - first["accuracy"], 2
+            ),
+            "trend": (
+                "improving"
+                if last["accuracy"] > first["accuracy"]
+                else "declining"
+                if last["accuracy"] < first["accuracy"]
+                else "stable"
+            ),
+        }
+
+        print("summary:", summary)
+
+        # --------------------------------------------------
+        # 7️⃣ Return payload
+        # --------------------------------------------------
+        print("\n[7] Returning response")
+        print("==============================\n")
+
+        return {
+            "student_id": student_id,
+            "student_name": student.name,
+            "exam": exam,
+            "attempts": results,
+            "summary": summary,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("🔥 UNHANDLED ERROR")
+        import traceback
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error while generating cumulative report",
+        )
+     
 @app.get("/api/reports/class")
 def class_exam_report(
     class_name: str,
