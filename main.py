@@ -21191,7 +21191,10 @@ def get_naplan_reading_review(
                         bundle["correct_answer"] = b["correct_answers"][0]
                         break
         normalized_questions.append(q)
-
+     
+    print("\n------------- QUESTION IDS SENT TO FRONTEND -------------")
+    for q in normalized_questions:
+        print("QUESTION:", q.get("question_id"))
     # --------------------------------------------------
     # 5. Fetch student responses
     # --------------------------------------------------
@@ -21208,6 +21211,12 @@ def get_naplan_reading_review(
     student_answers = {}
 
     for r in responses:
+        print(
+            "DB ROW →",
+            "q_id:", r.q_id,
+            "| selected_option:", r.selected_option,
+            "| is_correct:", r.is_correct
+        )
     
         qid = str(r.q_id)
     
@@ -21232,6 +21241,8 @@ def get_naplan_reading_review(
             "answer": value,
             "is_correct": r.is_correct
         }
+    print("\n------------- FINAL student_answers -------------")
+    print(json.dumps(student_answers, indent=2))
     # --------------------------------------------------
     # 6. Return review payload
     # --------------------------------------------------
