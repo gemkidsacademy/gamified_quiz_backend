@@ -5952,6 +5952,13 @@ def get_student_cumulative_report_overall(
             "| MODEL:",
             ResponseModel.__name__,
         )
+        # 🔎 Resolve attempt column
+        if exam == "reading":
+            attempt_column = ResponseModel.session_id
+        else:
+            attempt_column = ResponseModel.exam_attempt_id
+        
+        print("🔎 ATTEMPT COLUMN:", attempt_column.key)
 
         results = []
 
@@ -5969,11 +5976,10 @@ def get_student_cumulative_report_overall(
                 db.query(ResponseModel)
                 .filter(
                     ResponseModel.student_id == student.id,
-                    ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
+                    attempt_column == attempt.exam_attempt_id,
                 )
                 .all()
             )
-
             print("responses_found:", len(responses))
 
             if not responses:
