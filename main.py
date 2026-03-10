@@ -1159,17 +1159,17 @@ class StudentExamReportReading(Base):
 
     # 🕒 Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-class StudentExamReportReading(Base):
-    __tablename__ = "student_exam_report_reading"
+class AdminExamResponseReading(Base):
+    __tablename__ = "admin_exam_response_reading"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # 🔑 Identity
+    # Snapshot identifiers (NO FK constraints)
     student_id = Column(String, index=True, nullable=False)
     exam_id = Column(Integer, index=True, nullable=False)
-    session_id = Column(Integer, index=True, nullable=False, unique=True)
+    exam_attempt_id = Column(Integer, index=True, nullable=False)
 
-    # 🔎 Question-level data
+    # Question-level snapshot
     topic = Column(String, index=True, nullable=False)
     question_id = Column(String, index=True, nullable=False)
 
@@ -1177,12 +1177,18 @@ class StudentExamReportReading(Base):
     correct_answer = Column(String, nullable=False)
     is_correct = Column(Boolean, nullable=False)
 
-    # 🧾 Snapshot (optional but powerful)
+    # Optional question snapshot
     question_snapshot = Column(JSON, nullable=True)
 
-    # 🕒 Metadata
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Exam completion timestamp
+    attempt_completed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Metadata
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+ 
  
 class StudentExamResponseFoundational(Base):
      __tablename__ = "student_exam_response_foundational"
