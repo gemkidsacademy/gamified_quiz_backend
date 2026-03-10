@@ -21369,7 +21369,10 @@ def get_naplan_language_conventions_review(
         student_answers[qid] = value
 
         # correct answer
-        response_map[qid] = r.correct_option
+        response_map[qid] = {
+            "correct_answer": r.correct_option,
+            "is_correct": r.is_correct
+        }
 
     # --------------------------------------------------
     # 6. Inject correct_answer into questions
@@ -21378,7 +21381,8 @@ def get_naplan_language_conventions_review(
         qid = str(q.get("id"))
 
         if qid in response_map:
-            q["correct_answer"] = response_map[qid]
+           q["correct_answer"] = response_map[qid]["correct_answer"]
+           q["is_correct"] = response_map[qid]["is_correct"]
 
     # --------------------------------------------------
     # 7. Return review payload
