@@ -21204,29 +21204,34 @@ def get_naplan_reading_review(
         .all()
     )
 
+    
     student_answers = {}
 
     for r in responses:
-
+    
         qid = str(r.q_id)
-
+    
         raw = r.selected_option
-
+    
         if raw is None:
             value = None
-        
+    
         elif isinstance(raw, str):
-        
+    
             cleaned = raw.replace("'", '"')
-        
+    
             try:
                 value = json.loads(cleaned)
             except Exception:
                 value = raw
-        
+    
         else:
             value = raw
-        student_answers[qid] = value
+    
+        student_answers[qid] = {
+            "answer": value,
+            "is_correct": r.is_correct
+        }
     # --------------------------------------------------
     # 6. Return review payload
     # --------------------------------------------------
