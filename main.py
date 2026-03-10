@@ -328,6 +328,34 @@ Index(
     StudentExamResponseMathematicalReasoning.exam_attempt_id,
     StudentExamResponseMathematicalReasoning.q_id
 )
+class AdminExamResponseMathematicalReasoning(Base):
+    __tablename__ = "admin_exam_response_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Snapshot identifiers (no FK constraints)
+    student_id = Column(Integer, nullable=False, index=True)
+    exam_id = Column(Integer, nullable=False, index=True)
+    exam_attempt_id = Column(Integer, nullable=False, index=True)
+
+    # Question metadata
+    q_id = Column(Integer, nullable=False, index=True)
+    topic = Column(Text, nullable=True)
+
+    # Answer evaluation snapshot
+    selected_option = Column(Text, nullable=True)
+    correct_option = Column(Text, nullable=True)
+    is_correct = Column(Boolean, nullable=True)
+
+    # Snapshot metadata
+    attempt_completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+ 
 class StudentExamMathematicalReasoning(Base):
     __tablename__ = "student_exam_mathematical_reasoning"
 
@@ -2373,16 +2401,16 @@ scheduler.start()
 # ---------------------------
 def get_response_model(exam: str):
     if exam == "thinking_skills":
-        return StudentExamResponseThinkingSkills
+        return AdminExamResponseThinkingSkills
     if exam == "reading":
         return StudentExamReportReading
     if exam == "mathematical_reasoning":
         return StudentExamResponseMathematicalReasoning
-
     if exam == "writing":
         return StudentExamWriting
-    raise HTTPException(status_code=400, detail="Invalid exam type")
 
+    raise HTTPException(status_code=400, detail="Invalid exam type")
+ 
 def chunk_into_pages(paragraphs, per_page=18):
     pages = []
     for i in range(0, len(paragraphs), per_page):
@@ -21943,7 +21971,45 @@ def generate_admin_exam_report_math(
         )
     )
 
+def snapshot_math_responses_for_admin(db, attempt):
 
+    exists = (
+        db.query(AdminExamResponseMathematicalReasoning)
+        .filter(
+            AdminExamResponseMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .first()
+    )
+
+    if exists:
+        print("⚠️ Admin math snapshot already exists → skipping")
+        return
+
+    responses = (
+        db.query(StudentExamResponseMathematicalReasoning)
+        .filter(
+            StudentExamResponseMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    print(f"📦 Snapshotting {len(responses)} math responses")
+
+    for r in responses:
+        db.add(
+            AdminExamResponseMathematicalReasoning(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.exam_attempt_id,
+                q_id=r.q_id,
+                topic=r.topic,
+                selected_option=r.selected_option,
+                correct_option=r.correct_option,
+                is_correct=r.is_correct,
+                attempt_completed_at=attempt.completed_at
+            )
+        )
+     
 @app.post("/api/student/finish-exam")
 def finish_exam(
     req: FinishExamRequest,
@@ -22131,6 +22197,12 @@ def finish_exam(
     # 7️⃣ Mark attempt completed
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
+    # --------------------------------------------------
+    # 8️⃣ Snapshot responses for admin analytics
+    # --------------------------------------------------
+    print("📦 Snapshotting mathematical reasoning responses into admin table")
+    
+    snapshot_math_responses_for_admin(db, attempt)
     # --------------------------------------------------
     # 8️⃣ Generate Admin Report Snapshot (ADMIN)
     # --------------------------------------------------
