@@ -6002,25 +6002,50 @@ def get_student_cumulative_report_overall(
             print(f"\n▶ Attempt {idx}")
             print("exam_attempt_id:", attempt.exam_attempt_id)
 
-            responses = (
-                db.query(ResponseModel)
-                .filter(
-                    ResponseModel.student_id == student.id,
-                    attempt_column == attempt.exam_attempt_id,
+            # --------------------------------------------------
+            # Writing exam uses attempt row instead of responses
+            # --------------------------------------------------
+            if exam == "writing":
+            
+                writing_attempt = (
+                    db.query(StudentExamWriting)
+                    .filter(StudentExamWriting.id == attempt.exam_attempt_id)
+                    .first()
                 )
-                .all()
-            )
-            print("responses_found:", len(responses))
-
-            if not responses:
-                print("⚠️ No responses found")
-                continue
-
-            attempted = len(responses)
-            correct = sum(1 for r in responses if r.is_correct)
-
-            accuracy = round((correct / attempted) * 100, 2)
-            score = accuracy
+            
+                if not writing_attempt or writing_attempt.ai_score is None:
+                    print("⚠️ No writing attempt data found")
+                    continue
+            
+                print("writing_score:", writing_attempt.ai_score)
+            
+                attempted = 25
+                correct = writing_attempt.ai_score
+                accuracy = round((correct / attempted) * 100, 2)
+                score = accuracy
+            
+            else:
+            
+                responses = (
+                    db.query(ResponseModel)
+                    .filter(
+                        ResponseModel.student_id == student.id,
+                        attempt_column == attempt.exam_attempt_id,
+                    )
+                    .all()
+                )
+            
+                print("responses_found:", len(responses))
+            
+                if not responses:
+                    print("⚠️ No responses found")
+                    continue
+            
+                attempted = len(responses)
+                correct = sum(1 for r in responses if r.is_correct)
+            
+                accuracy = round((correct / attempted) * 100, 2)
+                score = accuracy
 
             print("attempted:", attempted)
             print("correct:", correct)
