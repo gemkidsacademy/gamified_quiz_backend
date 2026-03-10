@@ -2399,6 +2399,20 @@ scheduler.start()
 # ---------------------------
 # Endpoints
 # ---------------------------
+def get_attempt_column(exam: str, model):
+    if exam == "reading":
+        return model.session_id
+
+    if exam == "thinking_skills":
+        return model.exam_attempt_id
+
+    if exam == "mathematical_reasoning":
+        return model.exam_attempt_id
+
+    if exam == "writing":
+        return model.exam_attempt_id
+
+    raise HTTPException(status_code=400, detail="Invalid exam type")
 def get_response_model(exam: str):
     if exam == "thinking_skills":
         return AdminExamResponseThinkingSkills
@@ -5666,23 +5680,33 @@ def get_student_cumulative_report(
         # 3️⃣ Resolve response model
         # --------------------------------------------------
         print("\n[3] Resolving response model...")
-
+        
         ResponseModel = get_response_model(exam)
-
+        
         if not ResponseModel:
             print("❌ [ABORT @3] Unsupported exam type:", exam)
             raise HTTPException(
                 status_code=400,
                 detail="Unsupported exam type",
             )
-
+        
+        # 🔑 Resolve attempt column dynamically
+        if exam == "reading":
+            attempt_column = ResponseModel.session_id
+        else:
+            attempt_column = ResponseModel.exam_attempt_id
+        
         print(
             "🧪 QUERYING TABLE:",
             ResponseModel.__tablename__,
             "| MODEL:",
             ResponseModel.__name__,
         )
-
+        
+        print(
+            "🔎 ATTEMPT COLUMN:",
+            attempt_column.key
+        )
         # --------------------------------------------------
         # 4️⃣ Normalize requested topic
         # --------------------------------------------------
