@@ -20796,7 +20796,15 @@ def finish_naplan_reading_exam(
                     safe_correct = [str(x).strip() for x in (correct_answer or []) if x not in (None, "")]
                     safe_student = [str(x).strip() for x in (student_answer or []) if x not in (None, "")]
                 
-                    is_correct = sorted(safe_correct) == sorted(safe_student)
+                    # Detect ordered True/False sequences
+                    tf_values = {"True", "False"}
+                
+                    if set(safe_correct).issubset(tf_values):
+                        # order matters
+                        is_correct = safe_student == safe_correct
+                    else:
+                        # multi-select where order doesn't matter
+                        is_correct = sorted(safe_student) == sorted(safe_correct)
             
                 else:
                     is_correct = False
