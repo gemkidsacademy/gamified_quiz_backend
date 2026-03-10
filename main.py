@@ -10554,6 +10554,7 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         session.finished = True
         session.completed_at = datetime.now(timezone.utc)
         session.report_json = report_json
+        db.flush()
         # --------------------------------------------------
         # Snapshot responses for admin analytics
         # --------------------------------------------------
