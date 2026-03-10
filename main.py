@@ -854,6 +854,32 @@ class StudentExamResponseThinkingSkills(Base):
     )
     student = relationship("Student")
     exam = relationship("Exam")
+ 
+class AdminExamResponseThinkingSkills(Base):
+    __tablename__ = "admin_exam_response_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+    exam_attempt_id = Column(Integer, nullable=False)
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)
+
+    # snapshot metadata
+    attempt_completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
 class StudentExamResponseNaplanLanguageConventions(Base):
     __tablename__ = "student_exam_response_naplan_language_conventions"
 
@@ -21517,6 +21543,31 @@ def get_naplan_numeracy_review(
         "questions": normalized_questions,
         "student_answers": student_answers
     }
+ 
+def snapshot_thinking_skills_responses_for_admin(db, attempt):
+    responses = (
+        db.query(StudentExamResponseThinkingSkills)
+        .filter(
+            StudentExamResponseThinkingSkills.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    for r in responses:
+        db.add(
+            AdminExamResponseThinkingSkills(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.exam_attempt_id,
+                q_id=r.q_id,
+                topic=r.topic,
+                selected_option=r.selected_option,
+                correct_option=r.correct_option,
+                is_correct=r.is_correct,
+                attempt_completed_at=attempt.completed_at
+            )
+        )
+     
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
     req: FinishExamRequest,
@@ -21647,7 +21698,7 @@ def finish_thinking_skills_exam(
         "wrong": wrong,
         "accuracy": accuracy
     })
-
+    
     # --------------------------------------------------
     # 5️⃣ Save result row (idempotent)
     # --------------------------------------------------
@@ -21735,6 +21786,12 @@ def finish_thinking_skills_exam(
     if attempt.completed_at is None:
         attempt.completed_at = datetime.now(timezone.utc)
         print("✅ Attempt marked completed")
+    # --------------------------------------------------
+    # 5️⃣ Snapshot responses for admin analytics
+    # --------------------------------------------------
+    print("📦 Snapshotting responses into admin table")
+    
+    snapshot_thinking_skills_responses_for_admin(db, attempt)
 
     db.commit()
 
