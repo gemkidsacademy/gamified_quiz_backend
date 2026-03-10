@@ -25111,7 +25111,7 @@ async def process_exam_block(
            request_id=request_id,
         )
 
-        summary.block_success(block_idx, [1])
+        summary.block_success(block_idx, [parsed])
         return  # 🚨 DO NOT FALL THROUGH
 
     # ==================================================
