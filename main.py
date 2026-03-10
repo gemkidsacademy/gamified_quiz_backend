@@ -5999,65 +5999,63 @@ def get_student_cumulative_report_overall(
 
         for idx, attempt in enumerate(attempts, start=1):
 
-            print(f"\n▶ Attempt {idx}")
-            print("exam_attempt_id:", attempt.exam_attempt_id)
-
-            # --------------------------------------------------
-            # Writing exam uses attempt row instead of responses
-            # --------------------------------------------------
-            if exam == "writing":
-            
-                writing_attempt = (
-                    db.query(StudentExamWriting)
-                    .filter(StudentExamWriting.id == attempt.exam_attempt_id)
-                    .first()
-                )
-            
-                if not writing_attempt or writing_attempt.ai_score is None:
-                    print("⚠️ No writing attempt data found")
-                    continue
-            
-                print("writing_score:", writing_attempt.ai_score)
-            
-                attempted = 25
-                correct = writing_attempt.ai_score
-                accuracy = round((correct / attempted) * 100, 2)
-                score = accuracy
-            
-            else:
-            
-                responses = (
-                    db.query(ResponseModel)
-                    .filter(
-                        ResponseModel.student_id == student.id,
-                        attempt_column == attempt.exam_attempt_id,
-                    )
-                    .all()
-                )
-            
-                print("responses_found:", len(responses))
-            
-                if not responses:
-                    print("⚠️ No responses found")
-                    continue
-            
-                attempted = len(responses)
-                correct = sum(1 for r in responses if r.is_correct)
-            
-                accuracy = round((correct / attempted) * 100, 2)
-                score = accuracy
-
-            print("attempted:", attempted)
-            print("correct:", correct)
-            print("accuracy:", accuracy)
-
-            results.append({
-                "date": attempt.created_at.date().isoformat(),
-                "questions_attempted": attempted,
-                "correct_answers": correct,
-                "accuracy": accuracy,
-                "score": score,
-            })
+           
+           print(f"\n▶ Attempt {idx}")
+           print("exam_attempt_id:", attempt.exam_attempt_id)
+           
+           # --------------------------------------------------
+           # Writing exams use admin_exam_reports as source
+           # --------------------------------------------------
+           if exam == "writing":
+           
+               if attempt.overall_score is None:
+                   print("⚠️ Writing score missing in admin report")
+                   continue
+           
+               correct = attempt.overall_score
+               attempted = 25
+               accuracy = round((correct / attempted) * 100, 2)
+               score = accuracy
+           
+               print("writing_score:", correct)
+           
+           # --------------------------------------------------
+           # All other exams use response rows
+           # --------------------------------------------------
+           else:
+           
+               responses = (
+                   db.query(ResponseModel)
+                   .filter(
+                       ResponseModel.student_id == student.id,
+                       attempt_column == attempt.exam_attempt_id,
+                   )
+                   .all()
+               )
+           
+               print("responses_found:", len(responses))
+           
+               if not responses:
+                   print("⚠️ No responses found")
+                   continue
+           
+               attempted = len(responses)
+               correct = sum(1 for r in responses if r.is_correct)
+           
+               accuracy = round((correct / attempted) * 100, 2)
+               score = accuracy
+           
+           print("attempted:", attempted)
+           print("correct:", correct)
+           print("accuracy:", accuracy)
+           
+           results.append({
+               "date": attempt.created_at.date().isoformat(),
+               "questions_attempted": attempted,
+               "correct_answers": correct,
+               "accuracy": accuracy,
+               "score": score,
+           })
 
         # --------------------------------------------------
         # 5️⃣ Validate results
