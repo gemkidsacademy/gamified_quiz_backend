@@ -1159,6 +1159,30 @@ class StudentExamReportReading(Base):
 
     # 🕒 Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+class StudentExamReportReading(Base):
+    __tablename__ = "student_exam_report_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 🔑 Identity
+    student_id = Column(String, index=True, nullable=False)
+    exam_id = Column(Integer, index=True, nullable=False)
+    session_id = Column(Integer, index=True, nullable=False, unique=True)
+
+    # 🔎 Question-level data
+    topic = Column(String, index=True, nullable=False)
+    question_id = Column(String, index=True, nullable=False)
+
+    selected_answer = Column(String, nullable=True)
+    correct_answer = Column(String, nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+
+    # 🧾 Snapshot (optional but powerful)
+    question_snapshot = Column(JSON, nullable=True)
+
+    # 🕒 Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
  
 class StudentExamResponseFoundational(Base):
      __tablename__ = "student_exam_response_foundational"
@@ -10257,7 +10281,41 @@ def generate_admin_exam_report_reading(
     db.add(rule_applied)
 
 
- 
+def snapshot_reading_responses_for_admin(db, session):
+
+    exists = (
+        db.query(AdminExamResponseReading)
+        .filter(AdminExamResponseReading.exam_attempt_id == session.id)
+        .first()
+    )
+
+    if exists:
+        print("⚠️ Admin reading snapshot already exists — skipping")
+        return
+
+    responses = (
+        db.query(StudentExamReportReading)
+        .filter(StudentExamReportReading.session_id == session.id)
+        .all()
+    )
+
+    print(f"📦 Snapshotting {len(responses)} reading responses")
+
+    for r in responses:
+        db.add(
+            AdminExamResponseReading(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.session_id,
+                topic=r.topic,
+                question_id=r.question_id,
+                selected_answer=r.selected_answer,
+                correct_answer=r.correct_answer,
+                is_correct=r.is_correct,
+                attempt_completed_at=session.completed_at
+            )
+        )
+     
 @app.post("/api/exams/submit-reading")
 def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
@@ -10490,6 +10548,16 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         session.finished = True
         session.completed_at = datetime.now(timezone.utc)
         session.report_json = report_json
+        # --------------------------------------------------
+        # Snapshot responses for admin analytics
+        # --------------------------------------------------
+        print("📦 Snapshotting reading responses into admin table")
+        
+        snapshot_reading_responses_for_admin(db, session)
+
+
+
+      
         # --------------------------------------------------
         # 6️⃣b Generate Admin Exam Report (Reading)
         # --------------------------------------------------
