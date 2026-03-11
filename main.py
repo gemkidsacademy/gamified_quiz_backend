@@ -889,7 +889,7 @@ class StudentExamResponseWriting(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     student_id = Column(String, ForeignKey("students.id"), nullable=False)
-    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("generated_exam_writing.id"), nullable=False)
 
     exam_attempt_id = Column(
         Integer,
