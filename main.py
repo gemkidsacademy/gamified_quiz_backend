@@ -25174,6 +25174,7 @@ async def process_exam_block(
         # 🔹 Sentence and rest of parsing
         sentence = ws_extract_sentence(ctx)
         selectable_words = ws_extract_selectable_words(ctx)
+        print("DEBUG selectable_words:", selectable_words)
         # 🔒 ADD THE SEMANTIC WORD-SELECTION BLOCK
         question_blocks.append({
             "type": "word-selection",
