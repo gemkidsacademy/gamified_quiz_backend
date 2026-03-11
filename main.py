@@ -889,6 +889,7 @@ class StudentExamResponseWriting(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     student_id = Column(String, ForeignKey("students.id"), nullable=False)
+
     exam_id = Column(Integer, ForeignKey("generated_exam_writing.id"), nullable=False)
 
     exam_attempt_id = Column(
@@ -901,9 +902,6 @@ class StudentExamResponseWriting(Base):
 
     essay_text = Column(Text, nullable=True)
 
-    # -----------------------------
-    # Performance snapshot
-    # -----------------------------
     writing_score = Column(Integer, nullable=True)
     readiness_band = Column(String, nullable=True)
 
@@ -911,7 +909,9 @@ class StudentExamResponseWriting(Base):
 
     attempt = relationship("StudentExamWriting", back_populates="responses")
     student = relationship("Student")
-    exam = relationship("Exam")
+
+    # FIXED RELATIONSHIP
+    exam = relationship("GeneratedExamWriting")
  
 class AdminExamResponseThinkingSkills(Base):
     __tablename__ = "admin_exam_response_thinking_skills"
