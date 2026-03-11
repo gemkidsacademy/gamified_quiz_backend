@@ -882,6 +882,35 @@ class StudentExamResponseThinkingSkills(Base):
     )
     student = relationship("Student")
     exam = relationship("Exam")
+class StudentExamResponseWriting(Base):
+    __tablename__ = "student_exam_response_writing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_writing.id"),
+        nullable=False
+    )
+
+    topic = Column(String, nullable=True)
+
+    essay_text = Column(Text, nullable=True)
+
+    # -----------------------------
+    # Performance snapshot
+    # -----------------------------
+    writing_score = Column(Integer, nullable=True)
+    readiness_band = Column(String, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    attempt = relationship("StudentExamWriting", back_populates="responses")
+    student = relationship("Student")
+    exam = relationship("Exam")
  
 class AdminExamResponseThinkingSkills(Base):
     __tablename__ = "admin_exam_response_thinking_skills"
@@ -1347,17 +1376,11 @@ class StudentExamWriting(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # External student identifier (e.g. "Gem002")
-    student_id = Column(Text, nullable=False)
+    # Internal student reference
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
 
-    # Generated writing exam ID
-    exam_id = Column(Integer, nullable=False)
-
-    exam_attempt_id = Column(
-        Integer,
-        ForeignKey("student_exam_thinking_skills.id"),
-        nullable=False
-    )
+    # Writing exam definition
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
     # --------------------------------------------------
     # Exam lifecycle timestamps
@@ -1391,43 +1414,50 @@ class StudentExamWriting(Base):
     )
 
     # --------------------------------------------------
-    # AI Writing Evaluation (Summary fields)
+    # AI Writing Evaluation
     # --------------------------------------------------
     ai_score = Column(
         Integer,
         nullable=True,
-        comment="AI-evaluated writing score (0–20)"
+        comment="AI-evaluated writing score (0–25)"
     )
 
     ai_strengths = Column(
         Text,
-        nullable=True,
-        comment="AI-identified writing strengths (summary)"
+        nullable=True
     )
 
     ai_improvements = Column(
         Text,
-        nullable=True,
-        comment="AI-identified areas for improvement (summary)"
+        nullable=True
     )
 
-    # --------------------------------------------------
-    # AI Writing Evaluation (Structured JSON)
-    # --------------------------------------------------
     ai_evaluation_json = Column(
         JSON,
         nullable=True,
-        comment="Full structured AI evaluation for frontend rendering"
+        comment="Full structured AI evaluation"
     )
 
     # --------------------------------------------------
-    # Record creation timestamp
+    # Record timestamp
     # --------------------------------------------------
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
+
+    # --------------------------------------------------
+    # Relationships
+    # --------------------------------------------------
+    responses = relationship(
+        "StudentExamResponseWriting",
+        back_populates="attempt"
+    )
+
+    student = relationship("Student")
+    exam = relationship("Exam")
+ 
 
 class WritingSubmitSchema(BaseModel):
     answer_text: str
@@ -11105,14 +11135,23 @@ def submit_writing_exam(
         .order_by(StudentExamWriting.started_at.desc())
         .first()
     )
-
+    print("🔍 Fetching exam topic...")
     if not exam_state:
         print("❌ No active writing exam found for student_id:", student_id)
         raise HTTPException(
             status_code=404,
             detail="No active writing exam found"
         )
+    exam = (
+        db.query(Exam)
+        .filter(Exam.id == exam_state.exam_id)
+        .first()
+    )
+    
+    
+    topic = exam.topic if exam else None
 
+    
     print("✅ Writing attempt found:", {
         "attempt_id": exam_state.id,
         "exam_id": exam_state.exam_id,
@@ -11127,7 +11166,25 @@ def submit_writing_exam(
 
     exam_state.answer_text = payload.answer_text
     exam_state.completed_at = datetime.now(timezone.utc)
-
+    print("📝 Saving writing response...")
+     
+    existing_response = (
+        db.query(StudentExamResponseWriting)
+        .filter(StudentExamResponseWriting.exam_attempt_id == exam_state.id)
+        .first()
+    )
+    
+    if existing_response:
+        writing_response = existing_response
+    else:
+        writing_response = StudentExamResponseWriting(
+            student_id=exam_state.student_id,
+            exam_id=exam_state.exam_id,
+            exam_attempt_id=exam_state.id,
+            topic=topic,
+            essay_text=payload.answer_text
+        )
+        db.add(writing_response)
     # --------------------------------------------------
     # 3️⃣ Evaluate essay using OpenAI
     # --------------------------------------------------
@@ -11271,6 +11328,7 @@ Student response:
         
         categories = evaluation.get("categories", {})
         band = evaluation.get("selective_readiness_band")
+        
 
         EXPECTED_BANDS = {
             range(22, 26): "Strong selective standard – very competitive",
@@ -11324,7 +11382,9 @@ Student response:
 
         exam_state.ai_evaluation_json = evaluation
         exam_state.ai_score = writing_score       
-        
+        # Save performance snapshot in response table
+        writing_response.writing_score = writing_score
+        writing_response.readiness_band = band
         
         print("✅ Parsed AI evaluation:", {
             "score": writing_score,
@@ -18553,7 +18613,7 @@ def start_exam(
         .order_by(Exam.created_at.desc())
         .first()
     )
-
+    
 
     if not exam:
         print("❌ Exam not generated")
