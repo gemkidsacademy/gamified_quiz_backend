@@ -7106,45 +7106,49 @@ def get_student_writing_cumulative(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # 2️⃣ Build base query
+    # 2️⃣ Base query (JOIN attempts + responses)
     query = (
         db.query(
-            StudentExamResponseWriting.created_at,
+            StudentExamWriting.completed_at,
             StudentExamResponseWriting.writing_score
         )
+        .join(
+            StudentExamResponseWriting,
+            StudentExamResponseWriting.exam_attempt_id == StudentExamWriting.id
+        )
         .filter(
-            StudentExamResponseWriting.student_id == student.id,
+            StudentExamWriting.student_id == student.id,
             StudentExamResponseWriting.writing_score.isnot(None)
         )
     )
 
-    # 3️⃣ Apply topic filter (if provided)
+    # 3️⃣ Topic filter
     if topic:
         query = query.filter(
             StudentExamResponseWriting.topic == topic
         )
 
-    # 4️⃣ Apply attempt date filter (if provided)
+    # 4️⃣ Attempt date filter
     if attempt_dates:
         query = query.filter(
-            func.date(StudentExamResponseWriting.created_at).in_(attempt_dates)
+            func.date(StudentExamWriting.completed_at).in_(attempt_dates)
         )
 
-    # 5️⃣ Execute query
+    # 5️⃣ Execute
     rows = (
         query
-        .order_by(StudentExamResponseWriting.created_at)
+        .order_by(StudentExamWriting.completed_at)
         .all()
     )
 
     # 6️⃣ Format response
     attempts = [
         {
-            "date": created_at.date().isoformat(),
+            "date": completed_at.date().isoformat(),
             "score": score,
             "accuracy": round((score / 25) * 100)
         }
-        for created_at, score in rows
+        for completed_at, score in rows
     ]
 
     return {
