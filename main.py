@@ -24907,9 +24907,10 @@ def ws_extract_question_text_blocks(
             upper = content.upper()
 
             # Start
-            if upper == "QUESTION_TEXT:":
-                in_question_text = True
-                continue
+            if not in_question_text:
+               if upper == "QUESTION_TEXT:":
+                   in_question_text = True
+               continue
 
             # Stop at next section
             if in_question_text and upper.endswith(":"):
@@ -24932,7 +24933,7 @@ def ws_extract_question_text_blocks(
         # -----------------------------
         elif b.get("type") == "image" and in_question_text:
             resolved = resolve_stem_images(
-                [b["name"]],
+                [b["image_ref"]],
                 db=db,
                 request_id=request_id,
             )
