@@ -26042,6 +26042,11 @@ async def upload_word_naplan(
         f"[{request_id}] ✅ STEP 3 COMPLETE | "
         f"ordered_blocks_count={len(ordered_blocks)}"
     )
+    print(f"\n[{request_id}] 🔬 ORDERED BLOCKS DUMP")
+    for i, b in enumerate(ordered_blocks):
+        print(f"[{request_id}] BLOCK {i}: {b}")
+    
+    print(f"[{request_id}] 🔬 END ORDERED BLOCKS\n")
 
     # Defensive visibility
     if ordered_blocks:
