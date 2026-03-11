@@ -7087,6 +7087,63 @@ def get_student_writing_report(
         "evaluation": exam_state.ai_evaluation_json,
     }
 
+
+@app.get("/api/reports/student/writing/cumulative")
+def get_student_writing_cumulative(
+    student_id: str,
+    topic: str,
+    db: Session = Depends(get_db)
+):
+
+    # 1️⃣ Resolve student
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(404, "Student not found")
+
+    # 2️⃣ Fetch writing attempts for this topic
+    rows = (
+        db.query(
+            StudentExamResponseWriting.created_at,
+            StudentExamResponseWriting.writing_score
+        )
+        .filter(
+            StudentExamResponseWriting.student_id == student.id,
+            StudentExamResponseWriting.topic == topic,
+            StudentExamResponseWriting.writing_score.isnot(None)
+        )
+        .order_by(StudentExamResponseWriting.created_at)
+        .all()
+    )
+
+    if not rows:
+        return {
+            "student_id": student.student_id,
+            "exam": "writing",
+            "topic": topic,
+            "attempts": []
+        }
+
+    attempts = []
+
+    for created_at, score in rows:
+        attempts.append({
+            "date": created_at.date().isoformat(),
+            "score": score,
+            "accuracy": round((score / 25) * 100)
+        })
+
+    return {
+        "student_id": student.student_id,
+        "exam": "writing",
+        "topic": topic,
+        "attempts": attempts
+    }
+
 def get_all_classes(db: Session):
     results = (
         db.query(distinct(Student.class_name))
