@@ -6692,22 +6692,21 @@ def get_exam_topics(
 
     elif exam == "reading":
         rows = (
-            db.query(ReadingQuestion.topic)
-            .filter(ReadingQuestion.topic.isnot(None))
+            db.query(QuestionReading.topic)
+            .filter(QuestionReading.topic.isnot(None))
             .distinct()
-            .order_by(ReadingQuestion.topic)
+            .order_by(QuestionReading.topic)
             .all()
         )
 
     elif exam == "writing":
         rows = (
-            db.query(WritingQuestion.topic)
-            .filter(WritingQuestion.topic.isnot(None))
+            db.query(WritingQuestionBank.topic)
+            .filter(WritingQuestionBank.topic.isnot(None))
             .distinct()
-            .order_by(WritingQuestion.topic)
+            .order_by(WritingQuestionBank.topic)
             .all()
         )
-
     else:
         raise HTTPException(status_code=400, detail="Unsupported exam type")
 
