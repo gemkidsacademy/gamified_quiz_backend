@@ -25004,7 +25004,12 @@ async def process_exam_block(
                 continue
     
             # Stop stem
-            if upper in {"QUESTION_BLOCKS:", "OPTIONS:", "CORRECT_ANSWER:"}:
+            stop_headers = {"QUESTION_BLOCKS:", "OPTIONS:", "CORRECT_ANSWER:"}
+
+            if question_type == 7:
+                stop_headers |= {"SENTENCE:", "SELECTABLE_WORDS:", "ANSWER_TYPE:"}
+            
+            if upper in stop_headers:
                 break
 
     
