@@ -5770,7 +5770,7 @@ def get_student_cumulative_report(
         
         # 🔑 Resolve attempt column dynamically
         if exam == "reading":
-            attempt_column = ResponseModel.session_id
+            attempt_column = ResponseModel.exam_attempt_id
         else:
             attempt_column = ResponseModel.exam_attempt_id
         
