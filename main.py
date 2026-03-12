@@ -7147,8 +7147,13 @@ def get_student_writing_cumulative(
 
     # 4️⃣ Attempt date filter
     if attempt_dates:
+
+        start = datetime.combine(attempt_dates[0], datetime.min.time())
+        end = start + timedelta(days=1)
+    
         query = query.filter(
-            func.date(StudentExamWriting.completed_at).in_(attempt_dates)
+            StudentExamWriting.completed_at >= start,
+            StudentExamWriting.completed_at < end
         )
 
     # 5️⃣ Execute
