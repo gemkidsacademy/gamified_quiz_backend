@@ -11265,15 +11265,17 @@ def submit_writing_exam(
             status_code=404,
             detail="No active writing exam found"
         )
-    exam = (
-        db.query(Exam)
-        .filter(Exam.id == exam_state.exam_id)
+    print("🔍 Fetching writing topic from generated exam...")
+
+    generated_exam = (
+        db.query(GeneratedExamWriting)
+        .filter(GeneratedExamWriting.id == exam_state.exam_id)
         .first()
     )
     
+    topic = generated_exam.topic if generated_exam else None
     
-    topic = exam.topic if exam else None
-
+    print("🧠 Writing topic:", topic)
     
     print("✅ Writing attempt found:", {
         "attempt_id": exam_state.id,
