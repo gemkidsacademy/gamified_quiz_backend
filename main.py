@@ -20883,6 +20883,12 @@ def finish_naplan_language_conventions_exam(
                     # fallback for cases like "BD"
                     if normalized_correct.isalpha() and normalized_correct.isupper():
                         normalized_correct = list(normalized_correct)
+            # Normalize case for multi-select answers
+            if isinstance(normalized_correct, list):
+                normalized_correct = [str(x).upper() for x in normalized_correct]
+            
+            if isinstance(normalized_student, list):
+                normalized_student = [str(x).upper() for x in normalized_student]
     
             # 3️⃣ Compare answers
             if isinstance(normalized_correct, list):
