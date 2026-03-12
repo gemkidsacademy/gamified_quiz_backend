@@ -20834,6 +20834,11 @@ def finish_naplan_language_conventions_exam(
 
         q_id = str(q.get("id"))
         correct_answer = q.get("correct_answer")
+        options = q.get("options")
+
+        # Convert option key (A,B,C) → value
+        if isinstance(correct_answer, str) and options and correct_answer in options:
+            correct_answer = options[correct_answer]
         topic = q.get("topic")
     
         student_answer = answers.get(q_id)
