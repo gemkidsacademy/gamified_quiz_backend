@@ -20873,6 +20873,9 @@ def finish_naplan_language_conventions_exam(
             # ⭐ Normalize both answers using evaluation helper
             normalized_student = normalize_naplan_evaluation_answer_value(student_answer)
             normalized_correct = normalize_naplan_evaluation_answer_value(normalized_correct)
+            # Convert "BD" → ["B","D"] for multi-select questions
+            if isinstance(normalized_correct, str) and len(normalized_correct) > 1:
+                normalized_correct = list(normalized_correct)
     
             # 3️⃣ Compare answers
             if isinstance(normalized_correct, list):
