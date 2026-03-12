@@ -20874,8 +20874,15 @@ def finish_naplan_language_conventions_exam(
             normalized_student = normalize_naplan_evaluation_answer_value(student_answer)
             normalized_correct = normalize_naplan_evaluation_answer_value(normalized_correct)
             # Convert "BD" → ["B","D"] for multi-select questions
-            if isinstance(normalized_correct, str) and len(normalized_correct) > 1:
-                normalized_correct = list(normalized_correct)
+            if isinstance(normalized_correct, str):
+                try:
+                    parsed = json.loads(normalized_correct.replace("'", '"'))
+                    if isinstance(parsed, list):
+                        normalized_correct = parsed
+                except:
+                    # fallback for cases like "BD"
+                    if normalized_correct.isalpha() and normalized_correct.isupper():
+                        normalized_correct = list(normalized_correct)
     
             # 3️⃣ Compare answers
             if isinstance(normalized_correct, list):
