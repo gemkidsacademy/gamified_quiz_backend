@@ -7123,38 +7123,63 @@ def get_student_writing_cumulative(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # 2️⃣ Base query from permanent reports
-    query = (
-        db.query(
-            AdminExamReport.created_at,
-            AdminExamReport.overall_score
-        )
-        .filter(
-            func.lower(AdminExamReport.student_id) == func.lower(student_id),
-            AdminExamReport.exam_type == "writing"
-        )
-    )
 
-    # 3️⃣ Filter by selected attempt dates (sent from frontend)
-    if attempt_dates:
-        query = query.filter(
-            func.date(AdminExamReport.created_at).in_(attempt_dates)
-        )
-
-    # 4️⃣ Topic filter
+    # -------------------------------------------------------
+    # CASE 1: TOPIC REPORT
+    # -------------------------------------------------------
     if topic:
-        query = query.filter(
-            func.lower(AdminExamReport.summary_notes).contains(topic.lower())
+
+        query = (
+            db.query(
+                AdminExamResponseWriting.created_at,
+                AdminExamResponseWriting.writing_score
+            )
+            .filter(
+                func.lower(AdminExamResponseWriting.student_id)
+                == func.lower(student_id),
+
+                func.lower(func.trim(AdminExamResponseWriting.topic))
+                == func.lower(func.trim(topic))
+            )
         )
 
-    # 5️⃣ Execute query
-    rows = (
-        query
-        .order_by(AdminExamReport.created_at)
-        .all()
-    )
+        if attempt_dates:
+            query = query.filter(
+                func.date(AdminExamResponseWriting.created_at).in_(attempt_dates)
+            )
 
-    # 6️⃣ Format response
+        rows = query.order_by(AdminExamResponseWriting.created_at).all()
+
+
+    # -------------------------------------------------------
+    # CASE 2: OVERALL REPORT
+    # -------------------------------------------------------
+    else:
+
+        query = (
+            db.query(
+                AdminExamReport.created_at,
+                AdminExamReport.overall_score
+            )
+            .filter(
+                func.lower(AdminExamReport.student_id)
+                == func.lower(student_id),
+
+                AdminExamReport.exam_type == "writing"
+            )
+        )
+
+        if attempt_dates:
+            query = query.filter(
+                func.date(AdminExamReport.created_at).in_(attempt_dates)
+            )
+
+        rows = query.order_by(AdminExamReport.created_at).all()
+
+
+    # -------------------------------------------------------
+    # FORMAT RESPONSE
+    # -------------------------------------------------------
     attempts = [
         {
             "date": created_at.date().isoformat(),
