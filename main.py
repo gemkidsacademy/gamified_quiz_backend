@@ -6037,7 +6037,7 @@ def get_student_cumulative_report_overall(
         )
         # 🔎 Resolve attempt column
         if exam == "reading":
-            attempt_column = ResponseModel.session_id
+            attempt_column = ResponseModel.exam_attempt_id
         else:
             attempt_column = ResponseModel.exam_attempt_id
         
