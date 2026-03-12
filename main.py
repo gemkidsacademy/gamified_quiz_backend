@@ -5822,7 +5822,9 @@ def get_student_cumulative_report(
                 )
                 .all()
             )
-
+            print("DB topics:", {r.topic for r in raw_responses})
+            print("Normalized DB topics:", {normalize_topic_reporting(r.topic) for r in raw_responses})
+            print("Requested topic:", normalized_request_topic)
             print("     raw_responses_found:", len(raw_responses))
 
             if not raw_responses:
