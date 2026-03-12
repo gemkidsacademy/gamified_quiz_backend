@@ -5791,12 +5791,21 @@ def get_student_cumulative_report(
         # --------------------------------------------------
         # 4️⃣ Normalize requested topic
         # --------------------------------------------------
+        print("[4] Topic normalization")
+
         normalized_request_topic = normalize_topic_reporting(topic)
-
-        print("\n[4] Topic normalization")
-        print("   request_topic_raw:", repr(topic))
-        print("   request_topic_normalized:", repr(normalized_request_topic))
-
+        
+        TOPIC_ALIASES = {
+            "main_idea_and_summary": "main_idea"
+        }
+        
+        normalized_request_topic = TOPIC_ALIASES.get(
+            normalized_request_topic,
+            normalized_request_topic
+        )
+        
+        print("   request_topic_raw:", topic)
+        print("   request_topic_normalized:", normalized_request_topic)
         results = []
 
         # --------------------------------------------------
