@@ -7112,7 +7112,6 @@ def get_student_writing_cumulative(
     attempt_dates: List[date] = Query([]),
     db: Session = Depends(get_db)
 ):
-    
 
     # 1️⃣ Resolve student
     student = (
@@ -7123,69 +7122,56 @@ def get_student_writing_cumulative(
 
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
-    print("STUDENT DB ID:", student.id)
 
-    debug_rows = (
-        db.query(
-            StudentExamWriting.id,
-            StudentExamWriting.completed_at,
-            StudentExamResponseWriting.writing_score
-        )
-        .join(
-            StudentExamResponseWriting,
-            StudentExamResponseWriting.exam_attempt_id == StudentExamWriting.id
-        )
-        .filter(StudentExamWriting.student_id == student.id)
-        .all()
-    )
-    
-    print("DEBUG ATTEMPTS:", debug_rows)
-    # 2️⃣ Base query (JOIN attempts + responses)
+    # 2️⃣ Base query from permanent reports
     query = (
         db.query(
-            StudentExamWriting.completed_at,
-            StudentExamResponseWriting.writing_score
-        )
-        .join(
-            StudentExamResponseWriting,
-            StudentExamResponseWriting.exam_attempt_id == StudentExamWriting.id
+            AdminExamReport.created_at,
+            AdminExamReport.overall_score
         )
         .filter(
-            StudentExamWriting.student_id == student.id,
-            StudentExamResponseWriting.writing_score.isnot(None)
+            func.lower(AdminExamReport.student_id) == func.lower(student_id),
+            AdminExamReport.exam_type == "writing"
         )
     )
 
-    # 3️⃣ Topic filter
-    if topic:
+    # 3️⃣ Filter by selected attempt dates (sent from frontend)
+    if attempt_dates:
         query = query.filter(
-            StudentExamResponseWriting.topic == topic
+            func.date(AdminExamReport.created_at).in_(attempt_dates)
         )
 
-    
-    # 5️⃣ Execute
+    # 4️⃣ Topic filter
+    if topic:
+        query = query.filter(
+            func.lower(AdminExamReport.summary_notes).contains(topic.lower())
+        )
+
+    # 5️⃣ Execute query
     rows = (
         query
-        .order_by(StudentExamWriting.completed_at)
+        .order_by(AdminExamReport.created_at)
         .all()
     )
 
     # 6️⃣ Format response
     attempts = [
         {
-            "date": completed_at.date().isoformat(),
+            "date": created_at.date().isoformat(),
             "score": score,
             "accuracy": round((score / 25) * 100)
         }
-        for completed_at, score in rows
+        for created_at, score in rows
     ]
 
     return {
         "student_id": student.student_id,
+        "student_name": getattr(student, "name", student.student_id),
         "exam": "writing",
         "topic": topic,
         "attempts": attempts
     }
+ 
  
 def get_all_classes(db: Session):
     results = (
