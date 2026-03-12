@@ -5643,25 +5643,6 @@ def get_question_model(exam: str):
 # Helpers
 # ----------------------------------------
 
-def normalize_topic_reporting(value: str) -> str:
-    value = value.lower()
-
-    # Replace symbols with spaces
-    value = value.replace("&", " ")
-
-    # Remove punctuation
-    value = re.sub(r"[(),-]", " ", value)
-
-    # Normalize whitespace
-    value = re.sub(r"\s+", " ", value).strip()
-
-    # Remove standalone word "and"
-    tokens = [
-        word for word in value.split(" ")
-        if word != "and"
-    ]
-
-    return "_".join(tokens)
 def response_has_own_topic(ResponseModel):
     return hasattr(ResponseModel, "topic")
 
@@ -5670,6 +5651,28 @@ def response_has_own_topic(ResponseModel):
 # Endpoint
 # ----------------------------------------
 
+
+
+def normalize_topic_reporting(value: str) -> str:
+    value = value.lower()
+
+    value = value.replace("&", " ")
+    value = re.sub(r"[(),-]", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+
+    tokens = [
+        word for word in value.split(" ")
+        if word != "and"
+    ]
+
+    normalized = "_".join(tokens)
+
+    # Topic aliases to match DB keys
+    topic_aliases = {
+        "main_idea_summary": "main_idea",
+    }
+
+    return topic_aliases.get(normalized, normalized)
 
 @app.get("/api/reports/student/cumulative")
 def get_student_cumulative_report(
@@ -5948,6 +5951,7 @@ def get_student_cumulative_report(
             status_code=500,
             detail="Internal error while generating cumulative report",
         )
+ 
 @app.get("/api/reports/student/cumulative-overall")
 def get_student_cumulative_report_overall(
     student_id: str,
