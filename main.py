@@ -11303,7 +11303,7 @@ def submit_writing_exam(
         writing_response = existing_response
     else:
         writing_response = StudentExamResponseWriting(
-            student_id=exam_state.student_id,
+            student_id=student.student_id,
             exam_id=exam_state.exam_id,
             exam_attempt_id=exam_state.id,
             topic=topic,
