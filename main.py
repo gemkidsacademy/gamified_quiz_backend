@@ -12419,6 +12419,7 @@ def generate_exam_writing(
         exam = GeneratedExamWriting(
             class_name=class_name.capitalize(),
             subject="writing",
+            topic=question.topic, 
             difficulty=difficulty.capitalize(),
             question_text=full_exam_text,
             duration_minutes=40,
