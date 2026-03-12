@@ -355,24 +355,24 @@ class AdminExamResponseMathematicalReasoning(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
-class AdminExamResponseWriting(Base):
-    __tablename__ = "admin_exam_response_writing"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    student_id = Column(String, nullable=False)
-    exam_attempt_id = Column(Integer, nullable=False)
-    exam_id = Column(Integer, nullable=False)
-
-    topic = Column(Text)
-    essay_text = Column(Text)
-
-    writing_score = Column(Integer)
-    readiness_band = Column(Text)
-
-    ai_evaluation_json = Column(JSON)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ class AdminExamResponseWriting(Base):
+     __tablename__ = "admin_exam_response_writing"
+ 
+     id = Column(Integer, primary_key=True, index=True)
+ 
+     student_id = Column(String, nullable=False)
+     exam_attempt_id = Column(Integer, nullable=False)
+     exam_id = Column(Integer, nullable=False)
+ 
+     topic = Column(Text)
+     essay_text = Column(Text)
+ 
+     writing_score = Column(Integer)
+     readiness_band = Column(Text)
+ 
+     ai_evaluation_json = Column(JSON)
+ 
+     created_at = Column(DateTime(timezone=True), server_default=func.now())
 class StudentExamMathematicalReasoning(Base):
     __tablename__ = "student_exam_mathematical_reasoning"
 
