@@ -2495,7 +2495,7 @@ def get_response_model(exam: str):
     if exam == "thinking_skills":
         return AdminExamResponseThinkingSkills
     if exam == "reading":
-        return StudentExamReportReading
+        return AdminExamResponseReading
     if exam == "mathematical_reasoning":
         return AdminExamResponseMathematicalReasoning
     if exam == "writing":
