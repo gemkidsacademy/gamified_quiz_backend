@@ -7937,38 +7937,37 @@ def get_exam_dates(
     student_id: str | None = None,
     db: Session = Depends(get_db),
 ):
-    """
-    Returns available exam dates for:
-    - Per Student Report (exam + student_id)
-    - Per Class Report (exam only)
-    """
 
-    # Base query: filter by exam
-    query = (
-        db.query(AdminExamReport.created_at)
-        .filter(AdminExamReport.exam_type == exam)
+    query = db.query(StudentExamWriting.completed_at).filter(
+        StudentExamWriting.completed_at.isnot(None)
     )
 
-    # Per Student Report: further restrict by student
     if student_id:
-        query = query.filter(AdminExamReport.student_id == student_id)
+        student = (
+            db.query(Student)
+            .filter(Student.student_id == student_id)
+            .first()
+        )
 
-    # Execute query
+        if not student:
+            raise HTTPException(404, "Student not found")
+
+        query = query.filter(StudentExamWriting.student_id == student.id)
+
     rows = (
         query
         .distinct()
-        .order_by(AdminExamReport.created_at.desc())
+        .order_by(StudentExamWriting.completed_at.desc())
         .all()
     )
 
     return {
         "dates": [
-            row.created_at.date().isoformat()
+            row.completed_at.date().isoformat()
             for row in rows
         ]
     }
  
-
 @app.get("/api/admin/students")
 def get_admin_students(db: Session = Depends(get_db)):
     students = (
