@@ -5806,10 +5806,15 @@ def get_student_cumulative_report(
             print("     exam_attempt_id:", attempt.exam_attempt_id)
             print("     created_at:", attempt.created_at)
 
+            if exam == "reading":
+                student_filter = ResponseModel.student_id == student.student_id
+            else:
+                student_filter = ResponseModel.student_id == student.id
+            
             raw_responses = (
                 db.query(ResponseModel)
                 .filter(
-                    ResponseModel.student_id == student.id,
+                    student_filter,
                     ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
                 )
                 .all()
