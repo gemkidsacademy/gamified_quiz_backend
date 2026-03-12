@@ -7112,6 +7112,7 @@ def get_student_writing_cumulative(
     attempt_dates: List[date] = Query([]),
     db: Session = Depends(get_db)
 ):
+    
 
     # 1️⃣ Resolve student
     student = (
@@ -7122,7 +7123,23 @@ def get_student_writing_cumulative(
 
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
+    print("STUDENT DB ID:", student.id)
 
+    debug_rows = (
+        db.query(
+            StudentExamWriting.id,
+            StudentExamWriting.completed_at,
+            StudentExamResponseWriting.writing_score
+        )
+        .join(
+            StudentExamResponseWriting,
+            StudentExamResponseWriting.exam_attempt_id == StudentExamWriting.id
+        )
+        .filter(StudentExamWriting.student_id == student.id)
+        .all()
+    )
+    
+    print("DEBUG ATTEMPTS:", debug_rows)
     # 2️⃣ Base query (JOIN attempts + responses)
     query = (
         db.query(
