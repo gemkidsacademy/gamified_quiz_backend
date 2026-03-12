@@ -6081,7 +6081,7 @@ def get_student_cumulative_report_overall(
                    db.query(ResponseModel)
                    .filter(
                        ResponseModel.student_id == student.id,
-                       attempt_column == attempt.exam_attempt_id,
+                       ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
                    )
                    .all()
                )
