@@ -355,7 +355,7 @@ class AdminExamResponseMathematicalReasoning(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
- class AdminExamResponseWriting(Base):
+class AdminExamResponseWriting(Base):
      __tablename__ = "admin_exam_response_writing"
  
      id = Column(Integer, primary_key=True, index=True)
