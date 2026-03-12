@@ -5808,12 +5808,9 @@ def get_student_cumulative_report(
             print(f"\n   ▶ Attempt {idx}")
             print("     exam_attempt_id:", attempt.exam_attempt_id)
             print("     created_at:", attempt.created_at)
-
-            if exam == "reading":
-                student_filter = ResponseModel.student_id == student.student_id
-            else:
-                student_filter = ResponseModel.student_id == student.id
-            
+        
+            student_filter = ResponseModel.student_id == str(student.id)
+        
             raw_responses = (
                 db.query(ResponseModel)
                 .filter(
@@ -5822,10 +5819,11 @@ def get_student_cumulative_report(
                 )
                 .all()
             )
+        
             print("DB topics:", {r.topic for r in raw_responses})
             print("Normalized DB topics:", {normalize_topic_reporting(r.topic) for r in raw_responses})
             print("Requested topic:", normalized_request_topic)
-            print("     raw_responses_found:", len(raw_responses))
+            print("raw_responses_found:", len(raw_responses))
 
             if not raw_responses:
                 print("     ⚠️ No responses found for this attempt")
