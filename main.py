@@ -11194,13 +11194,13 @@ def archive_writing_response_to_admin_table(
     exam_state: StudentExamWriting,
     writing_response: StudentExamResponseWriting,
 ):
- 
+
     """
     Copies the writing response snapshot into admin_exam_response_writing
     so data survives exam resets.
     """
-    student_id=student.student_id
-     # 🔹 Prevent duplicate archive records
+
+    # 🔹 Prevent duplicate archive records
     existing = (
         db.query(AdminExamResponseWriting)
         .filter(AdminExamResponseWriting.exam_attempt_id == exam_state.id)
@@ -11211,7 +11211,7 @@ def archive_writing_response_to_admin_table(
         return
 
     admin_record = AdminExamResponseWriting(
-        student_id=str(exam_state.student_id),
+        student_id=student.student_id,   # ✅ FIX
         exam_attempt_id=exam_state.id,
         exam_id=exam_state.exam_id,
 
