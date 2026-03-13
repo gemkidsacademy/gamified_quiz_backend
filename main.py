@@ -1279,7 +1279,7 @@ class StudentExamResultsThinkingSkills(Base):
         Integer,
         ForeignKey("student_exams.id"),
         nullable=False,
-        unique=True
+        index=True
     )
 
     total_questions = Column(Integer, nullable=False)
@@ -22633,31 +22633,22 @@ def finish_thinking_skills_exam(
     # --------------------------------------------------
     # 5️⃣ Save result row (idempotent)
     # --------------------------------------------------
-    existing_result = (
-        db.query(StudentExamResultsThinkingSkills)
-        .filter(
-            StudentExamResultsThinkingSkills.exam_attempt_id == attempt.id
+    db.add(
+        StudentExamResultsThinkingSkills(
+            student_id=student.id,
+            exam_attempt_id=attempt.id,
+            total_questions=total_questions,
+            correct_answers=correct,
+            wrong_answers=wrong,
+            accuracy_percent=accuracy
         )
-        .first()
     )
-
-    if existing_result:
-        print("ℹ️ Result row already exists:", {
-            "result_id": existing_result.id
-        })
-    else:
-        print("💾 Creating result row for attempt:", attempt.id)
-        db.add(
-            StudentExamResultsThinkingSkills(
-                student_id=student.id,
-                exam_attempt_id=attempt.id,
-                total_questions=total_questions,
-                correct_answers=correct,
-                wrong_answers=wrong,
-                accuracy_percent=accuracy
-            )
-        )
-
+    print("💾 Saving exam result snapshot:", {
+        "attempt_id": attempt.id,
+        "correct": correct,
+        "total": total_questions,
+        "accuracy": accuracy
+    })
     # --------------------------------------------------
     # 6️⃣ ADMIN REPORT GENERATION (CRITICAL DIAGNOSTICS)
     # --------------------------------------------------
