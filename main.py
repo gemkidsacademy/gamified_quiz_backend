@@ -21671,22 +21671,23 @@ def finish_naplan_reading_exam(
     for q in questions:
         q_id = str(q.get("question_id") or q.get("id"))
         bundle = q.get("exam_bundle") or {}
-
+    
         correct_answer = (
             q.get("correct_answer")
             or bundle.get("correct_answer")
         )
-        
-        # 🔎 fallback for word_select questions
+    
+        # fallback for word_select questions
         if correct_answer is None:
             for block in bundle.get("question_blocks", []):
                 if block.get("type") == "word_select":
-                    answers = block.get("correct_answers") or []
-                    if answers:
-                        correct_answer = answers[0]
+                    correct_answers = block.get("correct_answers") or []
+                    if correct_answers:
+                        correct_answer = correct_answers[0]
                         break
+    
         topic = q.get("topic")
-
+    
         student_answer = answers.get(q_id)
 
         # 1️⃣ Normalize unanswered
