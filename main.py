@@ -7881,97 +7881,130 @@ def generate_overall_selective_report(
 
 @app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
-    student_id: str,
-    exam_date: date,   # ✅ REQUIRED
-    db: Session = Depends(get_db)
-): 
-    """
-    Fetch all selective exam reports for a given student.
-    Read-only aggregation over admin reporting tables.
-    """
+student_id: str,
+exam_date: date,
+db: Session = Depends(get_db)
+):
+"""
+Fetch all selective exam reports for a given student.
+Read-only aggregation over admin reporting tables.
+"""
 
-    # --------------------------------------------------
-    # 1️⃣ Fetch admin exam reports for student
-    # --------------------------------------------------
-    reports = (
-        db.query(AdminExamReport)
-        .filter(
-            AdminExamReport.student_id == student_id,
-            func.date(AdminExamReport.created_at) == exam_date
-        )
-        .order_by(AdminExamReport.created_at.desc())
-        .all()
+```
+# --------------------------------------------------
+# 1️⃣ Fetch admin exam reports for student
+# --------------------------------------------------
+reports = (
+    db.query(AdminExamReport)
+    .filter(
+        AdminExamReport.student_id == student_id,
+        func.date(AdminExamReport.created_at) == exam_date
     )
+    .order_by(AdminExamReport.created_at.desc())
+    .all()
+)
 
-    if not reports:
-        return []
+if not reports:
+    return []
 
-    report_ids = [r.id for r in reports]
+report_ids = [r.id for r in reports]
+attempt_ids = [r.exam_attempt_id for r in reports]
 
-    # --------------------------------------------------
-    # 2️⃣ Fetch section results
-    # --------------------------------------------------
-    sections = (
-        db.query(AdminExamSectionResult)
-        .filter(AdminExamSectionResult.admin_report_id.in_(report_ids))
-        .all()
+# --------------------------------------------------
+# 2️⃣ Fetch section results
+# --------------------------------------------------
+sections = (
+    db.query(AdminExamSectionResult)
+    .filter(AdminExamSectionResult.admin_report_id.in_(report_ids))
+    .all()
+)
+
+sections_by_report = defaultdict(list)
+
+for s in sections:
+    sections_by_report[s.admin_report_id].append({
+        "section_name": s.section_name,
+        "raw_score": s.raw_score,
+        "performance_band": s.performance_band,
+        "strengths": s.strengths_summary,
+        "improvements": s.improvement_summary
+    })
+
+# --------------------------------------------------
+# 3️⃣ Fetch readiness rules (audit trail)
+# --------------------------------------------------
+rules = (
+    db.query(AdminReadinessRuleApplied)
+    .filter(AdminReadinessRuleApplied.admin_report_id.in_(report_ids))
+    .all()
+)
+
+rules_by_report = defaultdict(list)
+
+for r in rules:
+    rules_by_report[r.admin_report_id].append({
+        "rule_code": r.rule_code,
+        "result": r.rule_result,
+        "description": r.rule_description
+    })
+
+# --------------------------------------------------
+# 4️⃣ Fetch thinking skills result rows
+# --------------------------------------------------
+results = (
+    db.query(StudentExamResultsThinkingSkills)
+    .filter(
+        StudentExamResultsThinkingSkills.exam_attempt_id.in_(attempt_ids)
     )
+    .all()
+)
 
-    sections_by_report = defaultdict(list)
-    for s in sections:
-        sections_by_report[s.admin_report_id].append({
-            "section_name": s.section_name,
-            "raw_score": s.raw_score,
-            "performance_band": s.performance_band,
-            "strengths": s.strengths_summary,
-            "improvements": s.improvement_summary
-        })
+results_by_attempt = {
+    r.exam_attempt_id: r for r in results
+}
 
-    # --------------------------------------------------
-    # 3️⃣ Fetch readiness rules (audit trail)
-    # --------------------------------------------------
-    rules = (
-        db.query(AdminReadinessRuleApplied)
-        .filter(AdminReadinessRuleApplied.admin_report_id.in_(report_ids))
-        .all()
-    )
+# --------------------------------------------------
+# 5️⃣ Shape final response
+# --------------------------------------------------
+response = []
 
-    rules_by_report = defaultdict(list)
-    for r in rules:
-        rules_by_report[r.admin_report_id].append({
-            "rule_code": r.rule_code,
-            "result": r.rule_result,
-            "description": r.rule_description
-        })
+for report in reports:
 
-    # --------------------------------------------------
-    # 4️⃣ Shape final response
-    # --------------------------------------------------
-    response = []
+    result = results_by_attempt.get(report.exam_attempt_id)
 
-    for report in reports:
-        response.append({
-            "id": report.id,                          # 🔑 REQUIRED
-            "exam_type": report.exam_type,
-            "exam_attempt_id": report.exam_attempt_id,
-            "overall_score": report.overall_score,
-            "readiness_band": report.readiness_band,
-            "school_guidance_level": report.school_guidance_level,
-            "summary_notes": report.summary_notes,
-            "exam_date": report.created_at.date().isoformat(),  # 🔑 REQUIRED
-            "disclaimer": (
-                "This report is advisory only and does not guarantee placement."
-            ),
-    
-            # ✅ sections are ALREADY dicts → just pass them through
-            "sections": sections_by_report.get(report.id, []),
-    
-            # ✅ readiness rules are ALREADY dicts
-            "readiness_rules": rules_by_report.get(report.id, [])
-        })
+    obtained_marks = None
+    total_marks = None
 
+    if result:
+        obtained_marks = result.correct_answers
+        total_marks = result.total_questions
 
-    return response
+    response.append({
+        "id": report.id,
+        "exam_type": report.exam_type,
+        "exam_attempt_id": report.exam_attempt_id,
+
+        "overall_score": report.overall_score,
+
+        # ⭐ NEW FIELDS FOR FRONTEND
+        "obtained_marks": obtained_marks,
+        "total_marks": total_marks,
+
+        "readiness_band": report.readiness_band,
+        "school_guidance_level": report.school_guidance_level,
+        "summary_notes": report.summary_notes,
+
+        "exam_date": report.created_at.date().isoformat(),
+
+        "disclaimer": (
+            "This report is advisory only and does not guarantee placement."
+        ),
+
+        "sections": sections_by_report.get(report.id, []),
+        "readiness_rules": rules_by_report.get(report.id, [])
+    })
+
+return response
 
 @app.get("/api/exams/dates")
 def get_exam_dates(
