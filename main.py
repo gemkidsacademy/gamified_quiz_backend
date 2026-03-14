@@ -5587,6 +5587,7 @@ def get_exam_review_thinking_skills(
     review_questions = []
     
     for q in normalized:
+        print("🔍 REVIEW QUESTION:", q)
         r = response_map.get(q["q_id"])
     
         normalized_options = normalize_options_thinking_skills_review(
