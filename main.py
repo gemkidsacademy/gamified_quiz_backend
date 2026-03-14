@@ -1480,7 +1480,8 @@ class StudentExamWriting(Base):
 
 class WritingSubmitSchema(BaseModel):
     answer_text: str
-
+    writing_type: str
+ 
 class GeneratedExamWriting(Base):
     __tablename__ = "generated_exam_writing"
 
@@ -11392,101 +11393,118 @@ def submit_writing_exam(
     print("🤖 Preparing OpenAI prompt...")
 
     prompt = f"""
-You are an expert NSW Selective School writing marker.
-
-CRITICAL OUTPUT RULES (MUST FOLLOW EXACTLY):
-- Respond with ONLY a valid JSON object
-- Do NOT include markdown, headings, emojis, numbering symbols, or formatting characters
-- Do NOT include explanations, notes, or extra text outside the JSON
-- Do NOT include triple backticks or language tags
-- Output must be directly parsable using json.loads()
-- Use double quotes for all JSON keys and string values
-
-TASK:
-Assess the student's writing response strictly against NSW Selective School exam standards.
-
-INPUTS YOU WILL RECEIVE:
-1. Writing prompt
-2. Student response
-
-ASSESSMENT INSTRUCTIONS:
-- Judge the response holistically, but score using the five selective criteria below
-- Prioritise clarity, task fulfilment, and accuracy over creativity
-- Be strict but fair; assume this is a competitive selective exam
-- Do NOT rewrite or correct the student’s response
-- Accuracy issues must meaningfully reduce scores where present
-
-SCORING CRITERIA (TOTAL 25 MARKS):
-Each category is scored out of 5.
-
-1. Audience, Purpose and Form
-- Matches the required genre
-- Appropriate tone for the intended audience
-- All parts of the task are addressed
-
-2. Ideas and Content
-- Ideas are relevant to the prompt
-- Ideas are clearly explained and developed
-- No unnecessary, vague, or unrealistic content
-
-3. Structure and Organisation
-- Logical sequencing of ideas
-- Purposeful paragraphing
-- Clear beginning, middle, and end
-
-4. Language and Vocabulary
-- Precise and appropriate word choice
-- Controlled and varied sentence structures
-- Consistent and suitable tone
-
-5. Grammar, Spelling and Punctuation
-- Accuracy of spelling and punctuation
-- Errors must not limit clarity
-- Frequent basic errors must significantly reduce the score
-
-SELECTIVE READINESS BAND (MANDATORY):
-Based on the overall score out of 25, assign ONE descriptor only:
-
-- 22–25: Strong selective standard – very competitive
-- 18–21: On track for selective with minor improvements
-- 14–17: Developing – selective readiness needs strengthening
-- 10–13: Below selective standard – significant improvement needed
-- Below 10: Well below selective standard at this stage
-
-REQUIRED JSON RESPONSE FORMAT:
-Return a JSON object with the following keys ONLY:
-
-- overall_score (integer between 0 and 25)
-- selective_readiness_band (string that exactly matches the descriptor wording above)
-
-- categories (object)
-- teacher_feedback (3 to 4 sentences, professional selective-exam tone)
-
-The categories object MUST contain the following keys exactly:
-- audience_purpose_form
-- ideas_content
-- structure_organisation
-- language_vocabulary
-- grammar_spelling_punctuation
-
-Each category MUST contain:
-- score (integer between 0 and 5)
-- strengths (array of 2–3 concise strings)
-- improvements (array of 2–3 concise, actionable strings)
-
-IMPORTANT CONSTRAINTS:
-- The readiness band MUST match the overall score
-- Do NOT invent information
-- Do NOT be lenient
-- Clearly identify accuracy issues where present
-- Feedback must be suitable for parents and teachers
-- Maintain a professional NSW Selective exam tone
-
-Student response:
-{payload.answer_text}
-"""
-
-
+    You are an expert NSW Selective School writing marker.
+    
+    CRITICAL OUTPUT RULES (MUST FOLLOW EXACTLY):
+    - Respond with ONLY a valid JSON object
+    - Do NOT include markdown, headings, emojis, numbering symbols, or formatting characters
+    - Do NOT include explanations, notes, or extra text outside the JSON
+    - Do NOT include triple backticks or language tags
+    - Output must be directly parsable using json.loads()
+    - Use double quotes for all JSON keys and string values
+    
+    TASK:
+    Assess the student's writing response strictly according to NSW Selective School writing standards.
+    
+    INPUTS PROVIDED:
+    1. Writing type
+    2. Writing prompt
+    3. Student response
+    
+    WRITING TYPE:
+    {payload.writing_type}
+    
+    EVALUATION REQUIREMENT:
+    You MUST evaluate the response according to the required writing type.
+    
+    Expected structures:
+    - Narrative: story structure with character, setting, tension, and progression of events
+    - Persuasive: clear arguments supported by reasoning or examples
+    - Speech: engaging spoken tone addressing an audience
+    - Letter: appropriate letter structure and audience awareness
+    - Article: informative and organised explanation of ideas
+    - Explanation: clear logical explanation of a topic or process
+    
+    If the student's response does not match the required writing type or structure, the score for Audience, Purpose and Form must be significantly reduced.
+    
+    ASSESSMENT INSTRUCTIONS:
+    - Judge the response holistically, but score using the five criteria below
+    - Prioritise clarity, task fulfilment, and accuracy over creativity
+    - Be strict but fair; assume this is a competitive selective exam
+    - Do NOT rewrite or correct the student's response
+    - Accuracy issues must meaningfully reduce scores where present
+    
+    SCORING CRITERIA (TOTAL 25 MARKS):
+    Each category is scored out of 5.
+    
+    1. Audience, Purpose and Form
+    - Correctly follows the required writing type
+    - Appropriate tone for the intended audience
+    - All parts of the task are addressed
+    
+    2. Ideas and Content
+    - Ideas are relevant to the prompt
+    - Ideas are clearly explained and developed
+    - No unnecessary, vague, or unrealistic content
+    
+    3. Structure and Organisation
+    - Logical sequencing of ideas
+    - Purposeful paragraphing
+    - Clear beginning, middle, and end
+    
+    4. Language and Vocabulary
+    - Precise and appropriate word choice
+    - Controlled and varied sentence structures
+    - Consistent and suitable tone
+    
+    5. Grammar, Spelling and Punctuation
+    - Accuracy of spelling and punctuation
+    - Errors must not limit clarity
+    - Frequent basic errors must significantly reduce the score
+    
+    SELECTIVE READINESS BAND (MANDATORY):
+    Based on the overall score out of 25, assign ONE descriptor only:
+    
+    - 22–25: Strong selective standard – very competitive
+    - 18–21: On track for selective with minor improvements
+    - 14–17: Developing – selective readiness needs strengthening
+    - 10–13: Below selective standard – significant improvement needed
+    - Below 10: Well below selective standard at this stage
+    
+    REQUIRED JSON RESPONSE FORMAT:
+    Return a JSON object with the following keys ONLY:
+    
+    - overall_score (integer between 0 and 25)
+    - selective_readiness_band (string that exactly matches the descriptor wording above)
+    - categories (object)
+    - teacher_feedback (3 to 4 sentences, professional selective-exam tone)
+    
+    The categories object MUST contain the following keys exactly:
+    - audience_purpose_form
+    - ideas_content
+    - structure_organisation
+    - language_vocabulary
+    - grammar_spelling_punctuation
+    
+    Each category MUST contain:
+    - score (integer between 0 and 5)
+    - strengths (array of 2–3 concise strings)
+    - improvements (array of 2–3 concise, actionable strings)
+    
+    IMPORTANT CONSTRAINTS:
+    - The readiness band MUST match the overall score
+    - Do NOT invent information
+    - Do NOT be lenient
+    - Clearly identify accuracy issues where present
+    - Feedback must be suitable for parents and teachers
+    - Maintain a professional NSW Selective exam tone
+    
+    Writing prompt:
+    {payload.prompt_text}
+    
+    Student response:
+    {payload.answer_text}
+    """
 
 
 
