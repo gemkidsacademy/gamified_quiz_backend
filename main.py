@@ -5340,12 +5340,7 @@ IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
 
 def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
     """
-    Ensures every option value is a dictionary so it matches
-    the FastAPI / Pydantic response model.
-
-    Supported outputs:
-    - text options
-    - image options
+    Ensures every option value is normalized for the frontend.
     """
 
     normalized = {}
@@ -5354,35 +5349,35 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
         return normalized
 
     for key, value in raw_options.items():
-        # Case 1: already normalized
+
+        # already normalized
         if isinstance(value, dict):
             normalized[key] = value
             continue
 
-        # Case 2: string value (text or image filename)
+        # string value
         if isinstance(value, str):
             lower = value.lower()
 
             if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
                 normalized[key] = {
                     "type": "image",
-                    "value": value
+                    "src": IMAGE_BASE + value
                 }
             else:
                 normalized[key] = {
                     "type": "text",
-                    "value": value
+                    "content": value
                 }
             continue
 
-        # Case 3: numbers or unexpected types
+        # fallback
         normalized[key] = {
             "type": "text",
-            "value": str(value)
+            "content": str(value)
         }
 
     return normalized
-
  
  
 @app.get(
