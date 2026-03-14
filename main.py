@@ -5338,36 +5338,51 @@ def get_exam_review_mathematical_reasoning(
 
 IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
 
-def normalize_options_for_review(options: dict) -> dict:
+def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
+    """
+    Ensures every option value is a dictionary so it matches
+    the FastAPI / Pydantic response model.
+
+    Supported outputs:
+    - text options
+    - image options
+    """
+
     normalized = {}
 
-    if not isinstance(options, dict):
+    if not isinstance(raw_options, dict):
         return normalized
 
-    for key, value in options.items():
-
-        # already correct structure
+    for key, value in raw_options.items():
+        # Case 1: already normalized
         if isinstance(value, dict):
             normalized[key] = value
             continue
 
-        # image filename
-        if isinstance(value, str) and value.lower().endswith(
-            (".png", ".jpg", ".jpeg", ".webp")
-        ):
-            normalized[key] = {
-                "type": "image",
-                "src": IMAGE_BASE + value.replace(" ", "%20")
-            }
+        # Case 2: string value (text or image filename)
+        if isinstance(value, str):
+            lower = value.lower()
+
+            if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                normalized[key] = {
+                    "type": "image",
+                    "value": value
+                }
+            else:
+                normalized[key] = {
+                    "type": "text",
+                    "value": value
+                }
             continue
 
-        # text option
+        # Case 3: numbers or unexpected types
         normalized[key] = {
             "type": "text",
-            "content": str(value)
+            "value": str(value)
         }
 
     return normalized
+
  
  
 @app.get(
@@ -5536,7 +5551,7 @@ def get_exam_review_thinking_skills(
         
         r = response_map.get(q["q_id"])
     
-        normalized_options = normalize_options_for_review(q.get("options", {}))
+        normalized_options = normalize_options_thinking_skills(q.get("options", {}))
     
         review_questions.append({
             "q_id": q["q_id"],
