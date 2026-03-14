@@ -5356,30 +5356,42 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
             normalized[key] = value
             continue
 
-        # string value
         if isinstance(value, str):
-            lower = value.lower()
+
+            clean_value = value.strip()
+
+            # 🔧 fix "op A.png" → "opA.png"
+            clean_value = clean_value.replace("op ", "op")
+
+            lower = clean_value.lower()
 
             if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+
+                # If already full URL
+                if clean_value.startswith("http"):
+                    src = clean_value
+                else:
+                    src = IMAGE_BASE + clean_value
+
                 normalized[key] = {
                     "type": "image",
-                    "src": IMAGE_BASE + value
+                    "src": src
                 }
+
             else:
                 normalized[key] = {
                     "type": "text",
-                    "content": value
+                    "content": clean_value
                 }
+
             continue
 
-        # fallback
         normalized[key] = {
             "type": "text",
             "content": str(value)
         }
 
     return normalized
- 
  
 @app.get(
     "/api/student/exam-review/thinking-skills",
@@ -5547,7 +5559,32 @@ def get_exam_review_thinking_skills(
         
         r = response_map.get(q["q_id"])
     
-        normalized_options = normalize_options_thinking_skills_review(q.get("options", {}))
+        raw_options = q.get("options", {})
+
+        resolved_options = {}
+        
+        for key, value in raw_options.items():
+        
+            if isinstance(value, str) and value.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp")
+            ):
+                # resolve image to true GCS URL
+                urls = resolve_image_options({key: value}, db)
+                resolved_options[key] = {
+                    "type": "image",
+                    "src": urls[key]
+                }
+        
+            elif isinstance(value, dict):
+                resolved_options[key] = value
+        
+            else:
+                resolved_options[key] = {
+                    "type": "text",
+                    "content": value
+                }
+        
+        normalized_options = resolved_options
     
         review_questions.append({
             "q_id": q["q_id"],
