@@ -12006,8 +12006,27 @@ def generate_exam_writing(
         difficulty = payload.difficulty.strip().lower()
 
         # ----------------------------------
+        # Read setup configuration
+        # ----------------------------------
+        setup = (
+            db.query(QuizSetupWriting)
+            .filter(
+                func.trim(func.lower(QuizSetupWriting.class_name)) == class_name,
+                func.trim(func.lower(QuizSetupWriting.difficulty)) == difficulty
+            )
+            .first()
+        )
+
+        if not setup:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No writing exam setup found for class '{class_name}' and difficulty '{difficulty}'."
+            )
+
+        topic = setup.topic.strip().lower()
+
+        # ----------------------------------
         # Reset writing exam system
-        # Delete in dependency order
         # ----------------------------------
         db.query(StudentExamResponseWriting).delete(synchronize_session=False)
         db.query(StudentExamWriting).delete(synchronize_session=False)
@@ -12021,6 +12040,7 @@ def generate_exam_writing(
             .filter(
                 func.trim(func.lower(WritingQuestionBank.class_name)) == class_name,
                 func.trim(func.lower(WritingQuestionBank.difficulty)) == difficulty,
+                func.trim(func.lower(WritingQuestionBank.topic)) == topic
             )
             .order_by(func.random())
             .first()
@@ -12029,7 +12049,7 @@ def generate_exam_writing(
         if not question:
             raise HTTPException(
                 status_code=404,
-                detail=f"No writing question found for class '{class_name}' and difficulty '{difficulty}'."
+                detail=f"No writing question found for class '{class_name}', topic '{topic}', and difficulty '{difficulty}'."
             )
 
         # ----------------------------------
@@ -12077,10 +12097,10 @@ def generate_exam_writing(
         exam = GeneratedExamWriting(
             class_name=class_name.capitalize(),
             subject="writing",
-            topic=question.topic, 
+            topic=question.topic,
             difficulty=difficulty.capitalize(),
             question_text=full_exam_text,
-            duration_minutes=40,
+            duration_minutes=30,
         )
 
         db.add(exam)
@@ -12094,6 +12114,7 @@ def generate_exam_writing(
             "exam_id": exam.id,
             "class_name": exam.class_name,
             "difficulty": exam.difficulty,
+            "topic": exam.topic,
             "duration_minutes": exam.duration_minutes,
             "exam_text": full_exam_text,
         }
