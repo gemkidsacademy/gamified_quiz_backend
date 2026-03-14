@@ -5342,6 +5342,8 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
     Output schema always matches exam mode.
     """
 
+    print("\n🔧 normalize_options called with:", raw_options)
+
     normalized = {}
 
     if not isinstance(raw_options, dict):
@@ -5349,8 +5351,10 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
 
     for key, value in raw_options.items():
 
+        print(f"   OPTION {key} BEFORE:", value)
+
         # -------------------------
-        # Case 1: already a dict
+        # Case 1: dict value
         # -------------------------
         if isinstance(value, dict):
 
@@ -5369,22 +5373,26 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
                         "type": "image",
                         "src": src
                     }
+
+                    print(f"   OPTION {key} AFTER:", normalized[key])
                     continue
 
-            # text dict
             if value.get("type") == "text":
                 normalized[key] = {
                     "type": "text",
                     "content": value.get("value") or value.get("content", "")
                 }
+
+                print(f"   OPTION {key} AFTER:", normalized[key])
                 continue
 
             normalized[key] = value
+            print(f"   OPTION {key} AFTER:", normalized[key])
             continue
 
 
         # -------------------------
-        # Case 2: string
+        # Case 2: string value
         # -------------------------
         if isinstance(value, str):
 
@@ -5400,6 +5408,8 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
                     "type": "text",
                     "content": value
                 }
+
+            print(f"   OPTION {key} AFTER:", normalized[key])
             continue
 
 
@@ -5410,6 +5420,8 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
             "type": "text",
             "content": str(value)
         }
+
+        print(f"   OPTION {key} AFTER:", normalized[key])
 
     return normalized
 @app.get(
