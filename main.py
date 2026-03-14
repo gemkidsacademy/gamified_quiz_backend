@@ -12405,6 +12405,7 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
         "exam": {
             "exam_id": exam.id,
             "difficulty": exam.difficulty,
+            "writing_type": exam.topic,   # ⭐ added
             "question_text": exam.question_text,
             "duration_minutes": attempt.duration_minutes
         }
