@@ -9,6 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from io import BytesIO 
 from typing import List
 from sendgrid import SendGridAPIClient
+from urllib.parse import quote
 from datetime import datetime, timedelta,date, timezone
 from sqlalchemy.dialects.postgresql import JSONB
 import mammoth
@@ -5338,8 +5339,13 @@ IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
 
 def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
     """
-    Ensures every option is normalized for the frontend.
-    Output schema always matches exam mode.
+    Normalize options so the frontend always receives:
+
+    Image option:
+        { "type": "image", "src": "FULL_URL" }
+
+    Text option:
+        { "type": "text", "content": "..." }
     """
 
     print("\n🔧 normalize_options called with:", raw_options)
@@ -5353,9 +5359,9 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
 
         print(f"   OPTION {key} BEFORE:", value)
 
-        # -------------------------
-        # Case 1: dict value
-        # -------------------------
+        # --------------------------------------------------
+        # Case 1: Option already stored as dict
+        # --------------------------------------------------
         if isinstance(value, dict):
 
             if value.get("type") == "image":
@@ -5366,7 +5372,7 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
                     src = (
                         filename
                         if filename.startswith("http")
-                        else IMAGE_BASE + filename
+                        else IMAGE_BASE + quote(filename)
                     )
 
                     normalized[key] = {
@@ -5378,32 +5384,37 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
                     continue
 
             if value.get("type") == "text":
+
                 normalized[key] = {
                     "type": "text",
-                    "content": value.get("value") or value.get("content", "")
+                    "content": value.get("content") or value.get("value", "")
                 }
 
                 print(f"   OPTION {key} AFTER:", normalized[key])
                 continue
 
+            # fallback if dict has unknown schema
             normalized[key] = value
             print(f"   OPTION {key} AFTER:", normalized[key])
             continue
 
 
-        # -------------------------
-        # Case 2: string value
-        # -------------------------
+        # --------------------------------------------------
+        # Case 2: Option stored as string
+        # --------------------------------------------------
         if isinstance(value, str):
 
             lower = value.lower()
 
             if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+
                 normalized[key] = {
                     "type": "image",
-                    "src": IMAGE_BASE + value
+                    "src": IMAGE_BASE + quote(value)
                 }
+
             else:
+
                 normalized[key] = {
                     "type": "text",
                     "content": value
@@ -5413,9 +5424,9 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
             continue
 
 
-        # -------------------------
-        # Case 3: fallback
-        # -------------------------
+        # --------------------------------------------------
+        # Case 3: Fallback for unexpected types
+        # --------------------------------------------------
         normalized[key] = {
             "type": "text",
             "content": str(value)
@@ -5424,6 +5435,8 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
         print(f"   OPTION {key} AFTER:", normalized[key])
 
     return normalized
+ 
+ 
 @app.get(
     "/api/student/exam-review/thinking-skills",
     response_model=ExamReviewResponse
