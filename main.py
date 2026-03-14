@@ -5335,104 +5335,37 @@ def get_exam_review_mathematical_reasoning(
         "exam_attempt_id": exam_attempt_id,
         "questions": review_questions
     }
+
 IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
 
-def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
-    """
-    Normalize options so the frontend always receives:
-
-    Image option:
-        { "type": "image", "src": "FULL_URL" }
-
-    Text option:
-        { "type": "text", "content": "..." }
-    """
-
-    print("\n🔧 normalize_options called with:", raw_options)
-
+def normalize_options_for_review(options: dict) -> dict:
     normalized = {}
 
-    if not isinstance(raw_options, dict):
+    if not isinstance(options, dict):
         return normalized
 
-    for key, value in raw_options.items():
+    for key, value in options.items():
 
-        print(f"   OPTION {key} BEFORE:", value)
-
-        # --------------------------------------------------
-        # Case 1: Option already stored as dict
-        # --------------------------------------------------
+        # already correct structure
         if isinstance(value, dict):
-
-            if value.get("type") == "image":
-
-                filename = value.get("src") or value.get("value")
-
-                if filename:
-                    src = (
-                        filename
-                        if filename.startswith("http")
-                        else IMAGE_BASE + quote(filename)
-                    )
-
-                    normalized[key] = {
-                        "type": "image",
-                        "src": src
-                    }
-
-                    print(f"   OPTION {key} AFTER:", normalized[key])
-                    continue
-
-            if value.get("type") == "text":
-
-                normalized[key] = {
-                    "type": "text",
-                    "content": value.get("content") or value.get("value", "")
-                }
-
-                print(f"   OPTION {key} AFTER:", normalized[key])
-                continue
-
-            # fallback if dict has unknown schema
             normalized[key] = value
-            print(f"   OPTION {key} AFTER:", normalized[key])
             continue
 
-
-        # --------------------------------------------------
-        # Case 2: Option stored as string
-        # --------------------------------------------------
-        if isinstance(value, str):
-
-            lower = value.lower()
-
-            if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
-
-                normalized[key] = {
-                    "type": "image",
-                    "src": IMAGE_BASE + quote(value)
-                }
-
-            else:
-
-                normalized[key] = {
-                    "type": "text",
-                    "content": value
-                }
-
-            print(f"   OPTION {key} AFTER:", normalized[key])
+        # image filename
+        if isinstance(value, str) and value.lower().endswith(
+            (".png", ".jpg", ".jpeg", ".webp")
+        ):
+            normalized[key] = {
+                "type": "image",
+                "src": IMAGE_BASE + value.replace(" ", "%20")
+            }
             continue
 
-
-        # --------------------------------------------------
-        # Case 3: Fallback for unexpected types
-        # --------------------------------------------------
+        # text option
         normalized[key] = {
             "type": "text",
             "content": str(value)
         }
-
-        print(f"   OPTION {key} AFTER:", normalized[key])
 
     return normalized
  
@@ -5600,10 +5533,10 @@ def get_exam_review_thinking_skills(
     review_questions = []
     
     for q in normalized:
-        print("🔍 REVIEW QUESTION:", q)
+        
         r = response_map.get(q["q_id"])
     
-        normalized_options = q.get("options", {})
+        normalized_options = normalize_options_for_review(q.get("options", {}))
     
         review_questions.append({
             "q_id": q["q_id"],
