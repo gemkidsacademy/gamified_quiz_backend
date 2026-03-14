@@ -5334,14 +5334,12 @@ def get_exam_review_mathematical_reasoning(
         "exam_attempt_id": exam_attempt_id,
         "questions": review_questions
     }
+IMAGE_BASE = "https://storage.googleapis.com/exammoduleimages/"
+
 def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
     """
-    Ensures every option value is a dictionary so it matches
-    the FastAPI / Pydantic response model.
-
-    Supported outputs:
-    - text options
-    - image options
+    Ensures every option is normalized for the frontend.
+    Output schema always matches exam mode.
     """
 
     normalized = {}
@@ -5350,35 +5348,70 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
         return normalized
 
     for key, value in raw_options.items():
-        # Case 1: already normalized
+
+        # -------------------------
+        # Case 1: already a dict
+        # -------------------------
         if isinstance(value, dict):
+
+            if value.get("type") == "image":
+
+                filename = value.get("src") or value.get("value")
+
+                if filename:
+                    src = (
+                        filename
+                        if filename.startswith("http")
+                        else IMAGE_BASE + filename
+                    )
+
+                    normalized[key] = {
+                        "type": "image",
+                        "src": src
+                    }
+                    continue
+
+            # text dict
+            if value.get("type") == "text":
+                normalized[key] = {
+                    "type": "text",
+                    "content": value.get("value") or value.get("content", "")
+                }
+                continue
+
             normalized[key] = value
             continue
 
-        # Case 2: string value (text or image filename)
+
+        # -------------------------
+        # Case 2: string
+        # -------------------------
         if isinstance(value, str):
+
             lower = value.lower()
 
             if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
                 normalized[key] = {
                     "type": "image",
-                    "value": value
+                    "src": IMAGE_BASE + value
                 }
             else:
                 normalized[key] = {
                     "type": "text",
-                    "value": value
+                    "content": value
                 }
             continue
 
-        # Case 3: numbers or unexpected types
+
+        # -------------------------
+        # Case 3: fallback
+        # -------------------------
         normalized[key] = {
             "type": "text",
-            "value": str(value)
+            "content": str(value)
         }
 
     return normalized
-
 @app.get(
     "/api/student/exam-review/thinking-skills",
     response_model=ExamReviewResponse
