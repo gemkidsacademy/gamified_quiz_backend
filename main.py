@@ -11500,7 +11500,7 @@ def submit_writing_exam(
     - Maintain a professional NSW Selective exam tone
     
     Writing prompt:
-    {payload.prompt_text}
+    {exam.question_text}
     
     Student response:
     {payload.answer_text}
