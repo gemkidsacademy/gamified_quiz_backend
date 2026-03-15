@@ -7986,9 +7986,10 @@ db: Session = Depends(get_db)
         })
     
     # --------------------------------------------------
-    # 4️⃣ Fetch thinking skills result rows
+    # 4️⃣ Fetch result rows (Thinking Skills + Mathematical Reasoning)
     # --------------------------------------------------
-    results = (
+    
+    thinking_results = (
         db.query(StudentExamResultsThinkingSkills)
         .filter(
             StudentExamResultsThinkingSkills.exam_attempt_id.in_(attempt_ids)
@@ -7996,9 +7997,21 @@ db: Session = Depends(get_db)
         .all()
     )
     
-    results_by_attempt = {
-        r.exam_attempt_id: r for r in results
-    }
+    math_results = (
+        db.query(StudentExamResultsMathematicalReasoning)
+        .filter(
+            StudentExamResultsMathematicalReasoning.exam_attempt_id.in_(attempt_ids)
+        )
+        .all()
+    )
+    
+    results_by_attempt = {}
+    
+    for r in thinking_results:
+        results_by_attempt[r.exam_attempt_id] = r
+    
+    for r in math_results:
+        results_by_attempt[r.exam_attempt_id] = r
     
     # --------------------------------------------------
     # 5️⃣ Shape final response
