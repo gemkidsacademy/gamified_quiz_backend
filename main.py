@@ -22719,7 +22719,7 @@ def snapshot_math_responses_for_admin(db, attempt):
             )
         )
      
-v
+
 
 
 @app.get("/api/student/get-quiz")
