@@ -178,6 +178,25 @@ otp_store = {}
 # Models
 # ---------------------------
 #for naplan reading
+class StudentExamResultsReading(Base):
+    __tablename__ = "student_exam_results_reading"
+
+    id = Column(Integer, primary_key=True)
+    exam_attempt_id = Column(Integer, nullable=False, index=True)
+
+    total_questions = Column(Integer)
+    attempted_questions = Column(Integer)
+
+    correct_answers = Column(Integer)
+    incorrect_answers = Column(Integer)
+
+    accuracy = Column(Float)
+    coverage = Column(Float)
+
+    score_percent = Column(Float)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+ 
 class QuestionType7Handler:
     def parse(self, ctx):
         instruction_text = read_block(ctx, "QUESTION_TEXT")
@@ -8004,6 +8023,13 @@ db: Session = Depends(get_db)
         )
         .all()
     )
+    reading_results = (
+        db.query(StudentExamResultsReading)
+        .filter(
+            StudentExamResultsReading.exam_attempt_id.in_(attempt_ids)
+        )
+        .all()
+    )
     
     results_by_attempt = {}
     
@@ -8012,7 +8038,8 @@ db: Session = Depends(get_db)
     
     for r in math_results:
         results_by_attempt[r.exam_attempt_id] = r
-    
+    for r in reading_results:
+        results_by_attempt[r.exam_attempt_id] = r
     # --------------------------------------------------
     # 5️⃣ Shape final response
     # --------------------------------------------------
@@ -10781,6 +10808,24 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         coverage = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
         score_percent = round((correct / total_questions) * 100, 2) if total_questions > 0 else 0.0
         result = "Pass" if score_percent >= 50 else "Fail"
+
+
+        # --------------------------------------------------
+        # Save summary results for reporting
+        # --------------------------------------------------
+        
+        reading_result = StudentExamResultsReading(
+            exam_attempt_id=session.id,
+            total_questions=total_questions,
+            attempted_questions=attempted,
+            correct_answers=correct,
+            incorrect_answers=incorrect,
+            accuracy=accuracy,
+            coverage=coverage,
+            score_percent=score_percent
+        )
+        
+        db.add(reading_result)
 
         MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
         has_sufficient_data = attempted >= MIN_ATTEMPTS
