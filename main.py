@@ -19115,40 +19115,23 @@ from database import SessionLocal
 from models import Exam
 
 
-def update_exam_questions(exam_id):
-    
-    # create DB session
-    db: Session = SessionLocal()
+import json
 
-    try:
-        # load JSON file
-        with open("New_MR_exam.json", "r", encoding="utf-8") as f:
-            updated_questions = json.load(f)
+def update_exam_questions(db: Session, exam_id: int):
 
-        # fetch exam
-        exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    with open("New_MR_exam.json", "r", encoding="utf-8") as f:
+        updated_questions = json.load(f)
 
-        if not exam:
-            print(f"Exam with id {exam_id} not found.")
-            return
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
 
-        # update questions column
-        exam.questions = updated_questions
+    if not exam:
+        print(f"Exam with id {exam_id} not found.")
+        return
 
-        db.commit()
+    exam.questions = updated_questions
+    db.commit()
 
-        print("✅ Exam questions updated successfully.")
-
-    except Exception as e:
-        print("❌ Error updating exam:", e)
-
-    finally:
-        db.close()
-
-
-# change exam id here
-update_exam_questions(exam_id=1)
-
+    print("✅ Exam questions updated successfully.")
 @app.post("/api/student/start-exam")
 def start_exam(
     req: StartExamRequest = Body(...),
