@@ -19134,7 +19134,7 @@ def start_exam(
 ):
     print("\n🚀 START-EXAM REQUEST")
     print("➡ payload:", req.dict())
-    update_exam_questions(exam_id=105)
+    update_exam_questions(db,105)
 
     # --------------------------------------------------
     # 1️⃣ Resolve student (external → internal)
