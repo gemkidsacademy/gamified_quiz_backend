@@ -20612,56 +20612,19 @@ def start_exam(
             db
         )
         
-        # --------------------------------------------------
-        # 🛠️ BACKFILL MISSING RESPONSE ROWS (CRITICAL FIX)
-        # --------------------------------------------------
-        existing_qids = {
-            r.q_id
-            for (r,) in db.query(StudentExamResponseThinkingSkills.q_id)
-            .filter(
-                StudentExamResponseThinkingSkills.exam_attempt_id == attempt.id
-            )
-            .all()
-        }
-        
-        missing_questions = [
-            q for q in normalized_questions
-            if q["q_id"] not in existing_qids
-        ]
-        
-        if missing_questions:
-            print(
-                f"🛠️ Backfilling {len(missing_questions)} response rows "
-                f"for attempt_id={attempt.id}"
-            )
-        
-            for q in missing_questions:
-                db.add(
-                    StudentExamResponseThinkingSkills(
-                        student_id=student.id,
-                        exam_id=exam.id,
-                        exam_attempt_id=attempt.id,
-                        q_id=q["q_id"],
-                        topic=q.get("topic"),
-                        selected_option=None,
-                        correct_option=q["correct_answer"],
-                        is_correct=None
-                    )
-                )
-        
-            db.commit()
-        
         print(
             "➡️ Returning: resume exam | "
             f"questions={len(normalized_questions)} | "
             f"remaining_seconds={remaining}"
         )
         
-        return jsonable_encoder({
+        return {
             "completed": False,
-            "questions": normalized_questions,
+            "questions": jsonable_encoder(normalized_questions),
             "remaining_time": remaining
-        })
+        }
+        
+        
     # --------------------------------------------------
     # 🆕 FIRST AND ONLY ATTEMPT (no attempt exists)
     # --------------------------------------------------
