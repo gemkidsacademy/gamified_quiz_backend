@@ -19108,14 +19108,9 @@ def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depend
         "created_at": new_config.created_at
     }
 
-import json
-from sqlalchemy.orm import Session
-
-from database import SessionLocal
-from models import Exam
 
 
-import json
+
 
 def update_exam_questions(db: Session, exam_id: int):
 
