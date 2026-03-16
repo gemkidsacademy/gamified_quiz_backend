@@ -1,0 +1,1093 @@
+[
+  {
+    "q_id": 1,
+    "topic": "Critical Thinking & Argument Analysis",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A corporate productivity audit at a large software firm uncovered a strong positive correlation between the use of \"Rapid-Response Protocols\" (RRP), a system where teams meet every morning to re-assign tasks, and significant project delays. The data showed that the teams who utilized RRP the most frequently were consistently the ones who missed their final deadlines by the widest margins. Based on this evidence, the Operations Director concluded that the RRP system is counter-productive, as it likely fragments the workday and interrupts deep work, thereby causing the very delays it was meant to prevent."
+      },
+      {
+        "type": "text",
+        "content": "Which one of the following, if true, most weakens the Operations Director's argument?"
+      }
+    ],
+    "options": {
+      "A": "The RRP system was designed by an external consultant who had previously worked with manufacturing companies rather than software firms.",
+      "B": "Teams are strictly instructed to adopt the RRP system only when a project has fallen at least two weeks behind schedule and requires emergency management.",
+      "C": "Several employees in the teams that used RRP complained that the daily meetings were tedious and reduced their overall job satisfaction.",
+      "D": "The software firm recently increased the average complexity of the projects assigned to all teams, regardless of whether they used RRP or not."
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 2,
+    "topic": "Critical Thinking & Argument Analysis",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Maya and Toby are discussing online videos of influencers eating very large amounts of junk food."
+      },
+      {
+        "type": "text",
+        "content": "Maya says that these videos are harmless entertainment because viewers know it is only for show."
+      },
+      {
+        "type": "text",
+        "content": "Toby replies, “That is wrong. What people watch online can influence their everyday habits and choices. Videos that promote unhealthy eating can lead to real health problems.”"
+      },
+      {
+        "type": "text",
+        "content": "Which one of the following statements, if true, most strengthens Toby’s argument?"
+      }
+    ],
+    "options": {
+      "A": "Junk food is widely available, so banning these videos would not stop people from buying it.",
+      "B": "Watching other people eat junk food online can satisfy cravings and make viewers eat less of it.",
+      "C": "Online sponsorships are highly successful at influencing viewers to buy particular brands.",
+      "D": "People who want to eat healthily can simply choose not to watch those influencers."
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 3,
+    "topic": "Critical Thinking & Argument Analysis",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "\"The shift toward a completely cashless society is often celebrated for its convenience and efficiency. However, this transition systematically excludes the elderly and low-income populations who may lack access to digital banking tools. Additionally, relying entirely on digital transactions leaves the entire economy vulnerable to cyber-attacks and power outages. Because a robust economic system must be inclusive and resilient, physical currency must remain a protected payment option.\""
+      },
+      {
+        "type": "text",
+        "content": "Which one of the following is a reason used to support the claim that physical currency must remain protected?"
+      }
+    ],
+    "options": {
+      "A": "A cashless society is celebrated for its convenience and efficiency.",
+      "B": "Physical currency must remain a protected payment option to ensure inclusivity.",
+      "C": "A robust economic system is defined by its inclusivity and resilience.",
+      "D": "Relying purely on digital transactions makes the economy vulnerable to cyber-attacks."
+    },
+    "correct": "D"
+  },
+  {
+    "q_id": 4,
+    "topic": "Critical Thinking & Argument Analysis",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "\"While digital textbooks are often praised for being lighter and cheaper than print versions, recent studies indicate that students retain significantly less information when reading on screens. Moreover, the interactive features of digital books, intended to engage students, often serve as distractions that fragment concentration. If the primary purpose of educational materials is to facilitate deep understanding and long-term retention of knowledge, then schools are making a pedagogical error by transitioning entirely to digital formats, regardless of the financial benefits.\""
+      },
+      {
+        "type": "text",
+        "content": "Which one of the following best expresses the main conclusion of the argument?"
+      }
+    ],
+    "options": {
+      "A": "Digital textbooks are cheaper and lighter but result in lower rates of information retention than print books.",
+      "B": "Schools are making a mistake in terms of teaching quality by replacing all print books with digital ones.",
+      "C": "The primary purpose of educational materials should be to facilitate deep understanding rather than to save money.",
+      "D": "The interactive features found in digital textbooks frequently distract students rather than helping them learn."
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 5,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A computer program processes numbers using two strict rules:"
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/83c8089d-7ac2-460b-b7dd-358100b4b825_Selective_TS_SCC1_25_Q.png",
+        "name": "Selective_TS_SCC1_25_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "If the starting number is 10, what is the 6th number in the sequence? (Note: 10 is the 1st number)."
+      }
+    ],
+    "options": {
+      "A": "2",
+      "B": "4",
+      "C": "8",
+      "D": "14"
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 6,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A computer generates a sequence starting with the number 6."
+      },
+      {
+        "type": "text",
+        "content": "To get the next number, it checks the Unit Digit (the last digit) of the current number and applies one of the following rules:"
+      },
+      {
+        "type": "text",
+        "content": "Rule A: If the number ends in 0, 1, 2, 3, or 4, you must Add 9."
+      },
+      {
+        "type": "text",
+        "content": "Rule B: If the number ends in 5, 6, 7, 8, or 9, you must Multiply by 2."
+      },
+      {
+        "type": "text",
+        "content": "What is the 6th number in the sequence?"
+      }
+    ],
+    "options": {
+      "A": "39",
+      "B": "78",
+      "C": "60",
+      "D": "48"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 7,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Study the values of the words below to determine the hidden calculation rule."
+      },
+      {
+        "type": "text",
+        "content": "Example 1: AT = 22"
+      },
+      {
+        "type": "text",
+        "content": "Example 2: BET = 32"
+      },
+      {
+        "type": "text",
+        "content": "Using the same rule, what is the value of the word CAT?"
+      }
+    ],
+    "options": {
+      "A": "22",
+      "B": "25",
+      "C": "28",
+      "D": "35"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 8,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Find the missing tile in the sequence below. The sequence of values follows a strict mathematical pattern."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/e3bc4d0a-46f7-4edf-b65d-67f8b17602c4_Selective_TS_SCC1_33_Q.png",
+        "name": "Selective_TS_SCC1_33_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which tile replaces the question mark?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC1_33_opA.png",
+      "B": "Selective_TS_SCC1_33_opB.png",
+      "C": "Selective_TS_SCC1_33_opC.png",
+      "D": "Selective_TS_SCC1_33_opD.png"
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 9,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The figure below shows a square grid containing a continuous line pattern, but the bottom-left section is missing."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/185ff911-ddec-4d09-8878-3c12cb6a6c41_Selective_TS_SCC3_17_Q.png",
+        "name": "Selective_TS_SCC3_17_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the four options correctly completes the pattern in the missing square?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_17_op A.png",
+      "B": "Selective_TS_SCC3_17_op B.png",
+      "C": "Selective_TS_SCC3_17_op C.png",
+      "D": "Selective_TS_SCC3_17_op D.png"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 10,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A shape enters a sorting machine and follows a path based on its features."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/03e4ece1-e419-455b-84f7-3c639edb9b34_Selective_TS_SCC1_32_Q.png",
+        "name": "Selective_TS_SCC1_32_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "If we add a white pentagon, what is the Final Output shape?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC1_32_opA.png",
+      "B": "Selective_TS_SCC1_32_opB.png",
+      "C": "Selective_TS_SCC1_32_opC.png",
+      "D": "Selective_TS_SCC1_32_opD.png"
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 11,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Four houses are built in a straight line on a street, from Left to Right."
+      },
+      {
+        "type": "text",
+        "content": "The Blue House is to the right of the Red House, but to the left of the Green House."
+      },
+      {
+        "type": "text",
+        "content": "The Yellow House is at one of the far ends."
+      },
+      {
+        "type": "text",
+        "content": "The Red House is immediately next to the Yellow House."
+      },
+      {
+        "type": "text",
+        "content": "Which house is on the far Right end?"
+      }
+    ],
+    "options": {
+      "A": "Yellow House",
+      "B": "Green House",
+      "C": "Blue House",
+      "D": "Red House"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 12,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Find the missing term in the sequence below."
+      },
+      {
+        "type": "text",
+        "content": "1Z, 1Y, 2W, 3T, 5P, ?"
+      }
+    ],
+    "options": {
+      "A": "8K",
+      "B": "8J",
+      "C": "7K",
+      "D": "9L"
+    },
+    "correct": "A"
+  },  
+  {
+    "q_id": 14,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A spaceship's navigation panel has four dials that show directional arrows. Every hour, the onboard computer updates the directions of the arrows according to a strict, continuous mathematical pattern."
+      },
+      {
+        "type": "text",
+        "content": "The sequence below shows the navigation panel over several hours, but the record from the very last hour is missing."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/87855f97-f255-4bde-8422-f5b627cf52ce_Selective_TS_SCC3_27_Q.png",
+        "name": "Selective_TS_SCC3_27_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the four options correctly shows how the navigation panel looked at the very end of the sequence?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_27_op A.png",
+      "B": "Selective_TS_SCC3_27_op B.png",
+      "C": "Selective_TS_SCC3_27_op C.png",
+      "D": "Selective_TS_SCC3_27_op D.png"
+    },
+    "correct": "D"
+  },
+  {
+    "q_id": 15,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Find the missing letter in the center of the cross."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/cddcaa89-277b-4491-a27f-9247634a4d68_Selective_TS_SCC1_23_Q.png",
+        "name": "Selective_TS_SCC1_23_Q.png",
+        "type": "image"
+      }
+    ],
+    "options": {
+      "A": "I",
+      "B": "J",
+      "C": "K",
+      "D": "M"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 16,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The diagram shows a tiled floor where 24 individual tiles with different prints are used to make up the overall pattern."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/d376f652-92e2-40c4-9b9f-3ac50bdc08c3_Selective_TS_SCC3_5_Q.png",
+        "name": "Selective_TS_SCC3_5_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "How many different patterns of tile are needed to make up the overall pattern?"
+      }
+    ],
+    "options": {
+      "A": "2",
+      "B": "3",
+      "C": "4",
+      "D": "5"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 17,
+    "topic": "Patterns, Sequences & Relationships",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "In the grid below, the shapes in each row follow a strict mathematical rule."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/51c0e7d8-c9db-4855-bd45-6e769eefd25d_Selective_TS_SCC1_27_Q.png",
+        "name": "Selective_TS_SCC1_27_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which tile replaces the question mark?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC1_27_opA.png",
+      "B": "Selective_TS_SCC1_27_opB.png",
+      "C": "Selective_TS_SCC1_27_opC.png",
+      "D": "Selective_TS_SCC1_27_opD.png"
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 18,
+    "topic": "Logical & Verbal Deduction",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "If enough funding is not secured, the science fair will be cancelled."
+      },
+      {
+        "type": "text",
+        "content": "If the fair goes ahead and is a great success, the organisers might be able to persuade the mayor to let them host the state finals next year. However, the fair will not be a success unless the students build working models and practise their presentations."
+      },
+      {
+        "type": "text",
+        "content": "If the fair is not a success, it will be the last science fair they are allowed to host."
+      },
+      {
+        "type": "text",
+        "content": "Which one of the following outcomes is not possible?"
+      }
+    ],
+    "options": {
+      "A": "The fair did not go ahead even though they secured more than enough funding.",
+      "B": "The fair did not go ahead even though the students built working models and practised their presentations.",
+      "C": "The fair was not a success even though the students built working models and practised their presentations.",
+      "D": "The mayor let them host the state finals even though the students did not practise their presentations."
+    },
+    "correct": "D"
+  },
+  {
+    "q_id": 19,
+    "topic": "Logical & Verbal Deduction",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The “Golden Amp” Music Festival is held every year. A band can qualify in any of the following ways:"
+      },
+      {
+        "type": "text",
+        "content": "by winning its local city showcase"
+      },
+      {
+        "type": "text",
+        "content": "by being last year’s festival winner, provided the band has exactly the same members"
+      },
+      {
+        "type": "text",
+        "content": "by being selected as the Producer’s Pick, which is chosen randomly from bands that have not already qualified"
+      },
+      {
+        "type": "text",
+        "content": "Max and Leo are in the same band and want to qualify for this year’s festival."
+      },
+      {
+        "type": "text",
+        "content": "Max says, “We came second in our city showcase. We won the festival last year, but our bassist moved away. Our only chance of qualifying is if she comes back.”"
+      },
+      {
+        "type": "text",
+        "content": "Leo says, “If she comes back, it will not matter that we did not win the city showcase.”"
+      },
+      {
+        "type": "text",
+        "content": "If the information above is true, whose reasoning is correct?"
+      }
+    ],
+    "options": {
+      "A": "Max only",
+      "B": "Leo only",
+      "C": "Both Max and Leo",
+      "D": "Neither Max nor Leo"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 20,
+    "topic": "Logical & Verbal Deduction",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Four friends — Sam, Mia, Leo, and Jade — competed to see who could swim the most laps in a pool."
+      },
+      {
+        "type": "text",
+        "content": "Sam did not swim the fewest laps."
+      },
+      {
+        "type": "text",
+        "content": "Exactly two people swam fewer laps than Leo."
+      },
+      {
+        "type": "text",
+        "content": "Mia swam fewer laps than Jade."
+      },
+      {
+        "type": "text",
+        "content": "Which one of the following must be true?"
+      }
+    ],
+    "options": {
+      "A": "Leo swam more laps than Mia.",
+      "B": "Mia swam more laps than Leo.",
+      "C": "Leo swam more laps than Jade.",
+      "D": "Jade swam more laps than Leo."
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 21,
+    "topic": "Logical & Verbal Deduction",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The AeroSweep and DustMite cleaning robots have identical outer casings. The main differences between the two models are the floor surfaces they can clean and the sounds they make when switched on."
+      },
+      {
+        "type": "text",
+        "content": "AeroSweeps mainly clean hardwood and tile, but they will sometimes clean low-pile carpet. They are completely silent when turned on."
+      },
+      {
+        "type": "text",
+        "content": "DustMites can clean almost any floor type and work especially well on hardwood, but they can never operate on high-pile shag rugs because the motor shuts down immediately. DustMites always make a loud beep when turned on."
+      },
+      {
+        "type": "text",
+        "content": "Sam and Alex have bought a refurbished robot with its label missing, and they want to work out which model it is."
+      },
+      {
+        "type": "text",
+        "content": "Sam says, “If we let it clean the hardwood kitchen floor, we still will not know whether it is an AeroSweep or a DustMite.”"
+      },
+      {
+        "type": "text",
+        "content": "Alex says, “The only way we could know for certain would be to place it on a high-pile shag rug and see whether it shuts down.”"
+      },
+      {
+        "type": "text",
+        "content": "If the information above is true, whose reasoning is correct?"
+      }
+    ],
+    "options": {
+      "A": "Sam only",
+      "B": "Alex only",
+      "C": "Both Sam and Alex",
+      "D": "Neither Sam nor Alex"
+    },
+    "correct": "D"
+  },
+  {
+    "q_id": 22,
+    "topic": "Logical & Verbal Deduction",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "There are three ways to travel to the summit of Mount Veridia:"
+      },
+      {
+        "type": "text",
+        "content": "The Skyway Gondola carries hikers and cyclists. It only operates on Tuesdays, Thursdays, and Saturdays. It is known for swinging heavily in the wind."
+      },
+      {
+        "type": "text",
+        "content": "The Mountain Train carries cyclists only. It does not allow hikers. It only operates on Mondays, Wednesdays, and Fridays."
+      },
+      {
+        "type": "text",
+        "content": "The Valley Shuttle is for hikers only. It operates regularly on Sundays. It also operates on other days, but only if the service that would normally run that day has broken down."
+      },
+      {
+        "type": "text",
+        "content": "Sarah says, “If the shuttle operates for three days in a row, both the gondola and the train must have broken down.”"
+      },
+      {
+        "type": "text",
+        "content": "Leo says, “I do not own a bicycle, and I get severe motion sickness from swinging. Unless I rent a bike, I can only ever reach the summit on a Sunday.”"
+      },
+      {
+        "type": "text",
+        "content": "If the information above is true, whose reasoning is correct?"
+      }
+    ],
+    "options": {
+      "A": "Sarah only",
+      "B": "Leo only",
+      "C": "Both Sarah and Leo",
+      "D": "Neither Sarah nor Leo"
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 23,
+    "topic": "Logical & Verbal Deduction",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The three programming languages Apex, Beta, and Gamma are very similar, and they share some syntax. For example, the command `print` is identical in all three."
+      },
+      {
+        "type": "text",
+        "content": "Any command that is the same in Apex and Beta is also the same in Gamma."
+      },
+      {
+        "type": "text",
+        "content": "Beta and Gamma have many identical commands, but never for graphics. Graphics commands are always different."
+      },
+      {
+        "type": "text",
+        "content": "Sanjay says, “If a command is the same in Apex and Beta, it cannot be a graphics command.”"
+      },
+      {
+        "type": "text",
+        "content": "Leila says, “If a command is the same in Apex and Gamma, it cannot be a graphics command.”"
+      },
+      {
+        "type": "text",
+        "content": "If the information above is true, whose reasoning is correct?"
+      }
+    ],
+    "options": {
+      "A": "Sanjay only",
+      "B": "Leila only",
+      "C": "Both Sanjay and Leila",
+      "D": "Neither Sanjay nor Leila"
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 24,
+    "topic": "Logical & Verbal Deduction",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A set of tiles must follow this strict conditional rule: \"Every Grey tile must be a Circle, UNLESS it contains a Star.\""
+      },
+      {
+        "type": "text",
+        "content": "Which of the following tiles is INVALID (breaks the rule)?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC1_28_opA.png",
+      "B": "Selective_TS_SCC1_28_opB.png",
+      "C": "Selective_TS_SCC1_28_opC.png",
+      "D": "Selective_TS_SCC1_28_opD.png"
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 25,
+    "topic": "Quantitative & Analytical Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Leo is organising a community banquet and needs to buy packs of napkins. He can choose from three types: standard, premium, and luxury. The prices for the different pack sizes are shown in the table below."
+      },
+      {
+        "type": "text",
+        "content": "Leo needs enough standard napkins for 54 people and enough premium napkins for 110 people."
+      },
+      {
+        "type": "text",
+        "content": "What is the lowest total amount he can pay for the napkins?"
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/ed4a5f60-e298-4d72-992d-1e21675b7a70_Selective_TS_SCC4_34_Q.png",
+        "name": "Selective_TS_SCC4_34_Q.png",
+        "type": "image"
+      }
+    ],
+    "options": {
+      "A": "$26",
+      "B": "$32",
+      "C": "$34",
+      "D": "$40"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 26,
+    "topic": "Set-Based Logic (Venn Diagrams & Classification)",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The diagram below displays a 2×2 grid made up of four individual square tiles. Each tile features a specific pattern of straight lines, a curved line, and a single black dot."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/88d49908-8429-4bc0-adff-865a5e7c2a27_Selective_TS_SCC3_20_Q.png",
+        "name": "Selective_TS_SCC3_20_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the four tile options below is not used to make up this grid?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_20_op A.png",
+      "B": "Selective_TS_SCC3_20_op B.png",
+      "C": "Selective_TS_SCC3_20_op C.png",
+      "D": "Selective_TS_SCC3_20_op D.png"
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 27,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The piece of card shown below, when folded up, makes a cubical die for a children's game. The sides have various symbols on them."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/3d9a7e3a-d395-4c96-9e3b-34ac06222d01_Selective_TS_SCC3_4_Q.png",
+        "name": "Selective_TS_SCC3_4_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "When the die is folded into shape, which side will be opposite the triangle?"
+      }
+    ],
+    "options": {
+      "A": "The arrow",
+      "B": "The circle",
+      "C": "The square",
+      "D": "The smiley face"
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 28,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A toy maker glues 11 identical wooden cubes together to create the spaceship structure shown below."
+      },
+      {
+        "type": "text",
+        "content": "To finish the toy, they submerge the entire structure into a vat of shiny silver varnish, completely coating every exposed outer surface (including the bottom)."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/eab91753-603a-49b1-ab01-9b309769c517_Selective_TS_SCC3_26_Q.png",
+        "name": "Selective_TS_SCC3_26_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "How many individual wooden cubes end up with varnish on exactly two of their faces?"
+      }
+    ],
+    "options": {
+      "A": "0",
+      "B": "1",
+      "C": "2",
+      "D": "3"
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 29,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "An architect is designing a modern sculpture for a public plaza using identical concrete cubes. A 3D model of the proposed structure is shown below."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/4cb5c664-f4a5-4a52-8069-e7eabb994676_Selective_TS_SCC3_7_Q.png",
+        "name": "Selective_TS_SCC3_7_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "To assist the builders, the architect creates several flat, 2D elevation drawings showing how the sculpture appears when viewed directly from different sides."
+      },
+      {
+        "type": "text",
+        "content": "Which of the following diagrams does not represent a correct 2D view of this sculpture?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_7_op A.png",
+      "B": "Selective_TS_SCC3_7_op B.png",
+      "C": "Selective_TS_SCC3_7_op C.png",
+      "D": "Selective_TS_SCC3_7_op D.png"
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 30,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A piece of square paper is folded and cut as shown in the figure given below."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/cc950bd1-0ef9-4e2f-87ce-4a51292fcbc0_Selective_TS_SCC3_37_Q.png",
+        "name": "Selective_TS_SCC3_37_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Select the figure from the options that represents the paper when it is unfolded."
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_37_op A.png",
+      "B": "Selective_TS_SCC3_37_op B.png",
+      "C": "Selective_TS_SCC3_37_op C.png",
+      "D": "Selective_TS_SCC3_37_op D.png"
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 31,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The figure below shows a 3D cube with specific patterns on its faces, followed by four different 2D nets."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/de5c6061-b922-4f8d-a621-12df22b91825_Selective_TS_SCC3_33_Q.png",
+        "name": "Selective_TS_SCC3_33_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the four nets, when folded along the dotted lines, will correctly form the 3D cube shown on the far left?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_33_op A.png",
+      "B": "Selective_TS_SCC3_33_op B.png",
+      "C": "Selective_TS_SCC3_33_op C.png",
+      "D": "Selective_TS_SCC3_33_op D.png"
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 32,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The drawing below is a three-dimensional representation of a puzzle piece."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/c0f12c56-32bd-4390-889a-f5aab6640b01_Selective_TS_SCC3_2_Q.png",
+        "name": "Selective_TS_SCC3_2_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which diagram is not a possible representation of how it looks from the back (i.e., the direction shown by the arrow)? The shaded areas in the options represent recesses."
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_2_op A.png",
+      "B": "Selective_TS_SCC3_2_op B.png",
+      "C": "Selective_TS_SCC3_2_op C.png",
+      "D": "Selective_TS_SCC3_2_op D.png"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 33,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "In the grid below, the Outer Shape in the third column is determined by a strict mathematical rule combining the first two columns."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/0fbe0566-7861-4f1e-af58-93656ab652d8_Selective_TS_SCC1_29_Q.png",
+        "name": "Selective_TS_SCC1_29_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which tile replaces the question mark?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC1_29_opA.png",
+      "B": "Selective_TS_SCC1_29_opB.png",
+      "C": "Selective_TS_SCC1_29_opC.png",
+      "D": "Selective_TS_SCC1_29_opD.png"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 34,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The 3D diagram below shows the floor plan of a building with its roof removed, revealing the inner walls and doorways."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/ac808de4-0ae5-4c1f-9f55-36aa7cbcf059_Selective_TS_SCC3_28_Q.png",
+        "name": "Selective_TS_SCC3_28_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the four 2D options shows the correct top-down \"plan view\" of this building? Pay close attention to the exact placement of the doorways (the gaps in the lines)."
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_28_op A.png",
+      "B": "Selective_TS_SCC3_28_op B.png",
+      "C": "Selective_TS_SCC3_28_op C.png",
+      "D": "Selective_TS_SCC3_28_op D.png"
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 35,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The 3D diagram below shows the layout of a newly designed art museum with its roof removed, revealing the outer and inner walls."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/75e70692-569f-4e2c-8c6b-4fb0f301329c_Selective_TS_SCC3_29_Q.png",
+        "name": "Selective_TS_SCC3_29_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the following options shows the correct top-down \"plan view\" (or floor plan) of this museum?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_29_op A.png",
+      "B": "Selective_TS_SCC3_29_op B.png",
+      "C": "Selective_TS_SCC3_29_op C.png",
+      "D": "Selective_TS_SCC3_29_op D.png"
+    },
+    "correct": "C"
+  },
+  {
+    "q_id": 36,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The diagram below shows the net of a cube."
+      },
+      {
+        "type": "text",
+        "content": "Which one of the following cubes can be unfolded to form this net?"
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/9daa2e44-3ab8-4cfb-81c7-651bd18a2cc8_Selective_TS_SCC4_19_Q.png",
+        "name": "Selective_TS_SCC4_19_Q.png",
+        "type": "image"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC4_19_op A.png",
+      "B": "Selective_TS_SCC4_19_op B.png",
+      "C": "Selective_TS_SCC4_19_op C.png",
+      "D": "Selective_TS_SCC4_19_op D.png"
+    },
+    "correct": "D"
+  },
+  {
+    "q_id": 37,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Look at the square figure containing a complex pattern of lines shown below."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/ef7f160e-6cd5-459e-bb96-1d011778fb5e_Selective_TS_SCC3_16_Q.png",
+        "name": "Selective_TS_SCC3_16_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "If this figure is first rotated 270 degrees anti-clockwise, and then rotated 180 degrees clockwise, which of the four options shows exactly how the figure will appear?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_16_op A.png",
+      "B": "Selective_TS_SCC3_16_op B.png",
+      "C": "Selective_TS_SCC3_16_op C.png",
+      "D": "Selective_TS_SCC3_16_op D.png"
+    },
+    "correct": "B"
+  },
+  {
+    "q_id": 38,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "A square piece of paper is folded in half horizontally, and then folded in half again vertically. A specific pattern is cut out of the folded paper so that when it is completely unfolded, it forms the complex shape shown below."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/a53ebd6f-5e0c-421c-94fa-cac5f5cf5839_Selective_TS_SCC3_21_Q.png",
+        "name": "Selective_TS_SCC3_21_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the four options shows the correct cut that must be made on the folded piece of paper to produce this shape?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_21_op A.png",
+      "B": "Selective_TS_SCC3_21_op B.png",
+      "C": "Selective_TS_SCC3_21_op C.png",
+      "D": "Selective_TS_SCC3_21_op D.png"
+    },
+    "correct": "D"
+  },
+  {
+    "q_id": 39,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "Leo holds the patterned square shown above in front of a standard mirror."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/5c70608b-52d6-4739-8a60-05329b361101_Selective_TS_SCC3_38_Q.png",
+        "name": "Selective_TS_SCC3_38_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the options (A, B, C, or D) correctly shows the exact reflection of Leo’s shape?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_38_op A.png",
+      "B": "Selective_TS_SCC3_38_op B.png",
+      "C": "Selective_TS_SCC3_38_op C.png",
+      "D": "Selective_TS_SCC3_38_op D.png"
+    },
+    "correct": "A"
+  },
+  {
+    "q_id": 40,
+    "topic": "Spatial & Visual Reasoning",
+    "blocks": [
+      {
+        "type": "text",
+        "content": "The diagram below shows a two-dimensional net that can be folded to construct a three-dimensional shape."
+      },
+      {
+        "src": "https://storage.googleapis.com/exammoduleimages/80b4fb17-300b-4d44-9d70-86bf5563ed8b_Selective_TS_SCC3_12_Q.png",
+        "name": "Selective_TS_SCC3_12_Q.png",
+        "type": "image"
+      },
+      {
+        "type": "text",
+        "content": "Which of the four options represents the correct 3D shape once the net is fully folded?"
+      }
+    ],
+    "options": {
+      "A": "Selective_TS_SCC3_12_op A.png",
+      "B": "Selective_TS_SCC3_12_op B.png",
+      "C": "Selective_TS_SCC3_12_op C.png",
+      "D": "Selective_TS_SCC3_12_op D.png"
+    },
+    "correct": "C"
+  }
+]
