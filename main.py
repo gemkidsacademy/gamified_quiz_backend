@@ -20477,21 +20477,6 @@ def start_naplan_numeracy_exam(
 #         "questions": normalized_questions,
 #         "remaining_time": new_attempt.duration_minutes * 60
 #     }
-def update_exam_questions(db: Session, exam_id: int):
-
-    with open("New_TS_exam.json", "r", encoding="utf-8") as f:
-        updated_questions = json.load(f)
-
-    exam = db.query(Exam).filter(Exam.id == exam_id).first()
-
-    if not exam:
-        print(f"Exam with id {exam_id} not found.")
-        return
-
-    exam.questions = updated_questions
-    db.commit()
-
-    print("✅ Exam questions updated successfully.") 
 @app.post("/api/student/start-exam-thinkingskills")
 def start_exam(
     req: StartExamRequest = Body(...),
@@ -20499,8 +20484,7 @@ def start_exam(
 ):
     print("\n================ START THINKING SKILLS EXAM =================")
     print("📥 Incoming payload:", req.dict())
-    update_exam_questions(db, 106)
-
+    
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
