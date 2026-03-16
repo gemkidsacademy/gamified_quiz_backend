@@ -3697,10 +3697,10 @@ Instructions:
 1. First identify the key pattern, rule, or reasoning used in the question.
 2. Explain step-by-step how the pattern or logic leads to the correct answer.
 3. Then briefly explain why each of the other options is incorrect.
-4. Use simple and clear language suitable for students preparing for the Selective test.
-5. Format important headings using **bold text**.
-6. Keep the explanation concise (about 100–130 words).
-
+4. Focus on explaining the reasoning pattern that students should notice.
+5. Use simple and clear language suitable for students preparing for the Selective test.
+6. Format section headings using **bold text**.
+7. Keep the explanation concise (about 100–130 words).
 Structure the explanation like this:
 
 **Reasoning / Pattern**
