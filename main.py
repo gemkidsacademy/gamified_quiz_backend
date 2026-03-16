@@ -3678,7 +3678,27 @@ def get_available_naplan_numeracy_years(db: Session = Depends(get_db)):
     return {
         "years": [y[0] for y in years]
     }
- 
+@app.delete("/api/admin/delete-all-questions-MR")
+def delete_all_questions_mr(db: Session = Depends(get_db)):
+    try:
+        deleted = (
+            db.query(Question)
+            .filter(Question.subject == "Mathematical Reasoning")
+            .delete(synchronize_session=False)
+        )
+
+        db.commit()
+
+        return {
+            "message": f"{deleted} Mathematical Reasoning questions deleted successfully"
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting questions: {str(e)}"
+        )
 @app.delete("/api/admin/delete-previous-questions-TS")
 def delete_previous_questions_ts(db: Session = Depends(get_db)):
     try:
