@@ -3719,6 +3719,24 @@ def delete_previous_questions_ts(db: Session = Depends(get_db)):
         return {
             "error": str(e)
         }
+
+@app.delete("/api/admin/delete-all-questions-selective-reading")
+def delete_all_reading_questions(db: Session = Depends(get_db)):
+    try:
+        result = db.execute(text("DELETE FROM questions_reading"))
+        db.commit()
+
+        return {
+            "message": "All reading questions deleted successfully"
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting reading questions: {str(e)}"
+        )
+     
 @app.post("/naplan/language-conventions/generate-exam")
 async def generate_naplan_language_conventions_exam(
     request: Request,
