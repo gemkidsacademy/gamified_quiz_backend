@@ -3733,7 +3733,7 @@ Keep explanation under 120 words.
             "explanation": "Failed to generate explanation.",
             "error": str(e)
         }
-     
+      
  
 @app.get("/naplan/numeracy/class-years")
 def get_naplan_numeracy_class_years(db: Session = Depends(get_db)):
@@ -3777,7 +3777,7 @@ def get_available_naplan_numeracy_years(db: Session = Depends(get_db)):
     )
 
     return {
-        "years": [y[0] for y in years]
+        "years": [y[0] for y in years]  
     }
 @app.delete("/api/admin/delete-all-questions-MR")
 def delete_all_questions_mr(db: Session = Depends(get_db)):
