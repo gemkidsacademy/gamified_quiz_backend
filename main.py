@@ -3720,6 +3720,64 @@ def delete_previous_questions_ts(db: Session = Depends(get_db)):
             "error": str(e)
         }
 
+
+
+@app.delete("/api/admin/delete-all-questions-naplan-reading")
+def delete_all_questions_selective_reading(db: Session = Depends(get_db)):
+    try:
+        result = db.execute(text("DELETE FROM questions_naplan_reading"))
+        db.commit()
+
+        return {
+            "message": "All Selective Reading questions deleted successfully.",
+            "rows_deleted": result.rowcount
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "detail": f"Error deleting questions: {str(e)}"
+        }
+
+@app.delete("/api/admin/delete-all-questions-naplan-lc")
+def delete_all_questions_naplan_lc(db: Session = Depends(get_db)):
+    try:
+        result = db.execute(
+            text("DELETE FROM questions_numeracy_lc WHERE subject = 'Language Conventions'")
+        )
+
+        db.commit()
+
+        return {
+            "message": "All Language Conventions questions deleted successfully.",
+            "rows_deleted": result.rowcount
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "detail": f"Error deleting questions: {str(e)}"
+        }
+
+
+@app.delete("/api/admin/delete-all-questions-naplan-numeracy")
+def delete_all_questions_naplan_numeracy(db: Session = Depends(get_db)):
+    try:
+        db.execute(
+            text("DELETE FROM questions_numeracy_lc WHERE subject = 'Numeracy'")
+        )
+        db.commit()
+
+        return {
+            "message": "All NAPLAN Numeracy questions deleted successfully."
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "detail": f"Error deleting questions: {str(e)}"
+        }
+     
 @app.delete("/api/admin/delete-all-questions-selective-reading")
 def delete_all_reading_questions(db: Session = Depends(get_db)):
     try:
