@@ -19108,6 +19108,46 @@ def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depend
         "created_at": new_config.created_at
     }
 
+import json
+from sqlalchemy.orm import Session
+
+from database import SessionLocal
+from models import Exam
+
+
+def update_exam_questions(exam_id):
+    
+    # create DB session
+    db: Session = SessionLocal()
+
+    try:
+        # load JSON file
+        with open("New_MR_exam.json", "r", encoding="utf-8") as f:
+            updated_questions = json.load(f)
+
+        # fetch exam
+        exam = db.query(Exam).filter(Exam.id == exam_id).first()
+
+        if not exam:
+            print(f"Exam with id {exam_id} not found.")
+            return
+
+        # update questions column
+        exam.questions = updated_questions
+
+        db.commit()
+
+        print("✅ Exam questions updated successfully.")
+
+    except Exception as e:
+        print("❌ Error updating exam:", e)
+
+    finally:
+        db.close()
+
+
+# change exam id here
+update_exam_questions(exam_id=1)
 
 @app.post("/api/student/start-exam")
 def start_exam(
@@ -19116,6 +19156,7 @@ def start_exam(
 ):
     print("\n🚀 START-EXAM REQUEST")
     print("➡ payload:", req.dict())
+    update_exam_questions(exam_id=105)
 
     # --------------------------------------------------
     # 1️⃣ Resolve student (external → internal)
