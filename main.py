@@ -3679,7 +3679,26 @@ def get_available_naplan_numeracy_years(db: Session = Depends(get_db)):
         "years": [y[0] for y in years]
     }
  
+@app.delete("/api/admin/delete-previous-questions-TS")
+def delete_previous_questions_ts(db: Session = Depends(get_db)):
+    try:
+        result = db.execute(
+            text("DELETE FROM questions WHERE subject = 'Thinking Skills'")
+        )
+        db.commit()
 
+        deleted_rows = result.rowcount
+
+        return {
+            "message": "Previous Thinking Skills questions deleted successfully",
+            "deleted_rows": deleted_rows
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "error": str(e)
+        }
 @app.post("/naplan/language-conventions/generate-exam")
 async def generate_naplan_language_conventions_exam(
     request: Request,
