@@ -20574,6 +20574,15 @@ def start_exam(
         # ▶ Resume active attempt
         # --------------------------------------------------
         remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+        # safety guard
+        if remaining <= 0:
+            print("⛔ Attempt expired via remaining_time guard")
+
+            attempt.completed_at = now
+            db.commit()
+
+            return {"completed": True}
+
         
         print(
             "▶ Resuming active attempt | "
