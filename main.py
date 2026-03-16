@@ -1,6 +1,7 @@
 # main.py
 from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body, Request
 from passlib.context import CryptContext
+import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 import docx
@@ -27951,7 +27952,9 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
         "quiz_status": quiz.status
     }
 
-
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
 
 
 
