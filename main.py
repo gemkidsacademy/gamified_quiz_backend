@@ -3682,6 +3682,9 @@ def explain_question_ts(req: ExplainQuestionRequest):
         prompt = f"""
 You are an expert tutor for NSW Selective Thinking Skills exams.
 
+Your job is to explain the reasoning clearly so that a student understands
+how to solve the problem, not just which answer is correct.
+
 Question:
 {question_text}
 
@@ -3690,12 +3693,24 @@ Options:
 
 Correct Answer: {req.correct_answer}
 
-Explain clearly:
-1. Why the correct answer is correct
-2. Why the other options are incorrect
-3. Use simple reasoning suitable for students
+Instructions:
+1. First identify the key pattern, rule, or reasoning used in the question.
+2. Explain step-by-step how the pattern or logic leads to the correct answer.
+3. Then briefly explain why each of the other options is incorrect.
+4. Use simple and clear language suitable for students preparing for the Selective test.
+5. Format important headings using **bold text**.
+6. Keep the explanation concise (about 100–130 words).
 
-Keep explanation under 120 words.
+Structure the explanation like this:
+
+**Reasoning / Pattern**
+Explain the rule or logic used.
+
+**Why the correct answer works**
+Explain how option {req.correct_answer} follows the rule.
+
+**Why the other options are incorrect**
+Briefly explain why each remaining option does not fit the pattern.
 """
 
         print("📤 Prompt sent to AI:")
