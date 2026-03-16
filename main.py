@@ -3640,7 +3640,7 @@ def normalize_question_blocks(raw_blocks):
     )
 
 
-@router.post("/api/ai/explain-question-TS")
+@app.post("/api/ai/explain-question-TS")
 def explain_question_ts(req: ExplainQuestionRequest):
 
     print("\n================ AI EXPLANATION REQUEST ================")
