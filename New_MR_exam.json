@@ -1,0 +1,1013 @@
+[
+  {
+    "q_id": 1,
+    "topic": "Algebraic & Pattern Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Look at the sequence: 4, 50, 8, 45, 12, 40…"
+      },
+      {
+        "type": "text",
+        "content": "What is the difference between the 10th number and the 9th number?"
+      }
+    ],
+    "options": [
+      "A) 5",
+      "B) 10",
+      "C) 15",
+      "D) 20",
+      "E) 25"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 2,
+    "topic": "Algebraic & Pattern Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A robot moves on a grid following a repeating cycle: Up 4, Right 2, Down 1, Left 3. If the robot repeats this cycle 20 times, how far is it from the start?"
+      }
+    ],
+    "options": [
+      "A) 80 Up, 20 Left",
+      "B) 60 Up, 20 Left",
+      "C) 60 Up, 20 Right",
+      "D) 40 Up, 20 Right",
+      "E) 100 Up, 20 Left"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 3,
+    "topic": "Algebraic & Pattern Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Find the missing number in this sequence:"
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/2d55eaa7-44f7-48e8-b7ad-e9c2467d9f43_Selective_MR_SCC1_14_Q.png"
+      }
+    ],
+    "options": [
+      "A) 37",
+      "B) 45",
+      "C) 48",
+      "D) 49",
+      "E) 50"
+    ],
+    "correct": "D"
+  },
+  {
+    "q_id": 4,
+    "topic": "Algebraic & Pattern Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Below are the first three steps of a pattern made from hearts, stars and diamonds."
+      },
+      {
+        "type": "text",
+        "content": "How many stars will there be in Row 10 of Step 15?"
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/cee2cc9d-4efb-431f-bce9-8fc8836822d7_Selective_MR_SCC4_33_Q.png"
+      }
+    ],
+    "options": [
+      "A) 4",
+      "B) 5",
+      "C) 6",
+      "D) 10",
+      "E) 16"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 5,
+    "topic": "Algebraic & Pattern Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Look at this sequence of numbers carefully: 4, 100, 9, 90, 19, 75, 39, 55, ... What are the next two numbers in the sequence?"
+      }
+    ],
+    "options": [
+      "A) 59, 35",
+      "B) 69, 30",
+      "C) 79, 25",
+      "D) 79, 30",
+      "E) 89, 40"
+    ],
+    "correct": "D"
+  },
+  {
+    "q_id": 6,
+    "topic": "Algebraic & Pattern Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "The star, moon and heart symbols each represent a different whole number."
+      },
+      {
+        "type": "text",
+        "content": "Which of these statements is correct?"
+      },
+      {
+        "type": "text",
+        "content": "1. Star + Moon + Heart is even."
+      },
+      {
+        "type": "text",
+        "content": "2. Heart multiplied by the sum of Star and Moon is even."
+      },
+      {
+        "type": "text",
+        "content": "3. Star multiplied by the sum of Moon and Heart is even."
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/b950fc35-c4bb-4094-ab94-677c31c76492_Selective_MR_SCC4_34_Q.png"
+      }
+    ],
+    "options": [
+      "A) Statement 2 only",
+      "B) Statement 3 only",
+      "C) Statements 1 and 2 only",
+      "D) Statements 2 and 3 only",
+      "E) Statements 1, 2 and 3"
+    ],
+    "correct": "A"
+  },
+  {
+    "q_id": 7,
+    "topic": "Algebraic & Pattern Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "At a stationery shop, an order of 3 pens, 2 notebooks, and 1 eraser costs $12.00. A second order of 1 pen, 4 notebooks, and 1 eraser costs $13.00. The shop owner notes that 1 eraser costs exactly the same as 1 pen and 1 notebook combined.What is the exact price of 1 pen?"
+      }
+    ],
+    "options": [
+      "A) $1.00",
+      "B) $1.50",
+      "C) $2.00",
+      "D) $2.50"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 8,
+    "topic": "Data, Statistics & Probability",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Mrs. Davis asks 36 students how many books they read last month. She records the results in the frequency table below, but the table is incomplete."
+      },
+      {
+        "type": "text",
+        "content": "The number of students who read no books is equal to the number of students who read two books."
+      },
+      {
+        "type": "text",
+        "content": "The most common number of books read is one."
+      },
+      {
+        "type": "text",
+        "content": "What is the smallest possible number of students who read exactly one book?"
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/137af9e9-9689-46f6-a236-c869fe27bc12_Selective_MR_SCC4_35_Q.png"
+      }
+    ],
+    "options": [
+      "A) 8",
+      "B) 9",
+      "C) 10",
+      "D) 11",
+      "E) 12"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 9,
+    "topic": "Data, Statistics & Probability",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A school canteen offers a \"Meal Deal\" where a student must choose exactly 1 Sandwich, 1 Drink, and 1 Snack."
+      },
+      {
+        "type": "text",
+        "content": "There are 4 types of sandwiches (including Chicken)."
+      },
+      {
+        "type": "text",
+        "content": "There are 3 types of drinks (including Milkshake)."
+      },
+      {
+        "type": "text",
+        "content": "There are 5 types of snacks.To avoid allergies, the canteen has a strict rule: If a student chooses the Chicken sandwich, they are not allowed to choose the Milkshake.How many different valid Meal Deal combinations are possible?"
+      }
+    ],
+    "options": [
+      "A) 45",
+      "B) 50",
+      "C) 55",
+      "D) 60",
+      "E) 65"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 10,
+    "topic": "Data, Statistics & Probability",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "In a Year 6 grade of exactly 40 students, a survey is conducted about musical instruments."
+      },
+      {
+        "type": "text",
+        "content": "24 students play the Piano."
+      },
+      {
+        "type": "text",
+        "content": "18 students play the Guitar."
+      },
+      {
+        "type": "text",
+        "content": "5 students do not play either instrument.If one student from this grade is chosen at random, what is the probability that the student plays the Piano, but NOT the Guitar?"
+      }
+    ],
+    "options": [
+      "A) 17/40",
+      "B) 24/40",
+      "C) 7/40",
+      "D) 17/35",
+      "E) 12/35"
+    ],
+    "correct": "A"
+  },
+  {
+    "q_id": 11,
+    "topic": "Fractions, Decimals, Percentages & Ratios",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A gamer earns a chest of gold coins after completing a quest. They use 1/4 of the coins to upgrade their armor. Then they use 2/3 of their remaining coins to buy a rare sword. After this, they find a small hidden pouch that adds exactly 150 coins to their inventory. Finally, they spend 1/2 of their total current coins on healing potions, leaving them with exactly 225 coins in their inventory.How many coins were originally in the chest?"
+      }
+    ],
+    "options": [
+      "A) 800",
+      "B) 1000",
+      "C) 1200",
+      "D) 1500",
+      "E) 1800"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 12,
+    "topic": "Fractions, Decimals, Percentages & Ratios",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A wealthy uncle distributes a sum of money to his three nephews: Adam, Ben, and Carl. He follows a strict rule for each nephew in order."
+      },
+      {
+        "type": "text",
+        "content": "Adam receives half of the total money plus $20."
+      },
+      {
+        "type": "text",
+        "content": "Ben receives half of the remaining money plus $20."
+      },
+      {
+        "type": "text",
+        "content": "Carl receives half of the remaining money plus $20."
+      },
+      {
+        "type": "text",
+        "content": "After giving the money to Carl, the uncle has exactly $0 left."
+      },
+      {
+        "type": "text",
+        "content": "What was the total original amount of money the uncle started with?"
+      }
+    ],
+    "options": [
+      "A) $140",
+      "B) $200",
+      "C) $240",
+      "D) $280",
+      "E) $300"
+    ],
+    "correct": "D"
+  },
+  {
+    "q_id": 13,
+    "topic": "Fractions, Decimals, Percentages & Ratios",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Alice and Bob are both going up the same moving escalator which is traveling upwards at a constant speed."
+      },
+      {
+        "type": "text",
+        "content": "Alice walks up the escalator at a steady pace. She takes exactly 15 steps of her own to reach the top. The entire trip takes her 10 seconds."
+      },
+      {
+        "type": "text",
+        "content": "Bob runs up the same escalator much faster. He takes exactly 25 steps of his own to reach the top. The entire trip takes him only 5 seconds."
+      },
+      {
+        "type": "text",
+        "content": "If the escalator were turned off, how many steps would Alice have to climb to reach the top?"
+      }
+    ],
+    "options": [
+      "A) 30 steps",
+      "B) 35 steps",
+      "C) 40 steps",
+      "D) 45 steps",
+      "E) 50 steps"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 14,
+    "topic": "Fractions, Decimals, Percentages & Ratios",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A scientist has three beakers of solution: A, B, and C."
+      },
+      {
+        "type": "text",
+        "content": "The ratio of liquid in Beaker A to Beaker B is 3 : 4."
+      },
+      {
+        "type": "text",
+        "content": "The ratio of liquid in Beaker B to Beaker C is 2 : 5."
+      },
+      {
+        "type": "text",
+        "content": "The scientist performs the following steps:"
+      },
+      {
+        "type": "text",
+        "content": "She pours 20% of the liquid from Beaker A into an empty flask."
+      },
+      {
+        "type": "text",
+        "content": "She pours 25% of the liquid from Beaker C into the same flask."
+      },
+      {
+        "type": "text",
+        "content": "The flask now contains 104 mL of liquid."
+      },
+      {
+        "type": "text",
+        "content": "What is the total amount of liquid remaining in Beaker B?"
+      }
+    ],
+    "options": [
+      "A) 80 mL",
+      "B) 120 mL",
+      "C) 160 mL",
+      "D) 200 mL",
+      "E) 240 mL"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 15,
+    "topic": "Fractions, Decimals, Percentages & Ratios",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A large bowl of Fruit Punch is made by mixing the contents of two different jugs together."
+      },
+      {
+        "type": "text",
+        "content": "Jug A contains 300 mL of drink, which is 20% real fruit juice."
+      },
+      {
+        "type": "text",
+        "content": "Jug B contains 200 mL of drink, which is 45% real fruit juice."
+      },
+      {
+        "type": "text",
+        "content": "When these two jugs are poured into the large bowl, what percentage of the final mixture is real fruit juice?"
+      }
+    ],
+    "options": [
+      "A) 25%",
+      "B) 30%",
+      "C) 32.5%",
+      "D) 35%",
+      "E) 65%"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 16,
+    "topic": "Fractions, Decimals, Percentages & Ratios",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A farmer has a large cylindrical water tank."
+      },
+      {
+        "type": "text",
+        "content": "On Monday, the tank was 1/4 full."
+      },
+      {
+        "type": "text",
+        "content": "On Tuesday, the farmer added 240 litres of water to the tank."
+      },
+      {
+        "type": "text",
+        "content": "Now, the tank is 5/8 full."
+      },
+      {
+        "type": "text",
+        "content": "How much water is in the tank now (on Tuesday)?"
+      }
+    ],
+    "options": [
+      "A) 320 litres",
+      "B) 400 litres",
+      "C) 480 litres",
+      "D) 560 litres",
+      "E) 640 litres"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 17,
+    "topic": "Fractions, Decimals, Percentages & Ratios",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A factory uses 4 identical printing machines to print a magazine."
+      },
+      {
+        "type": "text",
+        "content": "When all 4 machines are working together, they can finish the entire job in 3 hours."
+      },
+      {
+        "type": "text",
+        "content": "Just before the job starts, one machine breaks down."
+      },
+      {
+        "type": "text",
+        "content": "The factory must now complete the same job using only the remaining 3 machines."
+      },
+      {
+        "type": "text",
+        "content": "How long will the job take now?"
+      }
+    ],
+    "options": [
+      "A) 2 hours 15 minutes",
+      "B) 3 hours 45 minutes",
+      "C) 4 hours",
+      "D) 4 hours 15 minutes",
+      "E) 5 hours"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 18,
+    "topic": "Logical & Spatial Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A 3D structure is built from exactly 5 identical uncoloured blocks on a flat desk. The Top View reveals the 2D footprint of the structure, showing exactly where the blocks touch the desk (positions A, B, C, and D). Because there are 4 positions touching the desk and 5 blocks in total, exactly one of these positions has a second block stacked on top of it."
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/787e4a3e-61bc-4fe2-9934-cc3af389f99d_Selective_MR_SCC3_24_Q.png"
+      },
+      {
+        "type": "text",
+        "content": "By cross-referencing the Front View (looking from the bottom of the grid up towards the top) and the Right Side View (looking from the right edge of the grid towards the left), determine the location of the 5th block."
+      },
+      {
+        "type": "text",
+        "content": "Where is the 5th block stacked?"
+      }
+    ],
+    "options": [
+      "A) Stacked on A",
+      "B) Stacked on B",
+      "C) Stacked on C",
+      "D) Stacked on D",
+      "E) It is impossible to tell"
+    ],
+    "correct": "B"
+  },  
+  {
+    "q_id": 19,
+    "topic": "Number & Numerical Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A new operation is defined as a # b = (a x a) - b. Calculate the value of: 5 # (4 # 6)"
+      }
+    ],
+    "options": [
+      "A) 10",
+      "B) 15",
+      "C) 19",
+      "D) 25",
+      "E) 34"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 20,
+    "topic": "Number & Numerical Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Three runners train on a circular track. They start at the same time from the start line."
+      },
+      {
+        "type": "text",
+        "content": "Runner A completes a lap every 40 seconds."
+      },
+      {
+        "type": "text",
+        "content": "Runner B completes a lap every 50 seconds."
+      },
+      {
+        "type": "text",
+        "content": "Runner C completes a lap every 60 seconds."
+      },
+      {
+        "type": "text",
+        "content": "How many laps will Runner A have completed when they all meet at the start line again for the first time?"
+      }
+    ],
+    "options": [
+      "A) 10",
+      "B) 12",
+      "C) 15",
+      "D) 20",
+      "E) 600"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 21,
+    "topic": "Number & Numerical Reasoning",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Jerry goes to three shops. In each shop, he spends exactly half of his money, plus $1."
+      },
+      {
+        "type": "text",
+        "content": "At the end of the third shop, he has $1 left."
+      },
+      {
+        "type": "text",
+        "content": "How much money did he start with?"
+      }
+    ],
+    "options": [
+      "A) $14",
+      "B) $18",
+      "C) $22",
+      "D) $30",
+      "E) $46"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 22,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A large solid 5 × 5 × 5 block is built from 125 identical smaller cubes. The entire outside of this large block is painted yellow. After the paint dries, the block is completely taken apart into the 125 smaller cubes. A student then takes ALL the completely unpainted cubes and uses them to build the largest possible solid square pyramid (where each layer is a solid square of cubes).How many unpainted cubes will be left over after building this pyramid?"
+      }
+    ],
+    "options": [
+      "A) 1",
+      "B) 3",
+      "C) 5",
+      "D) 13",
+      "E) 27"
+    ],
+    "correct": "D"
+  },
+  {
+    "q_id": 23,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Two trains are exactly 100 km apart on a straight track, heading towards each other."
+      },
+      {
+        "type": "text",
+        "content": "Train A travels at 30 km/h."
+      },
+      {
+        "type": "text",
+        "content": "Train B travels at 20 km/h."
+      },
+      {
+        "type": "text",
+        "content": "At the exact moment they start, a Super-Bird flies from the front of Train A towards Train B at a speed of 80 km/h. As soon as the bird reaches Train B, it instantly turns around and flies back to Train A. It keeps flying back and forth between the two trains until they collide."
+      },
+      {
+        "type": "text",
+        "content": "What is the Total Distance the bird flies?"
+      }
+    ],
+    "options": [
+      "A) 100 km",
+      "B) 130 km",
+      "C) 150 km",
+      "D) 160 km",
+      "E) 200 km"
+    ],
+    "correct": "D"
+  },
+  {
+    "q_id": 24,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A solid 3 × 3 × 3 cube is made of 27 smaller blocks. The blocks in the very center of the front face, the very center of the cube, and the very center of the back face are removed, creating a straight tunnel right through the middle. This new structure is completely submerged in red paint, meaning the inside walls of the tunnel get painted too. After it dries, it is broken apart into the remaining 24 blocks. How many small blocks have exactly TWO faces covered in red paint?"
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/22545599-2af9-468d-98ee-8a5bfdecaa2f_Selective_MR_SCC3_33_Q.png"
+      }
+    ],
+    "options": [
+      "A) 4",
+      "B) 8",
+      "C) 10",
+      "D) 12",
+      "E) 16"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 25,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A square courtyard is paved with identical square tiles."
+      },
+      {
+        "type": "text",
+        "content": "The tiles are coloured in a specific pattern:"
+      },
+      {
+        "type": "text",
+        "content": "The outermost border (1 tile deep) is Red."
+      },
+      {
+        "type": "text",
+        "content": "The next border inside that (1 tile deep) is Blue."
+      },
+      {
+        "type": "text",
+        "content": "The remaining inner core of tiles is White."
+      },
+      {
+        "type": "text",
+        "content": "If there are 36 Red tiles, what percentage of the total courtyard is White?"
+      }
+    ],
+    "options": [
+      "A) 25%",
+      "B) 30%",
+      "C) 36%",
+      "D) 40%",
+      "E) 64%"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 26,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "An 8-pointed star is drawn on a sheet of paper."
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/adcb27ea-c4de-41d2-a13d-2feba039cff9_Selective_MR_SCC2_25_Q.png"
+      },
+      {
+        "type": "text",
+        "content": "The middle part is shaded grey, while the points of the star are white."
+      },
+      {
+        "type": "text",
+        "content": "If the Area of one of the white triangular points is 12 sq cm, what is the Area of the shaded middle part?"
+      }
+    ],
+    "options": [
+      "A) 48 sq cm",
+      "B) 64 sq cm",
+      "C) 72 sq cm",
+      "D) 96 sq cm",
+      "E) 108 sq cm"
+    ],
+    "correct": "D"
+  },
+  {
+    "q_id": 27,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A rectangular prism is built using 8 smaller, identical cubes (6 black cubes and 2 white cubes) as shown in the diagram. The 2 white cubes are placed at the opposite diagonal corners of the structure. If the entire structure is completely submerged in a bucket of grey paint and then taken apart into the 8 individual cubes, how many original black faces will have NO grey paint on them?"
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/7ecef07b-79ca-466e-b007-1082b7aa4c0b_Selective_MR_SCC3_28_Q.png"
+      }
+    ],
+    "options": [
+      "A) 8",
+      "B) 10",
+      "C) 12",
+      "D) 14",
+      "E) 16"
+    ],
+    "correct": "E"
+  },
+  {
+    "q_id": 28,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A step pyramid is constructed by stacking square layers of identical cubes. The bottom layer is a 4 × 4 solid square. Centered on top of it is a 3 × 3 solid square layer, and centered on top of that is a 2 × 2 solid square layer. How many cubes in this entire structure are completely hidden from the outside (meaning they cannot be seen from the top, bottom, front, back, left, or right)?"
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/e5ccb3a8-43ef-4c31-b29e-6d513fe501ad_Selective_MR_SCC3_29_Q.png"
+      }
+    ],
+    "options": [
+      "A) 2",
+      "B) 4",
+      "C) 5",
+      "D) 6",
+      "E) 9"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 29,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A marine biologist is traveling from a coastal base in Zone Alpha to a conference in Zone Gamma, with a transfer in Zone Beta."
+      },
+      {
+        "type": "text",
+        "content": "The first flight from Zone Alpha to Zone Beta takes 4 hours."
+      },
+      {
+        "type": "text",
+        "content": "Zone Beta is 2 hours behind Zone Alpha."
+      },
+      {
+        "type": "text",
+        "content": "The biologist has a layover in Zone Beta lasting 3 hours and 15 minutes."
+      },
+      {
+        "type": "text",
+        "content": "The connecting flight from Zone Beta to Zone Gamma takes 9 hours."
+      },
+      {
+        "type": "text",
+        "content": "Zone Gamma is 5 hours ahead of Zone Beta."
+      },
+      {
+        "type": "text",
+        "content": "If the biologist departs Zone Alpha at 2:00 pm (Zone Alpha time) on Friday, what is the local time in Zone Gamma upon arrival?"
+      }
+    ],
+    "options": [
+      "A) 4:15 am Saturday",
+      "B) 6:15 am Saturday",
+      "C) 9:15 am Saturday",
+      "D) 11:15 am Saturday",
+      "E) 1:15 pm Saturday"
+    ],
+    "correct": "C"
+  },
+  {
+    "q_id": 30,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A large water tank has a capacity of 40 litres. It starts empty."
+      },
+      {
+        "type": "text",
+        "content": "Three pipes (A, B, and C) are controlled by an automatic timer to open in a repeating sequence. Only one pipe is open at a time."
+      },
+      {
+        "type": "text",
+        "content": "The cycle repeats every 3 minutes:"
+      },
+      {
+        "type": "text",
+        "content": "Minute 1: Pipe A opens and adds 5 litres of water."
+      },
+      {
+        "type": "text",
+        "content": "Minute 2: Pipe B opens and adds 3 litres of water."
+      },
+      {
+        "type": "text",
+        "content": "Minute 3: Pipe C opens and drains (removes) 4 litres of water."
+      },
+      {
+        "type": "text",
+        "content": "This pattern (A, B, C, A, B, C...) continues."
+      },
+      {
+        "type": "text",
+        "content": "Exactly how many minutes will it take for the tank to first become full or overflow (reach 40 litres or more)?"
+      }
+    ],
+    "options": [
+      "A) 27 minutes",
+      "B) 28 minutes",
+      "C) 29 minutes",
+      "D) 30 minutes",
+      "E) 33 minutes"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 31,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "Two rectangular panels are sliding along a straight track towards each other. They have the same height (10 cm) but different widths."
+      },
+      {
+        "type": "text",
+        "content": "Panel A: Width is 8 cm. It moves to the right at 3 cm per second."
+      },
+      {
+        "type": "text",
+        "content": "Panel B: Width is 12 cm. It moves to the left at 2 cm per second."
+      },
+      {
+        "type": "text",
+        "content": "At time T = 0, the two panels are exactly 20 cm apart (distance between their leading edges)."
+      },
+      {
+        "type": "text",
+        "content": "What is the total area covered by the panels (the area of the combined shape) at time T = 5 seconds?"
+      }
+    ],
+    "options": [
+      "A) 140 cm²",
+      "B) 150 cm²",
+      "C) 160 cm²",
+      "D) 180 cm²",
+      "E) 200 cm²"
+    ],
+    "correct": "B"
+  },
+  {
+    "q_id": 32,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A cargo plane flies from Dubai to Sydney, with a stopover in Singapore."
+      },
+      {
+        "type": "text",
+        "content": "The flight from Dubai to Singapore takes 7 hours."
+      },
+      {
+        "type": "text",
+        "content": "Singapore is 4 hours ahead of Dubai."
+      },
+      {
+        "type": "text",
+        "content": "The plane waits in Singapore for refueling for 3 hours."
+      },
+      {
+        "type": "text",
+        "content": "The flight from Singapore to Sydney takes 8 hours."
+      },
+      {
+        "type": "text",
+        "content": "Sydney is 3 hours ahead of Singapore."
+      },
+      {
+        "type": "text",
+        "content": "If the plane leaves Dubai at 8:00 am (Dubai time) on Monday, what is the local time in Sydney when the plane arrives?"
+      }
+    ],
+    "options": [
+      "A) 6:00 am Tuesday",
+      "B) 7:00 am Tuesday",
+      "C) 8:00 am Tuesday",
+      "D) 9:00 am Tuesday",
+      "E) 10:00 am Tuesday"
+    ],
+    "correct": "D"
+  },
+  {
+    "q_id": 33,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A student has a solid wooden shape made from 27 identical small cubes, arranged into a large 3 × 3 × 3 cube. The surface area of one face of a small cube is exactly 1 sq cm, meaning the total surface area of the large 3 × 3 × 3 cube is 54 sq cm."
+      },
+      {
+        "type": "text",
+        "content": "The student modifies the shape by removing exactly two small cubes:"
+      },
+      {
+        "type": "text",
+        "content": "They remove one cube from the exact center of the top face."
+      },
+      {
+        "type": "text",
+        "content": "They remove one cube from the exact center of the right face."
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/9d738bf3-e9c6-4df6-9524-f0054f238ab4_Selective_MR_SCC3_31_Q.png"
+      },
+      {
+        "type": "text",
+        "content": "What is the new total surface area of the resulting 3D structure?"
+      }
+    ],
+    "options": [
+      "A) 54 sq cm",
+      "B) 58 sq cm",
+      "C) 60 sq cm",
+      "D) 62 sq cm",
+      "E) 66 sq cm"
+    ],
+    "correct": "D"
+  },
+  {
+    "q_id": 34,
+    "topic": "Measurement & Applied Geometry",
+    "question_blocks": [
+      {
+        "type": "text",
+        "content": "A large rectangle is built by joining four squares of different sizes together."
+      },
+      {
+        "type": "text",
+        "content": "Square A and Square B are identical and sit side-by-side at the bottom left. The Area of Square A is 9 square cm."
+      },
+      {
+        "type": "image",
+        "src": "https://storage.googleapis.com/exammoduleimages/9ec7a6bd-96d7-40f7-aaf2-d22a9227952f_Selective_MR_SCC2_33_Q.png"
+      },
+      {
+        "type": "text",
+        "content": "What is the Total Perimeter of the final large rectangle?"
+      }
+    ],
+    "options": [
+      "A) 36 cm",
+      "B) 42 cm",
+      "C) 48 cm",
+      "D) 54 cm",
+      "E) 60 cm"
+    ],
+    "correct": "C"
+  }
+]
