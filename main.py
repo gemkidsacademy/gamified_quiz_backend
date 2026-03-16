@@ -177,6 +177,11 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class ExplainQuestionRequest(BaseModel):
+    question: list
+    options: dict
+    correct_answer: str
+ 
 #for naplan reading
 class StudentExamResultsReading(Base):
     __tablename__ = "student_exam_results_reading"
@@ -3634,6 +3639,102 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 
+
+@router.post("/api/ai/explain-question-TS")
+def explain_question_ts(req: ExplainQuestionRequest):
+
+    print("\n================ AI EXPLANATION REQUEST ================")
+
+    try:
+        # -------------------------------
+        # Log incoming payload
+        # -------------------------------
+        print("📥 Raw request object:", req)
+        print("📥 Question blocks:", req.question)
+        print("📥 Options:", req.options)
+        print("📥 Correct answer:", req.correct_answer)
+
+        # -------------------------------
+        # Extract question text
+        # -------------------------------
+        question_text = " ".join(
+            block.get("content", "")
+            for block in req.question
+            if block.get("type") == "text"
+        )
+
+        print("🧠 Extracted question_text:", question_text)
+
+        # -------------------------------
+        # Format options
+        # -------------------------------
+        options_text = "\n".join(
+            [f"{k}: {v}" for k, v in req.options.items()]
+        )
+
+        print("🧠 Formatted options_text:")
+        print(options_text)
+
+        # -------------------------------
+        # Build prompt
+        # -------------------------------
+        prompt = f"""
+You are an expert tutor for NSW Selective Thinking Skills exams.
+
+Question:
+{question_text}
+
+Options:
+{options_text}
+
+Correct Answer: {req.correct_answer}
+
+Explain clearly:
+1. Why the correct answer is correct
+2. Why the other options are incorrect
+3. Use simple reasoning suitable for students
+
+Keep explanation under 120 words.
+"""
+
+        print("📤 Prompt sent to AI:")
+        print(prompt)
+
+        # -------------------------------
+        # Call OpenAI
+        # -------------------------------
+        print("🚀 Calling OpenAI model...")
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        print("✅ OpenAI response received")
+
+        explanation = response.choices[0].message.content
+
+        print("🧾 AI Explanation:")
+        print(explanation)
+
+        print("========================================================\n")
+
+        return {
+            "explanation": explanation
+        }
+
+    except Exception as e:
+        print("❌ AI explanation error:", str(e))
+
+        return {
+            "explanation": "Failed to generate explanation.",
+            "error": str(e)
+        }
+     
+ 
 @app.get("/naplan/numeracy/class-years")
 def get_naplan_numeracy_class_years(db: Session = Depends(get_db)):
     years = (
