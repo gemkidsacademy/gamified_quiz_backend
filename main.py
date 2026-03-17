@@ -741,7 +741,7 @@ class StudentExamOCThinkingSkills(Base):
         "StudentExamResponseOCThinkingSkills",
         back_populates="attempt",
         cascade="all, delete-orphan"
-    )
+    ) 
 class StudentExamThinkingSkills(Base):
     __tablename__ = "student_exam_thinking_skills"
 
