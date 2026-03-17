@@ -1741,6 +1741,28 @@ class StudentExam(Base):
 
     duration_minutes = Column(Integer, default=40, nullable=False)
 
+class StudentExamOCThinkingSkills(Base):
+    __tablename__ = "student_exams_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # External student identifier (e.g. "Gem002")
+    student_id = Column(String, nullable=False, index=True)
+
+    # Reference to OC exams table (no FK for flexibility)
+    exam_id = Column(Integer, nullable=False, index=True)
+
+    # Optional: explicitly store context (helps debugging + analytics)
+    class_name = Column(String, nullable=False, default="oc")
+    subject = Column(String, nullable=False, default="thinking_skills")
+
+    # Time tracking
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    duration_minutes = Column(Integer, default=40, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Exam_reading(Base):
     __tablename__ = "exams_reading"   # UPDATED TABLE NAME
@@ -1878,6 +1900,29 @@ class Quiz(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+
+class QuizOCThinkingSkills(Base):
+    __tablename__ = "quizzes_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Fixed context (can still keep flexible if needed)
+    class_name = Column(String, nullable=False, default="oc")
+    subject = Column(String, nullable=False, default="thinking_skills")
+
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+
+    # Example:
+    # [
+    #   {"name": "Series", "ai": 10, "db": 10, "total": 20},
+    #   {"name": "Analogies", "ai": 10, "db": 10, "total": 20}
+    # ]
+    topics = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class Quiz_Naplan_Numeracy(Base):
     __tablename__ = "quizzes_naplan_numeracy"
 
@@ -4095,18 +4140,22 @@ def delete_all_questions_mr(db: Session = Depends(get_db)):
             status_code=500,
             detail=f"Error deleting questions: {str(e)}"
         )
-@app.delete("/api/admin/delete-previous-questions-TS")
+@app.delete("/api/admin/delete-previous-questions-ts")
 def delete_previous_questions_ts(db: Session = Depends(get_db)):
     try:
-        result = db.execute(
-            text("DELETE FROM questions WHERE subject = 'Thinking Skills'")
+        deleted_rows = (
+            db.query(Question)
+            .filter(
+                func.lower(Question.subject) == "thinking skills",
+                func.lower(Question.class_name) == "selective"
+            )
+            .delete(synchronize_session=False)
         )
+
         db.commit()
 
-        deleted_rows = result.rowcount
-
         return {
-            "message": "Previous Thinking Skills questions deleted successfully",
+            "message": "Selective Thinking Skills questions deleted successfully",
             "deleted_rows": deleted_rows
         }
 
@@ -4115,9 +4164,37 @@ def delete_previous_questions_ts(db: Session = Depends(get_db)):
         return {
             "error": str(e)
         }
+     
 
+from sqlalchemy import func
 
+@app.delete("/api/admin/delete-previous-questions-OC-TS")
+def delete_previous_questions_oc_ts(
+    db: Session = Depends(get_db)
+):
+    try:
+        deleted_rows = (
+            db.query(Question)
+            .filter(
+                func.lower(Question.subject) == "thinking skills",
+                func.lower(Question.class_name) == "oc"
+            )
+            .delete(synchronize_session=False)
+        )
 
+        db.commit()
+
+        return {
+            "message": "OC Thinking Skills questions deleted successfully",
+            "deleted_rows": deleted_rows
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "error": str(e)
+        }
+     
 @app.delete("/api/admin/delete-all-questions-naplan-reading")
 def delete_all_questions_selective_reading(db: Session = Depends(get_db)):
     try:
@@ -9068,6 +9145,134 @@ def sanitize_question_blocks(blocks):
 
 
 
+#5037
+
+@app.post("/api/exams/generate-oc-thinking-skills")
+def generate_oc_thinking_skills_exam(
+    payload: Optional[dict] = Body(default=None),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate OC Thinking Skills exam (hybrid architecture).
+    """
+
+    print("\n========== OC EXAM GENERATION START ==========")
+
+    payload = payload or {}
+
+    # --------------------------------------------------
+    # 0️⃣ Clear previous OC Thinking Skills exams
+    # --------------------------------------------------
+    print("\n--- Deleting previous OC Thinking Skills exams ---")
+
+    # ✅ STEP 1: get OC exam IDs (from shared Exam table)
+    exam_ids_subq = select(Exam.id).where(
+        func.lower(Exam.subject) == "thinking_skills",
+        func.lower(Exam.class_name) == "oc"
+    )
+
+    # ✅ STEP 2: delete ONLY OC student exam rows (from OC table)
+    deleted_student_exams = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(StudentExamOCThinkingSkills.exam_id.in_(exam_ids_subq))
+        .delete(synchronize_session=False)
+    )
+
+    print(f"🗑️ Deleted StudentExamOC rows: {deleted_student_exams}")
+
+    # ✅ STEP 3: delete OC exams (shared table but scoped)
+    deleted_exams = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.subject) == "thinking_skills",
+            func.lower(Exam.class_name) == "oc"
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(f"🗑️ Deleted OC exams: {deleted_exams}")
+
+    db.commit()
+    print("✅ Cleanup complete")
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch latest OC Thinking Skills quiz
+    # --------------------------------------------------
+    print("\n--- Fetching latest OC quiz ---")
+
+    quiz = (
+        db.query(Quiz)
+        .filter(
+            func.lower(Quiz.subject) == "thinking_skills",
+            func.lower(Quiz.class_name) == "oc"
+        )
+        .order_by(Quiz.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No OC Thinking Skills quiz found"
+        )
+
+    print(f"✅ Using Quiz ID: {quiz.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Generate exam questions
+    # --------------------------------------------------
+    print("\n--- Generating questions ---")
+
+    try:
+        questions = generate_exam_questions(quiz, db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate OC exam: {str(e)}"
+        )
+
+    if not questions:
+        raise HTTPException(
+            status_code=500,
+            detail="No questions generated"
+        )
+
+    print(f"✅ Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 3️⃣ Save exam (shared table)
+    # --------------------------------------------------
+    print("\n--- Saving OC exam ---")
+
+    new_exam = Exam(
+        quiz_id=quiz.id,
+        class_name="OC",
+        subject="thinking_skills",
+        difficulty=quiz.difficulty,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"✅ Exam saved with ID: {new_exam.id}")
+
+    # --------------------------------------------------
+    # 4️⃣ Response
+    # --------------------------------------------------
+    print("========== OC EXAM GENERATION COMPLETE ==========\n")
+
+    return {
+        "message": "OC Thinking Skills exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": quiz.id,
+        "class_name": "oc",
+        "subject": "thinking_skills",
+        "difficulty": quiz.difficulty,
+        "total_questions": len(questions),
+        "questions": questions
+    }
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
     payload: Optional[dict] = Body(default=None),
@@ -27428,79 +27633,161 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
     }
 
 #endpoint to save a certain exam for Exam module
+
+@app.post("/api/quizzes/oc-thinking-skills")
+def create_quiz_oc_thinking_skills(
+    quiz: QuizCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create OC Thinking Skills quiz with scoped cleanup.
+    """
+
+    print("\n========== OC QUIZ CREATION START ==========")
+
+    # Debug payload
+    try:
+        quiz_dict = quiz.dict()
+        print("📦 Payload:", quiz_dict)
+    except Exception as e:
+        print("❌ Payload parsing failed:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    print("➡️ class_name:", quiz.class_name)
+    print("➡️ subject:", quiz.subject)
+    print("➡️ difficulty:", quiz.difficulty)
+    print("➡️ num_topics:", quiz.num_topics)
+    print("➡️ topics count:", len(quiz.topics))
+
+    # ✅ Validate topics
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(status_code=400, detail="topics must be a list")
+
+    try:
+        print("\n--- Deleting previous OC Thinking Skills data ---")
+
+        # ✅ 1️⃣ Delete ONLY OC exams
+        deleted_exams = (
+            db.query(Exam)
+            .filter(
+                func.lower(Exam.subject) == "thinking_skills",
+                func.lower(Exam.class_name) == "oc"
+            )
+            .delete(synchronize_session=False)
+        )
+
+        print(f"🗑️ Deleted OC exams: {deleted_exams}")
+
+        # ✅ 2️⃣ Delete ONLY OC quizzes
+        deleted_quizzes = (
+            db.query(Quiz)
+            .filter(
+                func.lower(Quiz.subject) == "thinking_skills",
+                func.lower(Quiz.class_name) == "oc"
+            )
+            .delete(synchronize_session=False)
+        )
+
+        print(f"🗑️ Deleted OC quizzes: {deleted_quizzes}")
+
+        db.commit()
+        print("✅ Cleanup commit complete")
+
+        print("\n--- Creating OC Quiz ---")
+
+        new_quiz = Quiz(
+            class_name="oc",  # enforce consistency
+            subject="thinking_skills",  # enforce consistency
+            difficulty=quiz.difficulty,
+            num_topics=quiz.num_topics,
+            topics=[t.dict() for t in quiz.topics]
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        print("✅ OC Quiz created with ID:", new_quiz.id)
+        print("========== OC QUIZ CREATION COMPLETE ==========\n")
+
+        return {
+            "message": "OC Thinking Skills quiz created successfully",
+            "quiz_id": new_quiz.id
+        }
+
+    except Exception as e:
+        print("\n❌ DB ERROR ❌")
+        print(str(e))
+        traceback.print_exc()
+
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+     
 @app.post("/api/quizzes")
 def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
-    Create a new quiz with extensive debugging.
+    Create a new quiz with controlled deletion (Selective only).
     """
 
     print("\n========== QUIZ CREATION START ==========")
-    
-    # Print the raw QuizCreate object
-    print("🔍 Incoming QuizCreate object:", quiz)
 
-    # Convert quiz to dict to inspect content
+    # Debug incoming payload
     try:
         quiz_dict = quiz.dict()
         print("📦 Parsed quiz payload:", quiz_dict)
     except Exception as e:
-        print("❌ Failed to convert quiz to dict:", e)
+        print("❌ Failed to parse quiz:", e)
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=f"Invalid quiz model: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Debug each field
-    print("➡️ class_name:", quiz.class_name, type(quiz.class_name))
-    print("➡️ subject:", quiz.subject, type(quiz.subject))
-    print("➡️ difficulty:", quiz.difficulty, type(quiz.difficulty))
-    print("➡️ num_topics:", quiz.num_topics, type(quiz.num_topics))
-    print("➡️ topics:", quiz.topics, type(quiz.topics))
+    print("➡️ class_name:", quiz.class_name)
+    print("➡️ subject:", quiz.subject)
+    print("➡️ difficulty:", quiz.difficulty)
+    print("➡️ num_topics:", quiz.num_topics)
+    print("➡️ topics count:", len(quiz.topics))
 
-    # Validate topics field
+    # Validate topics
     if not isinstance(quiz.topics, list):
-        print("❌ ERROR: topics is not a list")
         raise HTTPException(status_code=400, detail="topics must be a list")
 
-    print("📝 Topics count:", len(quiz.topics))
-    for i, t in enumerate(quiz.topics):
-        print(f"   └─ Topic {i}: {t}")
-
     try:
-        print("\n--- Deleting previous data (Exam → Quiz) ---")
+        print("\n--- Deleting previous data (Selective only) ---")
 
-        # 1️⃣ Delete dependent exams (StudentExam deleted automatically via cascade)
-        db.query(Exam).filter(Exam.subject == "thinking_skills").delete(
-            synchronize_session=False
+        # ✅ 1️⃣ Delete ONLY Selective exams for Thinking Skills
+        deleted_exams = (
+            db.query(Exam)
+            .filter(
+                func.lower(Exam.subject) == "thinking_skills",
+                func.lower(Exam.class_name) == "selective"
+            )
+            .delete(synchronize_session=False)
         )
 
-        # 2️⃣ Delete quizzes
-        db.query(Quiz).delete(synchronize_session=False)
+        print(f"🗑️ Deleted Selective exams: {deleted_exams}")
+
+        # 2️⃣ Delete quizzes (you may later also scope this if needed)
+        deleted_quizzes = db.query(Quiz).delete(synchronize_session=False)
+        print(f"🗑️ Deleted quizzes: {deleted_quizzes}")
 
         db.commit()
-        print("🗑️ All previous exams and quizzes deleted")
+        print("✅ Cleanup commit complete")
 
-        print("\n--- Creating SQLAlchemy Quiz object ---")
+        print("\n--- Creating Quiz ---")
 
-        print("\n--- Creating SQLAlchemy Quiz object ---")
-        
         new_quiz = Quiz(
-            class_name = quiz.class_name,
-            subject = quiz.subject,
-            difficulty = quiz.difficulty,
-            num_topics = quiz.num_topics,
-            topics = [t.dict() for t in quiz.topics]   # Convert to JSON-safe dict
+            class_name=quiz.class_name,
+            subject=quiz.subject,
+            difficulty=quiz.difficulty,
+            num_topics=quiz.num_topics,
+            topics=[t.dict() for t in quiz.topics]
         )
-        print("✅ SQLAlchemy object created:", new_quiz)
 
-        print("\n--- Adding to DB session ---")
         db.add(new_quiz)
-
-        print("\n--- Attempting commit ---")
         db.commit()
-        print("✅ Commit successful!")
-
         db.refresh(new_quiz)
-        print("🔄 Refreshed object:", new_quiz)
 
+        print("✅ Quiz created with ID:", new_quiz.id)
         print("========== QUIZ CREATION COMPLETE ==========\n")
 
         return {
@@ -27509,14 +27796,13 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         }
 
     except Exception as e:
-        print("\n❌ EXCEPTION DURING DB OPERATION ❌")
-        print("Error message:", str(e))
+        print("\n❌ DB ERROR ❌")
+        print(str(e))
         traceback.print_exc()
 
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error creating quiz: {str(e)}")
-
-
+        raise HTTPException(status_code=500, detail=str(e))
+ 
 @app.get("/api/quizzes")
 def get_quizzes(db: Session = Depends(get_db)):
     """
