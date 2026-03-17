@@ -711,6 +711,37 @@ class StudentExamResultsNaplanLanguageConventions(Base):
     # relationships
     attempt = relationship("StudentExamNaplanLanguageConventions")
     student = relationship("Student")
+class StudentExamOCThinkingSkills(Base):
+    __tablename__ = "student_exam_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(Integer, nullable=False)
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship("Student")
+    exam = relationship("Exam")
+    responses = relationship(
+        "StudentExamResponseOCThinkingSkills",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
 class StudentExamThinkingSkills(Base):
     __tablename__ = "student_exam_thinking_skills"
 
@@ -935,6 +966,36 @@ class StudentExamResponseThinkingSkills(Base):
     # -----------------------------
     attempt = relationship(
         "StudentExamThinkingSkills",
+        back_populates="responses"
+    )
+    student = relationship("Student")
+    exam = relationship("Exam")
+class StudentExamResponseOCThinkingSkills(Base):
+    __tablename__ = "student_exam_response_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_oc_thinking_skills.id"),
+        nullable=False
+    )
+
+    q_id = Column(Integer, nullable=False)  # stable per-attempt index
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)  # NULL = not attempted
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentExamOCThinkingSkills",
         back_populates="responses"
     )
     student = relationship("Student")
@@ -21244,6 +21305,7 @@ def start_naplan_numeracy_exam(
 #         "questions": normalized_questions,
 #         "remaining_time": new_attempt.duration_minutes * 60
 #     }
+
 @app.post("/api/student/start-exam-thinkingskills")
 def start_exam(
     req: StartExamRequest = Body(...),
@@ -21481,6 +21543,238 @@ def start_exam(
         "remaining_time": int(new_attempt.duration_minutes * 60)
     }
 
+@app.post("/api/student/start-exam-oc-thinking-skills")
+def start_exam_oc_thinking_skills(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ START OC THINKING SKILLS EXAM =================")
+    print("📥 Incoming payload:", req.dict())
+    
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found:", repr(req.student_id))
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch the ONE (and only) OC Thinking Skills attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(StudentExamOCThinkingSkills.student_id == student.id)
+        .order_by(StudentExamOCThinkingSkills.started_at.desc())
+        .first()
+    )
+
+    MAX_DURATION = timedelta(minutes=40)
+    now = datetime.now(timezone.utc)
+
+    if attempt:
+        print(
+            "🧠 Existing OC attempt found | "
+            f"attempt_id={attempt.id} | "
+            f"started_at={attempt.started_at} | "
+            f"completed_at={attempt.completed_at} | "
+            f"duration_minutes={attempt.duration_minutes}"
+        )
+
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        expires_at = started_at + MAX_DURATION
+        elapsed = int((now - started_at).total_seconds())
+
+        print(
+            "⏱️ Timer evaluation | "
+            f"now={now} | "
+            f"started_at={started_at} | "
+            f"expires_at={expires_at} | "
+            f"elapsed_seconds={elapsed}"
+        )
+
+        # --------------------------------------------------
+        # ⛔ Timeout → FINAL completion
+        # --------------------------------------------------
+        if attempt.completed_at is None and now > expires_at:
+            print(
+                "⛔ OC attempt expired | "
+                f"attempt_id={attempt.id} | "
+                f"auto_completed_at={expires_at}"
+            )
+
+            attempt.completed_at = expires_at
+            db.commit()
+
+            print("➡️ Returning: completed=true (timeout)")
+            return {"completed": True}
+
+        # --------------------------------------------------
+        # ✅ Already completed → show report
+        # --------------------------------------------------
+        if attempt.completed_at is not None:
+            print(
+                "✅ OC attempt already completed | "
+                f"attempt_id={attempt.id} | "
+                f"completed_at={attempt.completed_at}"
+            )
+
+            print("➡️ Returning: completed=true (already completed)")
+            return {"completed": True}
+
+        # --------------------------------------------------
+        # ▶ Resume active attempt
+        # --------------------------------------------------
+        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+
+        if remaining <= 0:
+            print("⛔ OC attempt expired via remaining_time guard")
+
+            attempt.completed_at = now
+            db.commit()
+
+            return {"completed": True}
+
+        print(
+            "▶ Resuming OC attempt | "
+            f"attempt_id={attempt.id} | "
+            f"remaining_seconds={remaining}"
+        )
+
+        exam = (
+            db.query(Exam)
+            .filter(
+                func.lower(Exam.class_name) == "oc",
+                Exam.subject == "thinking_skills"
+            )
+            .order_by(Exam.created_at.desc())
+            .first()
+        )
+
+        if not exam:
+            raise HTTPException(
+                status_code=404,
+                detail="OC Thinking Skills exam not found"
+            )
+
+        normalized_questions = normalize_thinking_skills_questions(
+            exam.questions or [],
+            db
+        )
+
+        print(
+            "➡️ Returning: resume OC exam | "
+            f"questions={len(normalized_questions)} | "
+            f"remaining_seconds={remaining}"
+        )
+
+        return {
+            "completed": False,
+            "questions": jsonable_encoder(normalized_questions),
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 🆕 FIRST AND ONLY ATTEMPT
+    # --------------------------------------------------
+    print("🆕 No existing OC attempt → creating FIRST attempt")
+
+    exam = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.class_name) == "oc",
+            Exam.subject == "thinking_skills"
+        )
+        .order_by(Exam.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        print("❌ OC Exam not found")
+        raise HTTPException(
+            status_code=404,
+            detail="OC Thinking Skills exam not found"
+        )
+
+    normalized_questions = normalize_thinking_skills_questions(
+        exam.questions or [],
+        db
+    )
+
+    new_attempt = StudentExamOCThinkingSkills(
+        student_id=student.id,
+        exam_id=exam.id,
+        started_at=now,
+        duration_minutes=40
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    print(
+        "🆕 New OC attempt created | "
+        f"attempt_id={new_attempt.id} | "
+        f"started_at={new_attempt.started_at}"
+    )
+
+    # --------------------------------------------------
+    # Pre-create response rows
+    # --------------------------------------------------
+    for q in normalized_questions:
+        try:
+            db.add(
+                StudentExamResponseOCThinkingSkills(
+                    student_id=student.id,
+                    exam_id=exam.id,
+                    exam_attempt_id=new_attempt.id,
+                    q_id=q["q_id"],
+                    topic=q.get("topic"),
+                    selected_option=None,
+                    correct_option=q["correct_answer"],
+                    is_correct=None
+                )
+            )
+        except Exception as e:
+            print("⚠️ Skipping OC response row:", q["q_id"], repr(e))
+
+    db.commit()
+
+    print(
+        "➡️ Returning: new OC exam started | "
+        f"attempt_id={new_attempt.id} | "
+        f"questions={len(normalized_questions)} | "
+        f"remaining_seconds={new_attempt.duration_minutes * 60}"
+    )
+
+    print("🧪 SERIALIZED PREVIEW:")
+    print(
+        json.dumps(
+            jsonable_encoder(normalized_questions),
+            indent=2
+        )
+    )
+
+    print("================ END START OC THINKING SKILLS EXAM ================\n")
+
+    return {
+        "completed": False,
+        "questions": jsonable_encoder(normalized_questions),
+        "remaining_time": int(new_attempt.duration_minutes * 60)
+    }
 
 
 
