@@ -716,7 +716,7 @@ class StudentExamOCThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
     started_at = Column(
@@ -975,7 +975,7 @@ class StudentExamResponseOCThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
     exam_attempt_id = Column(
         Integer,
