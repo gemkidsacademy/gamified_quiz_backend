@@ -3582,20 +3582,25 @@ def normalize_mr_questions_exam_review(raw_questions):
         # ✅ FIX OPTIONS
         opts = q.get("options", {})
         normalized_options = {}
-
+        
         if isinstance(opts, list):
             for i, opt in enumerate(opts):
-                key = chr(65 + i)  # A, B, C...
+                key = chr(65 + i)
                 normalized_options[key] = {
-                    "type": "text",
                     "content": opt
                 }
-
+        
         elif isinstance(opts, dict):
-            normalized_options = opts
-
+            normalized_options = {
+                k: {"content": v}
+                for k, v in opts.items()
+            }
+        
         else:
             normalized_options = {}
+        
+        # 🔥 CRITICAL LINE (THIS WAS MISSING)
+        resolve_option_images(normalized_options, db, "exam-review")
 
         normalized.append({
             "q_id": q.get("q_id"),
