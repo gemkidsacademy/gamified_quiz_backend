@@ -19683,7 +19683,34 @@ def start_exam(
     if not exam:
         print("❌ Exam not generated")
         raise HTTPException(status_code=404, detail="Exam not generated")
-    def normalize_questions(raw_questions):
+    def parse_option_to_blocks(opt):
+        if not isinstance(opt, str):
+            return [{
+                "type": "text",
+                "content": str(opt)
+            }]
+    
+        text = opt.strip()
+    
+        # Remove "A) " prefix
+        if ")" in text:
+            text = text.split(")", 1)[1].strip()
+    
+        # 🔥 FIX: normalize only specific pattern "op A.png" → "opA.png"
+        if text.lower().endswith(".png"):
+            text = re.sub(r"op\s+([A-Za-z])\.png$", r"op\1.png", text)
+    
+            return [{
+                "type": "image",
+                "image_ref": text
+            }]
+    
+        return [{
+            "type": "text",
+            "content": text
+        }]
+ 
+    def normalize_questions(raw_questions, db, request_id):
         normalized = []
     
         for q in raw_questions or []:
@@ -19709,19 +19736,29 @@ def start_exam(
             # -----------------------------
             # ✅ NORMALIZE OPTIONS
             # -----------------------------
-            opts = fixed.get("options")
-    
-            if isinstance(opts, dict):
-                fixed["options"] = {
-                    k: {"content": v} for k, v in opts.items()
-                }
-            elif isinstance(opts, list):
-                fixed["options"] = {
-                    chr(65 + i): {"content": v}
-                    for i, v in enumerate(opts)
-                }
-            else:
-                fixed["options"] = {}
+            opts = fixed.get("options") or {}
+            normalized_options = {}
+            
+            if isinstance(opts, list):
+                for i, opt in enumerate(opts):
+                    key = chr(65 + i)
+            
+                    blocks = parse_option_to_blocks(opt)
+            
+                    # 🔥 resolve image if present
+                    resolve_images(blocks, db, request_id)
+            
+                    normalized_options[key] = blocks
+            
+            elif isinstance(opts, dict):
+                for key, opt in opts.items():
+                    blocks = parse_option_to_blocks(opt)
+            
+                    resolve_images(blocks, db, request_id)
+            
+                    normalized_options[key] = blocks
+            
+            fixed["options"] = normalized_options
     
             normalized.append(fixed)
     
@@ -19804,7 +19841,11 @@ def start_exam(
     
         return {
             "completed": False,
-            "questions": normalize_questions(exam.questions),
+            "questions": normalize_questions(
+                exam.questions,
+                db,
+                request_id="start-exam-resume"
+            ),
             "remaining_time": remaining
         }
     
@@ -19858,7 +19899,11 @@ def start_exam(
     
     return {
         "completed": False,
-        "questions": normalize_questions(exam.questions),
+        "questions": normalize_questions(
+            exam.questions,
+            db,
+            request_id="start-exam-new"
+        ),
         "remaining_time": 40 * 60
     }
 
