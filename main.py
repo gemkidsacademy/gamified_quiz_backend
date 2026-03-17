@@ -178,6 +178,11 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class ExplainReadingRequest(BaseModel):
+    question_text: str
+    options: Optional[Dict[str, str]] = {}
+    correct_answer: Any
+    passage: Optional[Any] = None
 class ExplainQuestionRequest(BaseModel):
     question: list
     options: dict
@@ -3642,7 +3647,7 @@ def normalize_question_blocks(raw_blocks):
 
 
 @app.post("/api/ai/explain-question-selective-reading")
-def explain_question_reading(req: ExplainQuestionRequest):
+def explain_question_reading(req: ExplainReadingRequest):
 
     print("\n================ AI SELECTIVE READING EXPLANATION =================")
 
