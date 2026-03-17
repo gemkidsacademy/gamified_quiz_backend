@@ -5819,7 +5819,7 @@ def get_exam_review_mathematical_reasoning(
     raw_questions = exam.questions or []
     print(f"📚 Raw questions loaded: {len(raw_questions)}")
 
-    normalized = normalize_mr_questions_exam_review(raw_questions)
+    normalized = normalize_mr_questions_exam_review(raw_questions, db)
 
     print(f"🧹 Normalized questions count: {len(normalized)}")
 
