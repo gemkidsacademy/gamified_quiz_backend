@@ -712,7 +712,7 @@ class StudentExamResultsNaplanLanguageConventions(Base):
     attempt = relationship("StudentExamNaplanLanguageConventions")
     student = relationship("Student")
 class StudentExamOCThinkingSkills(Base):
-    __tablename__ = "student_exam_oc_thinking_skills"
+    __tablename__ = "student_exams_oc_thinking_skills"
 
     id = Column(Integer, primary_key=True, index=True)
 
