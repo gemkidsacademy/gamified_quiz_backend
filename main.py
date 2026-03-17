@@ -21360,8 +21360,7 @@ def start_exam(
         exam = (
             db.query(Exam)
             .filter(
-                func.lower(Exam.class_name) ==
-                func.lower(student.class_name),
+                func.lower(Exam.class_name) == "selective",
                 Exam.subject == "thinking_skills"
             )
             .order_by(Exam.created_at.desc())
@@ -21481,7 +21480,6 @@ def start_exam(
         "questions": safe_questions,
         "remaining_time": int(new_attempt.duration_minutes * 60)
     }
-
 
 
 
