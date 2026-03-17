@@ -13785,7 +13785,24 @@ def finish_exam(
         print("⚠️ No active mathematical reasoning attempt found")
         return {"status": "completed"}
     print("✅ Active mathematical reasoning attempt found → id:", attempt.id)
-         
+
+    existing_result = (
+        db.query(StudentExamResultsMathematicalReasoning)
+        .filter(StudentExamResultsMathematicalReasoning.exam_attempt_id == attempt.id)
+        .first()
+    )
+    
+    if existing_result:
+        print("⚠️ Result already exists → returning idempotent response")
+        return {"status": "completed"}
+
+
+
+
+    
+    
+    
+
     # --------------------------------------------------
     # 3️⃣ Load exam (STRICT subject guard)
     # --------------------------------------------------
@@ -13912,12 +13929,6 @@ def finish_exam(
     # 7️⃣ Mark attempt completed
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
-    # --------------------------------------------------
-    # 8️⃣ Snapshot responses for admin analytics
-    # --------------------------------------------------
-    print("📦 Snapshotting mathematical reasoning responses into admin table")
-    
-    snapshot_math_responses_for_admin(db, attempt)
     # --------------------------------------------------
     # 8️⃣ Generate Admin Report Snapshot (ADMIN)
     # --------------------------------------------------
