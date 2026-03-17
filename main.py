@@ -183,6 +183,16 @@ class ExplainReadingRequest(BaseModel):
     options: Optional[Dict[str, str]] = {}
     correct_answer: Any
     passage: Optional[Any] = None
+class ExplainNaplanReadingRequest(BaseModel):
+    question_text: str
+    
+    options: Optional[Dict[str, str]] = Field(default_factory=dict)
+
+    # supports: "B", ["B"], {"0": "B"}
+    correct_answer: Union[str, List[str], Dict[str, str]]
+
+    # flexible but still structured
+    passage: Optional[Dict[str, Any]] = None 
 class ExplainQuestionRequest(BaseModel):
     question: list
     options: dict
@@ -3755,7 +3765,156 @@ Structure:
             "explanation": "Failed to generate explanation.",
             "error": str(e)
         }
-     
+@app.post("/api/ai/explain-question-naplan-reading")
+def explain_question_reading(req: ExplainNaplanReadingRequest):
+
+    print("\n================ AI SELECTIVE READING EXPLANATION =================")
+
+    try:
+        print("📥 Question text:", req.question_text)
+        print("📥 Options:", req.options)
+        print("📥 Correct answer:", req.correct_answer)
+        print("📥 Passage:", req.passage)
+
+        # -------------------------------
+        # Normalize correct answer
+        # -------------------------------
+        def normalize_correct_answer_safe_naplan_reading(correct_answer):
+            if correct_answer is None:
+                return []
+
+            if isinstance(correct_answer, list):
+                return correct_answer
+
+            if isinstance(correct_answer, dict):
+                return list(correct_answer.values())
+
+            if isinstance(correct_answer, str):
+                try:
+                    parsed = json.loads(correct_answer.replace("'", '"'))
+                    if isinstance(parsed, list):
+                        return parsed
+                    return [str(parsed)]
+                except:
+                    return [correct_answer]
+
+            return [str(correct_answer)]
+
+        correct_keys = normalize_correct_answer_safe_naplan_reading(req.correct_answer)
+
+        # Map to labels (A → actual text)
+        option_map = req.options or {}
+
+        correct_labels = [
+            f"{k}: {option_map.get(k, k)}"
+            for k in correct_keys
+        ]
+
+        correct_answer_text = ", ".join(correct_labels) if correct_labels else "—"
+
+        # -------------------------------
+        # Extract question text
+        # -------------------------------
+        question_text = req.question_text or ""
+
+        # -------------------------------
+        # Extract passage text (FIXED)
+        # -------------------------------
+        passage_text = ""
+
+        if req.passage and isinstance(req.passage, dict):
+
+            # Case: extracts is a LIST (your current case)
+            extracts = req.passage.get("extracts")
+
+            if isinstance(extracts, list):
+                for ex in extracts:
+                    title = ex.get("title", "")
+                    content = ex.get("content", "")
+
+                    if title:
+                        passage_text += f"{title}\n"
+
+                    if content:
+                        passage_text += content + "\n"
+
+            # Case: extracts as dict (fallback safety)
+            elif isinstance(extracts, dict):
+                for _, ex in extracts.items():
+                    passage_text += str(ex) + "\n"
+
+        # -------------------------------
+        # Format options
+        # -------------------------------
+        options_text = "\n".join(
+            [f"{k}: {v}" for k, v in option_map.items()]
+        )
+
+        # -------------------------------
+        # Prompt
+        # -------------------------------
+        prompt = f"""
+You are an expert tutor for Selective School reading comprehension exams.
+
+Your goal is to help the student understand how to find the correct answer using the passage.
+
+Passage:
+{passage_text}
+
+Question:
+{question_text}
+
+Options:
+{options_text}
+
+Correct Answer: {correct_answer_text}
+
+Instructions:
+1. Identify what the question is testing (main idea, inference, tone, detail, etc.).
+2. Point to the relevant part of the passage.
+3. Explain step-by-step how that part leads to the correct answer.
+4. Briefly explain why the other options are incorrect.
+5. Use simple, student-friendly language.
+6. Keep explanation concise (100–130 words).
+7. Use **bold headings**.
+
+Structure:
+
+**What this question is testing**
+...
+
+**Where to look in the passage**
+...
+
+**Why the correct answer is right**
+...
+
+**Why the other options are incorrect**
+...
+"""
+
+        # -------------------------------
+        # OpenAI call
+        # -------------------------------
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+
+        explanation = response.choices[0].message.content
+
+        return {
+            "explanation": explanation
+        }
+
+    except Exception as e:
+        print("❌ ERROR:", str(e))
+
+        return {
+            "explanation": "Failed to generate explanation.",
+            "error": str(e)
+        }     
 @app.post("/api/ai/explain-question-TS")
 def explain_question_ts(req: ExplainQuestionRequest):
 
