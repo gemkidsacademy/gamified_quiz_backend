@@ -979,7 +979,7 @@ class StudentExamResponseOCThinkingSkills(Base):
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
     exam_attempt_id = Column(
         Integer,
-        ForeignKey("student_exam_oc_thinking_skills.id"),
+        ForeignKey("student_exams_oc_thinking_skills.id"),
         nullable=False
     )
 
