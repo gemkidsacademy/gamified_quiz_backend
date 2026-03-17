@@ -7365,7 +7365,41 @@ def get_question_bank_thinking_skills(
         }
         for r in results
     ]
+@app.get("/api/admin/question-bank-oc-thinking-skills")
+def get_question_bank_oc_thinking_skills(
+    db: Session = Depends(get_db)
+):
+    results = (
+        db.query(
+            Question.difficulty,
+            Question.topic,
+            func.count(Question.id).label("total_questions")
+        )
+        .filter(
+            func.lower(Question.class_name) == "oc",
+            func.lower(Question.subject) == "thinking skills",
+            Question.topic.isnot(None)
+        )
+        .group_by(
+            Question.difficulty,
+            Question.topic
+        )
+        .order_by(
+            Question.difficulty,
+            Question.topic
+        )
+        .all()
+    )
 
+    return [
+        {
+            "difficulty": r.difficulty,
+            "topic": r.topic,
+            "total_questions": r.total_questions
+        }
+        for r in results
+    ]
+ 
 def get_attempt_filter(ResponseModel, exam_attempt_id):
     if hasattr(ResponseModel, "exam_attempt_id"):
         return ResponseModel.exam_attempt_id == exam_attempt_id
