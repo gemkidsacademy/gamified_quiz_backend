@@ -1802,28 +1802,6 @@ class StudentExam(Base):
 
     duration_minutes = Column(Integer, default=40, nullable=False)
 
-class StudentExamOCThinkingSkills(Base):
-    __tablename__ = "student_exams_oc_thinking_skills"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # External student identifier (e.g. "Gem002")
-    student_id = Column(String, nullable=False, index=True)
-
-    # Reference to OC exams table (no FK for flexibility)
-    exam_id = Column(Integer, nullable=False, index=True)
-
-    # Optional: explicitly store context (helps debugging + analytics)
-    class_name = Column(String, nullable=False, default="oc")
-    subject = Column(String, nullable=False, default="thinking_skills")
-
-    # Time tracking
-    started_at = Column(DateTime(timezone=True), nullable=False)
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-
-    duration_minutes = Column(Integer, default=40, nullable=False)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Exam_reading(Base):
     __tablename__ = "exams_reading"   # UPDATED TABLE NAME
