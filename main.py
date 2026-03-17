@@ -6261,6 +6261,214 @@ def get_exam_review_thinking_skills(
         "questions": review_questions
     }
 
+@app.get(
+    "/api/student/exam-review/oc-thinking-skills",
+    response_model=ExamReviewResponse
+)
+def get_exam_review_oc_thinking_skills(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n================ EXAM REVIEW (OC THINKING SKILLS) =================")
+    print(f"➡️ Incoming request (external student_id): {student_id}")
+
+    # ==================================================
+    # 0️⃣ Resolve INTERNAL student ID
+    # ==================================================
+    print("🔐 Resolving internal student ID...")
+
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND for external_id =", student_id)
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    internal_student_id = student.id
+    print(f"✅ Internal student_id resolved: {internal_student_id}")
+
+    # ==================================================
+    # 1️⃣ Resolve LATEST OC exam_attempt_id
+    # ==================================================
+    print("🔍 Resolving latest OC exam_attempt_id from responses...")
+
+    latest_attempt = (
+        db.query(StudentExamResponseOCThinkingSkills.exam_attempt_id)
+        .filter(
+            StudentExamResponseOCThinkingSkills.student_id == internal_student_id
+        )
+        .order_by(StudentExamResponseOCThinkingSkills.exam_attempt_id.desc())
+        .first()
+    )
+
+    if not latest_attempt:
+        print(
+            "❌ No OC exam responses found for internal_student_id =",
+            internal_student_id
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="No completed OC exam attempt found for this student"
+        )
+
+    exam_attempt_id = latest_attempt.exam_attempt_id
+    print(f"✅ Latest OC exam_attempt_id resolved: {exam_attempt_id}")
+
+    # ==================================================
+    # 2️⃣ Validate OC exam attempt ownership
+    # ==================================================
+    print("🔍 Validating OC exam attempt ownership...")
+
+    attempt = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(
+            StudentExamOCThinkingSkills.id == exam_attempt_id,
+            StudentExamOCThinkingSkills.student_id == internal_student_id
+        )
+        .first()
+    )
+
+    if not attempt:
+        print(
+            "❌ OC Exam attempt ownership mismatch:",
+            f"attempt_id={exam_attempt_id},",
+            f"internal_student_id={internal_student_id}"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="OC exam attempt not found for this student"
+        )
+
+    print(
+        "✅ OC Exam attempt verified:",
+        f"id={attempt.id},",
+        f"exam_id={attempt.exam_id},",
+        f"student_id={attempt.student_id}"
+    )
+
+    # ==================================================
+    # 3️⃣ Fetch OC responses
+    # ==================================================
+    print("📥 Fetching OC student responses...")
+
+    responses = (
+        db.query(StudentExamResponseOCThinkingSkills)
+        .filter(
+            StudentExamResponseOCThinkingSkills.exam_attempt_id == exam_attempt_id
+        )
+        .order_by(StudentExamResponseOCThinkingSkills.q_id)
+        .all()
+    )
+
+    print(f"📊 OC response rows fetched: {len(responses)}")
+
+    if not responses:
+        print("⚠️ No OC responses found for exam_attempt_id =", exam_attempt_id)
+        return {
+            "exam_attempt_id": exam_attempt_id,
+            "questions": []
+        }
+
+    for r in responses[:3]:
+        print(
+            f"   ↳ q_id={r.q_id}, "
+            f"selected={r.selected_option}, "
+            f"correct={r.correct_option}, "
+            f"is_correct={r.is_correct}"
+        )
+
+    # ==================================================
+    # 4️⃣ Load exam definition
+    # ==================================================
+    print("📘 Loading OC exam definition...")
+
+    exam = (
+        db.query(Exam)
+        .filter(Exam.id == attempt.exam_id)
+        .first()
+    )
+
+    if not exam:
+        print("❌ OC Exam NOT FOUND for exam_id =", attempt.exam_id)
+        raise HTTPException(
+            status_code=404,
+            detail="OC exam not found"
+        )
+
+    raw_questions = exam.questions or []
+    print(f"📚 Raw OC questions loaded: {len(raw_questions)}")
+
+    normalized = normalize_questions_exam_review(raw_questions)
+    print(f"🧹 Normalized OC questions count: {len(normalized)}")
+
+    # ==================================================
+    # 5️⃣ Build review payload
+    # ==================================================
+    print("🧩 Building OC review payload...")
+
+    response_map = {r.q_id: r for r in responses}
+
+    review_questions = []
+
+    for q in normalized:
+
+        r = response_map.get(q["q_id"])
+
+        raw_options = q.get("options", {})
+        resolved_options = {}
+
+        for key, value in raw_options.items():
+
+            if isinstance(value, str) and value.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp")
+            ):
+                urls = resolve_image_options({key: value}, db)
+                resolved_options[key] = {
+                    "type": "image",
+                    "src": urls[key]
+                }
+
+            elif isinstance(value, dict):
+                resolved_options[key] = value
+
+            else:
+                resolved_options[key] = {
+                    "type": "text",
+                    "content": value
+                }
+
+        review_questions.append({
+            "q_id": q["q_id"],
+            "blocks": q.get("blocks", []),
+            "options": resolved_options,
+            "student_answer": r.selected_option if r else None,
+            "correct_answer": r.correct_option if r else None,
+        })
+
+    print(f"✅ OC Review questions prepared: {len(review_questions)}")
+
+    skipped = sum(1 for q in review_questions if q["student_answer"] is None)
+
+    print(
+        "📈 OC Review summary:",
+        f"total={len(review_questions)},",
+        f"attempted={len(review_questions) - skipped},",
+        f"skipped={skipped}"
+    )
+
+    print("================ END OC EXAM REVIEW =================\n")
+
+    return {
+        "exam_attempt_id": exam_attempt_id,
+        "questions": review_questions
+    }
+ 
 @app.get("/api/classes/{class_name}/exam-dates")
 def get_class_exam_dates(
     class_name: str,
@@ -10933,7 +11141,167 @@ def get_thinking_skills_report(
         "topic_accuracy": topic_accuracy,                   # Report C
         "improvement_areas": improvement_areas              # Report D
     }
+@app.get("/api/student/exam-report/oc-thinking-skills")
+def get_oc_thinking_skills_report(
+    student_id: str = Query(..., description="External student id e.g. Gem002"),
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
 
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest completed OC attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(
+            StudentExamOCThinkingSkills.student_id == student.id,
+            StudentExamOCThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(StudentExamOCThinkingSkills.completed_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed OC Thinking Skills exam found"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseOCThinkingSkills)
+        .filter(
+            StudentExamResponseOCThinkingSkills.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for OC Thinking Skills exam"
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ OVERALL SUMMARY
+    # --------------------------------------------------
+    total_questions = len(responses)
+    attempted = sum(1 for r in responses if r.is_correct is not None)
+    correct = sum(1 for r in responses if r.is_correct is True)
+    incorrect = sum(1 for r in responses if r.is_correct is False)
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
+    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent,
+        "pass": None
+    }
+
+    # --------------------------------------------------
+    # 5️⃣ TOPIC-WISE PERFORMANCE
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic or "Unknown"
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        topic_map[topic]["total"] += 1
+
+        if r.is_correct is None:
+            topic_map[topic]["not_attempted"] += 1
+        else:
+            topic_map[topic]["attempted"] += 1
+            if r.is_correct:
+                topic_map[topic]["correct"] += 1
+            else:
+                topic_map[topic]["incorrect"] += 1
+
+    topic_wise_performance = list(topic_map.values())
+
+    # --------------------------------------------------
+    # 6️⃣ TOPIC ACCURACY
+    # --------------------------------------------------
+    topic_accuracy = []
+
+    for t in topic_wise_performance:
+        attempted_t = t["attempted"]
+
+        accuracy_t = (
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
+        )
+
+        score_t = round((t["correct"] / t["total"]) * 100, 2)
+
+        topic_accuracy.append({
+            "topic": t["topic"],
+            "total_questions": t["total"],
+            "attempted": attempted_t,
+            "correct": t["correct"],
+            "incorrect": t["incorrect"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": score_t,
+            "pass": None
+        })
+
+    # --------------------------------------------------
+    # 7️⃣ IMPROVEMENT AREAS
+    # --------------------------------------------------
+    improvement_areas = []
+
+    for t in topic_accuracy:
+        limited_data = t["total_questions"] < 5
+
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy_percent": t["accuracy_percent"],
+            "score_percent": t["score_percent"],
+            "total_questions": t["total_questions"],
+            "limited_data": limited_data
+        })
+
+    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+
+    # --------------------------------------------------
+    # 8️⃣ Final response
+    # --------------------------------------------------
+    return {
+        "overall": overall,
+        "topic_wise_performance": topic_wise_performance,
+        "topic_accuracy": topic_accuracy,
+        "improvement_areas": improvement_areas
+    }
+ 
 # ============================================================
 # ❌ OLD / LEGACY MATHEMATICAL REASONING REPORT (DO NOT USE)
 # This version reads from GENERIC tables:
@@ -23613,7 +23981,155 @@ def finish_thinking_skills_exam(
         "accuracy": accuracy
     }
 
+@app.post("/api/student/finish-exam/oc-thinking-skills")
+def finish_oc_thinking_skills_exam(
+    req: FinishExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ FINISH OC THINKING SKILLS EXAM START ================")
+    print("📥 Incoming payload:", req.dict())
 
+    # --------------------------------------------------
+    # 1️⃣ Validate student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == req.student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ ABORT: Student not found for student_id =", req.student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved:", {
+        "external_id": student.student_id,
+        "internal_id": student.id
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch MOST RECENT OC attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(StudentExamOCThinkingSkills.student_id == student.id)
+        .order_by(StudentExamOCThinkingSkills.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("❌ ABORT: No OC attempt exists for student")
+        raise HTTPException(
+            status_code=404,
+            detail="No OC Thinking Skills exam attempt found"
+        )
+
+    print("✅ Latest OC attempt found:", {
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Load exam definition
+    # --------------------------------------------------
+    exam = (
+        db.query(Exam)
+        .filter(
+            Exam.id == attempt.exam_id,
+            Exam.subject == "thinking_skills"
+        )
+        .first()
+    )
+
+    if not exam:
+        print("❌ ABORT: OC Exam not found or subject mismatch")
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    questions = exam.questions or []
+    total_questions = len(questions)
+    question_map = {q["q_id"]: q for q in questions}
+
+    print("📊 OC Exam loaded:", {
+        "total_questions": total_questions
+    })
+
+    # --------------------------------------------------
+    # 4️⃣ Update responses (idempotent)
+    # --------------------------------------------------
+    correct = 0
+    saved_responses = 0
+
+    for q_id_str, selected in req.answers.items():
+        try:
+            q_id = int(q_id_str)
+        except ValueError:
+            print("⚠️ Skipping invalid q_id:", q_id_str)
+            continue
+
+        q = question_map.get(q_id)
+        if not q:
+            print("⚠️ Question not found in exam JSON:", q_id)
+            continue
+
+        is_correct = selected == q.get("correct")
+
+        if is_correct:
+            correct += 1
+
+        response = (
+            db.query(StudentExamResponseOCThinkingSkills)
+            .filter(
+                StudentExamResponseOCThinkingSkills.exam_attempt_id == attempt.id,
+                StudentExamResponseOCThinkingSkills.q_id == q_id
+            )
+            .first()
+        )
+
+        if not response:
+            print("❌ OC Response row missing:", {
+                "attempt_id": attempt.id,
+                "q_id": q_id
+            })
+            continue
+
+        response.selected_option = selected
+        response.correct_option = q.get("correct")
+        response.is_correct = is_correct
+
+        saved_responses += 1
+
+    wrong = saved_responses - correct
+    accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
+
+    print("📈 OC Scoring summary:", {
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    })
+
+    # --------------------------------------------------
+    # 5️⃣ Mark attempt completed
+    # --------------------------------------------------
+    if attempt.completed_at is None:
+        attempt.completed_at = datetime.now(timezone.utc)
+        print("✅ OC Attempt marked completed")
+
+    db.commit()
+
+    print("================ FINISH OC THINKING SKILLS EXAM END =================\n")
+
+    return {
+        "status": "completed",
+        "total_questions": total_questions,
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    }
+ 
 def aggregate_math_sections(db: Session, exam_attempt_id: int):
     """
     Aggregates Mathematical Reasoning responses into topic-based sections.
