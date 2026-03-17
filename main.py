@@ -3564,7 +3564,7 @@ def normalize_questions_exam_review(raw_questions):
 
     return normalized
 
-def normalize_mr_questions_exam_review(raw_questions):
+def normalize_mr_questions_exam_review(raw_questions, db: Session):
     normalized = []
 
     print("🧪 normalize_mr_questions_exam_review CALLED")
