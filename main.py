@@ -3641,6 +3641,116 @@ def normalize_question_blocks(raw_blocks):
     )
 
 
+@app.post("/api/ai/explain-question-selective-reading")
+def explain_question_reading(req: ExplainQuestionRequest):
+
+    print("\n================ AI SELECTIVE READING EXPLANATION =================")
+
+    try:
+        print("📥 Question text:", req.question_text)
+        print("📥 Options:", req.options)
+        print("📥 Correct answer:", req.correct_answer)
+        print("📥 Passage:", req.passage)
+
+        # -------------------------------
+        # Extract question text
+        # -------------------------------
+        question_text = req.question_text or ""
+
+        # -------------------------------
+        # Extract passage text
+        # -------------------------------
+        passage_text = ""
+
+        if req.passage and isinstance(req.passage, dict):
+
+            if req.passage.get("title"):
+                passage_text += f"{req.passage['title']}\n"
+
+            if req.passage.get("content"):
+                passage_text += req.passage["content"] + "\n"
+
+            if req.passage.get("paragraphs"):
+                for _, p in req.passage["paragraphs"].items():
+                    passage_text += p + " "
+
+            if req.passage.get("extracts"):
+                for _, ex in req.passage["extracts"].items():
+                    passage_text += ex + " "
+
+        # -------------------------------
+        # Format options
+        # -------------------------------
+        options_text = "\n".join(
+            [f"{k}: {v}" for k, v in (req.options or {}).items()]
+        )
+
+        # -------------------------------
+        # Prompt
+        # -------------------------------
+        prompt = f"""
+You are an expert tutor for Selective School reading comprehension exams.
+
+Your goal is to help the student understand how to find the correct answer using the passage.
+
+Passage:
+{passage_text}
+
+Question:
+{question_text}
+
+Options:
+{options_text}
+
+Correct Answer: {req.correct_answer}
+
+Instructions:
+1. Identify what the question is testing (main idea, inference, tone, detail, etc.).
+2. Point to the relevant part of the passage.
+3. Explain step-by-step how that part leads to the correct answer.
+4. Briefly explain why the other options are incorrect.
+5. Use simple, student-friendly language.
+6. Keep explanation concise (100–130 words).
+7. Use **bold headings**.
+
+Structure:
+
+**What this question is testing**
+...
+
+**Where to look in the passage**
+...
+
+**Why the correct answer is right**
+...
+
+**Why the other options are incorrect**
+...
+"""
+
+        # -------------------------------
+        # OpenAI call
+        # -------------------------------
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+
+        explanation = response.choices[0].message.content
+
+        return {
+            "explanation": explanation
+        }
+
+    except Exception as e:
+        print("❌ ERROR:", str(e))
+
+        return {
+            "explanation": "Failed to generate explanation.",
+            "error": str(e)
+        }
+     
 @app.post("/api/ai/explain-question-TS")
 def explain_question_ts(req: ExplainQuestionRequest):
 
