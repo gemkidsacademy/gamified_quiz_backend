@@ -19701,21 +19701,18 @@ def start_exam(
             fixed = dict(q)
     
             # -----------------------------
-            # ✅ NORMALIZE QUESTION CONTENT
+            # ✅ NORMALIZE QUESTION BLOCKS (FIXED)
             # -----------------------------
-            question_text = (
-                fixed.get("question")
-                or fixed.get("question_text")
-                or fixed.get("text")
-                or ""
+            raw_blocks = (
+                fixed.get("question_blocks")
+                or fixed.get("blocks")
+                or []
             )
-    
-            fixed["blocks"] = [
-                {
-                    "type": "text",
-                    "content": question_text
-                }
-            ]
+            
+            fixed["blocks"] = raw_blocks
+            
+            # 🔥 resolve question images
+            resolve_images(fixed["blocks"], db, "start-exam")
     
             # -----------------------------
             # ✅ NORMALIZE OPTIONS
@@ -19733,6 +19730,7 @@ def start_exam(
                 }
             else:
                 fixed["options"] = {}
+            resolve_option_images(fixed["options"], db, "start-exam")
     
             normalized.append(fixed)
     
@@ -19813,9 +19811,13 @@ def start_exam(
             db.commit()
             return {"completed": True}
     
+        normalized = normalize_questions(exam.questions)
+
+        print("🧪 DEBUG Q5 OPTIONS:", normalized[4]["options"])
+        
         return {
             "completed": False,
-            "questions": normalize_questions(exam.questions),
+            "questions": normalized,
             "remaining_time": remaining
         }
     
@@ -19867,9 +19869,13 @@ def start_exam(
          .count()
    )
     
+    normalized = normalize_questions(exam.questions)
+
+    print("🧪 DEBUG Q5 OPTIONS:", normalized[4]["options"])
+    
     return {
         "completed": False,
-        "questions": normalize_questions(exam.questions),
+        "questions": normalized,
         "remaining_time": 40 * 60
     }
 
@@ -26480,8 +26486,37 @@ def validate_question_by_type(qt: int, q: dict):
     else:
         raise ValueError(f"Unsupported question_type: {qt}")
 
+def resolve_option_images(options: dict, db: Session, request_id: str):
+    for key, opt in options.items():
+        content = (opt.get("content") or "").strip()
 
+        match = re.search(r"\)\s*(.*\.png)", content)
+        if not match:
+            continue
 
+        raw_name = match.group(1).strip()
+
+        print(f"[{request_id}] 🧩 Resolving option {key}: '{raw_name}'")
+
+        record = (
+            db.query(UploadedImage)
+            .filter(
+                func.replace(func.trim(UploadedImage.original_name), " ", "") ==
+                raw_name.replace(" ", "")
+            )
+            .first()
+        )
+
+        if not record:
+            raise ValueError(f"Option image '{raw_name}' not uploaded yet")
+
+        options[key] = {
+            "type": "image",
+            "src": record.gcs_url
+        }
+
+        print(f"[{request_id}] ✅ Option {key} resolved → {record.gcs_url}")
+     
 def resolve_images(blocks: list[dict], db: Session, request_id: str):
     for block in blocks:
         if block.get("type") != "image":
