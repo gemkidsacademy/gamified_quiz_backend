@@ -9411,23 +9411,45 @@ def generate_oc_thinking_skills_exam(
     # 0️⃣ Clear previous OC Thinking Skills exams
     # --------------------------------------------------
     print("\n--- Deleting previous OC Thinking Skills exams ---")
-
-    # ✅ STEP 1: get OC exam IDs (from shared Exam table)
+    
+    # STEP 1: Get OC exam IDs
     exam_ids_subq = select(Exam.id).where(
         func.lower(Exam.subject) == "thinking_skills",
         func.lower(Exam.class_name) == "oc"
     )
-
-    # ✅ STEP 2: delete ONLY OC student exam rows (from OC table)
+    
+    # STEP 2: Get attempt IDs (VERY IMPORTANT)
+    attempt_ids_subq = select(StudentExamOCThinkingSkills.id).where(
+        StudentExamOCThinkingSkills.exam_id.in_(exam_ids_subq)
+    )
+    
+    # --------------------------------------------------
+    # 🔥 DELETE CHILD FIRST (RESPONSES)
+    # --------------------------------------------------
+    deleted_responses = (
+        db.query(StudentExamResponseOCThinkingSkills)
+        .filter(
+            StudentExamResponseOCThinkingSkills.exam_attempt_id.in_(attempt_ids_subq)
+        )
+        .delete(synchronize_session=False)
+    )
+    
+    print(f"🗑️ Deleted OC responses: {deleted_responses}")
+    
+    # --------------------------------------------------
+    # 🔥 DELETE PARENT (ATTEMPTS)
+    # --------------------------------------------------
     deleted_student_exams = (
         db.query(StudentExamOCThinkingSkills)
         .filter(StudentExamOCThinkingSkills.exam_id.in_(exam_ids_subq))
         .delete(synchronize_session=False)
     )
-
-    print(f"🗑️ Deleted StudentExamOC rows: {deleted_student_exams}")
-
-    # ✅ STEP 3: delete OC exams (shared table but scoped)
+    
+    print(f"🗑️ Deleted OC attempts: {deleted_student_exams}")
+    
+    # --------------------------------------------------
+    # 🔥 DELETE ROOT (EXAMS)
+    # --------------------------------------------------
     deleted_exams = (
         db.query(Exam)
         .filter(
@@ -9436,12 +9458,11 @@ def generate_oc_thinking_skills_exam(
         )
         .delete(synchronize_session=False)
     )
-
+    
     print(f"🗑️ Deleted OC exams: {deleted_exams}")
-
+    
     db.commit()
     print("✅ Cleanup complete")
-
     # --------------------------------------------------
     # 1️⃣ Fetch latest OC Thinking Skills quiz
     # --------------------------------------------------
