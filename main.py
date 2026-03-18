@@ -20607,7 +20607,7 @@ def start_exam(
     
 
     # --------------------------------------------------
-    # 3️⃣ Load quiz (class-based)
+    # 3️⃣ Load quiz (class-based) 
     # --------------------------------------------------
     quiz = (
         db.query(Quiz)
