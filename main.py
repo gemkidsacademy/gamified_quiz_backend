@@ -20785,7 +20785,210 @@ def start_exam(
         "questions": normalized,
         "remaining_time": 40 * 60
     }
+ 
+@app.post("/api/student/start-exam-oc-mathematical-reasoning")
+def start_exam_oc_mathematical_reasoning(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n🚀 START OC MR EXAM REQUEST")
+    print("➡ payload:", req.dict())
 
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"✅ Student resolved: id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Load quiz (OC + MR)
+    # --------------------------------------------------
+    quiz = (
+        db.query(Quiz)
+        .filter(
+            func.lower(Quiz.class_name) == "oc",
+            func.lower(Quiz.subject) == "mathematical_reasoning"
+        )
+        .order_by(Quiz.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    # --------------------------------------------------
+    # 3️⃣ Load exam
+    # --------------------------------------------------
+    exam = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.class_name) == "oc",
+            func.lower(Exam.subject) == "mathematical_reasoning"
+        )
+        .order_by(Exam.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not generated")
+
+    # --------------------------------------------------
+    # 🔧 NORMALIZER
+    # --------------------------------------------------
+    def normalize_questions(raw_questions):
+        normalized = []
+
+        for q in raw_questions or []:
+            fixed = dict(q)
+
+            raw_blocks = (
+                fixed.get("question_blocks")
+                or fixed.get("blocks")
+                or []
+            )
+
+            fixed["blocks"] = raw_blocks
+            resolve_images(fixed["blocks"], db, "start-exam-oc-mr")
+
+            opts = fixed.get("options")
+
+            if isinstance(opts, dict):
+                fixed["options"] = {
+                    k: {"content": v} for k, v in opts.items()
+                }
+            elif isinstance(opts, list):
+                fixed["options"] = {
+                    chr(65 + i): {"content": v}
+                    for i, v in enumerate(opts)
+                }
+            else:
+                fixed["options"] = {}
+
+            resolve_option_images(fixed["options"], db, "start-exam-oc-mr")
+
+            normalized.append(fixed)
+
+        return normalized
+
+    # --------------------------------------------------
+    # 🔍 CHECK OC MR ATTEMPTS
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(
+            StudentExamOCMathematicalReasoning.student_id == student.id
+        )
+        .order_by(StudentExamOCMathematicalReasoning.started_at.desc())
+        .first()
+    )
+
+    # --------------------------------------------------
+    # 🟢 CASE A — COMPLETED
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is not None:
+        print("✅ Completed OC MR attempt exists")
+        return {"completed": True}
+
+    # --------------------------------------------------
+    # 🟡 CASE B — ACTIVE → RESUME
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is None:
+        print("⏳ Resuming OC MR attempt")
+
+        existing_count = (
+            db.query(StudentExamResponseOCMathematicalReasoning)
+            .filter(
+                StudentExamResponseOCMathematicalReasoning.exam_attempt_id == attempt.id
+            )
+            .count()
+        )
+
+        if existing_count == 0:
+            print("⚠️ Rehydrating responses")
+            for q in exam.questions or []:
+                db.add(
+                    StudentExamResponseOCMathematicalReasoning(
+                        student_id=student.id,
+                        exam_id=exam.id,
+                        exam_attempt_id=attempt.id,
+                        q_id=q["q_id"],
+                        topic=q.get("topic"),
+                        selected_option=None,
+                        correct_option=q.get("correct"),
+                        is_correct=None
+                    )
+                )
+            db.commit()
+
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, 40 * 60 - elapsed)
+
+        if remaining == 0:
+            attempt.completed_at = now
+            db.commit()
+            return {"completed": True}
+
+        return {
+            "completed": False,
+            "questions": normalize_questions(exam.questions),
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 🔵 CASE C — NEW ATTEMPT
+    # --------------------------------------------------
+    print("🆕 Starting new OC MR attempt")
+
+    new_attempt = StudentExamOCMathematicalReasoning(
+        student_id=student.id,
+        exam_id=exam.id,
+        started_at=datetime.now(timezone.utc)
+    )
+
+    db.add(new_attempt)
+    db.commit()
+
+    # --------------------------------------------------
+    # 🧱 CREATE RESPONSES
+    # --------------------------------------------------
+    for q in exam.questions or []:
+        db.add(
+            StudentExamResponseOCMathematicalReasoning(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=new_attempt.id,
+                q_id=q["q_id"],
+                topic=q.get("topic"),
+                selected_option=None,
+                correct_option=q.get("correct"),
+                is_correct=None
+            )
+        )
+
+    db.commit()
+
+    return {
+        "completed": False,
+        "questions": normalize_questions(exam.questions),
+        "remaining_time": 40 * 60
+    }
+ 
 def normalize_naplan_numeracy_questions_live(raw_questions):
     """
     Prepare questions for live exam delivery.
