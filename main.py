@@ -28765,7 +28765,7 @@ def create_quiz_oc_thinking_skills(
 
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
- @app.post("/api/quizzes/oc-mathematical-reasoning")
+@app.post("/api/quizzes/oc-mathematical-reasoning")
 def create_quiz_oc_mathematical_reasoning(
     quiz: QuizCreate,
     db: Session = Depends(get_db)
