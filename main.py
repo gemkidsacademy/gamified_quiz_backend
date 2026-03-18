@@ -183,15 +183,35 @@ class StudentExamOCMathematicalReasoning(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(String, nullable=False, index=True)
-    exam_id = Column(Integer, nullable=False, index=True)
+    # ✅ MUST match Student model type (very important)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
 
-    # Optional context
-    class_name = Column(String)
-    subject = Column(String)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
-    started_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(Integer, nullable=False, default=40)
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship("Student")
+    exam = relationship("Exam")
+
+    responses = relationship(
+        "StudentExamResponseOCMathematicalReasoning",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
 class StudentExamResponseOCMathematicalReasoning(Base):
     __tablename__ = "student_exam_response_oc_mathematical_reasoning"
 
