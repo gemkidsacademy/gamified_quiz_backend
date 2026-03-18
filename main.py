@@ -6556,7 +6556,213 @@ def get_exam_review_oc_thinking_skills(
         "exam_attempt_id": exam_attempt_id,
         "questions": review_questions
     }
- 
+@app.get(
+    "/api/student/exam-review/oc-mathematical-reasoning",
+    response_model=ExamReviewResponse
+)
+def get_exam_review_oc_mathematical_reasoning(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n================ EXAM REVIEW (OC MATHEMATICAL REASONING) =================")
+    print(f"➡️ Incoming request (external student_id): {student_id}")
+
+    # ==================================================
+    # 0️⃣ Resolve INTERNAL student ID
+    # ==================================================
+    print("🔐 Resolving internal student ID...")
+
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND for external_id =", student_id)
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    internal_student_id = student.id
+    print(f"✅ Internal student_id resolved: {internal_student_id}")
+
+    # ==================================================
+    # 1️⃣ Resolve LATEST OC MR exam_attempt_id
+    # ==================================================
+    print("🔍 Resolving latest OC MR exam_attempt_id from responses...")
+
+    latest_attempt = (
+        db.query(StudentExamResponseOCMathematicalReasoning.exam_attempt_id)
+        .filter(
+            StudentExamResponseOCMathematicalReasoning.student_id == internal_student_id
+        )
+        .order_by(StudentExamResponseOCMathematicalReasoning.exam_attempt_id.desc())
+        .first()
+    )
+
+    if not latest_attempt:
+        print(
+            "❌ No OC MR responses found for internal_student_id =",
+            internal_student_id
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="No completed OC Mathematical Reasoning exam attempt found"
+        )
+
+    exam_attempt_id = latest_attempt.exam_attempt_id
+    print(f"✅ Latest OC MR exam_attempt_id resolved: {exam_attempt_id}")
+
+    # ==================================================
+    # 2️⃣ Validate OC MR exam attempt ownership
+    # ==================================================
+    print("🔍 Validating OC MR exam attempt ownership...")
+
+    attempt = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(
+            StudentExamOCMathematicalReasoning.id == exam_attempt_id,
+            StudentExamOCMathematicalReasoning.student_id == internal_student_id
+        )
+        .first()
+    )
+
+    if not attempt:
+        print(
+            "❌ OC MR Exam attempt ownership mismatch:",
+            f"attempt_id={exam_attempt_id},",
+            f"internal_student_id={internal_student_id}"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="OC Mathematical Reasoning exam attempt not found for this student"
+        )
+
+    print(
+        "✅ OC MR Exam attempt verified:",
+        f"id={attempt.id},",
+        f"exam_id={attempt.exam_id},",
+        f"student_id={attempt.student_id}"
+    )
+
+    # ==================================================
+    # 3️⃣ Fetch OC MR responses
+    # ==================================================
+    print("📥 Fetching OC MR student responses...")
+
+    responses = (
+        db.query(StudentExamResponseOCMathematicalReasoning)
+        .filter(
+            StudentExamResponseOCMathematicalReasoning.exam_attempt_id == exam_attempt_id
+        )
+        .order_by(StudentExamResponseOCMathematicalReasoning.q_id)
+        .all()
+    )
+
+    print(f"📊 OC MR response rows fetched: {len(responses)}")
+
+    if not responses:
+        print("⚠️ No OC MR responses found for exam_attempt_id =", exam_attempt_id)
+        return {
+            "exam_attempt_id": exam_attempt_id,
+            "questions": []
+        }
+
+    for r in responses[:3]:
+        print(
+            f"   ↳ q_id={r.q_id}, "
+            f"selected={r.selected_option}, "
+            f"correct={r.correct_option}, "
+            f"is_correct={r.is_correct}"
+        )
+
+    # ==================================================
+    # 4️⃣ Load exam definition
+    # ==================================================
+    print("📘 Loading OC MR exam definition...")
+
+    exam = (
+        db.query(Exam)
+        .filter(Exam.id == attempt.exam_id)
+        .first()
+    )
+
+    if not exam:
+        print("❌ OC MR Exam NOT FOUND for exam_id =", attempt.exam_id)
+        raise HTTPException(
+            status_code=404,
+            detail="OC Mathematical Reasoning exam not found"
+        )
+
+    raw_questions = exam.questions or []
+    print(f"📚 Raw OC MR questions loaded: {len(raw_questions)}")
+
+    normalized = normalize_questions_exam_review(raw_questions)
+    print(f"🧹 Normalized OC MR questions count: {len(normalized)}")
+
+    # ==================================================
+    # 5️⃣ Build review payload
+    # ==================================================
+    print("🧩 Building OC MR review payload...")
+
+    response_map = {r.q_id: r for r in responses}
+
+    review_questions = []
+
+    for q in normalized:
+
+        r = response_map.get(q["q_id"])
+
+        raw_options = q.get("options", {})
+        resolved_options = {}
+
+        for key, value in raw_options.items():
+
+            if isinstance(value, str) and value.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp")
+            ):
+                urls = resolve_image_options({key: value}, db)
+                resolved_options[key] = {
+                    "type": "image",
+                    "src": urls[key]
+                }
+
+            elif isinstance(value, dict):
+                resolved_options[key] = value
+
+            else:
+                resolved_options[key] = {
+                    "type": "text",
+                    "content": value
+                }
+
+        review_questions.append({
+            "q_id": q["q_id"],
+            "blocks": q.get("blocks", []),
+            "options": resolved_options,
+            "student_answer": r.selected_option if r else None,
+            "correct_answer": r.correct_option if r else None,
+        })
+
+    print(f"✅ OC MR Review questions prepared: {len(review_questions)}")
+
+    skipped = sum(1 for q in review_questions if q["student_answer"] is None)
+
+    print(
+        "📈 OC MR Review summary:",
+        f"total={len(review_questions)},",
+        f"attempted={len(review_questions) - skipped},",
+        f"skipped={skipped}"
+    )
+
+    print("================ END OC MATHEMATICAL REASONING EXAM REVIEW =================\n")
+
+    return {
+        "exam_attempt_id": exam_attempt_id,
+        "questions": review_questions
+    }
 @app.get("/api/classes/{class_name}/exam-dates")
 def get_class_exam_dates(
     class_name: str,
