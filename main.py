@@ -14753,7 +14753,8 @@ def finish_exam(
         db.query(Exam)
         .filter(
             Exam.id == attempt.exam_id,
-            Exam.subject == "mathematical_reasoning"
+            func.lower(Exam.subject) == func.lower("mathematical_reasoning"),
+            func.lower(Exam.class_name) == func.lower(student.class_name)
         )
         .first()
     )
@@ -14907,6 +14908,151 @@ def finish_exam(
         "wrong": wrong,
         "accuracy": accuracy
     }
+
+@app.post("/api/student/finish-exam-oc-mathematical-reasoning")
+def finish_exam_oc_mathematical_reasoning(
+    req: FinishExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ FINISH OC MATHEMATICAL REASONING EXAM START ================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND:", req.student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved → id:", student.id)
+
+    # --------------------------------------------------
+    # 2️⃣ Get active OC MR attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(
+            StudentExamOCMathematicalReasoning.student_id == student.id,
+            StudentExamOCMathematicalReasoning.completed_at.is_(None)
+        )
+        .order_by(StudentExamOCMathematicalReasoning.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("⚠️ No active OC MR attempt found")
+        return {"status": "completed"}
+
+    print("✅ Active OC MR attempt found → id:", attempt.id)
+
+    # --------------------------------------------------
+    # 3️⃣ Load exam (STRICT subject + class guard)
+    # --------------------------------------------------
+    exam = (
+        db.query(Exam)
+        .filter(
+            Exam.id == attempt.exam_id,
+            func.lower(Exam.subject) == "mathematical_reasoning",
+            func.lower(Exam.class_name) == "oc"
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=400,
+            detail="Finish endpoint called for non-OC mathematical reasoning exam"
+        )
+
+    questions = exam.questions or []
+    total_questions = len(questions)
+
+    print("📘 Exam loaded → questions:", total_questions)
+
+    question_map = {q["q_id"]: q for q in questions}
+
+    # --------------------------------------------------
+    # 4️⃣ Update responses (NO inserts)
+    # --------------------------------------------------
+    correct = 0
+    saved_responses = 0
+
+    for q_id_str, selected in req.answers.items():
+        try:
+            q_id = int(q_id_str)
+        except ValueError:
+            continue
+
+        q = question_map.get(q_id)
+        if not q:
+            continue
+
+        correct_answer = q.get("correct")
+
+        print("🧪 EVALUATING QUESTION")
+        print("Question ID:", q_id)
+        print("Student Answer:", selected)
+        print("Correct Answer:", correct_answer)
+
+        is_correct = selected == correct_answer
+
+        if is_correct:
+            correct += 1
+
+        response = (
+            db.query(StudentExamResponseOCMathematicalReasoning)
+            .filter(
+                StudentExamResponseOCMathematicalReasoning.exam_attempt_id == attempt.id,
+                StudentExamResponseOCMathematicalReasoning.q_id == q_id
+            )
+            .first()
+        )
+
+        if not response:
+            print(f"⚠️ Missing response row for q_id={q_id}")
+            continue
+
+        response.selected_option = selected
+        response.correct_option = correct_answer
+        response.is_correct = is_correct
+
+        saved_responses += 1
+
+    wrong = saved_responses - correct
+    accuracy = round((correct / total_questions) * 100, 2) if total_questions else 0
+
+    print("📊 Result → correct:", correct, "wrong:", wrong)
+
+    # --------------------------------------------------
+    # 5️⃣ Mark attempt completed
+    # --------------------------------------------------
+    attempt.completed_at = datetime.now(timezone.utc)
+
+    # --------------------------------------------------
+    # 6️⃣ Commit
+    # --------------------------------------------------
+    db.commit()
+
+    print("================ FINISH OC MATHEMATICAL REASONING EXAM END =================\n")
+
+    return {
+        "status": "completed",
+        "total_questions": total_questions,
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    }
+ 
 
 @app.post("/api/student/finish-exam/foundational-skills")
 def finish_foundational_exam(
