@@ -178,6 +178,33 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentExamOCMathematicalReasoning(Base):
+    __tablename__ = "student_exams_oc_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, nullable=False, index=True)
+    exam_id = Column(Integer, nullable=False, index=True)
+
+    # Optional context
+    class_name = Column(String)
+    subject = Column(String)
+
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+class StudentExamResponseOCMathematicalReasoning(Base):
+    __tablename__ = "student_exam_responses_oc_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    exam_attempt_id = Column(Integer, nullable=False, index=True)
+    question_id = Column(Integer, nullable=False)
+
+    selected_answer = Column(String)
+    is_correct = Column(Boolean)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+ 
 class ExplainReadingRequest(BaseModel):
     question_text: str
     options: Optional[Dict[str, str]] = {}
@@ -4233,7 +4260,32 @@ def delete_previous_questions_oc_ts(
         return {
             "error": str(e)
         }
-     
+@app.delete("/api/admin/delete-all-questions-OC-MR")
+def delete_previous_questions_oc_mr(
+    db: Session = Depends(get_db)
+):
+    try:
+        deleted_rows = (
+            db.query(Question)
+            .filter(
+                func.lower(Question.subject) == "mathematical reasoning",
+                func.lower(Question.class_name) == "oc"
+            )
+            .delete(synchronize_session=False)
+        )
+
+        db.commit()
+
+        return {
+            "message": "OC Mathematical Reasoning questions deleted successfully",
+            "deleted_rows": deleted_rows
+        }
+
+    except Exception as e:
+        db.rollback()
+        return {
+            "error": str(e)
+        }     
 @app.delete("/api/admin/delete-all-questions-naplan-reading")
 def delete_all_questions_selective_reading(db: Session = Depends(get_db)):
     try:
@@ -7723,7 +7775,40 @@ def get_question_bank_oc_thinking_skills(
         }
         for r in results
     ]
- 
+@app.get("/api/admin/question-bank-oc-mathematical-reasoning")
+def get_question_bank_oc_mathematical_reasoning(
+    db: Session = Depends(get_db)
+):
+    results = (
+        db.query(
+            Question.difficulty,
+            Question.topic,
+            func.count(Question.id).label("total_questions")
+        )
+        .filter(
+            func.lower(Question.class_name) == "oc",
+            func.lower(Question.subject) == "mathematical reasoning",
+            Question.topic.isnot(None)
+        )
+        .group_by(
+            Question.difficulty,
+            Question.topic
+        )
+        .order_by(
+            Question.difficulty,
+            Question.topic
+        )
+        .all()
+    )
+
+    return [
+        {
+            "difficulty": r.difficulty,
+            "topic": r.topic,
+            "total_questions": r.total_questions
+        }
+        for r in results
+    ] 
 def get_attempt_filter(ResponseModel, exam_attempt_id):
     if hasattr(ResponseModel, "exam_attempt_id"):
         return ResponseModel.exam_attempt_id == exam_attempt_id
@@ -9541,6 +9626,156 @@ def generate_oc_thinking_skills_exam(
         "total_questions": len(questions),
         "questions": questions
     }
+
+@app.post("/api/exams/generate-oc-mathematical-reasoning")
+def generate_oc_mathematical_reasoning_exam(
+    payload: Optional[dict] = Body(default=None),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate OC Mathematical Reasoning exam (hybrid architecture).
+    """
+
+    print("\n========== OC MR EXAM GENERATION START ==========")
+
+    payload = payload or {}
+
+    # --------------------------------------------------
+    # 0️⃣ Clear previous OC MR exams
+    # --------------------------------------------------
+    print("\n--- Deleting previous OC Mathematical Reasoning exams ---")
+
+    # STEP 1: Get OC MR exam IDs
+    exam_ids_subq = select(Exam.id).where(
+        func.lower(Exam.subject) == "mathematical_reasoning",
+        func.lower(Exam.class_name) == "oc"
+    )
+
+    # STEP 2: Get attempt IDs
+    attempt_ids_subq = select(StudentExamOCMathematicalReasoning.id).where(
+        StudentExamOCMathematicalReasoning.exam_id.in_(exam_ids_subq)
+    )
+
+    # --------------------------------------------------
+    # 🔥 DELETE CHILD FIRST (RESPONSES)
+    # --------------------------------------------------
+    deleted_responses = (
+        db.query(StudentExamResponseOCMathematicalReasoning)
+        .filter(
+            StudentExamResponseOCMathematicalReasoning.exam_attempt_id.in_(attempt_ids_subq)
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(f"🗑️ Deleted OC MR responses: {deleted_responses}")
+
+    # --------------------------------------------------
+    # 🔥 DELETE PARENT (ATTEMPTS)
+    # --------------------------------------------------
+    deleted_student_exams = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(StudentExamOCMathematicalReasoning.exam_id.in_(exam_ids_subq))
+        .delete(synchronize_session=False)
+    )
+
+    print(f"🗑️ Deleted OC MR attempts: {deleted_student_exams}")
+
+    # --------------------------------------------------
+    # 🔥 DELETE ROOT (EXAMS)
+    # --------------------------------------------------
+    deleted_exams = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.subject) == "mathematical_reasoning",
+            func.lower(Exam.class_name) == "oc"
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(f"🗑️ Deleted OC MR exams: {deleted_exams}")
+
+    db.commit()
+    print("✅ Cleanup complete")
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch latest OC MR quiz
+    # --------------------------------------------------
+    print("\n--- Fetching latest OC MR quiz ---")
+
+    quiz = (
+        db.query(Quiz)
+        .filter(
+            func.lower(Quiz.subject) == "mathematical_reasoning",
+            func.lower(Quiz.class_name) == "oc"
+        )
+        .order_by(Quiz.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No OC Mathematical Reasoning quiz found"
+        )
+
+    print(f"✅ Using Quiz ID: {quiz.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Generate exam questions
+    # --------------------------------------------------
+    print("\n--- Generating questions ---")
+
+    try:
+        questions = generate_exam_questions(quiz, db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate OC MR exam: {str(e)}"
+        )
+
+    if not questions:
+        raise HTTPException(
+            status_code=500,
+            detail="No questions generated"
+        )
+
+    print(f"✅ Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 3️⃣ Save exam
+    # --------------------------------------------------
+    print("\n--- Saving OC MR exam ---")
+
+    new_exam = Exam(
+        quiz_id=quiz.id,
+        class_name="OC",
+        subject="mathematical_reasoning",
+        difficulty=quiz.difficulty,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"✅ Exam saved with ID: {new_exam.id}")
+
+    # --------------------------------------------------
+    # 4️⃣ Response
+    # --------------------------------------------------
+    print("========== OC MR EXAM GENERATION COMPLETE ==========\n")
+
+    return {
+        "message": "OC Mathematical Reasoning exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": quiz.id,
+        "class_name": "oc",
+        "subject": "mathematical_reasoning",
+        "difficulty": quiz.difficulty,
+        "total_questions": len(questions),
+        "questions": questions
+    }
+ 
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
     payload: Optional[dict] = Body(default=None),
@@ -28520,6 +28755,95 @@ def create_quiz_oc_thinking_skills(
 
         return {
             "message": "OC Thinking Skills quiz created successfully",
+            "quiz_id": new_quiz.id
+        }
+
+    except Exception as e:
+        print("\n❌ DB ERROR ❌")
+        print(str(e))
+        traceback.print_exc()
+
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+ @app.post("/api/quizzes/oc-mathematical-reasoning")
+def create_quiz_oc_mathematical_reasoning(
+    quiz: QuizCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create OC Mathematical Reasoning quiz with scoped cleanup.
+    """
+
+    print("\n========== OC MR QUIZ CREATION START ==========")
+
+    # Debug payload
+    try:
+        quiz_dict = quiz.dict()
+        print("📦 Payload:", quiz_dict)
+    except Exception as e:
+        print("❌ Payload parsing failed:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    print("➡️ class_name:", quiz.class_name)
+    print("➡️ subject:", quiz.subject)
+    print("➡️ difficulty:", quiz.difficulty)
+    print("➡️ num_topics:", quiz.num_topics)
+    print("➡️ topics count:", len(quiz.topics))
+
+    # ✅ Validate topics
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(status_code=400, detail="topics must be a list")
+
+    try:
+        print("\n--- Deleting previous OC Mathematical Reasoning data ---")
+
+        # ✅ 1️⃣ Delete ONLY OC MR exams
+        deleted_exams = (
+            db.query(Exam)
+            .filter(
+                func.lower(Exam.subject) == "mathematical_reasoning",
+                func.lower(Exam.class_name) == "oc"
+            )
+            .delete(synchronize_session=False)
+        )
+
+        print(f"🗑️ Deleted OC MR exams: {deleted_exams}")
+
+        # ✅ 2️⃣ Delete ONLY OC MR quizzes
+        deleted_quizzes = (
+            db.query(Quiz)
+            .filter(
+                func.lower(Quiz.subject) == "mathematical_reasoning",
+                func.lower(Quiz.class_name) == "oc"
+            )
+            .delete(synchronize_session=False)
+        )
+
+        print(f"🗑️ Deleted OC MR quizzes: {deleted_quizzes}")
+
+        db.commit()
+        print("✅ Cleanup commit complete")
+
+        print("\n--- Creating OC Mathematical Reasoning Quiz ---")
+
+        new_quiz = Quiz(
+            class_name="oc",  # ✅ enforce
+            subject="mathematical_reasoning",  # ✅ enforce
+            difficulty=quiz.difficulty,
+            num_topics=quiz.num_topics,
+            topics=[t.dict() for t in quiz.topics]
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        print("✅ OC MR Quiz created with ID:", new_quiz.id)
+        print("========== OC MR QUIZ CREATION COMPLETE ==========\n")
+
+        return {
+            "message": "OC Mathematical Reasoning quiz created successfully",
             "quiz_id": new_quiz.id
         }
 
