@@ -184,7 +184,7 @@ class StudentExamOCMathematicalReasoning(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # ✅ MUST match Student model type (very important)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(String, ForeignKey("students.id"))
 
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
 
