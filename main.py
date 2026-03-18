@@ -193,17 +193,33 @@ class StudentExamOCMathematicalReasoning(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 class StudentExamResponseOCMathematicalReasoning(Base):
-    __tablename__ = "student_exam_responses_oc_mathematical_reasoning"
+    __tablename__ = "student_exam_response_oc_mathematical_reasoning"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    exam_attempt_id = Column(Integer, nullable=False, index=True)
-    question_id = Column(Integer, nullable=False)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exams_oc_mathematical_reasoning.id"),
+        nullable=False
+    )
 
-    selected_answer = Column(String)
-    is_correct = Column(Boolean)
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)
+
+    # relationships
+    attempt = relationship(
+        "StudentExamOCMathematicalReasoning",
+        back_populates="responses"
+    )
+    student = relationship("Student")
+    exam = relationship("Exam")
  
 class ExplainReadingRequest(BaseModel):
     question_text: str
