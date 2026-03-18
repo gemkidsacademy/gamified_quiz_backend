@@ -15239,6 +15239,10 @@ def finish_exam(
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
     # --------------------------------------------------
+    # 7.5️⃣ Snapshot responses for admin (NEW)
+    # --------------------------------------------------
+    snapshot_math_responses_for_admin(db, attempt)
+    # --------------------------------------------------
     # 8️⃣ Generate Admin Report Snapshot (ADMIN)
     # --------------------------------------------------
     if not admin_report_exists(
