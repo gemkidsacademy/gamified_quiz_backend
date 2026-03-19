@@ -4379,22 +4379,43 @@ def delete_all_questions_naplan_numeracy(db: Session = Depends(get_db)):
         }
      
 @app.delete("/api/admin/delete-all-questions-selective-reading")
-def delete_all_reading_questions(db: Session = Depends(get_db)):
+def delete_all_reading_questions_selective(db: Session = Depends(get_db)):
     try:
-        result = db.execute(text("DELETE FROM questions_reading"))
+        result = db.execute(
+            text("DELETE FROM questions_reading WHERE class_name = 'selective'")
+        )
         db.commit()
 
         return {
-            "message": "All reading questions deleted successfully"
+            "message": "All Selective reading questions deleted successfully"
         }
 
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"Error deleting reading questions: {str(e)}"
+            detail=f"Error deleting Selective reading questions: {str(e)}"
         )
-     
+
+@app.delete("/api/admin/delete-all-questions-oc-reading")
+def delete_all_reading_questions_selective(db: Session = Depends(get_db)):
+    try:
+        result = db.execute(
+            text("DELETE FROM questions_reading WHERE class_name = 'oc'")
+        )
+        db.commit()
+
+        return {
+            "message": "All Selective reading questions deleted successfully"
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting Selective reading questions: {str(e)}"
+        )
+
 @app.post("/naplan/language-conventions/generate-exam")
 async def generate_naplan_language_conventions_exam(
     request: Request,
@@ -7804,21 +7825,18 @@ def get_reading_topics(
 ):
     print("📥 Fetching Reading topics")
     print(f"   difficulty={difficulty}")
-
-    # DB VALUE (even if misspelled)
-    DB_SUBJECT = "reading_comprehension"
+    print("   class_name=selective")
 
     topics = (
         db.query(func.distinct(QuestionReading.topic))
         .filter(
             func.lower(func.trim(QuestionReading.subject)).like("reading%"),
             func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
+            func.lower(func.trim(QuestionReading.class_name)) == "selective",
         )
-
         .order_by(QuestionReading.topic)
         .all()
     )
-
 
     topic_list = [{"name": t[0]} for t in topics]
 
@@ -7826,6 +7844,31 @@ def get_reading_topics(
 
     return topic_list
 
+@app.get("/api/reading/topics-oc")
+def get_reading_topics(
+    difficulty: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    print("📥 Fetching Reading topics")
+    print(f"   difficulty={difficulty}")
+    print("   class_name=selective")
+
+    topics = (
+        db.query(func.distinct(QuestionReading.topic))
+        .filter(
+            func.lower(func.trim(QuestionReading.subject)).like("reading%"),
+            func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
+            func.lower(func.trim(QuestionReading.class_name)) == "oc",
+        )
+        .order_by(QuestionReading.topic)
+        .all()
+    )
+
+    topic_list = [{"name": t[0]} for t in topics]
+
+    print(f"✅ Reading topics found: {len(topic_list)}")
+
+    return topic_list
 
 
 @app.get("/api/topics")
@@ -21035,15 +21078,21 @@ async def upload_word_reading_comparative_ai(
 
 #here line 8452
 @app.post("/api/admin/create-reading-config")
-def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depends(get_db)):
-
-    # Validate topics
+def create_reading_config(
+    payload: ReadingExamConfigCreate,
+    db: Session = Depends(get_db)
+):
+    # ---------------------------------------
+    # VALIDATION
+    # ---------------------------------------
     if len(payload.topics) == 0:
-        raise HTTPException(status_code=400, detail="At least one topic must be provided.")
+        raise HTTPException(
+            status_code=400,
+            detail="At least one topic must be provided."
+        )
 
     num_topics = len(payload.topics)
 
-    # Build JSON structure WITHOUT topic_id
     topics_json = [
         {
             "name": t.name,
@@ -21051,19 +21100,30 @@ def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depend
         }
         for t in payload.topics
     ]
-    print("\n--- Deleting dependent Reading generated exams ---")
 
-    db.query(GeneratedExamReading).delete(synchronize_session=False)
+    class_name_clean = payload.class_name.strip().lower()
+
+    print("\n--- Deleting dependent Reading generated exams ---")
+    print(f"   class_name={class_name_clean}")
+
+    db.query(GeneratedExamReading).filter(
+        func.lower(func.trim(GeneratedExamReading.class_name)) == class_name_clean
+    ).delete(synchronize_session=False)
+
     print("\n--- Deleting previous Reading exam configs ---")
 
-    db.query(ReadingExamConfig).delete(synchronize_session=False)
+    db.query(ReadingExamConfig).filter(
+        func.lower(func.trim(ReadingExamConfig.class_name)) == class_name_clean
+    ).delete(synchronize_session=False)
+
     db.commit()
+    print("🗑️ Previous reading configs deleted (scoped)")
 
-    print("🗑️ Previous reading configs deleted")
-
+    # ---------------------------------------
+    # CREATE NEW CONFIG
+    # ---------------------------------------
     print("\n--- Creating new Reading exam config ---")
 
-    # Create DB record
     new_config = ReadingExamConfig(
         class_name=payload.class_name,
         subject=payload.subject,
@@ -21079,10 +21139,9 @@ def create_reading_config(payload: ReadingExamConfigCreate, db: Session = Depend
     return {
         "status": "success",
         "config_id": new_config.id,
-        "message": "Reading exam configuration saved successfully.",
+        "message": f"{payload.class_name} reading exam configuration saved successfully.",
         "created_at": new_config.created_at
     }
-
 
 
 
