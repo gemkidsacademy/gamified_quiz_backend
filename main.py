@@ -12617,7 +12617,236 @@ def snapshot_reading_responses_for_admin(db, session):
                 attempt_completed_at=session.completed_at
             )
         )
-     
+
+
+@app.post("/api/exams/submit-oc-reading")
+def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
+
+    print("\n================ SUBMIT OC READING EXAM ================")
+    print("📥 Raw payload received:", payload)
+
+    try:
+        # --------------------------------------------------
+        # 0️⃣ Validate payload
+        # --------------------------------------------------
+        print("🟡 STEP 0: Validating payload")
+
+        session_id = payload.get("session_id")
+        answers = payload.get("answers", {})
+
+        print("🆔 session_id:", session_id)
+        print("📝 answers keys:",
+              list(answers.keys()) if isinstance(answers, dict) else answers)
+
+        if not session_id:
+            print("❌ ERROR: session_id missing")
+            raise HTTPException(status_code=400, detail="session_id is required")
+
+        if not isinstance(answers, dict):
+            print("❌ ERROR: answers is not a dict")
+            raise HTTPException(status_code=400, detail="answers must be a dictionary")
+
+        # --------------------------------------------------
+        # 1️⃣ Load session (OC)
+        # --------------------------------------------------
+        print("🟡 STEP 1: Loading StudentExamReadingOC session")
+
+        session = (
+            db.query(StudentExamReadingOC)
+            .filter(StudentExamReadingOC.id == session_id)
+            .first()
+        )
+
+        if not session:
+            print("❌ ERROR: Session not found:", session_id)
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        print("✅ Session loaded:", {
+            "id": session.id,
+            "student_id": session.student_id,
+            "exam_id": session.exam_id,
+            "finished": session.finished
+        })
+
+        if session.finished:
+            print("⚠️ Session already finished — idempotent exit")
+            return {
+                "status": "ok",
+                "message": "Exam already submitted"
+            }
+
+        # --------------------------------------------------
+        # 2️⃣ Load exam
+        # --------------------------------------------------
+        print("🟡 STEP 2: Loading GeneratedExamReading")
+
+        exam = (
+            db.query(GeneratedExamReading)
+            .filter(GeneratedExamReading.id == session.exam_id)
+            .first()
+        )
+
+        if not exam or not exam.exam_json:
+            print("❌ ERROR: exam or exam_json missing")
+            raise HTTPException(status_code=500, detail="Exam data not found")
+
+        sections = exam.exam_json.get("sections", [])
+        print("📚 Sections found:", len(sections))
+
+        # --------------------------------------------------
+        # 3️⃣ Evaluate questions
+        # --------------------------------------------------
+        print("🟡 STEP 3: Evaluating answers")
+
+        CANONICAL_TOPICS = {
+            "main_idea": "main_idea",
+            "main_idea_and_summary": "main_idea",
+            "comparative_analysis": "comparative_analysis",
+            "gapped_text": "gapped_text",
+        }
+
+        topic_stats = {}
+        total_questions = attempted = correct = incorrect = not_attempted = 0
+
+        for section in sections:
+            raw_topic = section.get("question_type")
+            topic = CANONICAL_TOPICS.get(raw_topic, "other")
+
+            print("🧪 OC TOPIC RESOLVED:", {
+                "section_id": section.get("section_id"),
+                "question_type": raw_topic,
+                "stored_topic": topic
+            })
+
+            questions = (
+                section.get("questions")
+                or section.get("items")
+                or section.get("question_list")
+                or []
+            )
+
+            topic_stats.setdefault(topic, {
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            })
+
+            for q in questions:
+                question_id = q.get("question_id")
+                correct_answer = q.get("correct_answer")
+                selected_answer = answers.get(question_id)
+
+                is_attempted = selected_answer is not None
+                is_correct = is_attempted and selected_answer == correct_answer
+
+                total_questions += 1
+                topic_stats[topic]["total"] += 1
+
+                if is_attempted:
+                    attempted += 1
+                    topic_stats[topic]["attempted"] += 1
+                    if is_correct:
+                        correct += 1
+                        topic_stats[topic]["correct"] += 1
+                    else:
+                        incorrect += 1
+                        topic_stats[topic]["incorrect"] += 1
+                else:
+                    not_attempted += 1
+                    topic_stats[topic]["not_attempted"] += 1
+
+                db.add(StudentExamReportOCReading(
+                    student_id=session.student_id,
+                    exam_id=session.exam_id,
+                    session_id=session.id,
+                    topic=topic,
+                    question_id=question_id,
+                    selected_answer=selected_answer,
+                    correct_answer=correct_answer,
+                    is_correct=is_correct
+                ))
+
+        print("✅ Evaluation complete")
+
+        # --------------------------------------------------
+        # 4️⃣ Build report
+        # --------------------------------------------------
+        print("🟡 STEP 4: Building report")
+
+        topics_report = []
+        for topic, stats in topic_stats.items():
+            accuracy = (
+                round((stats["correct"] / stats["attempted"]) * 100, 2)
+                if stats["attempted"] > 0 else 0.0
+            )
+
+            topics_report.append({
+                "topic": topic,
+                "total": stats["total"],
+                "attempted": stats["attempted"],
+                "correct": stats["correct"],
+                "incorrect": stats["incorrect"],
+                "not_attempted": stats["not_attempted"],
+                "accuracy": accuracy
+            })
+
+        accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+        score_percent = round((correct / total_questions) * 100, 2) if total_questions > 0 else 0.0
+        result = "Pass" if score_percent >= 50 else "Fail"
+
+        MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
+        has_sufficient_data = attempted >= MIN_ATTEMPTS
+
+        report_json = {
+            "overall": {
+                "total_questions": total_questions,
+                "attempted": attempted,
+                "correct": correct,
+                "incorrect": incorrect,
+                "not_attempted": not_attempted,
+                "accuracy": accuracy,
+                "score": score_percent,
+                "result": result
+            },
+            "topics": topics_report,
+            "has_sufficient_data": has_sufficient_data,
+            "improvement_order": (
+                [t["topic"] for t in sorted(topics_report, key=lambda x: x["accuracy"])]
+                if has_sufficient_data else []
+            )
+        }
+
+        print("📈 Report built successfully")
+
+        # --------------------------------------------------
+        # 5️⃣ Finalize session
+        # --------------------------------------------------
+        print("🟡 STEP 5: Marking session finished")
+
+        session.finished = True
+        session.completed_at = datetime.now(timezone.utc)
+        session.report_json = report_json
+
+        db.commit()
+
+        print("🟢 DB commit successful")
+        print("================ END SUBMIT OC READING EXAM ================\n")
+
+        return {
+            "status": "submitted",
+            "message": "OC Reading exam submitted successfully",
+            "report": report_json
+        }
+
+    except Exception as e:
+        print("❌❌❌ ERROR IN submit_oc_reading_exam ❌❌❌")
+        print("Type:", type(e))
+        print("Message:", str(e))
+        import traceback
+        traceback.print_exc()
+        raise
 @app.post("/api/exams/submit-reading")
 def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
@@ -13104,7 +13333,7 @@ def auto_submit_oc_reading_exam(session: StudentExamReading, db: Session):
             topic_stats[topic]["total"] += 1
             topic_stats[topic]["not_attempted"] += 1
 
-            db.add(StudentExamReportReadingOC(
+            db.add(StudentExamReportOCReading(
                 student_id=session.student_id,
                 exam_id=session.exam_id,
                 session_id=session.id,
