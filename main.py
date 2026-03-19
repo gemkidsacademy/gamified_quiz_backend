@@ -13039,6 +13039,254 @@ def auto_submit_reading_exam(session: StudentExamReading, db: Session):
     except Exception:
         db.rollback()
         raise
+def auto_submit_oc_reading_exam(session: StudentExamReading, db: Session):
+    """
+    Auto-submit reading exam on timeout.
+    Uses the SAME logic as manual submit, but with empty answers.
+    """
+    
+    print("🟡 AUTO-SUBMIT triggered for session:", session.id)
+    if session.finished and session.report_json:
+        print("⚠️ Auto-submit skipped — session already finalized")
+        return
+    existing_rows = (
+        db.query(StudentExamReportReading)
+        .filter(StudentExamReportReading.session_id == session.id)
+        .count()
+    )
+    
+    if existing_rows > 0:
+        print("⚠️ Auto-submit skipped — report rows already exist")
+        return
+
+
+    
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.id == session.exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        raise Exception("Exam data missing during auto-submit")
+
+    sections = exam.exam_json.get("sections", [])
+    TOPIC_LABELS = {
+        "main_idea": "Main Idea and Summary",
+        "main_idea_and_summary": "Main Idea and Summary",
+        "comparative_analysis": "Comparative Analysis",
+        "gapped_text": "Gapped Text",
+    }
+
+    topic_stats = {}
+    total = attempted = correct = incorrect = not_attempted = 0
+
+    for section in sections:
+        raw_topic = section.get("topic") or section.get("question_type")
+        topic = TOPIC_LABELS.get(raw_topic, "Other")
+        questions = section.get("questions", [])
+
+        topic_stats.setdefault(topic, {
+            "total": 0,
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "not_attempted": 0
+        })
+
+        for q in questions:
+            question_id = q.get("question_id")
+            correct_answer = q.get("correct_answer")
+
+            total += 1
+            not_attempted += 1
+
+            topic_stats[topic]["total"] += 1
+            topic_stats[topic]["not_attempted"] += 1
+
+            db.add(StudentExamReportReadingOC(
+                student_id=session.student_id,
+                exam_id=session.exam_id,
+                session_id=session.id,
+                topic=topic,
+                question_id=question_id,
+                selected_answer=None,
+                correct_answer=correct_answer,
+                is_correct=False
+            ))
+    topics_report = []
+
+    for topic, stats in topic_stats.items():
+        topics_report.append({
+            "topic": topic,
+            "total": stats["total"],
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "accuracy": 0.0
+        })
+
+    report_json = {
+        "overall": {
+            "total_questions": total,
+            "attempted": attempted,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy": 0.0,
+            "score": 0.0,
+            "result": "Fail"
+        },
+        "topics": topics_report,
+        "has_sufficient_data": False,
+        "improvement_order": []
+    }
+
+    session.finished = True
+    session.completed_at = datetime.now(timezone.utc)
+    session.report_json = report_json
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+@app.post("/api/exams/start-oc-reading")
+def start_exam_oc_reading(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ START-OC-READING ==================")
+    print("📘 Incoming request payload:", req.dict())
+
+    student_id = req.student_id.strip()
+
+    if not student_id:
+        print("❌ Invalid student_id")
+        raise HTTPException(status_code=400, detail="Invalid student_id")
+
+    print("✅ Using student_id:", student_id)
+
+    # 1️⃣ Fetch latest attempt (OC)
+    attempt = (
+        db.query(StudentExamReadingOC)
+        .filter(StudentExamReadingOC.student_id == student_id)
+        .order_by(StudentExamReadingOC.started_at.desc())
+        .first()
+    )
+
+    if attempt:
+        print("🧪 Found existing OC attempt:", {
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "started_at": attempt.started_at,
+            "finished": attempt.finished
+        })
+    else:
+        print("🆕 No previous OC attempt found")
+
+    # 🚫 Already finished → return report trigger
+    if attempt and attempt.finished:
+        payload = {
+            "completed": True,
+            "attempt_id": attempt.id
+        }
+
+        print("🚫 Attempt already finished → returning:", payload)
+        print("================================================\n")
+        return payload
+
+    # 2️⃣ Latest exam (same table)
+    exam = (
+        db.query(GeneratedExamReading)
+        .order_by(GeneratedExamReading.id.desc())
+        .first()
+    )
+
+    if not exam:
+        print("❌ No OC exam found")
+        raise HTTPException(status_code=404, detail="OC reading exam not found")
+
+    duration_minutes = exam.exam_json.get("duration_minutes", 30)
+
+    print("📘 Active OC exam:", {
+        "exam_id": exam.id,
+        "duration_minutes": duration_minutes
+    })
+
+    # 🔁 Resume attempt
+    if attempt and not attempt.finished:
+        now = datetime.now(timezone.utc)
+        started_at = attempt.started_at.replace(tzinfo=timezone.utc)
+
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, duration_minutes * 60 - elapsed)
+
+        print("⏱ Resume OC attempt:", {
+            "attempt_id": attempt.id,
+            "elapsed": elapsed,
+            "remaining": remaining
+        })
+
+        # ⌛ Time expired → auto submit
+        if remaining == 0:
+            print("⌛ Time expired — auto-submitting OC exam")
+
+            auto_submit_oc_reading_exam(
+                session=attempt,
+                db=db
+            )
+
+            payload = {
+                "completed": True,
+                "attempt_id": attempt.id
+            }
+
+            print("🟢 Auto-submit complete → returning:", payload)
+            print("================================================\n")
+            return payload
+
+        payload = {
+            "completed": False,
+            "attempt_id": attempt.id,
+            "exam_id": exam.id,
+            "remaining_time": remaining
+        }
+
+        print("🔁 Resuming OC attempt → returning:", payload)
+        print("================================================\n")
+        return payload
+
+    # 🆕 Create new attempt
+    new_attempt = StudentExamReadingOC(
+        student_id=student_id,
+        exam_id=exam.id,
+        started_at=datetime.now(timezone.utc),
+        finished=False
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    payload = {
+        "completed": False,
+        "attempt_id": new_attempt.id,
+        "exam_id": exam.id,
+        "remaining_time": duration_minutes * 60
+    }
+
+    print("🆕 New OC attempt created:", {
+        "attempt_id": new_attempt.id,
+        "exam_id": exam.id
+    })
+
+    print("📤 Returning payload:", payload)
+    print("================================================\n")
+
+    return payload
 
 
 @app.post("/api/exams/start-reading")
