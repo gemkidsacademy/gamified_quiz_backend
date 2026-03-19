@@ -7725,7 +7725,65 @@ def get_reading_question_bank_summary(
             for r in rows
         ]
     }
+@app.get("/api/reading/question-bank-oc")
+def get_reading_question_bank_summary(
+    subject: str = Query("reading_comprehension"),
+    class_name: str = Query("oc"),
+    db: Session = Depends(get_db),
+):
+    """
+    Admin overview of reading question bank.
 
+    Each row represents a distinct exam-ready question set,
+    grouped by:
+    - difficulty
+    - topic
+    - total_questions (set size)
+
+    This allows admins to clearly see, for example,
+    Comparative Analysis sets of size 8 vs 10.
+    """
+
+    subject_norm = func.lower(
+        func.replace(func.trim(QuestionReading.subject), " ", "_")
+    )
+    class_norm = func.lower(func.trim(QuestionReading.class_name))
+    difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
+
+    rows = (
+        db.query(
+            difficulty_norm.label("difficulty"),
+            QuestionReading.topic,
+            QuestionReading.total_questions.label("set_size"),
+            func.count(QuestionReading.id).label("sets_available"),
+        )
+        .filter(subject_norm == subject.lower())
+        .filter(class_norm == class_name.lower())
+        .filter(QuestionReading.difficulty.isnot(None))
+        .group_by(
+            difficulty_norm,
+            QuestionReading.topic,
+            QuestionReading.total_questions,
+        )
+        .order_by(
+            difficulty_norm,
+            QuestionReading.topic,
+            QuestionReading.total_questions,
+        )
+        .all()
+    )
+
+    return {
+        "rows": [
+            {
+                "difficulty": r.difficulty.capitalize(),
+                "topic": r.topic,
+                "set_size": r.set_size,
+                "sets_available": r.sets_available,
+            }
+            for r in rows
+        ]
+    }
 
  
 @app.get("/api/admin/question-bank-reading")
