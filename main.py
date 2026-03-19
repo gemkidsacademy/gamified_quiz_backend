@@ -6034,6 +6034,9 @@ def review_oc_reading_exam(
     for section_idx, section in enumerate(sections):
         topic = section.get("topic") or section.get("question_type") or "Other"
         passage_style = section.get("passage_style", "informational")
+        print("🧪 FULL SECTION DEBUG:")
+        
+        print(json.dumps(section, indent=2))
         if section.get("reading_material"):
             reading_material = section.get("reading_material")
         else:
