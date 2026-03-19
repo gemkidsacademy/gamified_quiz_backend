@@ -1378,7 +1378,7 @@ class StudentExamReportOCReading(Base):
     # 🔑 Identity
     student_id = Column(String, index=True, nullable=False)
     exam_id = Column(Integer, index=True, nullable=False)
-    session_id = Column(Integer, index=True, nullable=False, unique=True)
+    session_id = Column(Integer, index=True, nullable=False)  # ✅ FIXED (no unique)
 
     # 🔎 Question-level data
     topic = Column(String, index=True, nullable=False)
@@ -1388,11 +1388,16 @@ class StudentExamReportOCReading(Base):
     correct_answer = Column(String, nullable=False)
     is_correct = Column(Boolean, nullable=False)
 
-    # 🧾 Snapshot (optional but powerful)
+    # 🧾 Snapshot (keep this — very valuable later)
     question_snapshot = Column(JSON, nullable=True)
 
     # 🕒 Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # ✅ CORRECT CONSTRAINT
+    __table_args__ = (
+        UniqueConstraint("session_id", "question_id", name="uq_session_question"),
+    )
  
 class AdminExamResponseReading(Base):
     __tablename__ = "admin_exam_response_reading"
