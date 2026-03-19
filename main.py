@@ -6037,15 +6037,14 @@ def review_oc_reading_exam(
         print("🧪 FULL SECTION DEBUG:")
         
         print(json.dumps(section, indent=2))
-        if section.get("reading_material"):
-            reading_material = section.get("reading_material")
-        else:
-            reading_material = {
-                "title": section.get("topic", "Reading Passage"),
-                "content": section.get("content"),
-                "extracts": section.get("extracts"),
-                "paragraphs": section.get("paragraphs")
-            }
+        rm = section.get("reading_material") or {}
+
+        reading_material = {
+            "title": rm.get("title") or section.get("topic") or "Reading Passage",
+            "content": rm.get("content") or section.get("content"),
+            "paragraphs": rm.get("paragraphs") or section.get("paragraphs"),
+            "extracts": rm.get("extracts") or section.get("extracts")
+        }
 
         questions = (
             section.get("questions")
