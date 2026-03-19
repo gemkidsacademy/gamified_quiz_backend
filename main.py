@@ -6037,13 +6037,21 @@ def review_oc_reading_exam(
         print("🧪 FULL SECTION DEBUG:")
         
         print(json.dumps(section, indent=2))
-        rm = section.get("reading_material") or {}
+        rm = section.get("reading_material")
 
+        # ✅ FIX: normalize string → dict
+        if isinstance(rm, str):
+            rm = {
+                "content": rm
+            }
+        
+        rm = rm or {}
+        
         reading_material = {
             "title": rm.get("title") or section.get("topic") or "Reading Passage",
             "content": rm.get("content") or section.get("content"),
             "paragraphs": rm.get("paragraphs") or section.get("paragraphs"),
-            "extracts": rm.get("extracts") or section.get("extracts")
+            "extracts": rm.get("extracts") or section.get("extracts") or {}
         }
 
         questions = (
