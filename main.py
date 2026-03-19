@@ -17141,34 +17141,48 @@ def generate_exam_reading(
 @app.get("/api/quizzes-reading")
 def get_reading_quiz_dropdown(db: Session = Depends(get_db)):
     """
-    Returns unique class_name + difficulty combinations 
-    from reading_exam_config for populating the dropdown.
+    Returns all configs for a specific class_name
+    (e.g. 'selective') for dropdown usage.
     """
 
     rows = (
-        db.query(
-            ReadingExamConfig.class_name,
-            ReadingExamConfig.difficulty
-        )
-        .distinct()
+        db.query(ReadingExamConfig)
+        .filter(func.lower(ReadingExamConfig.class_name) == "selective")
+        .order_by(ReadingExamConfig.id.desc())
         .all()
     )
 
-    result = []
-    seen = set()
+    return [
+        {
+            "class_name": row.class_name,
+            "difficulty": row.difficulty,
+            "label": f"{row.class_name} | {row.difficulty}"
+        }
+        for row in rows
+    ]
+@app.get("/api/quizzes-reading-oc")
+def get_reading_quiz_dropdown(db: Session = Depends(get_db)):
+    """
+    Returns all configs for a specific class_name
+    (e.g. 'selective') for dropdown usage.
+    """
 
-    for row in rows:
-        key = (row.class_name, row.difficulty)
-        if key not in seen:
-            seen.add(key)
-            result.append({
-                "class_name": row.class_name,
-                "difficulty": row.difficulty,
-                "label": f"{row.class_name} | {row.difficulty}"
-            })
+    rows = (
+        db.query(ReadingExamConfig)
+        .filter(func.lower(ReadingExamConfig.class_name) == "oc")
+        .order_by(ReadingExamConfig.id.desc())
+        .all()
+    )
 
-    return result
-
+    return [
+        {
+            "class_name": row.class_name,
+            "difficulty": row.difficulty,
+            "label": f"{row.class_name} | {row.difficulty}"
+        }
+        for row in rows
+    ]
+ 
  
 CANONICAL_READING_TOPICS = {
     "comparative analysis": "Comparative analysis",
