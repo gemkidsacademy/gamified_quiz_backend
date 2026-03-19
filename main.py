@@ -7726,55 +7726,79 @@ def get_reading_question_bank_summary(
         ]
     }
 @app.get("/api/reading/question-bank-oc")
-def get_reading_question_bank_summary(
+def get_reading_question_bank_summary_oc(
     subject: str = Query("reading_comprehension"),
     class_name: str = Query("oc"),
     db: Session = Depends(get_db),
 ):
     """
-    Admin overview of reading question bank.
-
-    Each row represents a distinct exam-ready question set,
-    grouped by:
-    - difficulty
-    - topic
-    - total_questions (set size)
-
-    This allows admins to clearly see, for example,
-    Comparative Analysis sets of size 8 vs 10.
+    Debug-enabled OC Reading question bank summary
     """
 
-    subject_norm = func.lower(
-        func.replace(func.trim(QuestionReading.subject), " ", "_")
-    )
-    class_norm = func.lower(func.trim(QuestionReading.class_name))
-    difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
+    print("\n================ OC QUESTION BANK SUMMARY START ================")
+    print(f"📥 Incoming subject: '{subject}'")
+    print(f"📥 Incoming class_name: '{class_name}'")
 
-    rows = (
-        db.query(
-            difficulty_norm.label("difficulty"),
-            QuestionReading.topic,
-            QuestionReading.total_questions.label("set_size"),
-            func.count(QuestionReading.id).label("sets_available"),
-        )
-        .filter(subject_norm == subject.lower())
-        .filter(class_norm == class_name.lower())
-        .filter(QuestionReading.difficulty.isnot(None))
-        .group_by(
-            difficulty_norm,
-            QuestionReading.topic,
-            QuestionReading.total_questions,
-        )
-        .order_by(
-            difficulty_norm,
-            QuestionReading.topic,
-            QuestionReading.total_questions,
-        )
-        .all()
-    )
+    subject_clean = subject.strip().lower()
+    class_clean = class_name.strip().lower()
 
-    return {
-        "rows": [
+    print(f"🧹 Cleaned subject: '{subject_clean}'")
+    print(f"🧹 Cleaned class_name: '{class_clean}'")
+
+    try:
+        # ---------------------------------------
+        # DEBUG: TABLE HEALTH
+        # ---------------------------------------
+        total_rows = db.query(QuestionReading).count()
+        print(f"📊 Total rows in QuestionReading: {total_rows}")
+
+        subject_rows = db.query(QuestionReading).filter(
+            func.lower(func.replace(func.trim(QuestionReading.subject), " ", "_")) == subject_clean
+        ).count()
+        print(f"📊 Rows matching subject='{subject_clean}': {subject_rows}")
+
+        class_rows = db.query(QuestionReading).filter(
+            func.lower(func.trim(QuestionReading.class_name)) == class_clean
+        ).count()
+        print(f"📊 Rows matching class_name='{class_clean}': {class_rows}")
+
+        # ---------------------------------------
+        # NORMALIZATION
+        # ---------------------------------------
+        subject_norm = func.lower(
+            func.replace(func.trim(QuestionReading.subject), " ", "_")
+        )
+        class_norm = func.lower(func.trim(QuestionReading.class_name))
+        difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
+
+        print("🔍 Executing grouped query...")
+
+        rows = (
+            db.query(
+                difficulty_norm.label("difficulty"),
+                QuestionReading.topic,
+                QuestionReading.total_questions.label("set_size"),
+                func.count(QuestionReading.id).label("sets_available"),
+            )
+            .filter(subject_norm == subject_clean)
+            .filter(class_norm == class_clean)
+            .filter(QuestionReading.difficulty.isnot(None))
+            .group_by(
+                difficulty_norm,
+                QuestionReading.topic,
+                QuestionReading.total_questions,
+            )
+            .order_by(
+                difficulty_norm,
+                QuestionReading.topic,
+                QuestionReading.total_questions,
+            )
+            .all()
+        )
+
+        print(f"📦 Raw grouped rows: {rows}")
+
+        formatted_rows = [
             {
                 "difficulty": r.difficulty.capitalize(),
                 "topic": r.topic,
@@ -7783,8 +7807,20 @@ def get_reading_question_bank_summary(
             }
             for r in rows
         ]
-    }
 
+        print(f"✅ Final formatted rows: {formatted_rows}")
+        print(f"✅ Total groups returned: {len(formatted_rows)}")
+        print("================ OC QUESTION BANK SUMMARY END ================\n")
+
+        return {"rows": formatted_rows}
+
+    except Exception as e:
+        print("❌ ERROR in get_reading_question_bank_summary_oc:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching OC reading question bank: {str(e)}"
+        )
+     
  
 @app.get("/api/admin/question-bank-reading")
 def get_question_bank_reading(
