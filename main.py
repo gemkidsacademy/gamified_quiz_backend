@@ -4,7 +4,7 @@ from passlib.context import CryptContext
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field 
-import docx 
+import docx  
 from datetime import date  
 from fastapi.encoders import jsonable_encoder  
 from io import BytesIO 
