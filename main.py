@@ -12899,7 +12899,7 @@ def snapshot_reading_responses_for_admin(db, session):
                 is_correct=r.is_correct,
                 attempt_completed_at=session.completed_at
             )
-        )
+        ) 
 
 
 @app.post("/api/exams/submit-oc-reading")
