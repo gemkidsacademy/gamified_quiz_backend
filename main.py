@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File
 from passlib.context import CryptContext    
 import uvicorn 
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field 
+from pydantic import BaseModel, EmailStr, Field
 import docx  
 from datetime import date  
 from fastapi.encoders import jsonable_encoder  
