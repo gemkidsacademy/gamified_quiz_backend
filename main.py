@@ -17858,7 +17858,11 @@ def generate_exam_reading(
     print("🧹 Resetting previous reading exam attempts")
     db.query(StudentExamReportReading).delete(synchronize_session=False)
     db.query(StudentExamReading).delete(synchronize_session=False)
-    db.query(GeneratedExamReading).delete(synchronize_session=False)
+    deleted_generated = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.class_name == class_name)
+        .delete(synchronize_session=False)
+    )
     
     db.commit()
     
