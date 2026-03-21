@@ -9045,14 +9045,15 @@ def generate_exam(
     # --------------------------------------------------
     # 1️⃣ Fetch latest Mathematical Reasoning quiz
     # --------------------------------------------------
-    quiz = (
-        db.query(QuizMathematicalReasoning)
-        .filter(
-            QuizMathematicalReasoning.subject == "mathematical_reasoning"
-        )
-        .order_by(QuizMathematicalReasoning.id.desc())
-        .first()
-    )
+   quiz = (
+       db.query(QuizMathematicalReasoning)
+       .filter(
+           QuizMathematicalReasoning.subject == "mathematical_reasoning",
+           QuizMathematicalReasoning.class_name == "Selective"
+       )
+       .order_by(QuizMathematicalReasoning.id.desc())
+       .first()
+   )
 
     if not quiz:
         raise HTTPException(
@@ -9186,14 +9187,16 @@ def generate_exam(
     # 5️⃣ Clear previous exams (FULL WIPE)
     # --------------------------------------------------
     # 1️⃣ MR-specific responses (DEEPEST CHILD)
-    db.query(StudentExamResponseMathematicalReasoning).delete(
-        synchronize_session=False
-    )
+    # 1️⃣ MR exam responses (only Selective)
+    db.query(StudentExamResponseMathematicalReasoning).filter(
+        StudentExamResponseMathematicalReasoning.class_name == "Selective"
+    ).delete(synchronize_session=False)
     
-    # 2️⃣ MR exam attempts
-    db.query(StudentExamMathematicalReasoning).delete(
-        synchronize_session=False
-    )
+    
+    # 2️⃣ MR exam attempts (only Selective)
+    db.query(StudentExamMathematicalReasoning).filter(
+        StudentExamMathematicalReasoning.class_name == "Selective"
+    ).delete(synchronize_session=False)
     
     # 3️⃣ Aggregated MR results
     db.query(StudentExamResultsMathematicalReasoning).delete(
@@ -9205,9 +9208,9 @@ def generate_exam(
     
     # 5️⃣ Parent exams LAST
     db.query(Exam).filter(
-        Exam.subject == "mathematical_reasoning"
-    ).delete(synchronize_session=False)
-    
+        Exam.subject == "mathematical_reasoning",
+        Exam.class_name == "Selective"
+    ).delete(synchronize_session=False)    
     db.commit()
 
     # --------------------------------------------------
