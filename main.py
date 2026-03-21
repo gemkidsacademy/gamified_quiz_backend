@@ -10530,7 +10530,8 @@ def generate_thinking_skills_exam(
     
     # ✅ STEP 2: delete Exam rows
     db.query(Exam).filter(
-        Exam.subject == "thinking_skills"
+        Exam.subject == "thinking_skills",
+        Exam.class_name == "selective"
     ).delete(synchronize_session=False)
     
     db.commit()
@@ -10544,7 +10545,8 @@ def generate_thinking_skills_exam(
     # --------------------------------------------------
     
     query = db.query(Quiz).filter(
-        Quiz.subject == "thinking_skills"
+        Quiz.subject == "thinking_skills",
+        Quiz.class_name == "selective"
     )
     
     
