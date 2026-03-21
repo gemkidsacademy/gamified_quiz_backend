@@ -9045,21 +9045,21 @@ def generate_exam(
     # --------------------------------------------------
     # 1️⃣ Fetch latest Mathematical Reasoning quiz
     # --------------------------------------------------
-   quiz = (
-       db.query(QuizMathematicalReasoning)
-       .filter(
-           QuizMathematicalReasoning.subject == "mathematical_reasoning",
-           QuizMathematicalReasoning.class_name == "Selective"
-       )
-       .order_by(QuizMathematicalReasoning.id.desc())
-       .first()
-   )
-
-    if not quiz:
-        raise HTTPException(
-            status_code=404,
-            detail="No Mathematical Reasoning quiz found"
+    quiz = (
+        db.query(QuizMathematicalReasoning)
+        .filter(
+            QuizMathematicalReasoning.subject == "mathematical_reasoning",
+            QuizMathematicalReasoning.class_name == "Selective"
         )
+        .order_by(QuizMathematicalReasoning.id.desc())
+        .first()
+    )
+ 
+    if not quiz:
+         raise HTTPException(
+             status_code=404,
+             detail="No Mathematical Reasoning quiz found"
+         ) 
 
     # ✅ Difficulty now comes from DB
     difficulty = quiz.difficulty
