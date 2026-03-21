@@ -9188,15 +9188,16 @@ def generate_exam(
     # --------------------------------------------------
     # 1️⃣ MR-specific responses (DEEPEST CHILD)
     # 1️⃣ MR exam responses (only Selective)
-    db.query(StudentExamResponseMathematicalReasoning).filter(
-        StudentExamResponseMathematicalReasoning.class_name == "Selective"
-    ).delete(synchronize_session=False)
+    # 1️⃣ MR exam responses (delete everything)
+    db.query(StudentExamResponseMathematicalReasoning).delete(
+        synchronize_session=False
+    )
     
     
-    # 2️⃣ MR exam attempts (only Selective)
-    db.query(StudentExamMathematicalReasoning).filter(
-        StudentExamMathematicalReasoning.class_name == "Selective"
-    ).delete(synchronize_session=False)
+    # 2️⃣ MR exam attempts (delete everything)
+    db.query(StudentExamMathematicalReasoning).delete(
+        synchronize_session=False
+    )
     
     # 3️⃣ Aggregated MR results
     db.query(StudentExamResultsMathematicalReasoning).delete(
