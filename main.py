@@ -9049,7 +9049,7 @@ def generate_exam(
         db.query(QuizMathematicalReasoning)
         .filter(
             QuizMathematicalReasoning.subject == "mathematical_reasoning",
-            QuizMathematicalReasoning.class_name == "Selective"
+            QuizMathematicalReasoning.class_name == "selective"
         )
         .order_by(QuizMathematicalReasoning.id.desc())
         .first()
