@@ -8154,7 +8154,7 @@ def get_question_bank_mathematical_reasoning(
         }
         for r in results
     ]
- @app.get("/api/writing/topics")
+@app.get("/api/writing/topics")
 def get_writing_topics(
     difficulty: str = Query(...),
     db: Session = Depends(get_db),
