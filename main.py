@@ -3864,22 +3864,17 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
-from fastapi import Query, Depends
-from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 @app.get("/api/questions")
 def get_questions(
-    difficulty: str = Query(...),
+    id: int = Query(...),   # 👈 changed from difficulty to id
     db: Session = Depends(get_db),
 ):
-    print(f"📥 Fetching questions for difficulty={difficulty}")
+    print(f"📥 Fetching questions for id={id}")
 
     questions = (
         db.query(Question)
-        .filter(
-            func.lower(func.trim(Question.difficulty)) == difficulty.lower()
-        )
+        .filter(Question.id == id)   # 👈 direct match
         .all()
     )
 
@@ -3901,7 +3896,7 @@ def get_questions(
     print(f"✅ Questions found: {len(result)}")
 
     return result
-
+ 
 @app.post("/api/ai/explain-question-selective-reading")
 def explain_question_reading(req: ExplainReadingRequest):
 
