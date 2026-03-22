@@ -3867,21 +3867,21 @@ def normalize_question_blocks(raw_blocks):
 
 @app.get("/api/questions")
 def get_questions(
-    id: int = Query(...),   # 👈 changed from difficulty to id
+    difficulty: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    print(f"📥 Fetching questions for id={id}")
+    print(f"📥 Fetching questions for difficulty={difficulty}")
 
     questions = (
         db.query(Question)
-        .filter(Question.id == id)   # 👈 direct match
+        .filter(
+            func.lower(func.trim(Question.difficulty)) == difficulty.lower()
+        )
         .all()
     )
 
-    result = []
-
-    for q in questions:
-        result.append({
+    result = [
+        {
             "id": q.id,
             "topic": q.topic,
             "question_text": q.question_text,
@@ -3890,8 +3890,10 @@ def get_questions(
             "options": q.options,
             "correct_answer": q.correct_answer,
             "images": q.images,
-            "created_at": str(q.created_at)
-        })
+            "created_at": str(q.created_at),
+        }
+        for q in questions
+    ]
 
     print(f"✅ Questions found: {len(result)}")
 
