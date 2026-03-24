@@ -3868,6 +3868,64 @@ def normalize_question_blocks(raw_blocks):
 
 
 
+@router.post("/delete-all-naplan-numeracy-questions")
+def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
+
+    # -----------------------------
+    # Step 1: Count duplicates
+    # -----------------------------
+    count_result = db.execute(text("""
+        SELECT COUNT(*) FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY 
+                       LOWER(
+                         REGEXP_REPLACE(
+                           TRIM(question_text),
+                           '\s+', ' ', 'g'
+                         )
+                       )
+                       ORDER BY id
+                   ) AS rn
+            FROM questions_numeracy_lc
+            WHERE question_text IS NOT NULL
+        ) t
+        WHERE t.rn > 1;
+    """)).fetchone()
+
+    deleted_count = count_result[0] if count_result else 0
+
+    # -----------------------------
+    # Step 2: Delete duplicates
+    # -----------------------------
+    db.execute(text("""
+        DELETE FROM questions_numeracy_lc
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY 
+                           LOWER(
+                             REGEXP_REPLACE(
+                               TRIM(question_text),
+                               '\s+', ' ', 'g'
+                             )
+                           )
+                           ORDER BY id
+                       ) AS rn
+                FROM questions_numeracy_lc
+                WHERE question_text IS NOT NULL
+            ) t
+            WHERE t.rn > 1
+        );
+    """))
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "deleted_count": deleted_count
+    }
 
 @app.post("/delete-duplicate-questions-selective-reading")
 def delete_duplicate_questions_selective_reading(db: Session = Depends(get_db)):
