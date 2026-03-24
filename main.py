@@ -3867,12 +3867,12 @@ def normalize_question_blocks(raw_blocks):
 
 
 
+
+
 @app.post("/delete-duplicate-questions-selective-reading")
 def delete_duplicate_questions_selective_reading(db: Session = Depends(get_db)):
-    # -----------------------------
-    # Step 1: Count duplicates BEFORE deletion (optional but useful)
-    # -----------------------------
-    count_result = db.execute("""
+
+    count_result = db.execute(text("""
         SELECT COUNT(*) FROM (
             SELECT id,
                    ROW_NUMBER() OVER (
@@ -3883,14 +3883,11 @@ def delete_duplicate_questions_selective_reading(db: Session = Depends(get_db)):
             WHERE exam_bundle->'reading_material'->>'content' IS NOT NULL
         ) t
         WHERE t.rn > 1;
-    """).fetchone()
+    """)).fetchone()
 
     duplicates_to_delete = count_result[0] if count_result else 0
 
-    # -----------------------------
-    # Step 2: Delete duplicates
-    # -----------------------------
-    db.execute("""
+    db.execute(text("""
         DELETE FROM questions_reading
         WHERE id IN (
             SELECT id FROM (
@@ -3904,15 +3901,14 @@ def delete_duplicate_questions_selective_reading(db: Session = Depends(get_db)):
             ) t
             WHERE t.rn > 1
         );
-    """)
+    """))
 
     db.commit()
 
     return {
         "status": "success",
         "deleted_count": duplicates_to_delete
-    }
- 
+    } 
 @app.post("/delete-duplicate-questions")
 def delete_duplicate_questions(db: Session = Depends(get_db)):
     # -----------------------------
