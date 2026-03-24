@@ -3868,7 +3868,7 @@ def normalize_question_blocks(raw_blocks):
 
 
 
-@router.post("/delete-all-naplan-numeracy-questions")
+@app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
     # -----------------------------
