@@ -22663,18 +22663,18 @@ def start_exam_oc_mathematical_reasoning(
     # --------------------------------------------------
     # 2️⃣ Load quiz (OC + MR)
     # --------------------------------------------------
-    quiz = (
-        db.query(Quiz)
-        .filter(
-            func.lower(Quiz.class_name) == "oc",
-            func.lower(Quiz.subject) == "mathematical_reasoning"
-        )
-        .order_by(Quiz.id.desc())
-        .first()
-    )
+    #quiz = (
+     #   db.query(Quiz)
+      #  .filter(
+       #     func.lower(Quiz.class_name) == "oc",
+        #    func.lower(Quiz.subject) == "mathematical_reasoning"
+        #)
+        #.order_by(Quiz.id.desc())
+        #.first()
+    #)
 
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
+    #if not quiz:
+     #   raise HTTPException(status_code=404, detail="Quiz not found")
 
     # --------------------------------------------------
     # 3️⃣ Load exam
