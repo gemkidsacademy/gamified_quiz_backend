@@ -3864,6 +3864,55 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+
+
+
+@app.post("/delete-duplicate-questions-selective-reading")
+def delete_duplicate_questions_selective_reading(db: Session = Depends(get_db)):
+    # -----------------------------
+    # Step 1: Count duplicates BEFORE deletion (optional but useful)
+    # -----------------------------
+    count_result = db.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY LOWER(TRIM(exam_bundle->'reading_material'->>'content'))
+                       ORDER BY id
+                   ) AS rn
+            FROM questions_reading
+            WHERE exam_bundle->'reading_material'->>'content' IS NOT NULL
+        ) t
+        WHERE t.rn > 1;
+    """).fetchone()
+
+    duplicates_to_delete = count_result[0] if count_result else 0
+
+    # -----------------------------
+    # Step 2: Delete duplicates
+    # -----------------------------
+    db.execute("""
+        DELETE FROM questions_reading
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY LOWER(TRIM(exam_bundle->'reading_material'->>'content'))
+                           ORDER BY id
+                       ) AS rn
+                FROM questions_reading
+                WHERE exam_bundle->'reading_material'->>'content' IS NOT NULL
+            ) t
+            WHERE t.rn > 1
+        );
+    """)
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "deleted_count": duplicates_to_delete
+    }
+ 
 @app.post("/delete-duplicate-questions")
 def delete_duplicate_questions(db: Session = Depends(get_db)):
     # -----------------------------
