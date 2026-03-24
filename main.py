@@ -3864,7 +3864,55 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+@app.post("/delete-duplicate-questions")
+def delete_duplicate_questions(db: Session = Depends(get_db)):
+    # -----------------------------
+    # Step 1: Find duplicates
+    # -----------------------------
+    duplicates = (
+        db.query(
+            Question.question_text,
+            func.count(Question.id).label("count")
+        )
+        .group_by(Question.question_text)
+        .having(func.count(Question.id) > 1)
+        .all()
+    )
 
+    total_deleted = 0
+
+    # -----------------------------
+    # Step 2: Delete duplicates
+    # -----------------------------
+    for dup in duplicates:
+        question_text = dup[0]
+
+        # get all rows with same text (ordered by id)
+        rows = (
+            db.query(Question)
+            .filter(Question.question_text == question_text)
+            .order_by(Question.id)
+            .all()
+        )
+
+        # keep first, delete rest
+        ids_to_delete = [row.id for row in rows[1:]]
+
+        if ids_to_delete:
+            deleted_count = (
+                db.query(Question)
+                .filter(Question.id.in_(ids_to_delete))
+                .delete(synchronize_session=False)
+            )
+            total_deleted += deleted_count
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "deleted_count": total_deleted
+    }
+ 
 @app.get("/api/questions")
 def get_questions(
     difficulty: str = Query(...),
