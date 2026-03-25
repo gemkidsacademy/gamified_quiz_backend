@@ -1704,7 +1704,7 @@ class StudentExamWriting(Base):
     )
 
     student = relationship("Student")
-    exam = relationship("Exam")
+    exam = relationship("GeneratedExamWriting")
  
 
 class WritingSubmitSchema(BaseModel):
