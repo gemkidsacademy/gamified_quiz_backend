@@ -3867,7 +3867,35 @@ def normalize_question_blocks(raw_blocks):
 
 
 
+@app.get("/api/student/exam-attempts/thinking-skills")
+def get_attempts(student_id: str, db: Session = Depends(get_db)):
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
 
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    attempts = (
+        db.query(StudentExamThinkingSkills)
+        .filter(
+            StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(StudentExamThinkingSkills.completed_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "exam_attempt_id": a.id,
+            "completed_at": a.completed_at
+        }
+        for a in attempts
+    ]
+ 
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
