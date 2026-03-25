@@ -10745,12 +10745,12 @@ def generate_thinking_skills_exam(
     ).delete(synchronize_session=False)
     
     # ✅ STEP 2: delete Exam rows
-    db.query(Exam).filter(
-        Exam.subject == "thinking_skills",
-        Exam.class_name == "selective"
-    ).delete(synchronize_session=False)
+    #db.query(Exam).filter(
+     #   Exam.subject == "thinking_skills",
+      #  Exam.class_name == "selective"
+    #).delete(synchronize_session=False)
     
-    db.commit()
+    #db.commit()
 
 
     # --------------------------------------------------
