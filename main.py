@@ -24182,7 +24182,6 @@ def start_exam(
     )
 
     if not student:
-        print("❌ Student not found:", repr(req.student_id))
         raise HTTPException(status_code=404, detail="Student not found")
 
     print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
@@ -24191,12 +24190,31 @@ def start_exam(
     MAX_DURATION = timedelta(minutes=40)
 
     # --------------------------------------------------
-    # 2️⃣ Check ACTIVE attempt (resume)
+    # 2️⃣ Fetch latest exam FIRST (IMPORTANT)
+    # --------------------------------------------------
+    exam = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.class_name) == func.lower(student.class_name),
+            Exam.subject == "thinking_skills"
+        )
+        .order_by(Exam.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    print(f"📘 Using exam_id={exam.id}")
+
+    # --------------------------------------------------
+    # 3️⃣ Check ACTIVE attempt for THIS exam (resume)
     # --------------------------------------------------
     active_attempt = (
         db.query(StudentExamThinkingSkills)
         .filter(
             StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.exam_id == exam.id,
             StudentExamThinkingSkills.completed_at.is_(None)
         )
         .order_by(StudentExamThinkingSkills.started_at.desc())
@@ -24204,11 +24222,7 @@ def start_exam(
     )
 
     if active_attempt:
-        print(
-            "🧠 Active attempt found | "
-            f"attempt_id={active_attempt.id} | "
-            f"started_at={active_attempt.started_at}"
-        )
+        print(f"🧠 Active attempt found | attempt_id={active_attempt.id}")
 
         started_at = active_attempt.started_at
         if started_at.tzinfo is None:
@@ -24220,27 +24234,11 @@ def start_exam(
         # ⛔ Timeout
         if now > expires_at:
             print("⛔ Attempt expired → auto submit")
-
             active_attempt.completed_at = expires_at
             db.commit()
-
             return {"completed": True}
 
-        # ▶ Resume
         remaining = max(0, active_attempt.duration_minutes * 60 - elapsed)
-
-        exam = (
-            db.query(Exam)
-            .filter(
-                func.lower(Exam.class_name) == "selective",
-                Exam.subject == "thinking_skills"
-            )
-            .order_by(Exam.created_at.desc())
-            .first()
-        )
-
-        if not exam:
-            raise HTTPException(status_code=404, detail="Exam not found")
 
         normalized_questions = normalize_thinking_skills_questions(
             exam.questions or [],
@@ -24255,45 +24253,31 @@ def start_exam(
         }
 
     # --------------------------------------------------
-    # 3️⃣ Check COMPLETED attempt (block retake)
+    # 4️⃣ Check COMPLETED attempt for THIS exam (block)
     # --------------------------------------------------
     completed_attempt = (
         db.query(StudentExamThinkingSkills)
         .filter(
             StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.exam_id == exam.id,
             StudentExamThinkingSkills.completed_at.isnot(None)
         )
         .first()
     )
 
     if completed_attempt:
-        print(
-            "🚫 Student already completed exam | "
-            f"attempt_id={completed_attempt.id}"
-        )
+        print(f"🚫 Already completed exam_id={exam.id} | attempt_id={completed_attempt.id}")
 
         return {
             "completed": True,
+            "exam_attempt_id": completed_attempt.id,
             "message": "Exam already attempted"
         }
 
     # --------------------------------------------------
-    # 4️⃣ Create NEW attempt
+    # 5️⃣ Create NEW attempt (first time for this exam)
     # --------------------------------------------------
     print("🆕 Creating new attempt")
-
-    exam = (
-        db.query(Exam)
-        .filter(
-            func.lower(Exam.class_name) == func.lower(student.class_name),
-            Exam.subject == "thinking_skills"
-        )
-        .order_by(Exam.created_at.desc())
-        .first()
-    )
-
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
 
     normalized_questions = normalize_thinking_skills_questions(
         exam.questions or [],
@@ -24337,8 +24321,7 @@ def start_exam(
         "exam_attempt_id": new_attempt.id,
         "questions": jsonable_encoder(normalized_questions),
         "remaining_time": int(new_attempt.duration_minutes * 60)
-    }
- 
+    } 
 @app.post("/api/student/start-exam-oc-thinking-skills")
 def start_exam_oc_thinking_skills(
     req: StartExamRequest = Body(...),
