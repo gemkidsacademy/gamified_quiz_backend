@@ -3917,9 +3917,10 @@ def get_attempts(student_id: str, db: Session = Depends(get_db)):
         }
         for a in attempts
     ]
+
 @app.delete("/api/delete-exam-attempt")
 def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
-    student_external_id = payload.get("student_id")  # Gem002
+    student_external_id = payload.get("student_id")  # e.g. Gem002
     exam_type = payload.get("exam_type")
 
     if not student_external_id or not exam_type:
@@ -3938,39 +3939,56 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
     student_db_id = student.id
 
     # ============================
-    # STEP 2: Branching Logic
+    # STEP 2: Today's date (UTC safe)
+    # ============================
+    today_utc = datetime.now(timezone.utc).date()
+
+    # ============================
+    # STEP 3: Branching Logic
     # ============================
 
-    # -------- THINKING SKILLS --------
-    if exam_type == "thinking_skills":
+    try:
+        # -------- THINKING SKILLS --------
+        if exam_type == "thinking_skills":
 
-        # Get latest attempt (highest exam_id OR latest id)
-        latest_attempt = db.query(StudentExamThinkingSkills).filter(
-            StudentExamThinkingSkills.student_id == student_db_id
-        ).order_by(desc(StudentExamThinkingSkills.exam_id)).first()
+            latest_attempt = db.query(StudentExamThinkingSkills).filter(
+                StudentExamThinkingSkills.student_id == student_db_id,
+                func.date(StudentExamThinkingSkills.started_at) == today_utc
+            ).order_by(desc(StudentExamThinkingSkills.id)).first()
 
-        if not latest_attempt:
-            raise HTTPException(status_code=404, detail="No attempt found")
+            if not latest_attempt:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No attempt found for today"
+                )
 
-        # STEP A: Delete responses first
-        db.query(StudentExamResponseThinkingSkills).filter(
-            StudentExamResponseThinkingSkills.exam_attempt_id == latest_attempt.id
-        ).delete()
+            # STEP A: Delete responses
+            db.query(StudentExamResponseThinkingSkills).filter(
+                StudentExamResponseThinkingSkills.exam_attempt_id == latest_attempt.id
+            ).delete()
 
-        # STEP B: Delete attempt
-        db.delete(latest_attempt)
+            # STEP B: Delete attempt
+            db.delete(latest_attempt)
 
-        db.commit()
+            db.commit()
 
-        return {"message": "Thinking Skills attempt deleted successfully"}
+            return {
+                "message": "Thinking Skills attempt (today) deleted successfully"
+            }
 
-    # -------- ADD MORE BRANCHES HERE --------
-    # elif exam_type == "mathematical_reasoning":
-    # elif exam_type == "reading":
-    # elif exam_type == "writing":
+        # -------- FUTURE BRANCHES --------
+        # elif exam_type == "mathematical_reasoning":
+        # elif exam_type == "reading":
+        # elif exam_type == "writing":
 
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported exam type")
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported exam type")
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+     
+
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
