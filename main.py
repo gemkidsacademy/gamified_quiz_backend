@@ -24142,7 +24142,10 @@ def start_exam(
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamThinkingSkills)
-        .filter(StudentExamThinkingSkills.student_id == student.id)
+        .filter(
+            StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.completed_at.is_(None)
+        )
         .order_by(StudentExamThinkingSkills.started_at.desc())
         .first()
     )
@@ -24252,10 +24255,11 @@ def start_exam(
         )
         
         return {
-            "completed": False,
-            "questions": jsonable_encoder(normalized_questions),
-            "remaining_time": remaining
-        }
+           "completed": False,
+           "exam_attempt_id": attempt.id,   # 👈 ADD THIS
+           "questions": jsonable_encoder(normalized_questions),
+           "remaining_time": remaining
+       }
         
         
     # --------------------------------------------------
@@ -24344,6 +24348,7 @@ def start_exam(
 
     return {
         "completed": False,
+        "exam_attempt_id": new_attempt.id,   # 👈 ADD THIS
         "questions": safe_questions,
         "remaining_time": int(new_attempt.duration_minutes * 60)
     }
