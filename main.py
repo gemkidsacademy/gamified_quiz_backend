@@ -6708,6 +6708,7 @@ def normalize_options_thinking_skills_review(raw_options: dict) -> dict:
 )
 def get_exam_review_thinking_skills(
     student_id: str,  # external/public ID (e.g. Gem_temp3)
+    exam_attempt_id: int = None,
     db: Session = Depends(get_db)
 ):
     print("\n================ EXAM REVIEW (THINKING SKILLS) =================")
@@ -6734,33 +6735,32 @@ def get_exam_review_thinking_skills(
     internal_student_id = student.id
     print(f"✅ Internal student_id resolved: {internal_student_id}")
 
+    
     # ==================================================
-    # 1️⃣ Resolve LATEST exam_attempt_id for student
+    # 1️⃣ Resolve exam_attempt_id
     # ==================================================
-    print("🔍 Resolving latest exam_attempt_id from responses...")
-
-    latest_attempt = (
-        db.query(StudentExamResponseThinkingSkills.exam_attempt_id)
-        .filter(
-            StudentExamResponseThinkingSkills.student_id == internal_student_id
+    if exam_attempt_id is None:
+        print("🔍 No attempt provided → fetching latest")
+    
+        latest_attempt = (
+            db.query(StudentExamResponseThinkingSkills.exam_attempt_id)
+            .filter(
+                StudentExamResponseThinkingSkills.student_id == internal_student_id
+            )
+            .order_by(StudentExamResponseThinkingSkills.exam_attempt_id.desc())
+            .first()
         )
-        .order_by(StudentExamResponseThinkingSkills.exam_attempt_id.desc())
-        .first()
-    )
-
-    if not latest_attempt:
-        print(
-            "❌ No exam responses found for internal_student_id =",
-            internal_student_id
-        )
-        raise HTTPException(
-            status_code=404,
-            detail="No completed exam attempt found for this student"
-        )
-
-    exam_attempt_id = latest_attempt.exam_attempt_id
-    print(f"✅ Latest exam_attempt_id resolved: {exam_attempt_id}")
-
+    
+        if not latest_attempt:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed exam attempt found"
+            )
+    
+        exam_attempt_id = latest_attempt.exam_attempt_id
+    
+    else:
+        print(f"🎯 Using provided exam_attempt_id: {exam_attempt_id}")
     # ==================================================
     # 2️⃣ Validate exam attempt ownership
     # ==================================================
