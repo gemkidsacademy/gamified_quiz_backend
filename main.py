@@ -1625,7 +1625,7 @@ class StudentExamWriting(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # Internal student reference
-    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
 
     # Writing exam definition
     exam_id = Column(Integer, ForeignKey("generated_exam_writing.id"))
