@@ -24160,7 +24160,7 @@ def start_exam(
 ):
     print("\n================ START THINKING SKILLS EXAM =================")
     print("📥 Incoming payload:", req.dict())
-    
+
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
@@ -24179,10 +24179,13 @@ def start_exam(
 
     print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
 
+    now = datetime.now(timezone.utc)
+    MAX_DURATION = timedelta(minutes=40)
+
     # --------------------------------------------------
-    # 2️⃣ Fetch the ONE (and only) Thinking Skills attempt
+    # 2️⃣ Check ACTIVE attempt (resume)
     # --------------------------------------------------
-    attempt = (
+    active_attempt = (
         db.query(StudentExamThinkingSkills)
         .filter(
             StudentExamThinkingSkills.student_id == student.id,
@@ -24192,83 +24195,32 @@ def start_exam(
         .first()
     )
 
-    MAX_DURATION = timedelta(minutes=40)
-    now = datetime.now(timezone.utc)
-
-    if attempt:
+    if active_attempt:
         print(
-            "🧠 Existing attempt found | "
-            f"attempt_id={attempt.id} | "
-            f"started_at={attempt.started_at} | "
-            f"completed_at={attempt.completed_at} | "
-            f"duration_minutes={attempt.duration_minutes}"
+            "🧠 Active attempt found | "
+            f"attempt_id={active_attempt.id} | "
+            f"started_at={active_attempt.started_at}"
         )
 
-        started_at = attempt.started_at
+        started_at = active_attempt.started_at
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
 
         expires_at = started_at + MAX_DURATION
         elapsed = int((now - started_at).total_seconds())
 
-        print(
-            "⏱️ Timer evaluation | "
-            f"now={now} | "
-            f"started_at={started_at} | "
-            f"expires_at={expires_at} | "
-            f"elapsed_seconds={elapsed}"
-        )
+        # ⛔ Timeout
+        if now > expires_at:
+            print("⛔ Attempt expired → auto submit")
 
-        # --------------------------------------------------
-        # ⛔ Timeout → FINAL completion
-        # --------------------------------------------------
-        if attempt.completed_at is None and now > expires_at:
-            print(
-                "⛔ Attempt expired | "
-                f"attempt_id={attempt.id} | "
-                f"auto_completed_at={expires_at}"
-            )
-
-            attempt.completed_at = expires_at
-            db.commit()
-
-            print("➡️ Returning: completed=true (timeout)")
-            return {"completed": True}
-
-        # --------------------------------------------------
-        # ✅ Already completed → show report
-        # --------------------------------------------------
-        if attempt.completed_at is not None:
-            print(
-                "✅ Attempt already completed | "
-                f"attempt_id={attempt.id} | "
-                f"completed_at={attempt.completed_at}"
-            )
-
-            print("➡️ Returning: completed=true (already completed)")
-            return {"completed": True}
-
-        
-        # --------------------------------------------------
-        # ▶ Resume active attempt
-        # --------------------------------------------------
-        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
-        # safety guard
-        if remaining <= 0:
-            print("⛔ Attempt expired via remaining_time guard")
-
-            attempt.completed_at = now
+            active_attempt.completed_at = expires_at
             db.commit()
 
             return {"completed": True}
 
-        
-        print(
-            "▶ Resuming active attempt | "
-            f"attempt_id={attempt.id} | "
-            f"remaining_seconds={remaining}"
-        )
-        
+        # ▶ Resume
+        remaining = max(0, active_attempt.duration_minutes * 60 - elapsed)
+
         exam = (
             db.query(Exam)
             .filter(
@@ -24278,42 +24230,54 @@ def start_exam(
             .order_by(Exam.created_at.desc())
             .first()
         )
-        
+
         if not exam:
-            raise HTTPException(
-                status_code=404,
-                detail="Thinking Skills exam not found"
-            )
-        
+            raise HTTPException(status_code=404, detail="Exam not found")
+
         normalized_questions = normalize_thinking_skills_questions(
             exam.questions or [],
             db
         )
-        
-        print(
-            "➡️ Returning: resume exam | "
-            f"questions={len(normalized_questions)} | "
-            f"remaining_seconds={remaining}"
-        )
-        
+
         return {
-           "completed": False,
-           "exam_attempt_id": attempt.id,   # 👈 ADD THIS
-           "questions": jsonable_encoder(normalized_questions),
-           "remaining_time": remaining
-       }
-        
-        
+            "completed": False,
+            "exam_attempt_id": active_attempt.id,
+            "questions": jsonable_encoder(normalized_questions),
+            "remaining_time": remaining
+        }
+
     # --------------------------------------------------
-    # 🆕 FIRST AND ONLY ATTEMPT (no attempt exists)
+    # 3️⃣ Check COMPLETED attempt (block retake)
     # --------------------------------------------------
-    print("🆕 No existing attempt found → creating FIRST and ONLY attempt")
+    completed_attempt = (
+        db.query(StudentExamThinkingSkills)
+        .filter(
+            StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.completed_at.isnot(None)
+        )
+        .first()
+    )
+
+    if completed_attempt:
+        print(
+            "🚫 Student already completed exam | "
+            f"attempt_id={completed_attempt.id}"
+        )
+
+        return {
+            "completed": True,
+            "message": "Exam already attempted"
+        }
+
+    # --------------------------------------------------
+    # 4️⃣ Create NEW attempt
+    # --------------------------------------------------
+    print("🆕 Creating new attempt")
 
     exam = (
         db.query(Exam)
         .filter(
-            func.lower(Exam.class_name) ==
-            func.lower(student.class_name),
+            func.lower(Exam.class_name) == func.lower(student.class_name),
             Exam.subject == "thinking_skills"
         )
         .order_by(Exam.created_at.desc())
@@ -24321,11 +24285,7 @@ def start_exam(
     )
 
     if not exam:
-        print("❌ Exam not found for first attempt")
-        raise HTTPException(
-            status_code=404,
-            detail="Thinking Skills exam not found"
-        )
+        raise HTTPException(status_code=404, detail="Exam not found")
 
     normalized_questions = normalize_thinking_skills_questions(
         exam.questions or [],
@@ -24343,58 +24303,34 @@ def start_exam(
     db.commit()
     db.refresh(new_attempt)
 
-    print(
-        "🆕 New attempt created | "
-        f"attempt_id={new_attempt.id} | "
-        f"started_at={new_attempt.started_at}"
-    )
+    print(f"🆕 New attempt created | attempt_id={new_attempt.id}")
 
     # --------------------------------------------------
-    # Pre-create response rows (ONLY here)
+    # Pre-create responses
     # --------------------------------------------------
     for q in normalized_questions:
-        try:
-            db.add(
-                StudentExamResponseThinkingSkills(
-                    student_id=student.id,
-                    exam_id=exam.id,
-                    exam_attempt_id=new_attempt.id,
-                    q_id=q["q_id"],
-                    topic=q.get("topic"),
-                    selected_option=None,
-                    correct_option=q["correct_answer"],
-                    is_correct=None
-                )
+        db.add(
+            StudentExamResponseThinkingSkills(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=new_attempt.id,
+                q_id=q["q_id"],
+                topic=q.get("topic"),
+                selected_option=None,
+                correct_option=q["correct_answer"],
+                is_correct=None
             )
-        except Exception as e:
-            print("⚠️ Skipping response row:", q["q_id"], repr(e))
-    
-    db.commit()
-    print(
-        "➡️ Returning: new exam started | "
-        f"attempt_id={new_attempt.id} | "
-        f"questions={len(normalized_questions)} | "
-        f"remaining_seconds={new_attempt.duration_minutes * 60}"
-    )
-    
-    print("🧪 SERIALIZED PREVIEW:")
-    print(
-        json.dumps(
-            jsonable_encoder(normalized_questions),
-            indent=2
         )
-    )
-    print("================ END START THINKING SKILLS EXAM ================\n")
 
-    safe_questions = jsonable_encoder(normalized_questions)
+    db.commit()
 
     return {
         "completed": False,
-        "exam_attempt_id": new_attempt.id,   # 👈 ADD THIS
-        "questions": safe_questions,
+        "exam_attempt_id": new_attempt.id,
+        "questions": jsonable_encoder(normalized_questions),
         "remaining_time": int(new_attempt.duration_minutes * 60)
     }
-
+ 
 @app.post("/api/student/start-exam-oc-thinking-skills")
 def start_exam_oc_thinking_skills(
     req: StartExamRequest = Body(...),
