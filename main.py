@@ -3874,7 +3874,21 @@ def normalize_question_blocks(raw_blocks):
     )
 
 
+@app.get("/api/students/basic")
+def get_students_basic_info(db: Session = Depends(get_db)):
+    students = db.query(Student).all()
 
+    result = [
+        {
+            "id": student.id,  # internal PK (optional but useful)
+            "student_id": student.student_id,
+            "name": student.name,
+            "class_name": student.class_name  # optional (useful for your exam logic)
+        }
+        for student in students
+    ]
+
+    return result
 @app.get("/api/student/exam-attempts/thinking-skills")
 def get_attempts(student_id: str, db: Session = Depends(get_db)):
     student = (
