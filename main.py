@@ -12279,6 +12279,7 @@ def get_naplan_numeracy_report(
 @app.get("/api/student/exam-report/thinking-skills")
 def get_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
+    exam_attempt_id: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
     # --------------------------------------------------
@@ -12296,16 +12297,28 @@ def get_thinking_skills_report(
     # --------------------------------------------------
     # 2️⃣ Get latest completed THINKING SKILLS attempt
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamThinkingSkills)
-        .filter(
-            StudentExamThinkingSkills.student_id == student.id,
-            StudentExamThinkingSkills.completed_at.isnot(None)
+    # --------------------------------------------------
+    # 2️⃣ Get specific or latest completed attempt
+    # --------------------------------------------------
+    if exam_attempt_id:
+        attempt = (
+            db.query(StudentExamThinkingSkills)
+            .filter(
+                StudentExamThinkingSkills.id == exam_attempt_id,
+                StudentExamThinkingSkills.student_id == student.id
+            )
+            .first()
         )
-        .order_by(StudentExamThinkingSkills.completed_at.desc())
-        .first()
-    )
-
+    else:
+        attempt = (
+            db.query(StudentExamThinkingSkills)
+            .filter(
+                StudentExamThinkingSkills.student_id == student.id,
+                StudentExamThinkingSkills.completed_at.isnot(None)
+            )
+            .order_by(StudentExamThinkingSkills.completed_at.desc())
+            .first()
+        )
     if not attempt:
         raise HTTPException(
             status_code=404,
@@ -12429,6 +12442,7 @@ def get_thinking_skills_report(
     # 8️⃣ Final response
     # --------------------------------------------------
     return {
+        "exam_attempt_id": attempt.id,
         "overall": overall,                                 # Report B
         "topic_wise_performance": topic_wise_performance,   # Report A
         "topic_accuracy": topic_accuracy,                   # Report C
