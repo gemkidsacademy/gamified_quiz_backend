@@ -4170,7 +4170,52 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                     return {
                         "message": "NAPLAN Numeracy attempt (today) deleted successfully"
                     }
-            
+                elif exam_type == "language_conventions":
+                    print("➡️ EXAM: LANGUAGE CONVENTIONS")
+                
+                    # ✅ TIME RANGE
+                    start_of_day = datetime.combine(today_utc, datetime.min.time()).replace(tzinfo=timezone.utc)
+                    end_of_day = start_of_day + timedelta(days=1)
+                
+                    print("start_of_day:", start_of_day)
+                    print("end_of_day:", end_of_day)
+                
+                    # ✅ FETCH LATEST ATTEMPT
+                    latest_attempt = db.query(StudentExamNaplanLanguageConventions).filter(
+                        StudentExamNaplanLanguageConventions.student_id == str(student_db_id),  # 🔥 IMPORTANT
+                        StudentExamNaplanLanguageConventions.started_at >= start_of_day,
+                        StudentExamNaplanLanguageConventions.started_at < end_of_day
+                    ).order_by(desc(StudentExamNaplanLanguageConventions.id)).first()
+                
+                    print("latest_attempt:", latest_attempt)
+                
+                    if not latest_attempt:
+                        print("❌ No language conventions attempt found")
+                        raise HTTPException(
+                            status_code=404,
+                            detail="No language conventions attempt found for today"
+                        )
+                
+                    # ✅ DELETE RESPONSES
+                    deleted_count = db.query(StudentExamResponseNaplanLanguageConventions).filter(
+                        StudentExamResponseNaplanLanguageConventions.exam_attempt_id == latest_attempt.id
+                    ).delete()
+                
+                    print("Deleted language conventions responses:", deleted_count)
+                
+                    # ✅ DELETE ATTEMPT (safe delete)
+                    db.query(StudentExamNaplanLanguageConventions).filter(
+                        StudentExamNaplanLanguageConventions.id == latest_attempt.id
+                    ).delete()
+                
+                    print("Deleted language conventions attempt ID:", latest_attempt.id)
+                
+                    db.commit()
+                    print("✅ LANGUAGE CONVENTIONS DELETE SUCCESS")
+                
+                    return {
+                        "message": "NAPLAN Language Conventions attempt (today) deleted successfully"
+                    }
                 else:
                     print("❌ Unsupported exam type for NAPLAN:", exam_type)
                     raise HTTPException(
