@@ -1127,7 +1127,7 @@ class AdminExamResponseThinkingSkills(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
- class AdminExamResponseNaplanNumeracy(Base):
+class AdminExamResponseNaplanNumeracy(Base):
     __tablename__ = "admin_exam_response_naplan_numeracy"
 
     id = Column(Integer, primary_key=True, index=True)
