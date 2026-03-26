@@ -10559,23 +10559,36 @@ def get_exam_dates(
     student_id: str | None = None,
     db: Session = Depends(get_db),
 ):
-    """
-    Returns available exam dates for:
-    - Per Student Report (exam + student_id)
-    - Per Class Report (exam only)
-    """
+    print("\n====================")
+    print("📥 /api/exams/dates called")
+    print("➡️ Incoming exam:", exam)
+    print("➡️ Incoming student_id:", student_id)
 
-    # Base query: filter by exam
     query = (
         db.query(AdminExamReport.created_at)
         .filter(AdminExamReport.exam_type == exam)
     )
 
-    # Per Student Report: further restrict by student
-    if student_id:
-        query = query.filter(AdminExamReport.student_id == student_id)
+    print("🔍 Applied exam filter")
 
-    # Execute query
+    if student_id:
+        student = (
+            db.query(Student)
+            .filter(Student.student_id == student_id)
+            .first()
+        )
+
+        print("👤 Resolved student:", student)
+
+        if not student:
+            print("❌ Student NOT found")
+            raise HTTPException(404, "Student not found")
+
+        print("✅ Internal student.id:", student.id)
+
+        query = query.filter(AdminExamReport.student_id == student.id)
+        print("🔍 Applied student filter using internal ID")
+
     rows = (
         query
         .distinct()
@@ -10583,13 +10596,18 @@ def get_exam_dates(
         .all()
     )
 
-    return {
-        "dates": [
-            row.created_at.date().isoformat()
-            for row in rows
-        ]
-    }
- 
+    print("📊 Rows fetched:", rows)
+    print("📊 Number of rows:", len(rows))
+
+    dates = [
+        row.created_at.date().isoformat()
+        for row in rows
+    ]
+
+    print("📅 Final dates returned:", dates)
+    print("====================\n")
+
+    return {"dates": dates} 
 @app.get("/api/admin/students")
 def get_admin_students(db: Session = Depends(get_db)):
     students = (
