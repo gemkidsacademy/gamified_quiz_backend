@@ -4031,7 +4031,38 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 return {
                     "message": "Mathematical Reasoning attempt (today) deleted successfully"
                 }
-
+            elif exam_type == "reading":
+                print("➡️ EXAM: READING")
+            
+                # STEP 1: Get latest attempt
+                latest_attempt = db.query(StudentExamReading).filter(
+                    StudentExamReading.student_id == student_external_id,
+                    func.date(StudentExamReading.started_at) == today_utc
+                ).order_by(desc(StudentExamReading.id)).first()
+            
+                print("latest_attempt:", latest_attempt)
+            
+                if not latest_attempt:
+                    print("❌ No reading attempt found")
+                    raise HTTPException(status_code=404, detail="No reading attempt found for today")
+            
+                # STEP 2: Delete report rows using session_id
+                deleted_count = db.query(StudentExamReportReading).filter(
+                    StudentExamReportReading.session_id == latest_attempt.id
+                ).delete()
+            
+                print("Deleted reading report rows:", deleted_count)
+            
+                # STEP 3: Delete attempt
+                db.delete(latest_attempt)
+                print("Deleted reading attempt ID:", latest_attempt.id)
+            
+                db.commit()
+                print("✅ READING DELETE SUCCESS")
+            
+                return {
+                    "message": "Reading attempt (today) deleted successfully"
+                } 
             else:
                 print("❌ Unsupported exam type for selective:", exam_type)
                 raise HTTPException(status_code=400, detail="Unsupported exam type for Selective")
