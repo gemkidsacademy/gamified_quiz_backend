@@ -3920,11 +3920,25 @@ def get_attempts(student_id: str, db: Session = Depends(get_db)):
 
 @app.delete("/api/delete-exam-attempt")
 def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
+
+    print("\n========== DELETE EXAM ATTEMPT START ==========")
+    print("RAW PAYLOAD:", payload)
+
     student_external_id = payload.get("student_id")
     exam_type = payload.get("exam_type")
-    class_name = payload.get("class_name")
+    class_name_raw = payload.get("class_name")
+
+    print("Parsed Inputs →")
+    print("student_external_id:", student_external_id)
+    print("exam_type:", exam_type)
+    print("class_name_raw:", repr(class_name_raw))
+
+    class_name = (class_name_raw or "").strip().lower()
+
+    print("Normalized class_name:", repr(class_name))
 
     if not student_external_id or not exam_type or not class_name:
+        print("❌ Missing data condition triggered")
         raise HTTPException(status_code=400, detail="Missing data")
 
     # ============================
@@ -3934,41 +3948,54 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
         Student.student_id == student_external_id
     ).first()
 
+    print("Fetched student:", student)
+
     if not student:
+        print("❌ Student not found")
         raise HTTPException(status_code=404, detail="Student not found")
 
     student_db_id = student.id
+    print("student_db_id:", student_db_id)
 
     # ============================
-    # STEP 2: Today's date (UTC safe)
+    # STEP 2: Today's date
     # ============================
     today_utc = datetime.now(timezone.utc).date()
+    print("today_utc:", today_utc)
 
     try:
-        # ============================
-        # STEP 3: CLASS-LEVEL BRANCHING
-        # ============================
+        print("Entering CLASS branching...")
 
         # -------- SELECTIVE --------
-        if class_name.lower() == "selective":
+        if class_name == "selective":
+            print("➡️ CLASS: SELECTIVE")
 
             # ---- THINKING SKILLS ----
             if exam_type == "thinking_skills":
+                print("➡️ EXAM: THINKING SKILLS")
 
                 latest_attempt = db.query(StudentExamThinkingSkills).filter(
                     StudentExamThinkingSkills.student_id == student_db_id,
                     func.date(StudentExamThinkingSkills.started_at) == today_utc
                 ).order_by(desc(StudentExamThinkingSkills.id)).first()
 
+                print("latest_attempt:", latest_attempt)
+
                 if not latest_attempt:
+                    print("❌ No attempt found")
                     raise HTTPException(status_code=404, detail="No attempt found for today")
 
-                db.query(StudentExamResponseThinkingSkills).filter(
+                deleted_count = db.query(StudentExamResponseThinkingSkills).filter(
                     StudentExamResponseThinkingSkills.exam_attempt_id == latest_attempt.id
                 ).delete()
 
+                print("Deleted responses count:", deleted_count)
+
                 db.delete(latest_attempt)
+                print("Deleted attempt ID:", latest_attempt.id)
+
                 db.commit()
+                print("✅ COMMIT SUCCESS")
 
                 return {
                     "message": "Thinking Skills attempt (today) deleted successfully"
@@ -3976,50 +4003,65 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
 
             # ---- MATHEMATICAL REASONING ----
             elif exam_type == "mathematical_reasoning":
+                print("➡️ EXAM: MATHEMATICAL REASONING")
 
                 latest_attempt = db.query(StudentExamMathematicalReasoning).filter(
                     StudentExamMathematicalReasoning.student_id == student_db_id,
                     func.date(StudentExamMathematicalReasoning.started_at) == today_utc
                 ).order_by(desc(StudentExamMathematicalReasoning.id)).first()
 
+                print("latest_attempt:", latest_attempt)
+
                 if not latest_attempt:
+                    print("❌ No attempt found")
                     raise HTTPException(status_code=404, detail="No attempt found for today")
 
-                db.query(StudentExamResponseMathematicalReasoning).filter(
+                deleted_count = db.query(StudentExamResponseMathematicalReasoning).filter(
                     StudentExamResponseMathematicalReasoning.exam_attempt_id == latest_attempt.id
                 ).delete()
 
+                print("Deleted responses count:", deleted_count)
+
                 db.delete(latest_attempt)
+                print("Deleted attempt ID:", latest_attempt.id)
+
                 db.commit()
+                print("✅ COMMIT SUCCESS")
 
                 return {
                     "message": "Mathematical Reasoning attempt (today) deleted successfully"
                 }
 
             else:
+                print("❌ Unsupported exam type for selective:", exam_type)
                 raise HTTPException(status_code=400, detail="Unsupported exam type for Selective")
 
         # -------- NAPLAN --------
-        elif class_name.lower() == "naplan":
-
-            # (future implementation)
+        elif class_name == "naplan":
+            print("➡️ CLASS: NAPLAN (not implemented)")
             raise HTTPException(
                 status_code=400,
                 detail="NAPLAN delete logic not implemented yet"
             )
-        elif class_name.lower() == "OC":
+
+        # -------- OC --------
+        elif class_name == "oc":
+            print("➡️ CLASS: OC (not implemented)")
             raise HTTPException(
                 status_code=400,
                 detail="OC delete logic not implemented yet"
             )
-        # -------- UNKNOWN CLASS --------
+
+        # -------- UNKNOWN --------
         else:
+            print("❌ Unsupported class type:", class_name)
             raise HTTPException(status_code=400, detail="Unsupported class type")
 
     except Exception as e:
+        print("🔥 EXCEPTION OCCURRED:", str(e))
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))     
-
+        raise HTTPException(status_code=500, detail=str(e))
+     
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
