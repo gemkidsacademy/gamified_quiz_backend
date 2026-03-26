@@ -4007,7 +4007,7 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 status_code=400,
                 detail="NAPLAN delete logic not implemented yet"
             )
-         elif class_name.lower() == "OC":
+        elif class_name.lower() == "OC":
             raise HTTPException(
                 status_code=400,
                 detail="OC delete logic not implemented yet"
