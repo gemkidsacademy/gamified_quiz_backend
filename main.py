@@ -3911,6 +3911,57 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+@app.get("/api/exams/dates/naplan")
+def get_naplan_exam_dates(
+    exam: str,
+    student_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    print("\n📥 /api/exams/dates/naplan called")
+    print("exam:", exam)
+    print("student_id:", student_id)
+
+    query = db.query(
+        AdminExamResponseNaplanNumeracy.exam_attempt_id,
+        AdminExamResponseNaplanNumeracy.created_at
+    )
+
+    # filter by exam type
+    if exam == "naplan_numeracy":
+        pass  # already correct table
+
+    # filter by student
+    if student_id:
+        student = (
+            db.query(Student)
+            .filter(Student.student_id == student_id)
+            .first()
+        )
+
+        if not student:
+            raise HTTPException(404, "Student not found")
+
+        query = query.filter(
+            StudentExamResponseNaplanNumeracy.student_id == student.id
+        )
+
+    rows = (
+        query
+        .distinct(StudentExamResponseNaplanNumeracy.exam_attempt_id)
+        .order_by(StudentExamResponseNaplanNumeracy.created_at.desc())
+        .all()
+    )
+
+    dates = [
+        row.created_at.date().isoformat()
+        for row in rows
+    ]
+
+    print("📅 Naplan dates:", dates)
+
+    return {"dates": dates}
+
+
 
 @app.get("/api/students/class")
 def get_student_class(
