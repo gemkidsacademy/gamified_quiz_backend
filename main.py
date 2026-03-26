@@ -3873,6 +3873,36 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 
+@app.get("/api/students/class")
+def get_student_class(
+    student_id: str,
+    db: Session = Depends(get_db),
+):
+    print("\n====================")
+    print("📥 /api/students/class called")
+    print("➡️ Incoming student_id:", student_id)
+
+    # 🔍 Fetch student
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student found:", student.student_id)
+    print("🏫 Class name:", student.class_name)
+    print("====================\n")
+
+    return {
+        "student_id": student.student_id,
+        "class_name": student.class_name
+    }
+ 
+
 
 @app.get("/api/exams/available")
 def get_available_exams(student_id: str, db: Session = Depends(get_db)):
@@ -9341,15 +9371,16 @@ def get_student_exam_report(
     student_id: str,
     exam: str,
     date: date,
+    class_name: str | None = Query(default=None),   # ✅ ADD THIS
     db: Session = Depends(get_db),
 ):
-    print("\n" + "=" * 80)
-    print("📊 STUDENT EXAM REPORT REQUEST")
-    print("=" * 80)
-    print("➡️ external student_id:", student_id)
-    print("➡️ exam:", exam)
-    print("➡️ date:", date)
-
+    print("\n📥 /api/reports/student called")
+    print("student_id:", student_id)
+    print("exam:", exam)
+    print("date:", date)
+    print("class_name:", class_name)
+ 
+    
     # --------------------------------------------------
     # 0️⃣ Resolve student (EXTERNAL → INTERNAL ID)
     # --------------------------------------------------
