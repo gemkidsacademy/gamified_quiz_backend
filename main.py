@@ -4374,7 +4374,58 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 
                     return {
                         "message": "OC Mathematical Reasoning attempt (today) deleted successfully"
-                    }          
+                    } 
+                elif exam_type == "reading":
+                    print("➡️ EXAM: OC READING")
+                
+                    # ✅ TIME RANGE
+                    start_of_day = datetime.combine(today_utc, datetime.min.time()).replace(tzinfo=timezone.utc)
+                    end_of_day = start_of_day + timedelta(days=1)
+                
+                    print("start_of_day:", start_of_day)
+                    print("end_of_day:", end_of_day)
+                
+                    # ✅ student_id format (OC uses string of internal id)
+                    student_id_for_query = str(student_db_id)
+                
+                    print("student_id_for_query:", student_id_for_query)
+                
+                    # ✅ FETCH LATEST ATTEMPT
+                    latest_attempt = db.query(StudentExamReadingOC).filter(
+                        StudentExamReadingOC.student_id == student_id_for_query,
+                        StudentExamReadingOC.started_at >= start_of_day,
+                        StudentExamReadingOC.started_at < end_of_day
+                    ).order_by(desc(StudentExamReadingOC.id)).first()
+                
+                    print("latest_attempt:", latest_attempt)
+                
+                    if not latest_attempt:
+                        print("❌ No OC reading attempt found")
+                        raise HTTPException(
+                            status_code=404,
+                            detail="No OC reading attempt found for today"
+                        )
+                
+                    # ✅ DELETE REPORT ROWS (using session_id)
+                    deleted_count = db.query(StudentExamReportOCReading).filter(
+                        StudentExamReportOCReading.session_id == latest_attempt.id
+                    ).delete()
+                
+                    print("Deleted OC reading report rows:", deleted_count)
+                
+                    # ✅ DELETE ATTEMPT
+                    db.query(StudentExamReadingOC).filter(
+                        StudentExamReadingOC.id == latest_attempt.id
+                    ).delete()
+                
+                    print("Deleted OC reading attempt ID:", latest_attempt.id)
+                
+                    db.commit()
+                    print("✅ OC READING DELETE SUCCESS")
+                
+                    return {
+                        "message": "OC Reading attempt (today) deleted successfully"
+                    }
                 else:
                     print("❌ Unsupported exam type for OC:", exam_type)
                     raise HTTPException(
