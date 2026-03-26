@@ -26500,6 +26500,16 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
 
     attempt.completed_at = datetime.now(timezone.utc)
     print("📦 Snapshotting Naplan Numeracy responses for admin")
+    print("🧪 Attempt ID:", attempt.id)
+
+    count = db.query(StudentExamResponseNaplanNumeracy).count()
+    print("🧪 TOTAL responses in table:", count)
+    
+    filtered_count = db.query(StudentExamResponseNaplanNumeracy)\
+        .filter(StudentExamResponseNaplanNumeracy.exam_attempt_id == attempt.id)\
+        .count()
+    
+    print("🧪 Matching responses for attempt:", filtered_count)
 
     snapshot_naplan_numeracy_responses_for_admin(db, attempt)
 
