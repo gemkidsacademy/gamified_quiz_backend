@@ -3911,6 +3911,8 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+
+
 @app.get("/api/exams/dates/naplan")
 def get_naplan_exam_dates(
     exam: str,
@@ -3926,7 +3928,7 @@ def get_naplan_exam_dates(
     # --------------------------------------------------
     query = db.query(
         AdminExamResponseNaplanNumeracy.exam_attempt_id,
-        AdminExamResponseNaplanNumeracy.created_at
+        func.max(AdminExamResponseNaplanNumeracy.created_at).label("created_at")
     )
 
     # --------------------------------------------------
@@ -3950,30 +3952,28 @@ def get_naplan_exam_dates(
         )
 
     # --------------------------------------------------
-    # Get distinct attempts
+    # Group by attempt (one row per attempt)
     # --------------------------------------------------
     rows = (
         query
-        .distinct(AdminExamResponseNaplanNumeracy.exam_attempt_id)
-        .order_by(AdminExamResponseNaplanNumeracy.created_at.desc())
+        .group_by(AdminExamResponseNaplanNumeracy.exam_attempt_id)
+        .order_by(func.max(AdminExamResponseNaplanNumeracy.created_at).desc())
         .all()
     )
 
     print("📊 Rows fetched:", len(rows))
 
     # --------------------------------------------------
-    # Extract dates
+    # Extract dates (deduplicated per attempt)
     # --------------------------------------------------
     dates = [
         row.created_at.date().isoformat()
-        for row in rows
+        for row in rows if row.created_at
     ]
 
     print("📅 Naplan dates:", dates)
 
     return {"dates": dates}
-
-
 
 @app.get("/api/students/class")
 def get_student_class(
