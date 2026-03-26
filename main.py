@@ -4070,6 +4070,49 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
             
                 return {
                     "message": "Reading attempt (today) deleted successfully"
+                }
+            elif exam_type == "writing":
+                print("➡️ EXAM: WRITING")
+            
+                # ✅ TIME RANGE (SAFE)
+                start_of_day = datetime.combine(today_utc, datetime.min.time()).replace(tzinfo=timezone.utc)
+                end_of_day = start_of_day + timedelta(days=1)
+            
+                print("start_of_day:", start_of_day)
+                print("end_of_day:", end_of_day)
+            
+                # ✅ FETCH LATEST ATTEMPT
+                latest_attempt = db.query(StudentExamWriting).filter(
+                    StudentExamWriting.student_id == student_db_id,
+                    StudentExamWriting.started_at >= start_of_day,
+                    StudentExamWriting.started_at < end_of_day
+                ).order_by(desc(StudentExamWriting.id)).first()
+            
+                print("latest_attempt:", latest_attempt)
+            
+                if not latest_attempt:
+                    print("❌ No writing attempt found")
+                    raise HTTPException(
+                        status_code=404,
+                        detail="No writing attempt found for today"
+                    )
+            
+                # ✅ DELETE RESPONSES
+                deleted_count = db.query(StudentExamResponseWriting).filter(
+                    StudentExamResponseWriting.exam_attempt_id == latest_attempt.id
+                ).delete()
+            
+                print("Deleted writing responses:", deleted_count)
+            
+                # ✅ DELETE ATTEMPT
+                db.delete(latest_attempt)
+                print("Deleted writing attempt ID:", latest_attempt.id)
+            
+                db.commit()
+                print("✅ WRITING DELETE SUCCESS")
+            
+                return {
+                    "message": "Writing attempt (today) deleted successfully"
                 } 
             else:
                 print("❌ Unsupported exam type for selective:", exam_type)
