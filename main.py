@@ -10553,22 +10553,44 @@ db: Session = Depends(get_db)
     
     return response
 
+
+
 @app.get("/api/exams/dates")
 def get_exam_dates(
     exam: str,
     student_id: str | None = None,
     db: Session = Depends(get_db),
 ):
+    print("\n==================== /api/exams/dates ====================")
+    print(f"➡️ Incoming exam: {exam}")
+    print(f"➡️ Incoming student_id: {student_id}")
+
+    # --------------------------------------------------
+    # 1️⃣ Base query
+    # --------------------------------------------------
     query = (
         db.query(AdminExamReport.created_at)
         .filter(AdminExamReport.exam_type == exam)
     )
 
-    if student_id:
-        query = query.filter(
-            AdminExamReport.student_id.ilike(f"%{student_id}%")
-        )
+    print("✅ Base query created (filtered by exam_type)")
 
+    # --------------------------------------------------
+    # 2️⃣ Apply student filter (EXACT MATCH FIX)
+    # --------------------------------------------------
+    if student_id:
+        print("🔍 Applying student_id filter (EXACT MATCH)")
+        print(f"   Comparing lower(student_id) == {student_id.lower()}")
+
+        query = query.filter(
+            func.lower(AdminExamReport.student_id) == student_id.lower()
+        )
+    else:
+        print("⚠️ No student_id provided — fetching all students for this exam")
+
+    # --------------------------------------------------
+    # 3️⃣ Execute query
+    # --------------------------------------------------
     rows = (
         query
         .distinct()
@@ -10576,12 +10598,28 @@ def get_exam_dates(
         .all()
     )
 
+    print(f"📊 Rows fetched: {len(rows)}")
+
+    # Debug each row
+    for i, row in enumerate(rows):
+        print(f"   Row {i+1}: created_at = {row.created_at}")
+
+    # --------------------------------------------------
+    # 4️⃣ Format response
+    # --------------------------------------------------
+    dates = [
+        row.created_at.date().isoformat()
+        for row in rows
+    ]
+
+    print(f"📤 Final dates returned: {dates}")
+    print("==========================================================\n")
+
     return {
-        "dates": [
-            row.created_at.date().isoformat()
-            for row in rows
-        ]
+        "dates": dates
     }
+
+
 @app.get("/api/admin/students")
 def get_admin_students(db: Session = Depends(get_db)):
     students = (
