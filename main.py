@@ -4105,7 +4105,9 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 print("Deleted writing responses:", deleted_count)
             
                 # ✅ DELETE ATTEMPT
-                db.delete(latest_attempt)
+                db.query(StudentExamWriting).filter(
+                    StudentExamWriting.id == latest_attempt.id
+                ).delete()
                 print("Deleted writing attempt ID:", latest_attempt.id)
             
                 db.commit()
