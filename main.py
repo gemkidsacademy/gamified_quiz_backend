@@ -10565,7 +10565,9 @@ def get_exam_dates(
     )
 
     if student_id:
-        query = query.filter(AdminExamReport.student_id == student_id)
+        query = query.filter(
+            AdminExamReport.student_id.ilike(f"%{student_id}%")
+        )
 
     rows = (
         query
