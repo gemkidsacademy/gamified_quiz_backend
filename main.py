@@ -9469,6 +9469,147 @@ def get_attempt_filter(ResponseModel, exam_attempt_id):
             f"{ResponseModel.__name__} has no attempt identifier column"
         )
 
+
+def get_student_exam_report_naplan(
+    student_id: str,
+    exam: str,
+    date: date,
+    db: Session
+):
+    print("\n📥 get_student_exam_report_naplan called")
+    print("student_id:", student_id)
+    print("exam:", exam)
+    print("date:", date)
+
+    # --------------------------------------------------
+    # 0️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved:", student.id)
+
+    # --------------------------------------------------
+    # 1️⃣ Get exam_attempt_id from snapshot table (by date)
+    # --------------------------------------------------
+    attempt_row = (
+        db.query(AdminExamResponseNaplanNumeracy.exam_attempt_id)
+        .filter(
+            AdminExamResponseNaplanNumeracy.student_id == student.id,
+            func.date(AdminExamResponseNaplanNumeracy.created_at) == date
+        )
+        .order_by(AdminExamResponseNaplanNumeracy.created_at.desc())
+        .first()
+    )
+
+    if not attempt_row:
+        print("❌ No attempt found for this date")
+        raise HTTPException(status_code=404, detail="Exam attempt not found")
+
+    exam_attempt_id = attempt_row.exam_attempt_id
+    print("✅ Exam attempt:", exam_attempt_id)
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch responses from SNAPSHOT table
+    # --------------------------------------------------
+    responses = (
+        db.query(AdminExamResponseNaplanNumeracy)
+        .filter(
+            AdminExamResponseNaplanNumeracy.student_id == student.id,
+            AdminExamResponseNaplanNumeracy.exam_attempt_id == exam_attempt_id
+        )
+        .all()
+    )
+
+    print("📊 Responses fetched:", len(responses))
+
+    if not responses:
+        raise HTTPException(status_code=404, detail="No responses found")
+
+    # --------------------------------------------------
+    # 3️⃣ Summary
+    # --------------------------------------------------
+    total = len(responses)
+    attempted = sum(1 for r in responses if r.is_correct is not None)
+    correct = sum(1 for r in responses if r.is_correct is True)
+    incorrect = sum(1 for r in responses if r.is_correct is False)
+    not_attempted = total - attempted
+
+    accuracy = round((correct / attempted) * 100) if attempted else 0
+    result = "Pass" if accuracy >= 50 else "Fail"
+
+    summary = {
+        "total_questions": total,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy": accuracy,
+        "score": accuracy,
+        "result": result,
+    }
+
+    # --------------------------------------------------
+    # 4️⃣ Topic-wise aggregation (DB-level)
+    # --------------------------------------------------
+    topic_rows = (
+        db.query(
+            AdminExamResponseNaplanNumeracy.topic,
+            func.count().label("total"),
+            func.count(case((AdminExamResponseNaplanNumeracy.is_correct.isnot(None), 1))).label("attempted"),
+            func.count(case((AdminExamResponseNaplanNumeracy.is_correct.is_(True), 1))).label("correct"),
+            func.count(case((AdminExamResponseNaplanNumeracy.is_correct.is_(False), 1))).label("incorrect"),
+        )
+        .filter(
+            AdminExamResponseNaplanNumeracy.student_id == student.id,
+            AdminExamResponseNaplanNumeracy.exam_attempt_id == exam_attempt_id
+        )
+        .group_by(AdminExamResponseNaplanNumeracy.topic)
+        .all()
+    )
+
+    topics = []
+    improvement_areas = []
+
+    for row in topic_rows:
+        accuracy_pct = round((row.correct / row.attempted) * 100) if row.attempted else 0
+        weakness = 100 - accuracy_pct
+
+        topics.append({
+            "topic": row.topic,
+            "total": row.total,
+            "attempted": row.attempted,
+            "correct": row.correct,
+            "incorrect": row.incorrect,
+            "accuracy": accuracy_pct,
+        })
+
+        improvement_areas.append({
+            "topic": row.topic,
+            "weakness": weakness,
+        })
+
+    # --------------------------------------------------
+    # 5️⃣ Final response
+    # --------------------------------------------------
+    print("✅ Naplan report generated")
+    print("=" * 80 + "\n")
+
+    return {
+        "exam": exam,
+        "date": date.isoformat(),
+        "summary": summary,
+        "topics": topics,
+        "improvement_areas": improvement_areas,
+    }
+
 @app.get("/api/reports/student")
 def get_student_exam_report(
     student_id: str,
@@ -9633,6 +9774,7 @@ def get_student_exam_report(
         "topics": topics,
         "improvement_areas": improvement_areas,
     }
+    
 @app.get("/api/exams/writing/dates")
 def get_writing_exam_dates(student_id: str, db: Session = Depends(get_db)):
 
