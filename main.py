@@ -10586,7 +10586,7 @@ def get_exam_dates(
 
         print("✅ Internal student.id:", student.id)
 
-        query = query.filter(AdminExamReport.student_id == student.id)
+        query = query.filter(AdminExamReport.student_id == student_id)
         print("🔍 Applied student filter using internal ID")
 
     rows = (
