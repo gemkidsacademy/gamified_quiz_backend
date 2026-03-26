@@ -3921,16 +3921,17 @@ def get_naplan_exam_dates(
     print("exam:", exam)
     print("student_id:", student_id)
 
+    # --------------------------------------------------
+    # Base query (SNAPSHOT TABLE)
+    # --------------------------------------------------
     query = db.query(
         AdminExamResponseNaplanNumeracy.exam_attempt_id,
         AdminExamResponseNaplanNumeracy.created_at
     )
 
-    # filter by exam type
-    if exam == "naplan_numeracy":
-        pass  # already correct table
-
-    # filter by student
+    # --------------------------------------------------
+    # Filter by student (external → internal)
+    # --------------------------------------------------
     if student_id:
         student = (
             db.query(Student)
@@ -3939,19 +3940,30 @@ def get_naplan_exam_dates(
         )
 
         if not student:
-            raise HTTPException(404, "Student not found")
+            print("❌ Student not found")
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        print("✅ Student resolved:", student.id)
 
         query = query.filter(
-            StudentExamResponseNaplanNumeracy.student_id == student.id
+            AdminExamResponseNaplanNumeracy.student_id == student.id
         )
 
+    # --------------------------------------------------
+    # Get distinct attempts
+    # --------------------------------------------------
     rows = (
         query
-        .distinct(StudentExamResponseNaplanNumeracy.exam_attempt_id)
-        .order_by(StudentExamResponseNaplanNumeracy.created_at.desc())
+        .distinct(AdminExamResponseNaplanNumeracy.exam_attempt_id)
+        .order_by(AdminExamResponseNaplanNumeracy.created_at.desc())
         .all()
     )
 
+    print("📊 Rows fetched:", len(rows))
+
+    # --------------------------------------------------
+    # Extract dates
+    # --------------------------------------------------
     dates = [
         row.created_at.date().isoformat()
         for row in rows
