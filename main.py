@@ -1133,7 +1133,8 @@ class AdminExamResponseNaplanNumeracy(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # 🔑 Same identifiers
-    student_id = Column(Integer, nullable=False)
+    # Admin table
+    student_id = Column(String, nullable=False)
     exam_id = Column(Integer, nullable=False)
     exam_attempt_id = Column(Integer, nullable=False)
 
