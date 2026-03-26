@@ -9222,10 +9222,9 @@ def get_writing_result(
 
     if not exam_state or not exam_state.ai_evaluation_json:
         raise HTTPException(
-            status_code=500,
-            detail="AI evaluation missing for writing exam"
+            status_code=404,
+            detail="Writing result not ready yet"
         )
-
     # --------------------------------------------------
     # 4️⃣ Final response (UI SAFE)
     # --------------------------------------------------
