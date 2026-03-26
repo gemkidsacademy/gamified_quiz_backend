@@ -3874,6 +3874,49 @@ def normalize_question_blocks(raw_blocks):
     )
 
 
+@app.get("/api/exams/available")
+def get_available_exams(student_id: str, db: Session = Depends(get_db)):
+
+    # 1️⃣ Get student
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    class_name = student.class_name.lower()
+
+    # 2️⃣ Map exams based on class
+    if class_name == "selective":
+        exams = [
+            {"key": "thinking_skills", "label": "Thinking Skills"},
+            {"key": "mathematical_reasoning", "label": "Mathematical Reasoning"},
+            {"key": "reading", "label": "Reading"},
+            {"key": "writing", "label": "Writing"},
+        ]
+
+    elif class_name == "oc":
+        exams = [
+            {"key": "thinking_skills", "label": "Thinking Skills"},
+            {"key": "mathematical_reasoning", "label": "Mathematical Reasoning"},
+            {"key": "reading", "label": "Reading"},
+        ]
+
+    elif class_name == "naplan":
+        exams = [
+            {"key": "naplan_numeracy", "label": "Numeracy"},
+            {"key": "naplan_language_conventions", "label": "Language Conventions"},
+            {"key": "naplan_reading", "label": "Reading"},
+        ]
+
+    else:
+        exams = []
+
+    # 3️⃣ Return response
+    return {"exams": exams}
 @app.get("/api/students/basic")
 def get_students_basic_info(db: Session = Depends(get_db)):
     students = db.query(Student).all()
