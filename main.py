@@ -4271,11 +4271,66 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
 
         # -------- OC --------
         elif class_name == "oc":
-            print("➡️ CLASS: OC (not implemented)")
-            raise HTTPException(
-                status_code=400,
-                detail="OC delete logic not implemented yet"
-            )
+                print("➡️ CLASS: OC")
+            
+                if exam_type == "thinking_skills":
+                    print("➡️ EXAM: OC THINKING SKILLS")
+            
+                    # ✅ TIME RANGE
+                    start_of_day = datetime.combine(today_utc, datetime.min.time()).replace(tzinfo=timezone.utc)
+                    end_of_day = start_of_day + timedelta(days=1)
+            
+                    print("start_of_day:", start_of_day)
+                    print("end_of_day:", end_of_day)
+            
+                    # ⚠️ IMPORTANT: adjust based on your DB
+                    student_id_for_query = str(student_db_id)  # or student_external_id
+            
+                    print("student_id_for_query:", student_id_for_query)
+            
+                    # ✅ FETCH LATEST ATTEMPT
+                    latest_attempt = db.query(StudentExamOCThinkingSkills).filter(
+                        StudentExamOCThinkingSkills.student_id == student_id_for_query,
+                        StudentExamOCThinkingSkills.started_at >= start_of_day,
+                        StudentExamOCThinkingSkills.started_at < end_of_day
+                    ).order_by(desc(StudentExamOCThinkingSkills.id)).first()
+            
+                    print("latest_attempt:", latest_attempt)
+            
+                    if not latest_attempt:
+                        print("❌ No OC thinking skills attempt found")
+                        raise HTTPException(
+                            status_code=404,
+                            detail="No OC thinking skills attempt found for today"
+                        )
+            
+                    # ✅ DELETE RESPONSES
+                    deleted_count = db.query(StudentExamResponseOCThinkingSkills).filter(
+                        StudentExamResponseOCThinkingSkills.exam_attempt_id == latest_attempt.id
+                    ).delete()
+            
+                    print("Deleted OC thinking responses:", deleted_count)
+            
+                    # ✅ DELETE ATTEMPT (safe delete)
+                    db.query(StudentExamOCThinkingSkills).filter(
+                        StudentExamOCThinkingSkills.id == latest_attempt.id
+                    ).delete()
+            
+                    print("Deleted OC attempt ID:", latest_attempt.id)
+            
+                    db.commit()
+                    print("✅ OC THINKING SKILLS DELETE SUCCESS")
+            
+                    return {
+                        "message": "OC Thinking Skills attempt (today) deleted successfully"
+                    }
+            
+                else:
+                    print("❌ Unsupported exam type for OC:", exam_type)
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Unsupported exam type for OC"
+                    )
 
         # -------- UNKNOWN --------
         else:
