@@ -4385,9 +4385,10 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                     print("start_of_day:", start_of_day)
                     print("end_of_day:", end_of_day)
                 
-                    # ✅ student_id format (OC uses string of internal id)
-                    student_id_for_query = str(student_db_id)
+                    # ✅ FIX: use external student id (Gem_OC_001)
+                    student_id_for_query = student_external_id.strip()
                 
+                    print("student_external_id:", student_external_id)
                     print("student_id_for_query:", student_id_for_query)
                 
                     # ✅ FETCH LATEST ATTEMPT
@@ -4395,12 +4396,12 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                         StudentExamReadingOC.student_id == student_id_for_query,
                         StudentExamReadingOC.started_at >= start_of_day,
                         StudentExamReadingOC.started_at < end_of_day
-                    ).order_by(desc(StudentExamReadingOC.id)).first()
+                    ).order_by(desc(StudentExamReadingOC.started_at), desc(StudentExamReadingOC.id)).first()
                 
                     print("latest_attempt:", latest_attempt)
                 
                     if not latest_attempt:
-                        print("❌ No OC reading attempt found")
+                        print("❌ No OC reading attempt found for student:", student_id_for_query)
                         raise HTTPException(
                             status_code=404,
                             detail="No OC reading attempt found for today"
@@ -4413,7 +4414,7 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 
                     print("Deleted OC reading report rows:", deleted_count)
                 
-                    # ✅ DELETE ATTEMPT
+                    # ✅ DELETE ATTEMPT (safe delete)
                     db.query(StudentExamReadingOC).filter(
                         StudentExamReadingOC.id == latest_attempt.id
                     ).delete()
