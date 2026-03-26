@@ -10559,35 +10559,13 @@ def get_exam_dates(
     student_id: str | None = None,
     db: Session = Depends(get_db),
 ):
-    print("\n====================")
-    print("📥 /api/exams/dates called")
-    print("➡️ Incoming exam:", exam)
-    print("➡️ Incoming student_id:", student_id)
-
     query = (
         db.query(AdminExamReport.created_at)
         .filter(AdminExamReport.exam_type == exam)
     )
 
-    print("🔍 Applied exam filter")
-
     if student_id:
-        student = (
-            db.query(Student)
-            .filter(Student.student_id == student_id)
-            .first()
-        )
-
-        print("👤 Resolved student:", student)
-
-        if not student:
-            print("❌ Student NOT found")
-            raise HTTPException(404, "Student not found")
-
-        print("✅ Internal student.id:", student.id)
-
         query = query.filter(AdminExamReport.student_id == student_id)
-        print("🔍 Applied student filter using internal ID")
 
     rows = (
         query
@@ -10596,18 +10574,12 @@ def get_exam_dates(
         .all()
     )
 
-    print("📊 Rows fetched:", rows)
-    print("📊 Number of rows:", len(rows))
-
-    dates = [
-        row.created_at.date().isoformat()
-        for row in rows
-    ]
-
-    print("📅 Final dates returned:", dates)
-    print("====================\n")
-
-    return {"dates": dates} 
+    return {
+        "dates": [
+            row.created_at.date().isoformat()
+            for row in rows
+        ]
+    }
 @app.get("/api/admin/students")
 def get_admin_students(db: Session = Depends(get_db)):
     students = (
