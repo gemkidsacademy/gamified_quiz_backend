@@ -4034,10 +4034,18 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
             elif exam_type == "reading":
                 print("➡️ EXAM: READING")
             
-                # STEP 1: Get latest attempt
+                # ✅ TIME RANGE FIX
+                start_of_day = datetime.combine(today_utc, datetime.min.time()).replace(tzinfo=timezone.utc)
+                end_of_day = start_of_day + timedelta(days=1)
+            
+                print("start_of_day:", start_of_day)
+                print("end_of_day:", end_of_day)
+            
+                # ✅ STUDENT ID FIX
                 latest_attempt = db.query(StudentExamReading).filter(
-                    StudentExamReading.student_id == student_external_id,
-                    func.date(StudentExamReading.started_at) == today_utc
+                    StudentExamReading.student_id == str(student_db_id),
+                    StudentExamReading.started_at >= start_of_day,
+                    StudentExamReading.started_at < end_of_day
                 ).order_by(desc(StudentExamReading.id)).first()
             
                 print("latest_attempt:", latest_attempt)
@@ -4046,14 +4054,14 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                     print("❌ No reading attempt found")
                     raise HTTPException(status_code=404, detail="No reading attempt found for today")
             
-                # STEP 2: Delete report rows using session_id
+                # ✅ DELETE REPORTS
                 deleted_count = db.query(StudentExamReportReading).filter(
                     StudentExamReportReading.session_id == latest_attempt.id
                 ).delete()
             
                 print("Deleted reading report rows:", deleted_count)
             
-                # STEP 3: Delete attempt
+                # ✅ DELETE ATTEMPT
                 db.delete(latest_attempt)
                 print("Deleted reading attempt ID:", latest_attempt.id)
             
