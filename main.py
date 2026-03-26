@@ -4216,6 +4216,52 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                     return {
                         "message": "NAPLAN Language Conventions attempt (today) deleted successfully"
                     }
+                elif exam_type == "reading":
+                    print("➡️ EXAM: NAPLAN READING")
+                
+                    # ✅ TIME RANGE
+                    start_of_day = datetime.combine(today_utc, datetime.min.time()).replace(tzinfo=timezone.utc)
+                    end_of_day = start_of_day + timedelta(days=1)
+                
+                    print("start_of_day:", start_of_day)
+                    print("end_of_day:", end_of_day)
+                
+                    # ✅ FETCH LATEST ATTEMPT
+                    latest_attempt = db.query(StudentExamNaplanReading).filter(
+                        StudentExamNaplanReading.student_id == str(student_db_id),  # 🔥 IMPORTANT (based on your DB pattern)
+                        StudentExamNaplanReading.started_at >= start_of_day,
+                        StudentExamNaplanReading.started_at < end_of_day
+                    ).order_by(desc(StudentExamNaplanReading.id)).first()
+                
+                    print("latest_attempt:", latest_attempt)
+                
+                    if not latest_attempt:
+                        print("❌ No naplan reading attempt found")
+                        raise HTTPException(
+                            status_code=404,
+                            detail="No naplan reading attempt found for today"
+                        )
+                
+                    # ✅ DELETE RESPONSES
+                    deleted_count = db.query(StudentExamResponseNaplanReading).filter(
+                        StudentExamResponseNaplanReading.exam_attempt_id == latest_attempt.id
+                    ).delete()
+                
+                    print("Deleted naplan reading responses:", deleted_count)
+                
+                    # ✅ DELETE ATTEMPT (safe delete to avoid ORM FK issues)
+                    db.query(StudentExamNaplanReading).filter(
+                        StudentExamNaplanReading.id == latest_attempt.id
+                    ).delete()
+                
+                    print("Deleted naplan reading attempt ID:", latest_attempt.id)
+                
+                    db.commit()
+                    print("✅ NAPLAN READING DELETE SUCCESS")
+                
+                    return {
+                        "message": "NAPLAN Reading attempt (today) deleted successfully"
+                    }
                 else:
                     print("❌ Unsupported exam type for NAPLAN:", exam_type)
                     raise HTTPException(
