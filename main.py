@@ -1127,6 +1127,45 @@ class AdminExamResponseThinkingSkills(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+ class AdminExamResponseNaplanNumeracy(Base):
+    __tablename__ = "admin_exam_response_naplan_numeracy"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 🔑 Same identifiers
+    student_id = Column(Integer, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+    exam_attempt_id = Column(Integer, nullable=False)
+
+    # 🔢 Question-level data
+    q_id = Column(Integer, nullable=False)
+
+    # 📘 Naplan-specific topic (VERY IMPORTANT)
+    topic = Column(String, nullable=True)
+    # Example values:
+    # "Number & Algebra"
+    # "Measurement & Geometry"
+    # "Statistics & Probability"
+
+    # 🧠 Answer tracking
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)
+
+    # 📊 Optional (useful for numeracy)
+    difficulty = Column(String, nullable=True)   # easy / medium / hard
+    skill = Column(String, nullable=True)        # optional finer grouping
+
+    # 🕒 Snapshot metadata
+    attempt_completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+  
 class StudentExamResponseNaplanLanguageConventions(Base):
     __tablename__ = "student_exam_response_naplan_language_conventions"
 
@@ -9379,6 +9418,19 @@ def get_student_exam_report(
     print("exam:", exam)
     print("date:", date)
     print("class_name:", class_name)
+
+     # --------------------------------------------------
+    # 🔀 ROUTE TO NAPLAN HANDLER
+    # --------------------------------------------------
+    if class_name and class_name.lower() == "naplan":
+        print("🔁 Routing to NAPLAN handler")
+
+        return get_student_exam_report_naplan(
+            student_id=student_id,
+            exam=exam,
+            date=date,
+            db=db
+        )
  
     
     # --------------------------------------------------
@@ -26150,6 +26202,36 @@ def finish_naplan_reading_exam(
         "exam_attempt_id": attempt.id,
         "accuracy_percent": accuracy
     }
+def snapshot_naplan_numeracy_responses_for_admin(db: Session, attempt):
+
+    print("📦 Snapshotting Naplan Numeracy responses")
+
+    responses = (
+        db.query(StudentExamResponseNaplanNumeracy)
+        .filter(
+            StudentExamResponseNaplanNumeracy.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    print(f"📊 Found {len(responses)} responses to snapshot")
+
+    for r in responses:
+        db.add(
+            AdminExamResponseNaplanNumeracy(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.exam_attempt_id,
+                q_id=r.q_id,
+                topic=r.topic,
+                selected_option=r.selected_option,
+                correct_option=r.correct_option,
+                is_correct=r.is_correct,
+                attempt_completed_at=attempt.completed_at
+            )
+        )
+
+    print("✅ Snapshot complete")
  
 @app.post("/api/student/finish-exam/naplan-numeracy")
 def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
@@ -26354,6 +26436,9 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
     )
 
     attempt.completed_at = datetime.now(timezone.utc)
+    print("📦 Snapshotting Naplan Numeracy responses for admin")
+
+    snapshot_naplan_numeracy_responses_for_admin(db, attempt)
 
     db.commit()
 
