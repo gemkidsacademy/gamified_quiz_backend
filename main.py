@@ -4122,11 +4122,61 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
 
         # -------- NAPLAN --------
         elif class_name == "naplan":
-            print("➡️ CLASS: NAPLAN (not implemented)")
-            raise HTTPException(
-                status_code=400,
-                detail="NAPLAN delete logic not implemented yet"
-            )
+                print("➡️ CLASS: NAPLAN")
+            
+                if exam_type == "numeracy":
+                    print("➡️ EXAM: NUMERACY")
+            
+                    # ✅ TIME RANGE
+                    start_of_day = datetime.combine(today_utc, datetime.min.time()).replace(tzinfo=timezone.utc)
+                    end_of_day = start_of_day + timedelta(days=1)
+            
+                    print("start_of_day:", start_of_day)
+                    print("end_of_day:", end_of_day)
+            
+                    # ✅ FETCH LATEST ATTEMPT
+                    latest_attempt = db.query(StudentExamNaplanNumeracy).filter(
+                        StudentExamNaplanNumeracy.student_id == str(student_db_id),  # 🔥 IMPORTANT
+                        StudentExamNaplanNumeracy.started_at >= start_of_day,
+                        StudentExamNaplanNumeracy.started_at < end_of_day
+                    ).order_by(desc(StudentExamNaplanNumeracy.id)).first()
+            
+                    print("latest_attempt:", latest_attempt)
+            
+                    if not latest_attempt:
+                        print("❌ No numeracy attempt found")
+                        raise HTTPException(
+                            status_code=404,
+                            detail="No numeracy attempt found for today"
+                        )
+            
+                    # ✅ DELETE RESPONSES
+                    deleted_count = db.query(StudentExamResponseNaplanNumeracy).filter(
+                        StudentExamResponseNaplanNumeracy.exam_attempt_id == latest_attempt.id
+                    ).delete()
+            
+                    print("Deleted numeracy responses:", deleted_count)
+            
+                    # ✅ DELETE ATTEMPT (safe delete to avoid ORM issues)
+                    db.query(StudentExamNaplanNumeracy).filter(
+                        StudentExamNaplanNumeracy.id == latest_attempt.id
+                    ).delete()
+            
+                    print("Deleted numeracy attempt ID:", latest_attempt.id)
+            
+                    db.commit()
+                    print("✅ NAPLAN NUMERACY DELETE SUCCESS")
+            
+                    return {
+                        "message": "NAPLAN Numeracy attempt (today) deleted successfully"
+                    }
+            
+                else:
+                    print("❌ Unsupported exam type for NAPLAN:", exam_type)
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Unsupported exam type for NAPLAN"
+                    )
 
         # -------- OC --------
         elif class_name == "oc":
