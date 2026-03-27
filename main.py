@@ -26273,14 +26273,16 @@ def finish_naplan_language_conventions_exam(
             accuracy_percent=accuracy
         )
     )
+    
+    attempt.completed_at = datetime.now(timezone.utc)
+    
+    
+    db.commit()
     copy_to_admin_snapshot_naplan_language_conventions(
         db,
         attempt.id,
         student_year
     )
-    attempt.completed_at = datetime.now(timezone.utc)
-    
-    
     db.commit()
     print("🏁 Language Conventions exam successfully completed")
 
