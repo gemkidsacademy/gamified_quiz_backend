@@ -178,6 +178,23 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class AdminExamResponseNaplanReading(Base):
+    __tablename__ = "admin_exam_response_naplan_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+    exam_attempt_id = Column(Integer, nullable=False)
+
+    q_id = Column(String, nullable=False)
+    topic = Column(String)
+
+    selected_option = Column(Text)
+    correct_option = Column(Text)
+    is_correct = Column(Boolean)
+
+    submitted_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 class StudentExamOCMathematicalReasoning(Base):
     __tablename__ = "student_exams_oc_mathematical_reasoning"
 
@@ -26318,7 +26335,51 @@ def normalize_student_answer(answer):
             return answer
 
     return answer
+
+def copy_to_admin_snapshot_naplan_reading(
+    db: Session,
+    attempt_id: int
+):
+    print("📸 Creating READING ADMIN SNAPSHOT for attempt:", attempt_id)
+
+    # Prevent duplicates
+    existing = (
+        db.query(AdminExamResponseNaplanReading)
+        .filter(AdminExamResponseNaplanReading.exam_attempt_id == attempt_id)
+        .first()
+    )
+
+    if existing:
+        print("⚠️ Snapshot already exists, skipping...")
+        return
+
+    responses = (
+        db.query(StudentExamResponseNaplanReading)
+        .filter(StudentExamResponseNaplanReading.exam_attempt_id == attempt_id)
+        .all()
+    )
+
+    print(f"📦 Found {len(responses)} responses to snapshot")
+
+    admin_rows = []
+
+    for r in responses:
+        admin_rows.append(
+            AdminExamResponseNaplanReading(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.exam_attempt_id,
+                q_id=r.q_id,
+                topic=r.topic,
+                selected_option=r.selected_option,
+                correct_option=r.correct_option,
+                is_correct=r.is_correct,
+            )
+        )
+
+    db.bulk_save_objects(admin_rows)
  
+
 @app.post("/api/student/finish-exam/naplan-reading")
 def finish_naplan_reading_exam(
     payload: dict,
@@ -26545,6 +26606,13 @@ def finish_naplan_reading_exam(
     # 🔑 THIS IS THE CRITICAL LINE FOR YOUR 404 BUG
     attempt.completed_at = datetime.now(timezone.utc)
 
+    db.commit()
+        copy_to_admin_snapshot_naplan_reading(
+        db,
+        attempt.id
+    )
+    
+    # 4. commit snapshot
     db.commit()
 
     print("🏁 NAPLAN Reading exam successfully completed")
