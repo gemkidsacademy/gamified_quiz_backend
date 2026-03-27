@@ -3975,7 +3975,100 @@ def normalize_question_blocks(raw_blocks):
 
 
 
+@app.get("/api/exams/dates/oc")
+def get_oc_exam_dates(
+    exam: str,
+    student_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    print("\n==================== /api/exams/dates/oc ====================")
+    print(f"➡️ Incoming exam: {exam}")
+    print(f"➡️ Incoming student_id: {student_id}")
 
+    exam = exam.lower()
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve internal student ID
+    # --------------------------------------------------
+    internal_student_id = None
+
+    if student_id:
+        student = (
+            db.query(Student)
+            .filter(Student.student_id == student_id)
+            .first()
+        )
+
+        if student:
+            internal_student_id = student.id
+            print(f"✅ Student resolved → internal id: {internal_student_id}")
+        else:
+            print("⚠️ Student not found in Student table")
+
+    # --------------------------------------------------
+    # 2️⃣ Branch based on OC exam type
+    # --------------------------------------------------
+    if exam == "oc_thinking_skills":
+        print("🧠 Running OC THINKING SKILLS logic")
+
+        Model = AdminExamResponseOCThinkingSkills
+        timestamp_col = Model.submitted_at
+
+    # 👉 Add more OC exams here later
+    # elif exam == "oc_math":
+    #     Model = AdminExamResponseOCMath
+    #     timestamp_col = Model.submitted_at
+
+    # elif exam == "oc_reading":
+    #     Model = AdminExamResponseOCReading
+    #     timestamp_col = Model.submitted_at
+
+    else:
+        print(f"❌ Invalid OC exam type received: {exam}")
+        raise HTTPException(status_code=400, detail="Invalid OC exam type")
+
+    # --------------------------------------------------
+    # 3️⃣ Build query
+    # --------------------------------------------------
+    query = db.query(
+        Model.exam_attempt_id,
+        func.max(timestamp_col).label("timestamp")
+    )
+
+    if internal_student_id:
+        print("🔍 Filtering by internal_student_id")
+        query = query.filter(Model.student_id == internal_student_id)
+    else:
+        print("⚠️ Skipping student filter (no internal ID)")
+
+    rows = (
+        query
+        .group_by(Model.exam_attempt_id)
+        .order_by(func.max(timestamp_col).desc())
+        .all()
+    )
+
+    # --------------------------------------------------
+    # 4️⃣ Debug rows
+    # --------------------------------------------------
+    print(f"📊 Rows fetched: {len(rows)}")
+
+    for i, row in enumerate(rows):
+        print(f"   Row {i+1}: timestamp = {row.timestamp}")
+
+    # --------------------------------------------------
+    # 5️⃣ Extract unique dates
+    # --------------------------------------------------
+    dates = sorted(list(set(
+        row.timestamp.date().isoformat()
+        for row in rows if row.timestamp
+    )), reverse=True)
+
+    print(f"📅 Final dates returned: {dates}")
+    print("=================================================================\n")
+
+    return {"dates": dates}
+ 
 @app.get("/api/exams/dates/naplan")
 def get_naplan_exam_dates(
     exam: str,
