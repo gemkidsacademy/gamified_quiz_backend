@@ -4223,9 +4223,9 @@ def get_available_exams(student_id: str, db: Session = Depends(get_db)):
 
     elif class_name == "oc":
         exams = [
-            {"key": "thinking_skills", "label": "Thinking Skills"},
-            {"key": "mathematical_reasoning", "label": "Mathematical Reasoning"},
-            {"key": "reading", "label": "Reading"},
+            {"key": "oc_thinking_skills", "label": "Thinking Skills"},
+            {"key": "oc_mathematical_reasoning", "label": "Mathematical Reasoning"},
+            {"key": "oc_reading", "label": "Reading"},
         ]
 
     elif class_name == "naplan":
