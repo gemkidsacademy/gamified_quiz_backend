@@ -26607,7 +26607,7 @@ def finish_naplan_reading_exam(
     attempt.completed_at = datetime.now(timezone.utc)
 
     db.commit()
-        copy_to_admin_snapshot_naplan_reading(
+    copy_to_admin_snapshot_naplan_reading(
         db,
         attempt.id
     )
