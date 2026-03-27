@@ -4009,15 +4009,14 @@ def get_naplan_exam_dates(
             ).label("timestamp")
         )
 
-        if student_id:
-            print("🔍 Filtering language by student_id (string match)")
+        if internal_student_id:
+            print("🔍 Filtering language by internal_student_id")
             query = query.filter(
-                func.lower(AdminExamResponseNaplanLanguageConventions.student_id)
-                == student_id.lower()
+                AdminExamResponseNaplanLanguageConventions.student_id == internal_student_id
             )
         else:
-            print("⚠️ No student_id provided")
-
+            print("⚠️ Skipping student filter (no internal ID)")
+        
         rows = (
             query
             .group_by(
