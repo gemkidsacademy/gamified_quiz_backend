@@ -9659,7 +9659,165 @@ def get_attempt_filter(ResponseModel, exam_attempt_id):
             f"{ResponseModel.__name__} has no attempt identifier column"
         )
 
+def get_student_exam_report_oc(
+    student_id: str,
+    exam: str,
+    date: date,
+    db: Session
+):
+    print("\n📥 get_student_exam_report_oc called")
+    print("student_id:", student_id)
+    print("exam:", exam)
+    print("date:", date)
 
+    exam = exam.lower()
+
+    # --------------------------------------------------
+    # 0️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved:", student.id)
+
+    # --------------------------------------------------
+    # 1️⃣ Select correct OC model
+    # --------------------------------------------------
+    if exam == "oc_thinking_skills":
+        print("🧠 Using OC THINKING SKILLS model")
+        Model = AdminExamResponseOCThinkingSkills
+        timestamp_col = Model.submitted_at
+
+    elif exam == "oc_mathematical_reasoning":
+        print("🧮 Using OC MATHEMATICAL REASONING model")
+        Model = AdminExamResponseOCMathematicalReasoning
+        timestamp_col = Model.submitted_at
+
+    elif exam == "oc_reading":
+        print("📖 Using OC READING model")
+        Model = AdminExamResponseOCReading
+        timestamp_col = Model.submitted_at
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid OC exam type")
+
+    # --------------------------------------------------
+    # 2️⃣ Get attempt_id
+    # --------------------------------------------------
+    attempt_row = (
+        db.query(Model.exam_attempt_id)
+        .filter(
+            Model.student_id == student.id,
+            func.date(timestamp_col) == date
+        )
+        .order_by(timestamp_col.desc())
+        .first()
+    )
+
+    if not attempt_row:
+        print("❌ No OC attempt found for this date")
+        raise HTTPException(status_code=404, detail="Exam attempt not found")
+
+    exam_attempt_id = attempt_row.exam_attempt_id
+    print("✅ Exam attempt:", exam_attempt_id)
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch responses
+    # --------------------------------------------------
+    responses = (
+        db.query(Model)
+        .filter(
+            Model.student_id == student.id,
+            Model.exam_attempt_id == exam_attempt_id
+        )
+        .all()
+    )
+
+    print("📊 Responses fetched:", len(responses))
+
+    if not responses:
+        raise HTTPException(status_code=404, detail="No responses found")
+
+    # --------------------------------------------------
+    # 4️⃣ Summary
+    # --------------------------------------------------
+    total = len(responses)
+    attempted = sum(1 for r in responses if r.is_correct is not None)
+    correct = sum(1 for r in responses if r.is_correct is True)
+    incorrect = sum(1 for r in responses if r.is_correct is False)
+    not_attempted = total - attempted
+
+    accuracy = round((correct / attempted) * 100) if attempted else 0
+    result = "Pass" if accuracy >= 50 else "Fail"
+
+    summary = {
+        "total_questions": total,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy": accuracy,
+        "score": accuracy,
+        "result": result,
+    }
+
+    # --------------------------------------------------
+    # 5️⃣ Topic aggregation
+    # --------------------------------------------------
+    topic_rows = (
+        db.query(
+            Model.topic,
+            func.count().label("total"),
+            func.count(case((Model.is_correct.isnot(None), 1))).label("attempted"),
+            func.count(case((Model.is_correct.is_(True), 1))).label("correct"),
+            func.count(case((Model.is_correct.is_(False), 1))).label("incorrect"),
+        )
+        .filter(
+            Model.student_id == student.id,
+            Model.exam_attempt_id == exam_attempt_id
+        )
+        .group_by(Model.topic)
+        .all()
+    )
+
+    topics = []
+    improvement_areas = []
+
+    for row in topic_rows:
+        accuracy_pct = round((row.correct / row.attempted) * 100) if row.attempted else 0
+        weakness = 100 - accuracy_pct
+
+        topics.append({
+            "topic": row.topic,
+            "total": row.total,
+            "attempted": row.attempted,
+            "correct": row.correct,
+            "incorrect": row.incorrect,
+            "accuracy": accuracy_pct,
+        })
+
+        improvement_areas.append({
+            "topic": row.topic,
+            "weakness": weakness,
+        })
+
+    print("✅ OC report generated")
+    print("=" * 80 + "\n")
+
+    return {
+        "exam": exam,
+        "date": date.isoformat(),
+        "summary": summary,
+        "topics": topics,
+        "improvement_areas": improvement_areas,
+    }
+ 
 def get_student_exam_report_naplan(
     student_id: str,
     exam: str,
@@ -9845,7 +10003,18 @@ def get_student_exam_report(
             date=date,
             db=db
         )
- 
+    # --------------------------------------------------
+    # 🔀 ROUTE TO OC HANDLER
+    # --------------------------------------------------
+    if class_name and class_name.lower() == "oc":
+        print("🔁 Routing to OC handler")
+    
+        return get_student_exam_report_oc(
+            student_id=student_id,
+            exam=exam,
+            date=date,
+            db=db
+        )
     
     # --------------------------------------------------
     # 0️⃣ Resolve student (EXTERNAL → INTERNAL ID)
