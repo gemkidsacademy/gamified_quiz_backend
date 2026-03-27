@@ -3937,6 +3937,8 @@ def normalize_question_blocks(raw_blocks):
     )
 
 
+from sqlalchemy import func
+
 @app.get("/api/exams/dates/naplan")
 def get_naplan_exam_dates(
     exam: str,
@@ -3944,20 +3946,14 @@ def get_naplan_exam_dates(
     db: Session = Depends(get_db),
 ):
     print("\n📥 /api/exams/dates/naplan called")
-    print("exam:", exam)
-    print("student_id:", student_id)
+    print("➡️ exam:", exam)
+    print("➡️ student_id:", student_id)
 
     # --------------------------------------------------
-    # Base query (SNAPSHOT TABLE)
+    # 1️⃣ Resolve student (external → internal)
     # --------------------------------------------------
-    query = db.query(
-        AdminExamResponseNaplanNumeracy.exam_attempt_id,
-        func.max(AdminExamResponseNaplanNumeracy.created_at).label("created_at")
-    )
+    internal_student_id = None
 
-    # --------------------------------------------------
-    # Filter by student (external → internal)
-    # --------------------------------------------------
     if student_id:
         student = (
             db.query(Student)
@@ -3969,33 +3965,67 @@ def get_naplan_exam_dates(
             print("❌ Student not found")
             raise HTTPException(status_code=404, detail="Student not found")
 
-        print("✅ Student resolved:", student.id)
+        internal_student_id = student.id
+        print("✅ Student resolved → internal id:", internal_student_id)
 
-        query = query.filter(
-            AdminExamResponseNaplanNumeracy.student_id == student.id
+    # --------------------------------------------------
+    # 2️⃣ Branch based on exam type
+    # --------------------------------------------------
+    if exam.lower() == "numeracy":
+        print("🧮 Running NUMERACY logic")
+
+        query = db.query(
+            AdminExamResponseNaplanNumeracy.exam_attempt_id,
+            func.max(AdminExamResponseNaplanNumeracy.created_at).label("created_at")
         )
 
-    # --------------------------------------------------
-    # Group by attempt (one row per attempt)
-    # --------------------------------------------------
-    rows = (
-        query
-        .group_by(AdminExamResponseNaplanNumeracy.exam_attempt_id)
-        .order_by(func.max(AdminExamResponseNaplanNumeracy.created_at).desc())
-        .all()
-    )
+        if internal_student_id:
+            query = query.filter(
+                AdminExamResponseNaplanNumeracy.student_id == internal_student_id
+            )
+
+        rows = (
+            query
+            .group_by(AdminExamResponseNaplanNumeracy.exam_attempt_id)
+            .order_by(func.max(AdminExamResponseNaplanNumeracy.created_at).desc())
+            .all()
+        )
+
+    elif exam.lower() == "language_conventions":
+        print("📘 Running LANGUAGE CONVENTIONS logic")
+
+        query = db.query(
+            AdminExamResponseNaplanLanguage.exam_attempt_id,
+            func.max(AdminExamResponseNaplanLanguage.created_at).label("created_at")
+        )
+
+        if internal_student_id:
+            query = query.filter(
+                AdminExamResponseNaplanLanguage.student_id == internal_student_id
+            )
+
+        rows = (
+            query
+            .group_by(AdminExamResponseNaplanLanguage.exam_attempt_id)
+            .order_by(func.max(AdminExamResponseNaplanLanguage.created_at).desc())
+            .all()
+        )
+
+    else:
+        print("❌ Invalid exam type received:", exam)
+        raise HTTPException(status_code=400, detail="Invalid exam type")
 
     print("📊 Rows fetched:", len(rows))
 
     # --------------------------------------------------
-    # Extract dates (deduplicated per attempt)
+    # 3️⃣ Extract dates
     # --------------------------------------------------
     dates = [
         row.created_at.date().isoformat()
         for row in rows if row.created_at
     ]
 
-    print("📅 Naplan dates:", dates)
+    print("📅 Final dates returned:", dates)
 
     return {"dates": dates}
 
