@@ -178,6 +178,24 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class AdminExamResponseOCThinkingSkills(Base):
+    __tablename__ = "admin_exam_response_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+    exam_attempt_id = Column(Integer, nullable=False)
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String)
+
+    selected_option = Column(String)
+    correct_option = Column(String)
+    is_correct = Column(Boolean)
+
+    submitted_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+ 
 class AdminExamResponseNaplanReading(Base):
     __tablename__ = "admin_exam_response_naplan_reading"
 
@@ -27560,6 +27578,52 @@ def finish_thinking_skills_exam(
         "wrong": wrong,
         "accuracy": accuracy
     }
+def copy_to_admin_snapshot_oc_thinking_skills(
+    db: Session,
+    attempt_id: int
+):
+    print("📸 Creating OC THINKING SKILLS ADMIN SNAPSHOT for attempt:", attempt_id)
+
+    # prevent duplicates
+    existing = (
+        db.query(AdminExamResponseOCThinkingSkills)
+        .filter(AdminExamResponseOCThinkingSkills.exam_attempt_id == attempt_id)
+        .first()
+    )
+
+    if existing:
+        print("⚠️ Snapshot already exists, skipping...")
+        return
+
+    responses = (
+        db.query(StudentExamResponseOCThinkingSkills)
+        .filter(
+            StudentExamResponseOCThinkingSkills.exam_attempt_id == attempt_id
+        )
+        .all()
+    )
+
+    print(f"📦 Found {len(responses)} responses to snapshot")
+
+    admin_rows = []
+
+    for r in responses:
+        admin_rows.append(
+            AdminExamResponseOCThinkingSkills(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.exam_attempt_id,
+                q_id=r.q_id,
+                topic=getattr(r, "topic", None),  # safe
+                selected_option=r.selected_option,
+                correct_option=r.correct_option,
+                is_correct=r.is_correct,
+            )
+        )
+
+    db.bulk_save_objects(admin_rows)
+ 
+
 
 @app.post("/api/student/finish-exam/oc-thinking-skills")
 def finish_oc_thinking_skills_exam(
@@ -27697,6 +27761,13 @@ def finish_oc_thinking_skills_exam(
         attempt.completed_at = datetime.now(timezone.utc)
         print("✅ OC Attempt marked completed")
 
+    db.commit()
+    copy_to_admin_snapshot_oc_thinking_skills(
+        db,
+        attempt.id
+    )
+    
+    # 3️⃣ commit snapshot
     db.commit()
 
     print("================ FINISH OC THINKING SKILLS EXAM END =================\n")
