@@ -1166,7 +1166,30 @@ class AdminExamResponseNaplanNumeracy(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
-  
+class AdminExamResponseNaplanLanguageConventions(Base):
+    __tablename__ = "admin_exam_response_naplan_language_conventions"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Keep student reference (but no need for FK if you want loose snapshot)
+    student_id = Column(String, nullable=False, index=True)
+
+    exam_id = Column(Integer, nullable=False)
+    exam_attempt_id = Column(Integer, nullable=False)
+
+    year = Column(Integer, nullable=False, index=True)
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)
+
+    # 🔥 Snapshot metadata (VERY IMPORTANT)
+    submitted_at = Column(DateTime, server_default=func.now(), index=True)
+ 
 class StudentExamResponseNaplanLanguageConventions(Base):
     __tablename__ = "student_exam_response_naplan_language_conventions"
 
@@ -25895,7 +25918,55 @@ def normalize_naplan_evaluation_answer_value(answer):
         return val.lower()
 
     return answer
- 
+
+def copy_to_admin_snapshot_naplan_language_conventions(db, attempt_id, student_year):
+    print("📸 Creating ADMIN SNAPSHOT for attempt:", attempt_id)
+
+    # 🔥 PREVENT DUPLICATES
+    existing = (
+        db.query(AdminExamResponseNaplanLanguageConventions)
+        .filter(
+            AdminExamResponseNaplanLanguageConventions.exam_attempt_id == attempt_id
+        )
+        .first()
+    )
+
+    if existing:
+        print("⚠️ Snapshot already exists, skipping...")
+        return
+
+    responses = (
+        db.query(StudentExamResponseNaplanLanguageConventions)
+        .filter(
+            StudentExamResponseNaplanLanguageConventions.exam_attempt_id == attempt_id,
+            StudentExamResponseNaplanLanguageConventions.year == student_year
+        )
+        .all()
+    )
+
+    print(f"📦 Found {len(responses)} responses to snapshot")
+
+    admin_rows = []
+
+    for r in responses:
+        admin_rows.append(
+            AdminExamResponseNaplanLanguageConventions(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.exam_attempt_id,
+                year=r.year,
+                q_id=r.q_id,
+                topic=r.topic,
+                selected_option=r.selected_option,
+                correct_option=r.correct_option,
+                is_correct=r.is_correct,
+            )
+        )
+
+    db.bulk_save_objects(admin_rows)
+    
+
+    print("✅ ADMIN SNAPSHOT SAVED")
 @app.post("/api/student/finish-exam/naplan-language-conventions")
 def finish_naplan_language_conventions_exam(
     payload: dict,
@@ -26145,10 +26216,15 @@ def finish_naplan_language_conventions_exam(
             accuracy_percent=accuracy
         )
     )
-
+    copy_to_admin_snapshot_naplan_language_conventions(
+        db,
+        attempt.id,
+        student_year
+    )
     attempt.completed_at = datetime.now(timezone.utc)
+    
+    
     db.commit()
-
     print("🏁 Language Conventions exam successfully completed")
 
     return {
