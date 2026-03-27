@@ -9560,8 +9560,10 @@ def get_student_exam_report_naplan(
     print("exam:", exam)
     print("date:", date)
 
+    exam = exam.lower()
+
     # --------------------------------------------------
-    # 0️⃣ Resolve student (external → internal)
+    # 0️⃣ Resolve student
     # --------------------------------------------------
     student = (
         db.query(Student)
@@ -9570,21 +9572,34 @@ def get_student_exam_report_naplan(
     )
 
     if not student:
-        print("❌ Student not found")
         raise HTTPException(status_code=404, detail="Student not found")
 
     print("✅ Student resolved:", student.id)
 
     # --------------------------------------------------
-    # 1️⃣ Get exam_attempt_id from snapshot table (by date)
+    # 1️⃣ Select correct table + timestamp column
+    # --------------------------------------------------
+    if exam == "naplan_numeracy":
+        Model = AdminExamResponseNaplanNumeracy
+        timestamp_col = Model.created_at
+
+    elif exam == "naplan_language_conventions":
+        Model = AdminExamResponseNaplanLanguageConventions
+        timestamp_col = Model.submitted_at
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid naplan exam type")
+
+    # --------------------------------------------------
+    # 2️⃣ Get attempt_id
     # --------------------------------------------------
     attempt_row = (
-        db.query(AdminExamResponseNaplanNumeracy.exam_attempt_id)
+        db.query(Model.exam_attempt_id)
         .filter(
-            AdminExamResponseNaplanNumeracy.student_id == student.id,
-            func.date(AdminExamResponseNaplanNumeracy.created_at) == date
+            Model.student_id == student.id,
+            func.date(timestamp_col) == date
         )
-        .order_by(AdminExamResponseNaplanNumeracy.created_at.desc())
+        .order_by(timestamp_col.desc())
         .first()
     )
 
@@ -9596,13 +9611,13 @@ def get_student_exam_report_naplan(
     print("✅ Exam attempt:", exam_attempt_id)
 
     # --------------------------------------------------
-    # 2️⃣ Fetch responses from SNAPSHOT table
+    # 3️⃣ Fetch responses
     # --------------------------------------------------
     responses = (
-        db.query(AdminExamResponseNaplanNumeracy)
+        db.query(Model)
         .filter(
-            AdminExamResponseNaplanNumeracy.student_id == student.id,
-            AdminExamResponseNaplanNumeracy.exam_attempt_id == exam_attempt_id
+            Model.student_id == student.id,
+            Model.exam_attempt_id == exam_attempt_id
         )
         .all()
     )
@@ -9613,7 +9628,7 @@ def get_student_exam_report_naplan(
         raise HTTPException(status_code=404, detail="No responses found")
 
     # --------------------------------------------------
-    # 3️⃣ Summary
+    # 4️⃣ Summary
     # --------------------------------------------------
     total = len(responses)
     attempted = sum(1 for r in responses if r.is_correct is not None)
@@ -9636,21 +9651,21 @@ def get_student_exam_report_naplan(
     }
 
     # --------------------------------------------------
-    # 4️⃣ Topic-wise aggregation (DB-level)
+    # 5️⃣ Topic aggregation
     # --------------------------------------------------
     topic_rows = (
         db.query(
-            AdminExamResponseNaplanNumeracy.topic,
+            Model.topic,
             func.count().label("total"),
-            func.count(case((AdminExamResponseNaplanNumeracy.is_correct.isnot(None), 1))).label("attempted"),
-            func.count(case((AdminExamResponseNaplanNumeracy.is_correct.is_(True), 1))).label("correct"),
-            func.count(case((AdminExamResponseNaplanNumeracy.is_correct.is_(False), 1))).label("incorrect"),
+            func.count(case((Model.is_correct.isnot(None), 1))).label("attempted"),
+            func.count(case((Model.is_correct.is_(True), 1))).label("correct"),
+            func.count(case((Model.is_correct.is_(False), 1))).label("incorrect"),
         )
         .filter(
-            AdminExamResponseNaplanNumeracy.student_id == student.id,
-            AdminExamResponseNaplanNumeracy.exam_attempt_id == exam_attempt_id
+            Model.student_id == student.id,
+            Model.exam_attempt_id == exam_attempt_id
         )
-        .group_by(AdminExamResponseNaplanNumeracy.topic)
+        .group_by(Model.topic)
         .all()
     )
 
@@ -9675,9 +9690,6 @@ def get_student_exam_report_naplan(
             "weakness": weakness,
         })
 
-    # --------------------------------------------------
-    # 5️⃣ Final response
-    # --------------------------------------------------
     print("✅ Naplan report generated")
     print("=" * 80 + "\n")
 
@@ -9688,7 +9700,7 @@ def get_student_exam_report_naplan(
         "topics": topics,
         "improvement_areas": improvement_areas,
     }
-
+ 
 @app.get("/api/reports/student")
 def get_student_exam_report(
     student_id: str,
