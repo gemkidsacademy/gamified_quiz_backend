@@ -8323,6 +8323,8 @@ def get_exam_review_oc_mathematical_reasoning(
     }
 
 
+
+
 @app.get("/api/classes/{class_name}/exam-dates")
 def get_class_exam_dates(
     class_name: str,
@@ -8339,14 +8341,14 @@ def get_class_exam_dates(
     exam_key = exam.lower().strip()
 
     # =========================================
-    # 🟦 SELECTIVE (unchanged)
+    # 🟦 SELECTIVE
     # =========================================
     if class_key == "selective":
         print("🟦 Branch: SELECTIVE")
 
         dates = (
             db.query(func.date(AdminExamReport.created_at))
-            .join(Student, Student.student_id == AdminExamReport.student_id)
+            .join(Student, Student.id == AdminExamReport.student_id)   # ✅ FIXED
             .filter(
                 Student.class_name == class_name,
                 func.lower(AdminExamReport.exam_type) == exam_key,
@@ -8357,7 +8359,7 @@ def get_class_exam_dates(
         )
 
     # =========================================
-    # 🟩 OC (USE YOUR TABLES)
+    # 🟩 OC
     # =========================================
     elif class_key == "oc":
         print("🟩 Branch: OC")
@@ -8372,7 +8374,7 @@ def get_class_exam_dates(
 
         elif exam_key == "oc_reading":
             model = StudentExamReadingOC
-            date_column = model.created_at   # ✅ this table uses created_at
+            date_column = model.created_at   # this table uses created_at
 
         else:
             print("❌ Invalid OC exam:", exam_key)
@@ -8380,10 +8382,10 @@ def get_class_exam_dates(
 
         dates = (
             db.query(func.date(date_column))
-            .join(Student, Student.student_id == model.student_id)
+            .join(Student, Student.id == model.student_id)   # ✅ FIXED
             .filter(
                 Student.class_name == class_name,
-                date_column.isnot(None)  # ✅ only completed attempts
+                date_column.isnot(None)
             )
             .distinct()
             .order_by(func.date(date_column))
@@ -8391,7 +8393,7 @@ def get_class_exam_dates(
         )
 
     # =========================================
-    # 🟨 NAPLAN (USE YOUR TABLES)
+    # 🟨 NAPLAN
     # =========================================
     elif class_key == "naplan":
         print("🟨 Branch: NAPLAN")
@@ -8411,10 +8413,10 @@ def get_class_exam_dates(
 
         dates = (
             db.query(func.date(model.completed_at))
-            .join(Student, Student.student_id == model.student_id)
+            .join(Student, Student.id == model.student_id)   # ✅ FIXED
             .filter(
                 Student.class_name == class_name,
-                model.completed_at.isnot(None)  # ✅ only completed attempts
+                model.completed_at.isnot(None)
             )
             .distinct()
             .order_by(func.date(model.completed_at))
@@ -8440,7 +8442,6 @@ def get_class_exam_dates(
         "exam": exam,
         "dates": date_list,
     }
-
 
 def get_exam_response_model(exam: str):
     if exam == "thinking_skills":
