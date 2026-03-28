@@ -8321,6 +8321,8 @@ def get_exam_review_oc_mathematical_reasoning(
         "exam_attempt_id": exam_attempt_id,
         "questions": review_questions
     }
+
+
 @app.get("/api/classes/{class_name}/exam-dates")
 def get_class_exam_dates(
     class_name: str,
@@ -8333,21 +8335,102 @@ def get_class_exam_dates(
     print("   exam:", exam)
     print("==============================")
 
-    dates = (
-        db.query(func.date(AdminExamReport.created_at))
-        .join(
-            Student,
-            Student.student_id == AdminExamReport.student_id
-        )
-        .filter(
-            Student.class_name == class_name,
-            AdminExamReport.exam_type == exam,
-        )
-        .distinct()
-        .order_by(func.date(AdminExamReport.created_at))
-        .all()
-    )
+    class_key = class_name.lower().strip()
+    exam_key = exam.lower().strip()
 
+    # =========================================
+    # 🟦 SELECTIVE (unchanged)
+    # =========================================
+    if class_key == "selective":
+        print("🟦 Branch: SELECTIVE")
+
+        dates = (
+            db.query(func.date(AdminExamReport.created_at))
+            .join(Student, Student.student_id == AdminExamReport.student_id)
+            .filter(
+                Student.class_name == class_name,
+                func.lower(AdminExamReport.exam_type) == exam_key,
+            )
+            .distinct()
+            .order_by(func.date(AdminExamReport.created_at))
+            .all()
+        )
+
+    # =========================================
+    # 🟩 OC (USE YOUR TABLES)
+    # =========================================
+    elif class_key == "oc":
+        print("🟩 Branch: OC")
+
+        if exam_key == "oc_thinking_skills":
+            model = StudentExamOCThinkingSkills
+            date_column = model.completed_at
+
+        elif exam_key == "oc_mathematical_reasoning":
+            model = StudentExamOCMathematicalReasoning
+            date_column = model.completed_at
+
+        elif exam_key == "oc_reading":
+            model = StudentExamReadingOC
+            date_column = model.created_at   # ✅ this table uses created_at
+
+        else:
+            print("❌ Invalid OC exam:", exam_key)
+            return {"class_name": class_name, "exam": exam, "dates": []}
+
+        dates = (
+            db.query(func.date(date_column))
+            .join(Student, Student.student_id == model.student_id)
+            .filter(
+                Student.class_name == class_name,
+                date_column.isnot(None)  # ✅ only completed attempts
+            )
+            .distinct()
+            .order_by(func.date(date_column))
+            .all()
+        )
+
+    # =========================================
+    # 🟨 NAPLAN (USE YOUR TABLES)
+    # =========================================
+    elif class_key == "naplan":
+        print("🟨 Branch: NAPLAN")
+
+        if exam_key == "naplan_numeracy":
+            model = StudentExamNaplanNumeracy
+
+        elif exam_key == "naplan_language_conventions":
+            model = StudentExamNaplanLanguageConventions
+
+        elif exam_key == "naplan_reading":
+            model = StudentExamNaplanReading
+
+        else:
+            print("❌ Invalid Naplan exam:", exam_key)
+            return {"class_name": class_name, "exam": exam, "dates": []}
+
+        dates = (
+            db.query(func.date(model.completed_at))
+            .join(Student, Student.student_id == model.student_id)
+            .filter(
+                Student.class_name == class_name,
+                model.completed_at.isnot(None)  # ✅ only completed attempts
+            )
+            .distinct()
+            .order_by(func.date(model.completed_at))
+            .all()
+        )
+
+    # =========================================
+    # 🔴 UNKNOWN CLASS
+    # =========================================
+    else:
+        print("❌ Unknown class:", class_name)
+        return {"class_name": class_name, "exam": exam, "dates": []}
+
+    # =========================================
+    # FORMAT RESPONSE
+    # =========================================
     date_list = [d[0].isoformat() for d in dates if d[0]]
 
     print("✅ dates_found:", date_list)
@@ -8357,6 +8440,8 @@ def get_class_exam_dates(
         "exam": exam,
         "dates": date_list,
     }
+
+
 def get_exam_response_model(exam: str):
     if exam == "thinking_skills":
         return StudentExamResponseThinkingSkills
