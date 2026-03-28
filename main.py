@@ -4031,10 +4031,11 @@ def get_oc_exam_dates(
         Model = AdminExamResponseOCThinkingSkills
         timestamp_col = Model.submitted_at
 
-    # 👉 Add more OC exams here later
-    # elif exam == "oc_math":
-    #     Model = AdminExamResponseOCMath
-    #     timestamp_col = Model.submitted_at
+    elif exam == "oc_mathematical_reasoning":
+        print("🧮 Running OC MATHEMATICAL REASONING logic")
+    
+        Model = AdminExamResponseOCMathematicalReasoning
+        timestamp_col = Model.submitted_at
 
     # elif exam == "oc_reading":
     #     Model = AdminExamResponseOCReading
