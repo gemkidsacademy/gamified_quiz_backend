@@ -9020,7 +9020,36 @@ def get_student_cumulative_report_overall(
             status_code=500,
             detail="Internal error while generating cumulative report",
         )
-     
+def compute_student_scores_from_responses(raw_rows):
+    attempts = {}
+
+    for r in raw_rows:
+        key = (r.student_id, r.exam_attempt_id)
+
+        if key not in attempts:
+            attempts[key] = {"total": 0, "correct": 0}
+
+        attempts[key]["total"] += 1
+
+        if r.is_correct:
+            attempts[key]["correct"] += 1
+
+    results = []
+
+    for (sid, _), v in attempts.items():
+        total = v["total"]
+        correct = v["correct"]
+
+        score = round((correct / total) * 100) if total else 0
+
+        results.append({
+            "student_id": sid,
+            "score": score,
+            "accuracy": score
+        })
+
+    return results
+ 
 @app.get("/api/reports/class")
 def class_exam_report(
     class_name: str,
@@ -9033,6 +9062,8 @@ def class_exam_report(
     print("class_name:", class_name)
     print("exam:", exam)
     print("date:", date)
+    class_key = class_name.lower().strip()
+    exam_key = exam.lower().strip()
 
     # ===========================
     # STEP 1: Resolve class days
@@ -9116,82 +9147,292 @@ def class_exam_report(
         # ---------------------------
         # Resolve exam responses
         # ---------------------------
-        print("[STEP 3] Resolving exam attempts for date")
-        external_ids = list(student_code_map.values())
+        
+        print("[STEP 3] Resolving responses based on class type")
 
-        attempt_ids = (
-            db.query(AdminExamReport.exam_attempt_id)
-            .filter(
-                AdminExamReport.exam_type == exam,
-                func.date(AdminExamReport.created_at) == date,
-                AdminExamReport.student_id.in_(external_ids)
-            )
-            .all()
-        )
-
+        # =========================================
+        # 🟦 SELECTIVE (KEEP YOUR EXISTING LOGIC)
+        # =========================================
+        if class_key == "selective":
         
-        attempt_ids = [a[0] for a in attempt_ids]
+            external_ids = list(student_code_map.values())
         
-        print("[STEP 3] Exam attempt IDs:", attempt_ids)        
-        if not attempt_ids:
-            print("[STEP 3] No exam attempts found for this date")
-            students_attempted = 0
-            student_results = []
-        else:
-            print("[STEP 3] Resolving exam responses")
-        
-            ResponseModel = get_exam_response_model(exam)
-            print("[STEP 3] Using response model:", ResponseModel.__name__)
-        
-            raw_rows = (
-                db.query(
-                    ResponseModel.student_id,
-                    ResponseModel.exam_attempt_id,
-                    ResponseModel.is_correct
-                )
+            attempt_ids = (
+                db.query(AdminExamReport.exam_attempt_id)
                 .filter(
-                    ResponseModel.exam_attempt_id.in_(attempt_ids)
+                    AdminExamReport.exam_type == exam,
+                    func.date(AdminExamReport.created_at) == date,
+                    AdminExamReport.student_id.in_(external_ids)
                 )
                 .all()
             )
         
-            print("[STEP 3] Raw rows fetched:", len(raw_rows))
+            attempt_ids = [a[0] for a in attempt_ids]
         
-            attempts = {}
-            
-            for r in raw_rows:
-                key = (r.student_id, r.exam_attempt_id)
-            
-                if key not in attempts:
-                    attempts[key] = {"total": 0, "correct": 0}
-            
-                attempts[key]["total"] += 1
-            
-                # NULL treated as incorrect
-                if r.is_correct is True:
-                    attempts[key]["correct"] += 1
-            
-            student_results = []
-            
-            for (student_id, _), stats in attempts.items():
-                total = stats["total"]
-                correct = stats["correct"]
-            
-                score = round((correct / total) * 100) if total else 0
-            
-                result = {
-                    "student_id": student_id,  # internal ID
-                    "student_code": student_code_map.get(student_id),
-                    "student_name": student_name_map.get(student_id),
-                    "score": score,
-                    "accuracy": score
-                }
+            if not attempt_ids:
+                student_results = []
+                students_attempted = 0
+        
+            else:
+                ResponseModel = get_exam_response_model(exam)
+        
+                raw_rows = (
+                    db.query(
+                        ResponseModel.student_id,
+                        ResponseModel.exam_attempt_id,
+                        ResponseModel.is_correct
+                    )
+                    .filter(ResponseModel.exam_attempt_id.in_(attempt_ids))
+                    .all()
+                )
+        
+                raw_results = compute_student_scores_from_responses(raw_rows)
 
+                student_results = []
+                for r in raw_results:
+                    # r["student_id"] is external ID → convert to internal
+                    internal_id = next(
+                        (k for k, v in student_code_map.items() if v == r["student_id"]),
+                        None
+                    )
+                
+                    if internal_id:
+                        student_results.append({
+                            "student_id": internal_id,
+                            "student_code": r["student_id"],
+                            "student_name": student_name_map.get(internal_id),
+                            "score": r["score"],
+                            "accuracy": r["accuracy"]
+                        })
+                students_attempted = len(student_results)
+        
+        
+        # =========================================
+        # 🟩 OC
+        # =========================================
+        elif class_key == "oc":
+        
+            if exam_key == "oc_thinking_skills":
+        
+                raw_rows = db.query(
+                    StudentExamResponseOCThinkingSkills.student_id,
+                    StudentExamResponseOCThinkingSkills.exam_attempt_id,
+                    StudentExamResponseOCThinkingSkills.is_correct
+                ).join(
+                    StudentExamOCThinkingSkills,
+                    StudentExamOCThinkingSkills.id == StudentExamResponseOCThinkingSkills.exam_attempt_id
+                ).join(
+                    Student,
+                    Student.id == StudentExamOCThinkingSkills.student_id
+                ).filter(
+                    Student.class_name == class_name,
+                    func.date(StudentExamOCThinkingSkills.completed_at) == date
+                ).all()
+        
+                raw_results = compute_student_scores_from_responses(raw_rows)
+
+                student_results = []
+                
+                for r in raw_results:
+                    sid = r["student_id"]
+                
+                    student_results.append({
+                        "student_id": sid,
+                        "student_code": student_code_map.get(sid),
+                        "student_name": student_name_map.get(sid),
+                        "score": r["score"],
+                        "accuracy": r["accuracy"]
+                    })
+                
+                students_attempted = len(student_results)
+        
+        
+            elif exam_key == "oc_mathematical_reasoning":
+        
+                raw_rows = db.query(
+                    StudentExamResponseOCMathematicalReasoning.student_id,
+                    StudentExamResponseOCMathematicalReasoning.exam_attempt_id,
+                    StudentExamResponseOCMathematicalReasoning.is_correct
+                ).join(
+                    StudentExamOCMathematicalReasoning,
+                    StudentExamOCMathematicalReasoning.id == StudentExamResponseOCMathematicalReasoning.exam_attempt_id
+                ).join(
+                    Student,
+                    Student.id == StudentExamOCMathematicalReasoning.student_id
+                ).filter(
+                    Student.class_name == class_name,
+                    func.date(StudentExamOCMathematicalReasoning.completed_at) == date
+                ).all()
+        
+                raw_results = compute_student_scores_from_responses(raw_rows)
+
+                student_results = []
+                
+                for r in raw_results:
+                    sid = r["student_id"]
+                
+                    student_results.append({
+                        "student_id": sid,
+                        "student_code": student_code_map.get(sid),
+                        "student_name": student_name_map.get(sid),
+                        "score": r["score"],
+                        "accuracy": r["accuracy"]
+                    })
+                
+                students_attempted = len(student_results)
+        
+        
+            elif exam_key == "oc_reading":
+
+                raw_rows = db.query(
+                    StudentExamReportOCReading.student_id,
+                    StudentExamReportOCReading.session_id.label("exam_attempt_id"),
+                    StudentExamReportOCReading.is_correct
+                ).join(
+                    Student,
+                    Student.student_id == StudentExamReportOCReading.student_id
+                ).filter(
+                    Student.class_name == class_name,
+                    func.date(StudentExamReportOCReading.created_at) == date
+                ).all()
             
-                print("[STEP 3] Student result:", result)
-                student_results.append(result)
+                # STEP 1: compute scores
+                raw_results = compute_student_scores_from_responses(raw_rows)
             
-            students_attempted = len(student_results)
+                # STEP 2: convert external → internal IDs
+                student_results = []
+            
+                for r in raw_results:
+                    external_id = r["student_id"]
+            
+                    internal_id = next(
+                        (k for k, v in student_code_map.items() if v == external_id),
+                        None
+                    )
+            
+                    if internal_id:
+                        student_results.append({
+                            "student_id": internal_id,
+                            "student_code": external_id,
+                            "student_name": student_name_map.get(internal_id),
+                            "score": r["score"],
+                            "accuracy": r["accuracy"]
+                        })
+            
+                students_attempted = len(student_results)
+        
+            else:
+                student_results = []
+                students_attempted = 0
+        
+        
+        # =========================================
+        # 🟨 NAPLAN
+        # =========================================
+        elif class_key == "naplan":
+        
+            if exam_key == "naplan_numeracy":
+        
+                raw_rows = db.query(
+                    StudentExamResponseNaplanNumeracy.student_id,
+                    StudentExamResponseNaplanNumeracy.exam_attempt_id,
+                    StudentExamResponseNaplanNumeracy.is_correct
+                ).join(
+                    StudentExamNaplanNumeracy,
+                    StudentExamNaplanNumeracy.id == StudentExamResponseNaplanNumeracy.exam_attempt_id
+                ).join(
+                    Student,
+                    Student.id == StudentExamNaplanNumeracy.student_id
+                ).filter(
+                    Student.class_name == class_name,
+                    func.date(StudentExamNaplanNumeracy.completed_at) == date
+                ).all()
+        
+                raw_results = compute_student_scores_from_responses(raw_rows)
+
+                student_results = []
+                
+                for r in raw_results:
+                    sid = r["student_id"]
+                
+                    student_results.append({
+                        "student_id": sid,
+                        "student_code": student_code_map.get(sid),
+                        "student_name": student_name_map.get(sid),
+                        "score": r["score"],
+                        "accuracy": r["accuracy"]
+                    })
+                
+                students_attempted = len(student_results)
+            elif exam_key == "naplan_language_conventions":
+
+                raw_rows = db.query(
+                    StudentExamResponseNaplanLanguageConventions.student_id,
+                    StudentExamResponseNaplanLanguageConventions.exam_attempt_id,
+                    StudentExamResponseNaplanLanguageConventions.is_correct
+                ).join(
+                    StudentExamNaplanLanguageConventions,
+                    StudentExamNaplanLanguageConventions.id == StudentExamResponseNaplanLanguageConventions.exam_attempt_id
+                ).join(
+                    Student,
+                    Student.id == StudentExamNaplanLanguageConventions.student_id
+                ).filter(
+                    Student.class_name == class_name,
+                    func.date(StudentExamNaplanLanguageConventions.completed_at) == date
+                ).all()
+            
+                raw_results = compute_student_scores_from_responses(raw_rows)
+            
+                student_results = []
+                for r in raw_results:
+                    sid = r["student_id"]
+            
+                    student_results.append({
+                        "student_id": sid,
+                        "student_code": student_code_map.get(sid),
+                        "student_name": student_name_map.get(sid),
+                        "score": r["score"],
+                        "accuracy": r["accuracy"]
+                    })
+            
+                students_attempted = len(student_results)
+            elif exam_key == "naplan_reading":
+
+                raw_rows = db.query(
+                    StudentExamResponseNaplanReading.student_id,
+                    StudentExamResponseNaplanReading.exam_attempt_id,
+                    StudentExamResponseNaplanReading.is_correct
+                ).join(
+                    StudentExamNaplanReading,
+                    StudentExamNaplanReading.id == StudentExamResponseNaplanReading.exam_attempt_id
+                ).join(
+                    Student,
+                    Student.id == StudentExamNaplanReading.student_id
+                ).filter(
+                    Student.class_name == class_name,
+                    func.date(StudentExamNaplanReading.completed_at) == date
+                ).all()
+            
+                raw_results = compute_student_scores_from_responses(raw_rows)
+            
+                student_results = []
+                for r in raw_results:
+                    sid = r["student_id"]
+            
+                    student_results.append({
+                        "student_id": sid,
+                        "student_code": student_code_map.get(sid),
+                        "student_name": student_name_map.get(sid),
+                        "score": r["score"],
+                        "accuracy": r["accuracy"]
+                    })
+            
+                students_attempted = len(student_results)
+            else:
+                student_results = []
+                students_attempted = 0
+            
+            
             print("[STEP 3] Students attempted:", students_attempted)
   
 
