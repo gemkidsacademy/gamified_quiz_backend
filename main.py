@@ -8345,10 +8345,13 @@ def get_class_exam_dates(
     # =========================================
     if class_key == "selective":
         print("🟦 Branch: SELECTIVE")
-
+    
         dates = (
             db.query(func.date(AdminExamReport.created_at))
-            .join(Student, Student.id == AdminExamReport.student_id)   # ✅ FIXED
+            .join(
+                Student,
+                Student.student_id == AdminExamReport.student_id   # ✅ FIXED BACK
+            )
             .filter(
                 Student.class_name == class_name,
                 func.lower(AdminExamReport.exam_type) == exam_key,
