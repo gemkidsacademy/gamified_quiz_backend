@@ -4028,7 +4028,7 @@ def get_exam_dates_mathematical_reasoning(
     print(f"✅ Student resolved: id={student.id}")
 
     # --------------------------------------------------
-    # 2️⃣ Fetch distinct exams attempted by student
+    # 2️⃣ Fetch exams attempted by student
     # --------------------------------------------------
     rows = (
         db.query(
@@ -4042,8 +4042,7 @@ def get_exam_dates_mathematical_reasoning(
         .filter(
             StudentExamMathematicalReasoning.student_id == student.id
         )
-        .distinct(Exam.id)
-        .order_by(Exam.created_at.desc())
+        .order_by(Exam.created_at.desc())   # ✅ latest first
         .all()
     )
 
@@ -4052,15 +4051,13 @@ def get_exam_dates_mathematical_reasoning(
     # --------------------------------------------------
     # 3️⃣ Format response
     # --------------------------------------------------
-    result = [
+    return [
         {
             "exam_id": r.exam_id,
             "date": r.date.isoformat() if r.date else None
         }
         for r in rows
     ]
-
-    return result
 @app.get("/api/exams/by-category")
 def get_exams_by_category(category: str = Query(...)):
     category = category.lower().strip()
