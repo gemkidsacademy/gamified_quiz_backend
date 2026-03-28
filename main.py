@@ -24492,7 +24492,8 @@ def start_exam(
     math_attempt = (
         db.query(StudentExamMathematicalReasoning)
         .filter(
-            StudentExamMathematicalReasoning.student_id == student.id
+            StudentExamMathematicalReasoning.student_id == student.id,
+            StudentExamMathematicalReasoning.exam_id == exam.id   # ✅ KEY CHANGE
         )
         .order_by(StudentExamMathematicalReasoning.started_at.desc())
         .first()
