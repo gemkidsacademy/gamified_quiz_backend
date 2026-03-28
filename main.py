@@ -14571,9 +14571,11 @@ def get_thinking_skills_report(
 
 @app.get("/api/student/exam-report/mathematical-reasoning")
 def get_mathematical_reasoning_report(
-    student_id: str = Query(..., description="External student id e.g. Gem002"),
+    student_id: str = Query(...),
+    exam_id: int = Query(...),   # 🔥 ADD THIS
     db: Session = Depends(get_db)
 ):
+ 
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
@@ -14593,9 +14595,9 @@ def get_mathematical_reasoning_report(
         db.query(StudentExamMathematicalReasoning)
         .filter(
             StudentExamMathematicalReasoning.student_id == student.id,
+            StudentExamMathematicalReasoning.exam_id == exam_id,   # 🔥 KEY FIX
             StudentExamMathematicalReasoning.completed_at.isnot(None)
         )
-        .order_by(StudentExamMathematicalReasoning.completed_at.desc())
         .first()
     )
 
