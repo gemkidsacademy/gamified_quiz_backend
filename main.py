@@ -11089,22 +11089,8 @@ def generate_exam(
             )
         )
 
-    # --------------------------------------------------
-    # 5️⃣ Clear previous exams (FULL WIPE)
-    # --------------------------------------------------
-    # 1️⃣ MR-specific responses (DEEPEST CHILD)
-    # 1️⃣ MR exam responses (only Selective)
-    # 1️⃣ MR exam responses (delete everything)
-    
-    db.query(StudentExamResponseMathematicalReasoning).delete(
-        synchronize_session=False
-    )
     
     
-    # 2️⃣ MR exam attempts (delete everything)
-    db.query(StudentExamMathematicalReasoning).delete(
-        synchronize_session=False
-    )
     
     
     
