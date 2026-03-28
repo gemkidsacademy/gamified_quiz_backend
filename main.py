@@ -4005,6 +4005,62 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 
+@app.get("/api/student/exam-dates/mathematical-reasoning")
+def get_exam_dates_mathematical_reasoning(
+    student_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    print("\n📅 FETCH EXAM DATES (MR)")
+    print("➡ student_id:", student_id)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        return []
+
+    print(f"✅ Student resolved: id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch distinct exams attempted by student
+    # --------------------------------------------------
+    rows = (
+        db.query(
+            Exam.id.label("exam_id"),
+            Exam.created_at.label("date")
+        )
+        .join(
+            StudentExamMathematicalReasoning,
+            StudentExamMathematicalReasoning.exam_id == Exam.id
+        )
+        .filter(
+            StudentExamMathematicalReasoning.student_id == student.id
+        )
+        .distinct(Exam.id)
+        .order_by(Exam.created_at.desc())
+        .all()
+    )
+
+    print(f"📊 Found {len(rows)} exam dates")
+
+    # --------------------------------------------------
+    # 3️⃣ Format response
+    # --------------------------------------------------
+    result = [
+        {
+            "exam_id": r.exam_id,
+            "date": r.date.isoformat() if r.date else None
+        }
+        for r in rows
+    ]
+
+    return result
 @app.get("/api/exams/by-category")
 def get_exams_by_category(category: str = Query(...)):
     category = category.lower().strip()
