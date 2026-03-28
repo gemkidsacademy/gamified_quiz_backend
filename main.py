@@ -4005,8 +4005,36 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 
+@app.get("/api/exams/by-category")
+def get_exams_by_category(category: str = Query(...)):
+    category = category.lower().strip()
 
+    if category == "selective":
+        exams = [
+            {"key": "thinking_skills", "label": "Thinking Skills"},
+            {"key": "mathematical_reasoning", "label": "Mathematical Reasoning"},
+            {"key": "reading", "label": "Reading"},
+            {"key": "writing", "label": "Writing"},
+        ]
 
+    elif category == "oc":
+        exams = [
+            {"key": "oc_thinking_skills", "label": "Thinking Skills"},
+            {"key": "oc_mathematical_reasoning", "label": "Mathematical Reasoning"},
+            {"key": "oc_reading", "label": "Reading"},
+        ]
+
+    elif category == "naplan":
+        exams = [
+            {"key": "naplan_numeracy", "label": "Numeracy"},
+            {"key": "naplan_language_conventions", "label": "Language Conventions"},
+            {"key": "naplan_reading", "label": "Reading"},
+        ]
+
+    else:
+        return {"exams": []}
+
+    return {"exams": exams}
 
 
 @app.get("/api/exams/dates/oc")
