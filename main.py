@@ -178,6 +178,23 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class AdminExamResponseOCMathematicalReasoning(Base):
+    __tablename__ = "admin_exam_response_oc_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+    exam_attempt_id = Column(Integer, nullable=False)
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String)
+
+    selected_option = Column(String)
+    correct_option = Column(String)
+    is_correct = Column(Boolean)
+
+    submitted_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 class AdminExamResponseOCThinkingSkills(Base):
     __tablename__ = "admin_exam_response_oc_thinking_skills"
 
@@ -17850,7 +17867,51 @@ def finish_exam(
         "wrong": wrong,
         "accuracy": accuracy
     }
+def copy_to_admin_snapshot_oc_mathematical_reasoning(
+    db: Session,
+    attempt_id: int
+):
+    print("📸 Creating OC MATHEMATICAL REASONING SNAPSHOT for attempt:", attempt_id)
 
+    # prevent duplicates
+    existing = (
+        db.query(AdminExamResponseOCMathematicalReasoning)
+        .filter(AdminExamResponseOCMathematicalReasoning.exam_attempt_id == attempt_id)
+        .first()
+    )
+
+    if existing:
+        print("⚠️ Snapshot already exists, skipping...")
+        return
+
+    responses = (
+        db.query(StudentExamResponseOCMathematicalReasoning)
+        .filter(
+            StudentExamResponseOCMathematicalReasoning.exam_attempt_id == attempt_id
+        )
+        .all()
+    )
+
+    print(f"📦 Found {len(responses)} responses to snapshot")
+
+    admin_rows = []
+
+    for r in responses:
+        admin_rows.append(
+            AdminExamResponseOCMathematicalReasoning(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.exam_attempt_id,
+                q_id=r.q_id,
+                topic=getattr(r, "topic", None),
+                selected_option=r.selected_option,
+                correct_option=r.correct_option,
+                is_correct=r.is_correct,
+            )
+        )
+
+    db.bulk_save_objects(admin_rows)
+ 
 @app.post("/api/student/finish-exam-oc-mathematical-reasoning")
 def finish_exam_oc_mathematical_reasoning(
     req: FinishExamRequest,
@@ -17981,6 +18042,15 @@ def finish_exam_oc_mathematical_reasoning(
 
     # --------------------------------------------------
     # 6️⃣ Commit
+    # --------------------------------------------------
+    db.commit()
+    copy_to_admin_snapshot_oc_mathematical_reasoning(
+        db,
+        attempt.id
+    )
+    
+    # --------------------------------------------------
+    # 8️⃣ Commit snapshot
     # --------------------------------------------------
     db.commit()
 
