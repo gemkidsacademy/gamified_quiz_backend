@@ -9758,16 +9758,31 @@ def get_student_exam_report_oc(
     # --------------------------------------------------
     # 2️⃣ Get attempt_id
     # --------------------------------------------------
-    attempt_row = (
-        db.query(Model.exam_attempt_id)
-        .filter(
-            Model.student_id == student.id,
-            func.date(timestamp_col) == date
+    if exam == "oc_reading":
+        print("🔍 Using EXTERNAL student_id for OC Reading")
+    
+        attempt_row = (
+            db.query(Model.exam_attempt_id)
+            .filter(
+                func.lower(Model.student_id) == student_id.lower(),
+                func.date(timestamp_col) == date
+            )
+            .order_by(timestamp_col.desc())
+            .first()
         )
-        .order_by(timestamp_col.desc())
-        .first()
-    )
-
+    
+    else:
+        print("🔍 Using INTERNAL student_id")
+    
+        attempt_row = (
+            db.query(Model.exam_attempt_id)
+            .filter(
+                Model.student_id == student.id,
+                func.date(timestamp_col) == date
+            )
+            .order_by(timestamp_col.desc())
+            .first()
+        )
     if not attempt_row:
         print("❌ No OC attempt found for this date")
         raise HTTPException(status_code=404, detail="Exam attempt not found")
@@ -9778,14 +9793,24 @@ def get_student_exam_report_oc(
     # --------------------------------------------------
     # 3️⃣ Fetch responses
     # --------------------------------------------------
-    responses = (
-        db.query(Model)
-        .filter(
-            Model.student_id == student.id,
-            Model.exam_attempt_id == exam_attempt_id
+    if exam == "oc_reading":
+        responses = (
+            db.query(Model)
+            .filter(
+                func.lower(Model.student_id) == student_id.lower(),
+                Model.exam_attempt_id == exam_attempt_id
+            )
+            .all()
         )
-        .all()
-    )
+    else:
+        responses = (
+            db.query(Model)
+            .filter(
+                Model.student_id == student.id,
+                Model.exam_attempt_id == exam_attempt_id
+            )
+            .all()
+        )
 
     print("📊 Responses fetched:", len(responses))
 
@@ -9815,9 +9840,15 @@ def get_student_exam_report_oc(
         "result": result,
     }
 
+    
     # --------------------------------------------------
     # 5️⃣ Topic aggregation
     # --------------------------------------------------
+    if exam == "oc_reading":
+        student_filter = func.lower(Model.student_id) == student_id.lower()
+    else:
+        student_filter = Model.student_id == student.id
+    
     topic_rows = (
         db.query(
             Model.topic,
@@ -9827,7 +9858,7 @@ def get_student_exam_report_oc(
             func.count(case((Model.is_correct.is_(False), 1))).label("incorrect"),
         )
         .filter(
-            Model.student_id == student.id,
+            student_filter,
             Model.exam_attempt_id == exam_attempt_id
         )
         .group_by(Model.topic)
