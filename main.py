@@ -11088,20 +11088,6 @@ def generate_exam(
                 f"This indicates a generation inconsistency."
             )
         )
-
-    
-    
-    
-    
-    
-        
-    # 5️⃣ Parent exams LAST
-    db.query(Exam).filter(
-        Exam.subject == "mathematical_reasoning",
-        Exam.class_name == "selective"
-    ).delete(synchronize_session=False)    
-    db.commit()
-
     # --------------------------------------------------
     # 6️⃣ Save exam
     # --------------------------------------------------
