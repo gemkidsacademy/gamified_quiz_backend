@@ -4071,12 +4071,23 @@ def get_oc_exam_dates(
         Model.exam_attempt_id,
         func.max(timestamp_col).label("timestamp")
     )
-
-    if internal_student_id:
-        print("🔍 Filtering by internal_student_id")
-        query = query.filter(Model.student_id == internal_student_id)
+    
+    # 🔥 CONDITIONAL FILTERING BASED ON EXAM TYPE
+    if exam == "oc_reading":
+        if student_id:
+            print("🔍 Filtering by EXTERNAL student_id (OC Reading)")
+            query = query.filter(
+                func.lower(Model.student_id) == student_id.lower()
+            )
+        else:
+            print("⚠️ Skipping student filter (no student_id)")
+    
     else:
-        print("⚠️ Skipping student filter (no internal ID)")
+        if internal_student_id:
+            print("🔍 Filtering by internal_student_id")
+            query = query.filter(Model.student_id == internal_student_id)
+        else:
+            print("⚠️ Skipping student filter (no internal ID)")
 
     rows = (
         query
