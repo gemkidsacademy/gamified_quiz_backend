@@ -178,6 +178,23 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class AdminExamResponseOCReading(Base):
+    __tablename__ = "admin_exam_response_oc_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+    exam_attempt_id = Column(Integer, nullable=False)
+
+    q_id = Column(String, nullable=False)
+    topic = Column(String)
+
+    selected_option = Column(String)
+    correct_option = Column(String)
+    is_correct = Column(Boolean)
+
+    submitted_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 class AdminExamResponseOCMathematicalReasoning(Base):
     __tablename__ = "admin_exam_response_oc_mathematical_reasoning"
 
@@ -4037,9 +4054,11 @@ def get_oc_exam_dates(
         Model = AdminExamResponseOCMathematicalReasoning
         timestamp_col = Model.submitted_at
 
-    # elif exam == "oc_reading":
-    #     Model = AdminExamResponseOCReading
-    #     timestamp_col = Model.submitted_at
+    elif exam == "oc_reading":
+        print("📖 Running OC READING logic")
+    
+        Model = AdminExamResponseOCReading
+        timestamp_col = Model.submitted_at
 
     else:
         print(f"❌ Invalid OC exam type received: {exam}")
@@ -14542,7 +14561,49 @@ def snapshot_reading_responses_for_admin(db, session):
             )
         ) 
 
+def copy_to_admin_snapshot_oc_reading(
+    db: Session,
+    session_id: int
+):
+    print("📸 Creating OC READING SNAPSHOT for session:", session_id)
 
+    existing = (
+        db.query(AdminExamResponseOCReading)
+        .filter(AdminExamResponseOCReading.exam_attempt_id == session_id)
+        .first()
+    )
+
+    if existing:
+        print("⚠️ Snapshot already exists, skipping...")
+        return
+
+    responses = (
+        db.query(StudentExamReportOCReading)
+        .filter(StudentExamReportOCReading.session_id == session_id)
+        .all()
+    )
+
+    print(f"📦 Found {len(responses)} responses to snapshot")
+
+    admin_rows = []
+
+    for r in responses:
+        admin_rows.append(
+            AdminExamResponseOCReading(
+                student_id=r.student_id,
+                exam_id=r.exam_id,
+                exam_attempt_id=r.session_id,
+                q_id=r.question_id,
+                topic=r.topic,
+                selected_option=r.selected_answer,
+                correct_option=r.correct_answer,
+                is_correct=r.is_correct,
+                submitted_at=datetime.now(timezone.utc)
+            )
+        )
+
+    db.bulk_save_objects(admin_rows)
+ 
 @app.post("/api/exams/submit-oc-reading")
 def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
@@ -14747,23 +14808,32 @@ def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
         # --------------------------------------------------
         # 5️⃣ Finalize session
         # --------------------------------------------------
-        print("🟡 STEP 5: Marking session finished")
-
         session.finished = True
         session.completed_at = datetime.now(timezone.utc)
         session.report_json = report_json
-
+        
+        # --------------------------------------------------
+        # 6️⃣ Commit student report rows
+        # --------------------------------------------------
         db.commit()
-
-        print("🟢 DB commit successful")
-        print("================ END SUBMIT OC READING EXAM ================\n")
-
+        
+        # --------------------------------------------------
+        # 7️⃣ Create snapshot
+        # --------------------------------------------------
+        copy_to_admin_snapshot_oc_reading(
+            db,
+            session.id
+        )
+        
+        # --------------------------------------------------
+        # 8️⃣ Commit snapshot
+        # --------------------------------------------------
+        db.commit()
         return {
             "status": "submitted",
             "message": "OC Reading exam submitted successfully",
             "report": report_json
         }
-
     except Exception as e:
         print("❌❌❌ ERROR IN submit_oc_reading_exam ❌❌❌")
         print("Type:", type(e))
