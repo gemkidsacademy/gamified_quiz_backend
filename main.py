@@ -183,7 +183,7 @@ class AdminExamResponseOCReading(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, nullable=False)
+    student_id = Column(String, nullable=False, index=True)
     exam_id = Column(Integer, nullable=False)
     exam_attempt_id = Column(Integer, nullable=False)
 
