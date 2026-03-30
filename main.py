@@ -21199,49 +21199,57 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     # 5️⃣ AI EXTRACTION (STRICT CONTRACT)
     # --------------------------------------------------
     system_prompt = """
-You are an exam content extraction engine.
-
-You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
-
-The document contains:
-- class_name
-- subject
-- topic
-- difficulty
-
-The JSON output MUST contain EXACTLY:
-
-{
-  "class_name": string,
-  "subject": string,
-  "topic": string,
-  "difficulty": string,
-  "reading_material": {
-    "extracts": { "A": string, "B": string }
-  },
-  "questions": [...]
-}
-
-RULES:
-- Extract ONLY what exists
-- Preserve wording EXACTLY
-- DO NOT infer or generate content
-- If ANY required field is missing, RETURN {}
-
-QUESTION RULES:
-- questions count MUST match Total_Questions
-- EVERY question MUST have question_text and correct_answer
-
-IF ANSWER_OPTIONS exist:
-- answer_options required
-- correct_answer must be one of A,B,C,D
-
-IF NOT:
-- correct_answer must reference an extract letter
-
-OUTPUT:
-- VALID JSON ONLY
-"""
+    You are an exam content extraction engine.
+    
+    You MUST extract ONE COMPLETE COMPARATIVE ANALYSIS reading exam.
+    
+    The document contains:
+    - class_name
+    - subject
+    - topic
+    - difficulty
+    
+    The JSON output MUST contain EXACTLY:
+    
+    {
+      "class_name": string,
+      "subject": string,
+      "topic": string,
+      "difficulty": string,
+      "reading_material": {
+        "extracts": {
+          "<EXTRACT_KEY>": string
+        }
+      },
+      "questions": [...]
+    }
+    
+    RULES:
+    - Extract ONLY what exists
+    - Preserve wording EXACTLY
+    - DO NOT infer or generate content
+    - If ANY required field is missing, RETURN {}
+    
+    EXTRACT RULES:
+    - Extract ALL extracts present in the document
+    - Extract labels may include A, B, C, D, or more
+    - Preserve ALL extract keys exactly as they appear
+    - DO NOT limit extracts to only A and B
+    
+    QUESTION RULES:
+    - questions count MUST match Total_Questions
+    - EVERY question MUST have question_text and correct_answer
+    
+    IF ANSWER_OPTIONS exist:
+    - answer_options required
+    - correct_answer must be one of A,B,C,D
+    
+    IF NOT:
+    - correct_answer must reference one of the extract keys
+    
+    OUTPUT:
+    - VALID JSON ONLY
+    """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
