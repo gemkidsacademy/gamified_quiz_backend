@@ -33116,20 +33116,7 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="topics must be a list")
 
     try:
-        print("\n--- Deleting previous data (Selective only) ---")
-
-        # ✅ 1️⃣ Delete ONLY Selective exams for Thinking Skills
-        deleted_exams = (
-            db.query(Exam)
-            .filter(
-                func.lower(Exam.subject) == "thinking_skills",
-                func.lower(Exam.class_name) == "selective"
-            )
-            .delete(synchronize_session=False)
-        )
-
-        print(f"🗑️ Deleted Selective exams: {deleted_exams}")
-
+        
         # 2️⃣ Delete quizzes (you may later also scope this if needed)
         deleted_quizzes = db.query(Quiz).delete(synchronize_session=False)
         print(f"🗑️ Deleted quizzes: {deleted_quizzes}")
