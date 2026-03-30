@@ -7492,6 +7492,7 @@ def review_oc_reading_exam(
 )
 def get_exam_review_mathematical_reasoning(
     student_id: str,  # external/public ID (e.g. Gem_temp3)
+    exam_id: int,
     db: Session = Depends(get_db)
 ):
     print("\n============= EXAM REVIEW (MATHEMATICAL REASONING) =============")
@@ -7521,32 +7522,30 @@ def get_exam_review_mathematical_reasoning(
     # ==================================================
     # 1️⃣ Resolve LATEST exam_attempt_id
     # ==================================================
-    print("🔍 Resolving latest exam_attempt_id from responses...")
+    print("🔍 Resolving exam_attempt_id for requested exam_id...")
 
-    latest_attempt = (
-        db.query(StudentExamResponseMathematicalReasoning.exam_attempt_id)
+    attempt = (
+        db.query(StudentExamMathematicalReasoning)
         .filter(
-            StudentExamResponseMathematicalReasoning.student_id
-            == internal_student_id
+            StudentExamMathematicalReasoning.student_id == internal_student_id,
+            StudentExamMathematicalReasoning.exam_id == exam_id
         )
-        .order_by(
-            StudentExamResponseMathematicalReasoning.exam_attempt_id.desc()
-        )
+        .order_by(StudentExamMathematicalReasoning.id.desc())  # latest attempt of THIS exam
         .first()
     )
-
-    if not latest_attempt:
+    
+    if not attempt:
         print(
-            "❌ No exam responses found for internal_student_id =",
-            internal_student_id
+            "❌ No attempt found:",
+            f"internal_student_id={internal_student_id}, exam_id={exam_id}"
         )
         raise HTTPException(
             status_code=404,
-            detail="No completed exam attempt found for this student"
+            detail="No attempt found for this exam"
         )
-
-    exam_attempt_id = latest_attempt.exam_attempt_id
-    print(f"✅ Latest exam_attempt_id resolved: {exam_attempt_id}")
+    
+    exam_attempt_id = attempt.id
+    print(f"✅ Using exam_attempt_id: {exam_attempt_id} for exam_id: {exam_id}")
 
     # ==================================================
     # 2️⃣ Validate exam attempt ownership
@@ -14724,6 +14723,7 @@ def get_mathematical_reasoning_report(
     # 8️⃣ Final response
     # --------------------------------------------------
     return {
+        "exam_id": exam_id,   # ✅ ADD THIS
         "overall": overall,
         "topic_wise_performance": topic_wise_performance,
         "topic_accuracy": topic_accuracy,
