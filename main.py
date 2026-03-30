@@ -15993,10 +15993,11 @@ def start_exam_reading(
 
     # 3️⃣ Latest reading exam
     exam = (
-        db.query(GeneratedExamReading)
-        .order_by(GeneratedExamReading.id.desc())
-        .first()
-    )
+    db.query(GeneratedExamReading)
+    .filter(GeneratedExamReading.class_name == "selective")
+    .order_by(GeneratedExamReading.id.desc())
+    .first()
+)
 
     if not exam:
         print("❌ No reading exam exists in DB")
