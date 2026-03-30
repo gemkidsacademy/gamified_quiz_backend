@@ -15851,6 +15851,7 @@ def start_exam_oc_reading(
     # 2️⃣ Latest exam (same table)
     exam = (
         db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.class_name == "OC")
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
