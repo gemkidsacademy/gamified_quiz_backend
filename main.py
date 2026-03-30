@@ -19941,8 +19941,7 @@ def generate_exam_reading(
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
     print("🧹 Resetting previous reading exam attempts")
-    db.query(StudentExamReportReading).delete(synchronize_session=False)
-    db.query(StudentExamReading).delete(synchronize_session=False)
+    
     deleted_generated = (
         db.query(GeneratedExamReading)
         .filter(GeneratedExamReading.class_name == class_name)
@@ -19983,24 +19982,18 @@ def generate_exam_reading(
 
         section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
 
-        bundles = (
+        
+        matched_bundle = (
             db.query(QuestionReading)
             .filter(
                 func.lower(func.trim(QuestionReading.class_name)) == class_name.lower(),
                 func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
                 func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
                 func.lower(QuestionReading.topic) == topic_lower,
+                QuestionReading.total_questions == required,
             )
-            .all()
-        )
-
-        if not bundles:
-            warnings.append(f"No bundles found for topic '{topic_name}'")
-            continue
-        
-        matched_bundle = next(
-            (b for b in bundles if b.total_questions == required),
-            None
+            .order_by(QuestionReading.id.desc())   # 👈 ALWAYS pick latest
+            .first()
         )
 
         if not matched_bundle:
