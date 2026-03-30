@@ -19986,9 +19986,9 @@ def generate_exam_reading(
         bundles = (
             db.query(QuestionReading)
             .filter(
-                func.lower(QuestionReading.class_name) == class_name.lower(),
+                func.lower(func.trim(QuestionReading.class_name)) == class_name.lower(),
                 func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
-                func.lower(QuestionReading.difficulty) == difficulty.lower(),
+                func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
                 func.lower(QuestionReading.topic) == topic_lower,
             )
             .all()
@@ -19997,7 +19997,7 @@ def generate_exam_reading(
         if not bundles:
             warnings.append(f"No bundles found for topic '{topic_name}'")
             continue
-
+        
         matched_bundle = next(
             (b for b in bundles if b.total_questions == required),
             None
@@ -20011,6 +20011,9 @@ def generate_exam_reading(
 
         bundle_json = matched_bundle.exam_bundle or {}
 
+        for q in bundle_json.get("questions", []):
+            if q.get("difficulty", "").strip().lower() != difficulty.lower():
+                print("⚠️ Mixed difficulty detected inside bundle")
         question_type = bundle_json.get("question_type")
         reading_material = bundle_json.get("reading_material")
         answer_options = bundle_json.get("answer_options")
