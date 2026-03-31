@@ -28306,6 +28306,7 @@ def get_naplan_language_conventions_review(
 @app.get("/api/student/exam-review/naplan-numeracy")
 def get_naplan_numeracy_review(
     student_id: str,
+    exam_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     print("\n================ NAPLAN NUMERACY REVIEW =================")
@@ -28328,12 +28329,19 @@ def get_naplan_numeracy_review(
     # --------------------------------------------------
     # 2. Get completed attempt
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamNaplanNumeracy)
-        .filter(
-            StudentExamNaplanNumeracy.student_id == student.id,
-            StudentExamNaplanNumeracy.completed_at.isnot(None)
+    query = db.query(StudentExamNaplanNumeracy).filter(
+        StudentExamNaplanNumeracy.student_id == student.id,
+        StudentExamNaplanNumeracy.completed_at.isnot(None)
+    )
+    
+    # 🔥 NEW: exam_id filter (only if provided)
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanNumeracy.exam_id == exam_id
         )
+    
+    attempt = (
+        query
         .order_by(StudentExamNaplanNumeracy.completed_at.desc())
         .first()
     )
