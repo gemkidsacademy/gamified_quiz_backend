@@ -3387,16 +3387,22 @@ def generate_exam_questions(quiz, db):
         # --------------------------------------------------
         # 2️⃣ FETCH DB QUESTIONS
         # --------------------------------------------------
-        db_questions = (
+        raw_questions = (
             db.query(Question)
               .filter(func.lower(Question.topic) == topic_name.lower())
               .order_by(func.random())
-              .limit(db_count)
               .all()
         )
-
-        print(f"[DB FETCH] Retrieved {len(db_questions)} questions")
-
+        
+        # 🔥 Deduplicate by content
+        unique = {}
+        for q in raw_questions:
+            key = json.dumps(q.question_blocks or q.question_text, sort_keys=True)
+        
+            if key not in unique:
+                unique[key] = q
+        
+        db_questions = list(unique.values())[:db_count]
         for q in db_questions:
             # ---- Normalize blocks (FIX) ----
             blocks = q.question_blocks or []
