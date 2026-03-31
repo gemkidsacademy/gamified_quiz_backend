@@ -29413,7 +29413,7 @@ def filter_display_blocks(blocks: list[dict]) -> list[dict]:
             continue
 
         # Drop option lines accidentally leaking (A. / B) etc)
-        if re.match(r"^[A-D][\.\)]\s+", text):
+        if re.match(r"^[A-E][\.\)]\s+", text):
             continue
 
         filtered.append({
