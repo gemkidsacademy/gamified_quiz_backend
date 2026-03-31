@@ -2025,7 +2025,7 @@ class GeneratedExamReading(Base):
     __tablename__ = "generated_exams_reading"
 
     id = Column(Integer, primary_key=True, index=True)
-    config_id = Column(Integer, ForeignKey("reading_exam_config.id"), nullable=True)
+    config_id = Column(Integer, nullable=True)
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
