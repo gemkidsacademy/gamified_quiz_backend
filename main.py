@@ -20220,13 +20220,6 @@ def generate_exam_reading(
     difficulty = payload.difficulty.strip()
     print("🧹 Resetting previous reading exam attempts")
     
-    deleted_generated = (
-        db.query(GeneratedExamReading)
-        .filter(GeneratedExamReading.class_name == class_name)
-        .delete(synchronize_session=False)
-    )
-    
-    db.commit()
     
     print("🧼 All reading exam attempts cleared")
     # --------------------------------------------------
