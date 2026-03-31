@@ -4938,7 +4938,27 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
         print("🔥 EXCEPTION OCCURRED:", str(e))
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-     
+@app.get("/api/student/exam-dates/reading")
+def get_exam_dates_reading(student_id: str, db: Session = Depends(get_db)):
+
+    exams = (
+        db.query(StudentExamReading)
+        .filter(
+            func.lower(StudentExamReading.student_id) == func.lower(student_id.strip()),
+            StudentExamReading.finished == True
+        )
+        .order_by(StudentExamReading.id.desc())   # latest first
+        .all()
+    )
+
+    return [
+        {
+            "exam_id": exam.exam_id,
+            "date": exam.completed_at or exam.created_at
+        }
+        for exam in exams
+    ]
+ 
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
