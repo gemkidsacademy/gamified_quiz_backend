@@ -15995,11 +15995,25 @@ def start_exam_reading(
         "student_pk": student.id,
         "student_id": student.student_id
     })
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.class_name == "selective")
+        .order_by(GeneratedExamReading.id.desc())
+        .first()
+    )
+    
+    if not exam:
+        print("❌ No reading exam exists in DB")
+        raise HTTPException(status_code=404, detail="Reading exam not found")
+
 
     # 2️⃣ Fetch latest attempt
     attempt = (
         db.query(StudentExamReading)
-        .filter(StudentExamReading.student_id == student.id)
+        .filter(
+            StudentExamReading.student_id == student.id,
+            StudentExamReading.exam_id == exam.id   # ✅ match specific exam
+        )
         .order_by(StudentExamReading.started_at.desc())
         .first()
     )
@@ -16018,24 +16032,15 @@ def start_exam_reading(
     if attempt and attempt.finished:
         payload = {
             "completed": True,
-            "attempt_id": attempt.id
+            "attempt_id": attempt.id,
+            "exam_id": exam.id 
         }
         print("🚫 Attempt already finished → returning:", payload)
         print("================================================\n")
         return payload
 
     # 3️⃣ Latest reading exam
-    exam = (
-    db.query(GeneratedExamReading)
-    .filter(GeneratedExamReading.class_name == "selective")
-    .order_by(GeneratedExamReading.id.desc())
-    .first()
-)
-
-    if not exam:
-        print("❌ No reading exam exists in DB")
-        raise HTTPException(status_code=404, detail="Reading exam not found")
-
+    
     duration_minutes = exam.exam_json.get("duration_minutes", 40)
     print("📘 Active exam resolved:", {
         "exam_id": exam.id,
@@ -16045,7 +16050,9 @@ def start_exam_reading(
     # 🔁 Resume unfinished attempt
     if attempt and not attempt.finished:
         now = datetime.now(timezone.utc)
-        started_at = attempt.started_at.replace(tzinfo=timezone.utc)
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
         elapsed = int((now - started_at).total_seconds())
         remaining = max(0, duration_minutes * 60 - elapsed)
 
@@ -16066,7 +16073,8 @@ def start_exam_reading(
         
             payload = {
                 "completed": True,
-                "attempt_id": attempt.id
+                "attempt_id": attempt.id,
+                "exam_id": exam.id
             }
         
             print("🟢 Auto-submit complete → returning:", payload)
