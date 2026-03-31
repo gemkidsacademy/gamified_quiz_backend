@@ -3395,24 +3395,38 @@ def generate_exam_questions(quiz, db):
         )
         
         # 🔥 Deduplicate by content
+        
+        def normalize_blocks(blocks):
+            parts = []
+        
+            for b in blocks:
+                if b.get("type") == "text":
+                    text = b.get("content", "").lower()
+        
+                    # 🔥 normalize ALL whitespace
+                    text = re.sub(r"\s+", " ", text).strip()
+        
+                    parts.append(text)
+        
+                elif b.get("type") == "image":
+                    parts.append(b.get("src", "").strip())
+        
+            return " ".join(parts)
         unique = {}
+        db_questions = []
+        
         for q in raw_questions:
-            def normalize_blocks(blocks):
-                texts = []
-            
-                for b in blocks:
-                    if b.get("type") == "text":
-                        texts.append(b.get("content", "").strip().lower())
-            
-                return " ".join(texts)
-            
-            
             key = normalize_blocks(q.question_blocks)
         
-            if key not in unique:
+            if key in unique:
+                print("\n🚨 DUPLICATE DETECTED")
+                print("Duplicate Q_ID:", q.id)
+                print("Existing Q_ID:", unique[key].id)
+            else:
                 unique[key] = q
+                db_questions.append(q)
         
-        db_questions = list(unique.values())[:db_count]
+        db_questions = db_questions[:db_count]
         for q in db_questions:
             # ---- Normalize blocks (FIX) ----
             blocks = q.question_blocks or []
