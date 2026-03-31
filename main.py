@@ -32111,11 +32111,17 @@ def resolve_option_images(options: dict, db: Session, request_id: str):
     for key, opt in options.items():
         content = (opt.get("content") or "").strip()
 
+        # ✅ Handle BOTH formats:
+        # "A) file.png" OR "file.png"
         match = re.search(r"\)\s*(.*\.png)", content)
-        if not match:
-            continue
 
-        raw_name = match.group(1).strip()
+        if match:
+            raw_name = match.group(1).strip()
+        elif content.lower().endswith(".png"):
+            raw_name = content
+        else:
+            print(f"[{request_id}] ⚠️ Skipping non-image option {key}: '{content}'")
+            continue
 
         print(f"[{request_id}] 🧩 Resolving option {key}: '{raw_name}'")
 
@@ -32129,7 +32135,8 @@ def resolve_option_images(options: dict, db: Session, request_id: str):
         )
 
         if not record:
-            raise ValueError(f"Option image '{raw_name}' not uploaded yet")
+            print(f"[{request_id}] ❌ NOT FOUND in DB: '{raw_name}'")
+            continue   # ⚠️ DO NOT crash exam
 
         options[key] = {
             "type": "image",
