@@ -24677,12 +24677,7 @@ def create_reading_config(
     print("\n--- Deleting dependent Reading generated exams ---")
     print(f"   class_name={class_name_clean}")
 
-    db.query(GeneratedExamReading).filter(
-        func.lower(func.trim(GeneratedExamReading.class_name)) == class_name_clean
-    ).delete(synchronize_session=False)
-
-    print("\n--- Deleting previous Reading exam configs ---")
-
+    
     db.query(ReadingExamConfig).filter(
         func.lower(func.trim(ReadingExamConfig.class_name)) == class_name_clean
     ).delete(synchronize_session=False)
