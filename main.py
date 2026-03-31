@@ -4941,13 +4941,26 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
 @app.get("/api/student/exam-dates/reading")
 def get_exam_dates_reading(student_id: str, db: Session = Depends(get_db)):
 
+    # 1️⃣ Resolve internal student ID
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        return []
+
+    internal_id = student.id
+
+    # 2️⃣ Fetch exams using internal ID
     exams = (
         db.query(StudentExamReading)
         .filter(
-            func.lower(StudentExamReading.student_id) == func.lower(student_id.strip()),
+            StudentExamReading.student_id == str(internal_id),  # adjust type if needed
             StudentExamReading.finished == True
         )
-        .order_by(StudentExamReading.id.desc())   # latest first
+        .order_by(StudentExamReading.id.desc())
         .all()
     )
 
@@ -4957,8 +4970,7 @@ def get_exam_dates_reading(student_id: str, db: Session = Depends(get_db)):
             "date": exam.completed_at or exam.created_at
         }
         for exam in exams
-    ]
- 
+    ] 
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
