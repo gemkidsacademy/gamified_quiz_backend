@@ -33042,20 +33042,7 @@ def create_quiz_oc_thinking_skills(
         raise HTTPException(status_code=400, detail="topics must be a list")
 
     try:
-        print("\n--- Deleting previous OC Thinking Skills data ---")
-
-        # ✅ 1️⃣ Delete ONLY OC exams
-        deleted_exams = (
-            db.query(Exam)
-            .filter(
-                func.lower(Exam.subject) == "thinking_skills",
-                func.lower(Exam.class_name) == "oc"
-            )
-            .delete(synchronize_session=False)
-        )
-
-        print(f"🗑️ Deleted OC exams: {deleted_exams}")
-
+        
         # ✅ 2️⃣ Delete ONLY OC quizzes
         deleted_quizzes = (
             db.query(Quiz)
