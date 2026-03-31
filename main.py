@@ -33131,19 +33131,6 @@ def create_quiz_oc_mathematical_reasoning(
         raise HTTPException(status_code=400, detail="topics must be a list")
 
     try:
-        print("\n--- Deleting previous OC Mathematical Reasoning data ---")
-
-        # ✅ 1️⃣ Delete ONLY OC MR exams
-        deleted_exams = (
-            db.query(Exam)
-            .filter(
-                func.lower(Exam.subject) == "mathematical_reasoning",
-                func.lower(Exam.class_name) == "oc"
-            )
-            .delete(synchronize_session=False)
-        )
-
-        print(f"🗑️ Deleted OC MR exams: {deleted_exams}")
 
         # ✅ 2️⃣ Delete ONLY OC MR quizzes
         deleted_quizzes = (
