@@ -5001,6 +5001,55 @@ def get_exam_dates_reading(student_id: str, db: Session = Depends(get_db)):
         }
         for exam in exams
     ] 
+@app.get("/api/student/exam-dates/naplan-numeracy")
+def get_naplan_numeracy_exam_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2. Get all completed attempts
+    # --------------------------------------------------
+    attempts = (
+        db.query(StudentExamNaplanNumeracy)
+        .filter(
+            StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.completed_at.isnot(None)
+        )
+        .order_by(StudentExamNaplanNumeracy.completed_at.desc())
+        .all()
+    )
+
+    # --------------------------------------------------
+    # 3. Build response (unique exam_ids)
+    # --------------------------------------------------
+    seen_exam_ids = set()
+    exam_dates = []
+
+    for attempt in attempts:
+        if attempt.exam_id in seen_exam_ids:
+            continue
+
+        seen_exam_ids.add(attempt.exam_id)
+
+        exam_dates.append({
+            "exam_id": attempt.exam_id,
+            "date": attempt.completed_at
+        })
+
+    return exam_dates
+ 
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
