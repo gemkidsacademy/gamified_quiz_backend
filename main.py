@@ -14082,6 +14082,7 @@ def get_naplan_language_conventions_report(
 @app.get("/api/student/exam-report/naplan-numeracy")
 def get_naplan_numeracy_report(
     student_id: str = Query(..., description="External student id e.g. Gem_001_naplan"),
+    exam_id: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
     print("\n================ NAPLAN NUMERACY REPORT =================")
@@ -14108,12 +14109,19 @@ def get_naplan_numeracy_report(
     # --------------------------------------------------
     # 2️⃣ Latest completed NAPLAN Numeracy attempt
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamNaplanNumeracy)
-        .filter(
-            StudentExamNaplanNumeracy.student_id == student.id,
-            StudentExamNaplanNumeracy.completed_at.isnot(None)
+    query = db.query(StudentExamNaplanNumeracy).filter(
+        StudentExamNaplanNumeracy.student_id == student.id,
+        StudentExamNaplanNumeracy.completed_at.isnot(None)
+    )
+    
+    # 🔥 NEW: filter by exam_id
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanNumeracy.exam_id == exam_id
         )
+    
+    attempt = (
+        query
         .order_by(StudentExamNaplanNumeracy.completed_at.desc())
         .first()
     )
