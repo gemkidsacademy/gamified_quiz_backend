@@ -13358,7 +13358,70 @@ def get_reading_report(
         "exam_id": session.exam_id,
         "answer_count": answer_count
     }
+@app.get("/api/student/exam-report/reading")
+def get_exam_report_by_exam_id(
+    student_id: str = Query(...),
+    exam_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    print("\n=========== GET REPORT BY EXAM_ID ===========")
+    print("📥 Incoming:", {
+        "student_id": student_id,
+        "exam_id": exam_id
+    })
 
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved:", student.id)
+
+    # --------------------------------------------------
+    # 2️⃣ Find latest finished attempt for this exam
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamReading)
+        .filter(
+            StudentExamReading.student_id == student.id,
+            StudentExamReading.exam_id == exam_id,
+            StudentExamReading.finished == True
+        )
+        .order_by(StudentExamReading.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No attempt found for this exam")
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    print("✅ Attempt found:", {
+        "attempt_id": attempt.id,
+        "has_report": bool(attempt.report_json)
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Return report_json
+    # --------------------------------------------------
+    if attempt.report_json:
+        print("🟢 Returning report_json")
+        print("============================================\n")
+        return attempt.report_json
+
+    print("❌ report_json missing")
+    raise HTTPException(
+        status_code=404,
+        detail="Report not available"
+    )
+ 
 @app.get("/api/student/exam-report/naplan-reading")
 def get_naplan_reading_report(
     student_id: str = Query(..., description="External student id e.g. Gem_001_naplan"),
