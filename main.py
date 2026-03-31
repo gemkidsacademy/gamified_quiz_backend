@@ -3397,7 +3397,17 @@ def generate_exam_questions(quiz, db):
         # 🔥 Deduplicate by content
         unique = {}
         for q in raw_questions:
-            key = json.dumps(q.question_blocks or q.question_text, sort_keys=True)
+            def normalize_blocks(blocks):
+                texts = []
+            
+                for b in blocks:
+                    if b.get("type") == "text":
+                        texts.append(b.get("content", "").strip().lower())
+            
+                return " ".join(texts)
+            
+            
+            key = normalize_blocks(q.question_blocks)
         
             if key not in unique:
                 unique[key] = q
