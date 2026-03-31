@@ -7011,40 +7011,7 @@ def generate_naplan_numeracy_exam(
     # --------------------------------------------------
     # 9. Delete previous exams for the selected year
     # --------------------------------------------------
-    try:
     
-        print(f"🧹 Deleting previous exams for year {class_year}")
-    
-        exams_for_year = (
-            db.query(ExamNaplanNumeracy)
-            .filter(ExamNaplanNumeracy.year == class_year)
-            .all()
-        )
-    
-        exam_ids = [exam.id for exam in exams_for_year]
-    
-        if exam_ids:
-    
-            # Delete student responses related to those exams
-            db.query(StudentExamResponseNaplanNumeracy).filter(
-                StudentExamResponseNaplanNumeracy.exam_id.in_(exam_ids)
-            ).delete(synchronize_session=False)
-    
-            # Delete student exam attempts
-            db.query(StudentExamNaplanNumeracy).filter(
-                StudentExamNaplanNumeracy.exam_id.in_(exam_ids)
-            ).delete(synchronize_session=False)
-    
-            # Delete the exams themselves
-            db.query(ExamNaplanNumeracy).filter(
-                ExamNaplanNumeracy.year == class_year
-            ).delete(synchronize_session=False)
-    
-        db.commit()
-    
-    except Exception:
-        db.rollback()
-        raise
     # --------------------------------------------------
     # 10. Persist exam
     # --------------------------------------------------
