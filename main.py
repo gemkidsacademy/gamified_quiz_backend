@@ -4035,11 +4035,13 @@ def normalize_question_blocks(raw_blocks):
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
 @app.get("/api/student/exam-attempts/oc-thinking-skills")
-def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
-
-    print("📥 Incoming student_id (external):", student_id)
-
-    # 🔥 STEP 1: Convert external → internal
+def get_oc_thinking_skills_attempts(
+    student_id: str = Query(..., description="External student id e.g. Gem002"),
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(Student.student_id == student_id)
@@ -4047,43 +4049,33 @@ def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
     )
 
     if not student:
-        print("❌ No student found for external ID:", student_id)
-        return []
+        raise HTTPException(status_code=404, detail="Student not found")
 
-    print("✅ Found student:")
-    print("   external_id:", student.student_id)
-    print("   internal_id:", student.id)
-
-    # 🔥 STEP 2: Fetch attempts using internal ID
+    # --------------------------------------------------
+    # 2️⃣ Get ONLY completed attempts
+    # --------------------------------------------------
     attempts = (
         db.query(StudentExamOCThinkingSkills)
         .filter(
-            StudentExamOCThinkingSkills.student_id == str(student.id),
-            StudentExamOCThinkingSkills.completed_at.isnot(None)
+            StudentExamOCThinkingSkills.student_id == student.id,
+            StudentExamOCThinkingSkills.completed_at.isnot(None)  # ✅ important
         )
-        .order_by(StudentExamOCThinkingSkills.completed_at.desc())
+        .order_by(StudentExamOCThinkingSkills.completed_at.desc())  # latest first
         .all()
     )
 
-    print(f"📊 Attempts found: {len(attempts)}")
-
-    for a in attempts:
-        print(
-            f"   ➤ attempt_id={a.id}, completed_at={a.completed_at}"
-        )
-
+    # --------------------------------------------------
+    # 3️⃣ Format response
+    # --------------------------------------------------
     result = [
         {
-            "attempt_id": a.id,
-            "completed_at": a.completed_at.isoformat() if a.completed_at else None
+            "exam_attempt_id": attempt.id,
+            "completed_at": attempt.completed_at.isoformat()  # clean JSON format
         }
-        for a in attempts
+        for attempt in attempts
     ]
 
-    print("📤 Returning attempts payload:", result)
-
-    return result
- 
+    return result 
 @app.get("/api/student/exam-dates/mathematical-reasoning")
 def get_exam_dates_mathematical_reasoning(
     student_id: str = Query(...),
