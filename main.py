@@ -4034,7 +4034,56 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+@app.get("/api/student/exam-attempts/oc-thinking-skills")
+def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
 
+    print("📥 Incoming student_id (external):", student_id)
+
+    # 🔥 STEP 1: Convert external → internal
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ No student found for external ID:", student_id)
+        return []
+
+    print("✅ Found student:")
+    print("   external_id:", student.student_id)
+    print("   internal_id:", student.id)
+
+    # 🔥 STEP 2: Fetch attempts using internal ID
+    attempts = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(
+            StudentExamOCThinkingSkills.student_id == str(student.id),
+            StudentExamOCThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(StudentExamOCThinkingSkills.completed_at.desc())
+        .all()
+    )
+
+    print(f"📊 Attempts found: {len(attempts)}")
+
+    for a in attempts:
+        print(
+            f"   ➤ attempt_id={a.id}, completed_at={a.completed_at}"
+        )
+
+    result = [
+        {
+            "attempt_id": a.id,
+            "completed_at": a.completed_at.isoformat() if a.completed_at else None
+        }
+        for a in attempts
+    ]
+
+    print("📤 Returning attempts payload:", result)
+
+    return result
+ 
 @app.get("/api/student/exam-dates/mathematical-reasoning")
 def get_exam_dates_mathematical_reasoning(
     student_id: str = Query(...),
