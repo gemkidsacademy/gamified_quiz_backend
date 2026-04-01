@@ -12443,44 +12443,15 @@ def generate_oc_thinking_skills_exam(
     # --------------------------------------------------
     # 🔥 DELETE CHILD FIRST (RESPONSES)
     # --------------------------------------------------
-    deleted_responses = (
-        db.query(StudentExamResponseOCThinkingSkills)
-        .filter(
-            StudentExamResponseOCThinkingSkills.exam_attempt_id.in_(attempt_ids_subq)
-        )
-        .delete(synchronize_session=False)
-    )
-    
-    print(f"🗑️ Deleted OC responses: {deleted_responses}")
     
     # --------------------------------------------------
     # 🔥 DELETE PARENT (ATTEMPTS)
     # --------------------------------------------------
-    deleted_student_exams = (
-        db.query(StudentExamOCThinkingSkills)
-        .filter(StudentExamOCThinkingSkills.exam_id.in_(exam_ids_subq))
-        .delete(synchronize_session=False)
-    )
-    
-    print(f"🗑️ Deleted OC attempts: {deleted_student_exams}")
     
     # --------------------------------------------------
     # 🔥 DELETE ROOT (EXAMS)
     # --------------------------------------------------
-    deleted_exams = (
-        db.query(Exam)
-        .filter(
-            func.lower(Exam.subject) == "thinking_skills",
-            func.lower(Exam.class_name) == "oc"
-        )
-        .delete(synchronize_session=False)
-    )
-    
-    print(f"🗑️ Deleted OC exams: {deleted_exams}")
-    
-    db.commit()
-    print("✅ Cleanup complete")
-    # --------------------------------------------------
+        # --------------------------------------------------
     # 1️⃣ Fetch latest OC Thinking Skills quiz
     # --------------------------------------------------
     print("\n--- Fetching latest OC quiz ---")
