@@ -14535,6 +14535,7 @@ def get_thinking_skills_report(
 @app.get("/api/student/exam-report/oc-thinking-skills")
 def get_oc_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
+    exam_attempt_id: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
     # --------------------------------------------------
@@ -14549,19 +14550,30 @@ def get_oc_thinking_skills_report(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
+    
     # --------------------------------------------------
-    # 2️⃣ Get latest completed OC attempt
+    # 2️⃣ Get attempt (specific OR latest)
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamOCThinkingSkills)
-        .filter(
-            StudentExamOCThinkingSkills.student_id == student.id,
-            StudentExamOCThinkingSkills.completed_at.isnot(None)
+    if exam_attempt_id:
+        attempt = (
+            db.query(StudentExamOCThinkingSkills)
+            .filter(
+                StudentExamOCThinkingSkills.id == exam_attempt_id,
+                StudentExamOCThinkingSkills.student_id == student.id,
+                StudentExamOCThinkingSkills.completed_at.isnot(None)
+            )
+            .first()
         )
-        .order_by(StudentExamOCThinkingSkills.completed_at.desc())
-        .first()
-    )
-
+    else:
+        attempt = (
+            db.query(StudentExamOCThinkingSkills)
+            .filter(
+                StudentExamOCThinkingSkills.student_id == student.id,
+                StudentExamOCThinkingSkills.completed_at.isnot(None)
+            )
+            .order_by(StudentExamOCThinkingSkills.completed_at.desc())
+            .first()
+        )
     if not attempt:
         raise HTTPException(
             status_code=404,
