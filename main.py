@@ -12596,44 +12596,7 @@ def generate_oc_mathematical_reasoning_exam(
     # --------------------------------------------------
     # 🔥 DELETE CHILD FIRST (RESPONSES)
     # --------------------------------------------------
-    deleted_responses = (
-        db.query(StudentExamResponseOCMathematicalReasoning)
-        .filter(
-            StudentExamResponseOCMathematicalReasoning.exam_attempt_id.in_(attempt_ids_subq)
-        )
-        .delete(synchronize_session=False)
-    )
-
-    print(f"🗑️ Deleted OC MR responses: {deleted_responses}")
-
-    # --------------------------------------------------
-    # 🔥 DELETE PARENT (ATTEMPTS)
-    # --------------------------------------------------
-    deleted_student_exams = (
-        db.query(StudentExamOCMathematicalReasoning)
-        .filter(StudentExamOCMathematicalReasoning.exam_id.in_(exam_ids_subq))
-        .delete(synchronize_session=False)
-    )
-
-    print(f"🗑️ Deleted OC MR attempts: {deleted_student_exams}")
-
-    # --------------------------------------------------
-    # 🔥 DELETE ROOT (EXAMS)
-    # --------------------------------------------------
-    deleted_exams = (
-        db.query(Exam)
-        .filter(
-            func.lower(Exam.subject) == "mathematical_reasoning",
-            func.lower(Exam.class_name) == "oc"
-        )
-        .delete(synchronize_session=False)
-    )
-
-    print(f"🗑️ Deleted OC MR exams: {deleted_exams}")
-
-    db.commit()
-    print("✅ Cleanup complete")
-
+    
     # --------------------------------------------------
     # 1️⃣ Fetch latest OC MR quiz
     # --------------------------------------------------
