@@ -25098,7 +25098,8 @@ def start_exam_oc_mathematical_reasoning(
     attempt = (
         db.query(StudentExamOCMathematicalReasoning)
         .filter(
-            StudentExamOCMathematicalReasoning.student_id == student.id
+            StudentExamOCMathematicalReasoning.student_id == student.id,
+            StudentExamOCMathematicalReasoning.exam_id == exam.id   # ✅ FIX
         )
         .order_by(StudentExamOCMathematicalReasoning.started_at.desc())
         .first()
