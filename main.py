@@ -26514,13 +26514,32 @@ def start_exam_oc_thinking_skills(
         raise HTTPException(status_code=404, detail="Student not found")
 
     print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
+    exam = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.class_name) == "oc",
+            Exam.subject == "thinking_skills"
+        )
+        .order_by(Exam.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="OC Thinking Skills exam not found"
+        )
+
 
     # --------------------------------------------------
-    # 2️⃣ Fetch the ONE (and only) OC Thinking Skills attempt
+    # 2️⃣ Fetch the ONE (and only) OC Thinking Skills attempt 
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamOCThinkingSkills)
-        .filter(StudentExamOCThinkingSkills.student_id == student.id)
+        .filter(
+            StudentExamOCThinkingSkills.student_id == student.id,
+            StudentExamOCThinkingSkills.exam_id == exam.id   # ✅ KEY FIX
+        )
         .order_by(StudentExamOCThinkingSkills.started_at.desc())
         .first()
     )
@@ -26600,22 +26619,7 @@ def start_exam_oc_thinking_skills(
             f"remaining_seconds={remaining}"
         )
 
-        exam = (
-            db.query(Exam)
-            .filter(
-                func.lower(Exam.class_name) == "oc",
-                Exam.subject == "thinking_skills"
-            )
-            .order_by(Exam.created_at.desc())
-            .first()
-        )
-
-        if not exam:
-            raise HTTPException(
-                status_code=404,
-                detail="OC Thinking Skills exam not found"
-            )
-
+        
         normalized_questions = normalize_thinking_skills_questions(
             exam.questions or [],
             db
@@ -26721,7 +26725,6 @@ def start_exam_oc_thinking_skills(
         "questions": jsonable_encoder(normalized_questions),
         "remaining_time": int(new_attempt.duration_minutes * 60)
     }
-
 
 
 @app.get("/api/student/get-exam")
