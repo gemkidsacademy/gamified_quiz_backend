@@ -8324,27 +8324,32 @@ def get_exam_review_oc_thinking_skills(
         r = response_map.get(q["q_id"])
 
         raw_options = q.get("options", {})
-        resolved_options = {}
+        resolved_options = []
 
         for key, value in raw_options.items():
-
+        
             if isinstance(value, str) and value.lower().endswith(
                 (".png", ".jpg", ".jpeg", ".webp")
             ):
                 urls = resolve_image_options({key: value}, db)
-                resolved_options[key] = {
+                resolved_options.append({
+                    "key": key,
                     "type": "image",
                     "src": urls[key]
-                }
-
+                })
+        
             elif isinstance(value, dict):
-                resolved_options[key] = value
-
+                resolved_options.append({
+                    "key": key,
+                    **value
+                })
+        
             else:
-                resolved_options[key] = {
+                resolved_options.append({
+                    "key": key,
                     "type": "text",
                     "content": value
-                }
+                })
 
         review_questions.append({
             "q_id": q["q_id"],
