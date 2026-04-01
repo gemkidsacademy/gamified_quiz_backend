@@ -25959,6 +25959,7 @@ def start_naplan_numeracy_exam(
 
         return {
             "completed": True,
+            "exam_attempt_id": existing_completed_attempt.id,  # 🔥 ADD THIS
             "year": student_year,
             "message": "Exam already completed for this year"
         }
@@ -26036,6 +26037,7 @@ def start_naplan_numeracy_exam(
 
         return {
             "completed": False,
+            "exam_attempt_id": attempt.id,   # 🔥 ADD THIS
             "questions": normalized_questions,
             "remaining_time": remaining_seconds
         }
@@ -26083,6 +26085,7 @@ def start_naplan_numeracy_exam(
 
     return {
         "completed": False,
+        "exam_attempt_id": new_attempt.id,   # 🔥 ADD THIS
         "questions": normalized_questions,
         "remaining_time": new_attempt.duration_minutes * 60
     }  
