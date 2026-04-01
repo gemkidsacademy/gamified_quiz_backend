@@ -18913,12 +18913,13 @@ def finish_exam_oc_mathematical_reasoning(
 
     return {
         "status": "completed",
+        "attempt_id": attempt.id,   # 🔥 ADD THIS LINE
         "total_questions": total_questions,
         "attempted": saved_responses,
         "correct": correct,
         "wrong": wrong,
         "accuracy": accuracy
-    }
+    } 
  
 
 @app.post("/api/student/finish-exam/foundational-skills")
