@@ -4034,6 +4034,40 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+@rapp.get("/api/student/exam-attempts/oc-mathematical-reasoning")
+def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
+
+    # 🔹 STEP 1: Resolve internal student using EXTERNAL ID
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # 🔹 STEP 2: Query attempts using INTERNAL ID
+    attempts = (
+        db.query(StudentExamNaplanNumeracy)
+        .filter(
+            StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.completed_at.isnot(None)
+        )
+        .order_by(StudentExamNaplanNumeracy.completed_at.desc())
+        .all()
+    )
+
+    # 🔹 STEP 3: Format response
+    result = [
+        {
+            "attempt_id": a.id,  # ⚠️ confirm field below
+            "completed_at": a.completed_at
+        }
+        for a in attempts
+    ]
+
+    return {"attempts": result}
 @app.get("/api/student/exam-attempts/oc-thinking-skills")
 def get_oc_thinking_skills_attempts(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
