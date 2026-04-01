@@ -4969,7 +4969,7 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 
                     print("Deleted OC math attempt ID:", latest_attempt.id)
                 
-                    db.commit()
+                    db.commit() 
                     print("✅ OC MATHEMATICAL REASONING DELETE SUCCESS")
                 
                     return {
