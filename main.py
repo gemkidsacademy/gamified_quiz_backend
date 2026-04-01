@@ -8464,6 +8464,7 @@ def get_exam_review_oc_thinking_skills(
 )
 def get_exam_review_oc_mathematical_reasoning(
     student_id: str,
+    attempt_id: int | None = None,
     db: Session = Depends(get_db)
 ):
     print("\n================ EXAM REVIEW (OC MATHEMATICAL REASONING) =================")
@@ -8495,28 +8496,34 @@ def get_exam_review_oc_mathematical_reasoning(
     # ==================================================
     print("🔍 Resolving latest OC MR exam_attempt_id from responses...")
 
-    latest_attempt = (
-        db.query(StudentExamResponseOCMathematicalReasoning.exam_attempt_id)
-        .filter(
-            StudentExamResponseOCMathematicalReasoning.student_id == internal_student_id
+    # ==================================================
+    # 1️⃣ Resolve exam_attempt_id
+    # ==================================================
+    
+    if attempt_id:
+        print(f"📌 Using provided attempt_id: {attempt_id}")
+        exam_attempt_id = attempt_id
+    else:
+        print("🔍 No attempt_id provided, falling back to latest...")
+    
+        latest_attempt = (
+            db.query(StudentExamResponseOCMathematicalReasoning.exam_attempt_id)
+            .filter(
+                StudentExamResponseOCMathematicalReasoning.student_id == internal_student_id
+            )
+            .order_by(StudentExamResponseOCMathematicalReasoning.exam_attempt_id.desc())
+            .first()
         )
-        .order_by(StudentExamResponseOCMathematicalReasoning.exam_attempt_id.desc())
-        .first()
-    )
-
-    if not latest_attempt:
-        print(
-            "❌ No OC MR responses found for internal_student_id =",
-            internal_student_id
-        )
-        raise HTTPException(
-            status_code=404,
-            detail="No completed OC Mathematical Reasoning exam attempt found"
-        )
-
-    exam_attempt_id = latest_attempt.exam_attempt_id
-    print(f"✅ Latest OC MR exam_attempt_id resolved: {exam_attempt_id}")
-
+    
+        if not latest_attempt:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed OC Mathematical Reasoning exam attempt found"
+            )
+    
+        exam_attempt_id = latest_attempt.exam_attempt_id
+    
+    print(f"✅ Using exam_attempt_id: {exam_attempt_id}")
     # ==================================================
     # 2️⃣ Validate OC MR exam attempt ownership
     # ==================================================
@@ -14669,6 +14676,7 @@ def get_oc_thinking_skills_report(
 @app.get("/api/student/exam-report/oc-mathematical-reasoning")
 def get_oc_mathematical_reasoning_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
+    attempt_id: int | None = None,
     db: Session = Depends(get_db)
 ):
     # --------------------------------------------------
@@ -14686,22 +14694,43 @@ def get_oc_mathematical_reasoning_report(
     # --------------------------------------------------
     # 2️⃣ Get latest completed OC MR attempt
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamOCMathematicalReasoning)
-        .filter(
-            StudentExamOCMathematicalReasoning.student_id == student.id,
-            StudentExamOCMathematicalReasoning.completed_at.isnot(None)
+    # --------------------------------------------------
+    # 2️⃣ Resolve attempt
+    # --------------------------------------------------
+    
+    if attempt_id is not None:
+        print(f"📌 Using provided attempt_id: {attempt_id}")
+    
+        attempt = (
+            db.query(StudentExamOCMathematicalReasoning)
+            .filter(
+                StudentExamOCMathematicalReasoning.id == attempt_id,
+                StudentExamOCMathematicalReasoning.student_id == student.id,
+                StudentExamOCMathematicalReasoning.completed_at.isnot(None)
+            )
+            .first()
         )
-        .order_by(StudentExamOCMathematicalReasoning.completed_at.desc())
-        .first()
-    )
-
+    
+    else:
+        print("🔍 No attempt_id provided, falling back to latest...")
+    
+        attempt = (
+            db.query(StudentExamOCMathematicalReasoning)
+            .filter(
+                StudentExamOCMathematicalReasoning.student_id == student.id,
+                StudentExamOCMathematicalReasoning.completed_at.isnot(None)
+            )
+            .order_by(StudentExamOCMathematicalReasoning.completed_at.desc())
+            .first()
+        )
+    
     if not attempt:
         raise HTTPException(
             status_code=404,
             detail="No completed OC Mathematical Reasoning exam found"
         )
-
+    
+    print(f"✅ Using attempt_id: {attempt.id}")
     # --------------------------------------------------
     # 3️⃣ Load responses
     # --------------------------------------------------
