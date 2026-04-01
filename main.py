@@ -8228,8 +8228,10 @@ def get_exam_review_thinking_skills(
 )
 def get_exam_review_oc_thinking_skills(
     student_id: str,
+    exam_attempt_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
+ 
     print("\n================ EXAM REVIEW (OC THINKING SKILLS) =================")
     print(f"➡️ Incoming request (external student_id): {student_id}")
 
@@ -8254,65 +8256,56 @@ def get_exam_review_oc_thinking_skills(
     internal_student_id = student.id
     print(f"✅ Internal student_id resolved: {internal_student_id}")
 
+    
     # ==================================================
-    # 1️⃣ Resolve LATEST OC exam_attempt_id
+    # 1️⃣ Resolve exam_attempt_id (specific OR latest)
     # ==================================================
-    print("🔍 Resolving latest OC exam_attempt_id from responses...")
-
-    latest_attempt = (
-        db.query(StudentExamResponseOCThinkingSkills.exam_attempt_id)
-        .filter(
-            StudentExamResponseOCThinkingSkills.student_id == internal_student_id
+    print("🔍 Resolving OC exam_attempt_id...")
+    
+    if exam_attempt_id:
+        print(f"➡️ Using provided exam_attempt_id: {exam_attempt_id}")
+    
+        attempt = (
+            db.query(StudentExamOCThinkingSkills)
+            .filter(
+                StudentExamOCThinkingSkills.id == exam_attempt_id,
+                StudentExamOCThinkingSkills.student_id == internal_student_id,
+                StudentExamOCThinkingSkills.completed_at.isnot(None)
+            )
+            .first()
         )
-        .order_by(StudentExamResponseOCThinkingSkills.exam_attempt_id.desc())
-        .first()
-    )
-
-    if not latest_attempt:
-        print(
-            "❌ No OC exam responses found for internal_student_id =",
-            internal_student_id
+    
+        if not attempt:
+            print("❌ Invalid or unauthorized exam_attempt_id:", exam_attempt_id)
+            raise HTTPException(
+                status_code=404,
+                detail="OC exam attempt not found for this student"
+            )
+    
+    else:
+        print("➡️ No exam_attempt_id provided, fetching latest...")
+    
+        attempt = (
+            db.query(StudentExamOCThinkingSkills)
+            .filter(
+                StudentExamOCThinkingSkills.student_id == internal_student_id,
+                StudentExamOCThinkingSkills.completed_at.isnot(None)
+            )
+            .order_by(StudentExamOCThinkingSkills.completed_at.desc())
+            .first()
         )
-        raise HTTPException(
-            status_code=404,
-            detail="No completed OC exam attempt found for this student"
-        )
+    
+        if not attempt:
+            print("❌ No completed OC exam attempts found")
+            raise HTTPException(
+                status_code=404,
+                detail="No completed OC exam attempt found for this student"
+            )
+    
+    exam_attempt_id = attempt.id
+    print(f"✅ OC exam_attempt_id resolved: {exam_attempt_id}")
 
-    exam_attempt_id = latest_attempt.exam_attempt_id
-    print(f"✅ Latest OC exam_attempt_id resolved: {exam_attempt_id}")
-
-    # ==================================================
-    # 2️⃣ Validate OC exam attempt ownership
-    # ==================================================
-    print("🔍 Validating OC exam attempt ownership...")
-
-    attempt = (
-        db.query(StudentExamOCThinkingSkills)
-        .filter(
-            StudentExamOCThinkingSkills.id == exam_attempt_id,
-            StudentExamOCThinkingSkills.student_id == internal_student_id
-        )
-        .first()
-    )
-
-    if not attempt:
-        print(
-            "❌ OC Exam attempt ownership mismatch:",
-            f"attempt_id={exam_attempt_id},",
-            f"internal_student_id={internal_student_id}"
-        )
-        raise HTTPException(
-            status_code=404,
-            detail="OC exam attempt not found for this student"
-        )
-
-    print(
-        "✅ OC Exam attempt verified:",
-        f"id={attempt.id},",
-        f"exam_id={attempt.exam_id},",
-        f"student_id={attempt.student_id}"
-    )
-
+    
     # ==================================================
     # 3️⃣ Fetch OC responses
     # ==================================================
