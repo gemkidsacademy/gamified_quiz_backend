@@ -25905,6 +25905,11 @@ def start_naplan_numeracy_exam(
         raise HTTPException(status_code=404, detail="Student not found")
 
     print(f"👤 Student DB ID: {student.id}, Class: {student.class_name}")
+    student_year_str = student.student_year
+    student_year = student_year_to_int(student_year_str)
+
+    print(f"📅 START: student year = {student_year}")
+
     # --------------------------------------------------
     #  Load exam (same logic as before)
     # --------------------------------------------------
@@ -25943,6 +25948,7 @@ def start_naplan_numeracy_exam(
         .filter(
             StudentExamNaplanNumeracy.student_id == student.id,
             StudentExamNaplanNumeracy.exam_id == exam.id,
+            StudentExamNaplanNumeracy.year == student_year,  # ✅ ADD
             StudentExamNaplanNumeracy.completed_at.isnot(None)
         )
         .first()
@@ -25962,6 +25968,7 @@ def start_naplan_numeracy_exam(
         db.query(StudentExamNaplanNumeracy)
         .filter(
             StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.year == student_year,  # ✅ ADD THIS
             StudentExamNaplanNumeracy.completed_at.is_(None)
         )
         .order_by(StudentExamNaplanNumeracy.started_at.desc())
@@ -26060,10 +26067,11 @@ def start_naplan_numeracy_exam(
         normalize_type6_visual_counting_question(q)
 
         normalized_questions.append(q)
-
+    
     new_attempt = StudentExamNaplanNumeracy(
         student_id=student.id,
         exam_id=exam.id,
+        year=student_year,
         started_at=now,
         duration_minutes=40
     )
@@ -26080,6 +26088,7 @@ def start_naplan_numeracy_exam(
         "questions": normalized_questions,
         "remaining_time": new_attempt.duration_minutes * 60
     }
+
 
 # @app.post("/api/student/start-exam-thinkingskills")
 # def start_exam(
