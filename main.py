@@ -14620,11 +14620,12 @@ def get_oc_thinking_skills_report(
     # 8️⃣ Final response
     # --------------------------------------------------
     return {
-        "overall": overall,
-        "topic_wise_performance": topic_wise_performance,
-        "topic_accuracy": topic_accuracy,
-        "improvement_areas": improvement_areas
-    }
+    "exam_attempt_id": attempt.id,   # 🔥 ADD THIS LINE
+    "overall": overall,
+    "topic_wise_performance": topic_wise_performance,
+    "topic_accuracy": topic_accuracy,
+    "improvement_areas": improvement_areas
+}
 @app.get("/api/student/exam-report/oc-mathematical-reasoning")
 def get_oc_mathematical_reasoning_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
