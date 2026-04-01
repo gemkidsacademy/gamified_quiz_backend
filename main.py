@@ -4049,19 +4049,19 @@ def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
 
     # 🔹 STEP 2: Query attempts using INTERNAL ID
     attempts = (
-        db.query(StudentExamNaplanNumeracy)
+        db.query(StudentExamOCMathematicalReasoning)  # ✅ FIXED
         .filter(
-            StudentExamNaplanNumeracy.student_id == student.id,
-            StudentExamNaplanNumeracy.completed_at.isnot(None)
+            StudentExamOCMathematicalReasoning.student_id == student.id,
+            StudentExamOCMathematicalReasoning.completed_at.isnot(None)
         )
-        .order_by(StudentExamNaplanNumeracy.completed_at.desc())
+        .order_by(StudentExamOCMathematicalReasoning.completed_at.desc())
         .all()
     )
 
     # 🔹 STEP 3: Format response
     result = [
         {
-            "attempt_id": a.id,  # ⚠️ confirm field below
+            "attempt_id": a.id,
             "completed_at": a.completed_at
         }
         for a in attempts
