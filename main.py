@@ -2163,7 +2163,7 @@ class Student(Base):
     __tablename__ = "students"
 
     id = Column(String, primary_key=True, index=True)   # internal PK
-    student_id = Column(String, unique=True, nullable=False)  # e.g. "Gem002"
+    student_id = Column(String, unique=True, nullable=False)  # e.g. External "Gem002"
 
     password = Column(String, nullable=False)
     name = Column(String, nullable=False)
@@ -5124,6 +5124,46 @@ def get_naplan_numeracy_exam_dates(
         })
 
     return exam_dates
+
+
+@app.get("/api/exams/oc-reading-attempts")
+def get_oc_reading_attempts(
+    student_id: str = Query(...),  # external id (e.g. Gem002)
+    db: Session = Depends(get_db)
+):
+    # ✅ STEP 1: Resolve internal student ID
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    internal_id = student.id   # 🔥 THIS is what exams table uses
+
+    # ✅ STEP 2: Fetch attempts
+    attempts = (
+        db.query(StudentExamReadingOC)
+        .filter(
+            StudentExamReadingOC.student_id == internal_id,
+            StudentExamReadingOC.finished == True
+        )
+        .order_by(desc(StudentExamReadingOC.completed_at))
+        .all()
+    )
+
+    # ✅ STEP 3: Format response
+    return {
+        "attempts": [
+            {
+                "session_id": a.id,
+                "created_at": a.completed_at or a.created_at
+            }
+            for a in attempts
+        ]
+    }
  
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
