@@ -13371,7 +13371,7 @@ def get_oc_reading_report(
     db: Session = Depends(get_db)
 ):
     print("\n================ GET OC READING REPORT ================")
-    print("🆔 Incoming session_id:", session_id_new)
+    print("🆔 Incoming session_id:", session_id)
 
     # --------------------------------------------------
     # 1️⃣ Load session (OC)
