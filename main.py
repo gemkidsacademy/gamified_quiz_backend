@@ -20144,17 +20144,7 @@ def generate_exam_oc_reading(
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
 
-    # --------------------------------------------------
-    # 🧹 RESET PREVIOUS OC READING DATA
-    # --------------------------------------------------
-    print("🧹 Resetting previous OC reading exam attempts")
-
-    db.query(StudentExamReportOCReading).delete(synchronize_session=False)
-    db.query(StudentExamReadingOC).delete(synchronize_session=False)
-    db.query(GeneratedExamReading).filter(
-        func.lower(GeneratedExamReading.class_name) == class_name.lower()
-    ).delete(synchronize_session=False)
-
+    
     
 
     # --------------------------------------------------
