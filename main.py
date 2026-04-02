@@ -16182,11 +16182,25 @@ def start_exam_oc_reading(
         raise HTTPException(status_code=400, detail="Invalid student_id")
 
     print("✅ Using student_id:", student_id)
+    # 2️⃣ Latest exam (same table)
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.class_name == "oc")
+        .order_by(GeneratedExamReading.id.desc())
+        .first()
+    )
+
+    if not exam:
+        print("❌ No OC exam found")
+        raise HTTPException(status_code=404, detail="OC reading exam not found")
 
     # 1️⃣ Fetch latest attempt (OC)
     attempt = (
         db.query(StudentExamReadingOC)
-        .filter(StudentExamReadingOC.student_id == student_id)
+        .filter(
+            StudentExamReadingOC.student_id == student_id,
+            StudentExamReadingOC.exam_id == exam.id   # ✅ ADD THIS
+        )
         .order_by(StudentExamReadingOC.started_at.desc())
         .first()
     )
@@ -16212,17 +16226,7 @@ def start_exam_oc_reading(
         print("================================================\n")
         return payload
 
-    # 2️⃣ Latest exam (same table)
-    exam = (
-        db.query(GeneratedExamReading)
-        .filter(GeneratedExamReading.class_name == "oc")
-        .order_by(GeneratedExamReading.id.desc())
-        .first()
-    )
-
-    if not exam:
-        print("❌ No OC exam found")
-        raise HTTPException(status_code=404, detail="OC reading exam not found")
+    
 
     duration_minutes = exam.exam_json.get("duration_minutes", 30)
 
@@ -16234,7 +16238,9 @@ def start_exam_oc_reading(
     # 🔁 Resume attempt
     if attempt and not attempt.finished:
         now = datetime.now(timezone.utc)
-        started_at = attempt.started_at.replace(tzinfo=timezone.utc)
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
 
         elapsed = int((now - started_at).total_seconds())
         remaining = max(0, duration_minutes * 60 - elapsed)
