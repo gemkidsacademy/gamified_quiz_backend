@@ -5417,7 +5417,7 @@ def send_selective_report_email(
     # 3️⃣ Fetch student email
     # ----------------------------------------
     student = (
-        db.query(Student)
+        db.query(Students)
         .filter(Student.student_id == req.student_id)
         .first()
     )
@@ -5437,6 +5437,7 @@ def send_selective_report_email(
         to_email=to_email,
         pdf_path=pdf_path
     )
+    
 
     # ----------------------------------------
     # 5️⃣ Response
