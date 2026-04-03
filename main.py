@@ -5184,8 +5184,7 @@ def generate_overall_selective_report_internal(
     )
 
     if existing:
-        return existing
-
+        return serialize_overall_report(existing)
     # --------------------------------------------------
     # 2️⃣ Fetch reports
     # --------------------------------------------------
