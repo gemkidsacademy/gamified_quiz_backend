@@ -177,7 +177,7 @@ def get_db():
 # ---------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
 client_save_questions = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-#SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 otp_store = {}
 # ---------------------------
 # Models
@@ -5395,7 +5395,7 @@ def send_report_email_with_pdf(to_email: str, pdf_path: str):
         raise 
 @app.post("/api/admin/send-selective-report-email")
 def send_selective_report_email(
-    req: SendSelectiveReportEmailRequest,
+    #req: SendSelectiveReportEmailRequest,
     db: Session = Depends(get_db)
 ):
     # ----------------------------------------
