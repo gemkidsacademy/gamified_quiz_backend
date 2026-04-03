@@ -38,11 +38,12 @@ import ast
 
 
 
+
  
 import json
 
 from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text, Boolean, Date, Text, desc, Float, Index, case, Numeric, distinct, cast, UniqueConstraint
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 
 
 
@@ -178,6 +179,10 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class SendSelectiveReportEmailRequest(BaseModel):
+    student_id: str
+    exam_date: str
+ 
 class AdminExamResponseOCReading(Base):
     __tablename__ = "admin_exam_response_oc_reading"
 
@@ -5149,7 +5154,351 @@ def get_oc_reading_attempts(
             }
             for a in attempts
         ]
-    } 
+    }
+def serialize_overall_report(report):
+    return {
+        "student_id": report.student_id,
+        "exam_date": str(report.exam_date),
+        "overall_percent": report.overall_percent,
+        "readiness_band": report.readiness_band,
+        "school_recommendation": report.school_recommendation,
+        "override_flag": report.override_flag,
+        "override_message": report.override_message,
+        "components": report.components
+    }
+def generate_overall_selective_report_internal(
+    student_id: str,
+    exam_date: date,
+    db: Session
+):
+    # --------------------------------------------------
+    # 1️⃣ Guard: already exists?
+    # --------------------------------------------------
+    existing = (
+        db.query(AdminOverallSelectiveReport)
+        .filter(
+            AdminOverallSelectiveReport.student_id == student_id,
+            AdminOverallSelectiveReport.exam_date == exam_date
+        )
+        .first()
+    )
+
+    if existing:
+        return existing
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch reports
+    # --------------------------------------------------
+    reports = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student_id,
+            func.date(AdminExamReport.created_at) == exam_date
+        )
+        .all()
+    )
+
+    if not reports:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "NO_EXAMS_FOUND",
+                "message": "No exam reports exist for this student on the selected exam date.",
+                "student_id": student_id,
+                "exam_date": str(exam_date)
+            }
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Normalize subjects
+    # --------------------------------------------------
+    def normalize_exam_type(raw: str) -> str:
+        raw = raw.lower().strip()
+        if raw == "thinking skills":
+            return "thinking_skills"
+        return raw
+
+    reports_by_subject = {
+        normalize_exam_type(r.exam_type): r for r in reports
+    }
+
+    required_subjects = {
+        "reading",
+        "mathematical_reasoning",
+        "thinking_skills",
+        "writing"
+    }
+
+    missing = required_subjects - reports_by_subject.keys()
+
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "INCOMPLETE_EXAMS",
+                "message": "Overall readiness cannot be generated because not all required exams are completed.",
+                "missing_subjects": sorted(list(missing)),
+                "completed_subjects": sorted(list(reports_by_subject.keys())),
+                "student_id": student_id,
+                "exam_date": str(exam_date)
+            }
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ Compute scores
+    # --------------------------------------------------
+    MAX_SCORES = {
+        "reading": 100,
+        "mathematical_reasoning": 100,
+        "thinking_skills": 100,
+        "writing": 20,
+    }
+
+    components = {
+        subject: reports_by_subject[subject].overall_score
+        for subject in MAX_SCORES
+    }
+
+    normalized_components = {
+        subject: round((components[subject] / MAX_SCORES[subject]) * 100, 2)
+        for subject in components
+    }
+
+    overall_percent = round(
+        sum(normalized_components.values()) / len(normalized_components),
+        2
+    )
+
+    # --------------------------------------------------
+    # 5️⃣ Band
+    # --------------------------------------------------
+    if overall_percent >= 80:
+        band = "Band 1 – Fully Selective Ready"
+    elif overall_percent >= 70:
+        band = "Band 2 – Strong Selective Potential"
+    elif overall_percent >= 60:
+        band = "Band 3 – Borderline Selective"
+    else:
+        band = "Band 4 – Not Selective Ready Yet"
+
+    # --------------------------------------------------
+    # 6️⃣ School map 
+    # --------------------------------------------------
+    school_map = {
+        "Band 1 – Fully Selective Ready": [
+            "James Ruse",
+            "Baulkham Hills",
+            "North Sydney Boys/Girls",
+            "Sydney Grammar (Academic profile)"
+        ],
+        "Band 2 – Strong Selective Potential": [
+            "Hornsby Girls",
+            "Chatswood",
+            "Ryde",
+            "Sydney Technical",
+            "Parramatta",
+            "Penrith Selective"
+        ],
+        "Band 3 – Borderline Selective": [
+            "Local / partially selective schools",
+            "Lower competition selective schools"
+        ],
+        "Band 4 – Not Selective Ready Yet": [
+            "Focus on foundations",
+            "Reassess selective pathway",
+            "Consider enrichment before exam prep"
+        ]
+    }
+
+
+    school_recommendation = school_map[band]
+
+    # --------------------------------------------------
+    # 7️⃣ Overrides
+    # --------------------------------------------------
+    override_flag = False
+    override_message = None
+
+    if components["writing"] < 60:
+        override_flag = True
+        override_message = "Improvement in Writing required."
+
+    for subject, score in components.items():
+        if score < 55:
+            override_flag = True
+            override_message = f"Improve {subject}"
+            break
+
+    # --------------------------------------------------
+    # 8️⃣ Store
+    # --------------------------------------------------
+    overall_report = AdminOverallSelectiveReport(
+        student_id=student_id,
+        exam_date=exam_date,
+        overall_percent=overall_percent,
+        readiness_band=band,
+        school_recommendation=school_recommendation,
+        override_flag=override_flag,
+        override_message=override_message,
+        components=components
+    )
+
+    db.add(overall_report)
+    db.commit()
+    db.refresh(overall_report)
+
+    return serialize_overall_report(overall_report)
+
+@app.post("/api/admin/send-selective-report-email", response_class=HTMLResponse)
+def send_selective_report_email(req: SendSelectiveReportEmailRequest, db: Session = Depends(get_db)):
+
+    report_dict = generate_overall_selective_report_internal(
+        req.student_id,
+        req.exam_date,
+        db
+    )
+
+    html = build_selective_report_html(report_dict)
+
+    return html
+ 
+
+def build_selective_report_html(report):
+    components = report["components"]
+
+    def percent(subject, value):
+        max_scores = {
+            "reading": 100,
+            "mathematical_reasoning": 100,
+            "thinking_skills": 100,
+            "writing": 20,
+        }
+        return round((value / max_scores[subject]) * 100)
+
+    def progress_bar(pct):
+        return f"""
+        <div style="background:#e5e7eb;border-radius:8px;height:10px;">
+            <div style="
+                width:{pct}%;
+                background:#2563eb;
+                height:10px;
+                border-radius:8px;">
+            </div>
+        </div>
+        """
+
+    subject_labels = {
+        "reading": "Reading",
+        "mathematical_reasoning": "Mathematical Reasoning",
+        "thinking_skills": "Thinking Skills",
+        "writing": "Writing",
+    }
+
+    subject_cards = ""
+
+    for key, value in components.items():
+        pct = percent(key, value)
+
+        subject_cards += f"""
+        <div class="card">
+            <h3>{subject_labels[key]}</h3>
+            {progress_bar(pct)}
+            <p>{value} / { '20' if key=='writing' else '100' } ({pct}%)</p>
+        </div>
+        """
+
+    schools_html = "".join(
+        [f"<li>{school}</li>" for school in report["school_recommendation"]]
+    )
+
+    override_html = ""
+    if report["override_flag"]:
+        override_html = f"""
+        <div class="override">
+            ⚠ {report["override_message"]}
+        </div>
+        """
+
+    html = f"""
+    <html>
+    <head>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                padding: 30px;
+                color: #111827;
+            }}
+            h1 {{
+                text-align: center;
+                margin-bottom: 20px;
+            }}
+            .summary {{
+                text-align: center;
+                margin-bottom: 30px;
+            }}
+            .score {{
+                font-size: 42px;
+                font-weight: bold;
+                color: #2563eb;
+            }}
+            .band {{
+                font-size: 18px;
+                margin-top: 5px;
+            }}
+            .grid {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+                margin-top: 20px;
+            }}
+            .card {{
+                border: 1px solid #e5e7eb;
+                padding: 15px;
+                border-radius: 10px;
+            }}
+            .schools {{
+                margin-top: 30px;
+            }}
+            .override {{
+                margin-top: 20px;
+                padding: 12px;
+                background: #fef3c7;
+                border: 1px solid #f59e0b;
+                border-radius: 8px;
+            }}
+        </style>
+    </head>
+
+    <body>
+
+        <h1>Selective Readiness Report</h1>
+
+        <div class="summary">
+            <div class="score">{report["overall_percent"]}%</div>
+            <div class="band">{report["readiness_band"]}</div>
+            <p>Student ID: {report["student_id"]}</p>
+            <p>Exam Date: {report["exam_date"]}</p>
+        </div>
+
+        <div class="grid">
+            {subject_cards}
+        </div>
+
+        <div class="schools">
+            <h3>Recommended Schools</h3>
+            <ul>
+                {schools_html}
+            </ul>
+        </div>
+
+        {override_html}
+
+    </body>
+    </html>
+    """
+
+    return html
+ 
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
@@ -11652,7 +12001,7 @@ def get_selective_report_dates(
 
     return [r[0].isoformat() for r in rows]
 
-
+ 
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
