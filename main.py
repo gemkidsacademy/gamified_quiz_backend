@@ -185,6 +185,7 @@ otp_store = {}
 class SendSelectiveReportEmailRequest(BaseModel):
     student_id: str
     exam_date: str
+    email:str
  
 class AdminExamResponseOCReading(Base):
     __tablename__ = "admin_exam_response_oc_reading"
@@ -5395,7 +5396,7 @@ def send_report_email_with_pdf(to_email: str, pdf_path: str):
         raise 
 @app.post("/api/admin/send-selective-report-email")
 def send_selective_report_email(
-    #req: SendSelectiveReportEmailRequest,
+    req: SendSelectiveReportEmailRequest,
     db: Session = Depends(get_db)
 ):
     # ----------------------------------------
