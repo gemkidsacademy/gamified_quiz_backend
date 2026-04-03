@@ -5408,7 +5408,7 @@ def send_selective_report_email(req: SendSelectiveReportEmailRequest, db: Sessio
 
     # 🔥 TEMP: hardcode email (we’ll improve later)
     send_report_email_with_pdf(
-        to_email="your_test_email@gmail.com",
+        to_email="proactive1.san@gmail.com",
         pdf_path=pdf_path
     )
 
