@@ -37,7 +37,8 @@ from google.cloud import storage
 import ast
 import tempfile
 
-
+from sendgrid.helpers.mail import Mail, Email, Attachment, FileContent, FileName, FileType, Disposition
+import base64
 
 
 
@@ -5359,7 +5360,39 @@ def generate_pdf_from_html(html_content: str) -> str:
     HTML(string=html_content).write_pdf(pdf_path)
 
     return pdf_path
- 
+from sendgrid.helpers.mail import Mail, Email, Attachment, FileContent, FileName, FileType, Disposition
+import base64
+
+def send_report_email_with_pdf(to_email: str, pdf_path: str):
+    with open(pdf_path, "rb") as f:
+        encoded_file = base64.b64encode(f.read()).decode()
+
+    message = Mail(
+        from_email='noreply@gemkidsacademy.com.au',
+        to_emails=to_email,
+        subject='Selective Readiness Report',
+        html_content="""
+            <p>Please find attached the Selective Readiness Report.</p>
+        """,
+    )
+
+    attachment = Attachment(
+        FileContent(encoded_file),
+        FileName("Selective_Readiness_Report.pdf"),
+        FileType("application/pdf"),
+        Disposition("attachment")
+    )
+
+    message.attachment = attachment
+    message.reply_to = Email('do-not-reply@gemkidsacademy.com.au')
+
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        print(f"[INFO] Report email sent, status code {response.status_code}")
+    except Exception as e:
+        print(f"[ERROR] Failed to send report email: {e}")
+        raise 
 @app.post("/api/admin/send-selective-report-email")
 def send_selective_report_email(req: SendSelectiveReportEmailRequest, db: Session = Depends(get_db)):
 
@@ -5371,18 +5404,15 @@ def send_selective_report_email(req: SendSelectiveReportEmailRequest, db: Sessio
 
     html = build_selective_report_html(report_dict)
 
-    # ✅ NEW: generate PDF
-    
-    try:
-        pdf_path = generate_pdf_from_html(html)
-    except Exception as e:
-        print("❌ PDF ERROR:", str(e))
-        traceback.print_exc()
-        return {"error": str(e)}
+    pdf_path = generate_pdf_from_html(html)
 
-    print("PDF generated at:", pdf_path)
+    # 🔥 TEMP: hardcode email (we’ll improve later)
+    send_report_email_with_pdf(
+        to_email="your_test_email@gmail.com",
+        pdf_path=pdf_path
+    )
 
-    return {"message": "PDF generated successfully"}
+    return {"message": "Email sent successfully ✅"}
  
 def build_selective_report_html(report):
     components = report["components"]
