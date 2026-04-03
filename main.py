@@ -185,7 +185,7 @@ otp_store = {}
 class SendSelectiveReportEmailRequest(BaseModel):
     student_id: str
     exam_date: str
-    email:str
+    
  
 class AdminExamResponseOCReading(Base):
     __tablename__ = "admin_exam_response_oc_reading"
