@@ -4,6 +4,7 @@ from passlib.context import CryptContext
 import uvicorn     
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
+from weasyprint import HTML
 import docx  
 from datetime import date   
 from fastapi.encoders import jsonable_encoder   
@@ -5348,7 +5349,17 @@ def generate_overall_selective_report_internal(
 
     return serialize_overall_report(overall_report)
 
-@app.post("/api/admin/send-selective-report-email", response_class=HTMLResponse)
+def generate_pdf_from_html(html_content: str) -> str:
+    # create temp file
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    pdf_path = temp_file.name
+
+    # generate PDF
+    HTML(string=html_content).write_pdf(pdf_path)
+
+    return pdf_path
+ 
+@app.post("/api/admin/send-selective-report-email")
 def send_selective_report_email(req: SendSelectiveReportEmailRequest, db: Session = Depends(get_db)):
 
     report_dict = generate_overall_selective_report_internal(
@@ -5359,9 +5370,13 @@ def send_selective_report_email(req: SendSelectiveReportEmailRequest, db: Sessio
 
     html = build_selective_report_html(report_dict)
 
-    return html
- 
+    # ✅ NEW: generate PDF
+    pdf_path = generate_pdf_from_html(html)
 
+    print("PDF generated at:", pdf_path)
+
+    return {"message": "PDF generated successfully"}
+ 
 def build_selective_report_html(report):
     components = report["components"]
 
