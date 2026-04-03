@@ -177,7 +177,7 @@ def get_db():
 # ---------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
 client_save_questions = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
+#SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 otp_store = {}
 # ---------------------------
 # Models
@@ -5417,7 +5417,7 @@ def send_selective_report_email(
     # 3️⃣ Fetch student email
     # ----------------------------------------
     student = (
-        db.query(Students)
+        db.query(Student)
         .filter(Student.student_id == req.student_id)
         .first()
     )
