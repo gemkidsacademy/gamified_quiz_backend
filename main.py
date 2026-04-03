@@ -5394,25 +5394,56 @@ def send_report_email_with_pdf(to_email: str, pdf_path: str):
         print(f"[ERROR] Failed to send report email: {e}")
         raise 
 @app.post("/api/admin/send-selective-report-email")
-def send_selective_report_email(req: SendSelectiveReportEmailRequest, db: Session = Depends(get_db)):
-
+def send_selective_report_email(
+    req: SendSelectiveReportEmailRequest,
+    db: Session = Depends(get_db)
+):
+    # ----------------------------------------
+    # 1️⃣ Generate report
+    # ----------------------------------------
     report_dict = generate_overall_selective_report_internal(
         req.student_id,
         req.exam_date,
         db
     )
 
+    # ----------------------------------------
+    # 2️⃣ Build HTML + PDF
+    # ----------------------------------------
     html = build_selective_report_html(report_dict)
-
     pdf_path = generate_pdf_from_html(html)
 
-    # 🔥 TEMP: hardcode email (we’ll improve later)
+    # ----------------------------------------
+    # 3️⃣ Fetch student email
+    # ----------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == req.student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Student with ID {req.student_id} not found"
+        )
+
+    to_email = student.parent_email
+
+    # ----------------------------------------
+    # 4️⃣ Send email
+    # ----------------------------------------
     send_report_email_with_pdf(
-        to_email="proactive1.san@gmail.com",
+        to_email=to_email,
         pdf_path=pdf_path
     )
 
-    return {"message": "Email sent successfully ✅"}
+    # ----------------------------------------
+    # 5️⃣ Response
+    # ----------------------------------------
+    return {
+        "message": f"Email sent successfully to {to_email} ✅"
+    }
  
 def build_selective_report_html(report):
     components = report["components"]
