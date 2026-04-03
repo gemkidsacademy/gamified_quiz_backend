@@ -5372,7 +5372,13 @@ def send_selective_report_email(req: SendSelectiveReportEmailRequest, db: Sessio
     html = build_selective_report_html(report_dict)
 
     # ✅ NEW: generate PDF
-    pdf_path = generate_pdf_from_html(html)
+    
+    try:
+        pdf_path = generate_pdf_from_html(html)
+    except Exception as e:
+        print("❌ PDF ERROR:", str(e))
+        traceback.print_exc()
+        return {"error": str(e)}
 
     print("PDF generated at:", pdf_path)
 
