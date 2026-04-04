@@ -10648,13 +10648,69 @@ def get_topics(
     difficulty: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    print("📥 Fetching topics with filters:")
-    print(f"   class_name={class_name}")
-    print(f"   subject={subject}")
-    print(f"   difficulty={difficulty}")
+    print("\n📥 Fetching topics with filters:")
+    print(f"   RAW class_name = '{class_name}'")
+    print(f"   RAW subject    = '{subject}'")
+    print(f"   RAW difficulty = '{difficulty}'")
 
     normalized_subject = subject.lower().replace("_", " ")
 
+    print("\n🔧 Normalized values:")
+    print(f"   class_name = '{class_name.lower()}'")
+    print(f"   subject    = '{normalized_subject}'")
+    print(f"   difficulty = '{difficulty.lower()}'")
+
+    # ✅ Step 1: Check total rows
+    total_rows = db.query(Question).count()
+    print(f"\n📊 Total rows in Question table: {total_rows}")
+
+    # ✅ Step 2: Check class filter only
+    class_filtered = db.query(Question).filter(
+        func.lower(func.trim(Question.class_name)) == class_name.lower()
+    ).count()
+    print(f"📊 Rows after class_name filter: {class_filtered}")
+
+    # ✅ Step 3: Check subject filter only
+    subject_filtered = db.query(Question).filter(
+        func.lower(func.trim(Question.subject)) == normalized_subject
+    ).count()
+    print(f"📊 Rows after subject filter: {subject_filtered}")
+
+    # ✅ Step 4: Check difficulty filter only
+    difficulty_filtered = db.query(Question).filter(
+        func.lower(func.trim(Question.difficulty)) == difficulty.lower()
+    ).count()
+    print(f"📊 Rows after difficulty filter: {difficulty_filtered}")
+
+    # ✅ Step 5: Combined filters BEFORE topic conditions
+    combined_filtered = db.query(Question).filter(
+        func.lower(func.trim(Question.class_name)) == class_name.lower(),
+        func.lower(func.trim(Question.subject)) == normalized_subject,
+        func.lower(func.trim(Question.difficulty)) == difficulty.lower(),
+    ).count()
+    print(f"📊 Rows after ALL filters (before topic check): {combined_filtered}")
+
+    # ✅ Step 6: Check topic issues
+    topic_null_count = db.query(Question).filter(Question.topic.is_(None)).count()
+    topic_empty_count = db.query(Question).filter(Question.topic == "").count()
+
+    print(f"\n⚠️ Topic issues:")
+    print(f"   NULL topics  = {topic_null_count}")
+    print(f"   EMPTY topics = {topic_empty_count}")
+
+    # ✅ Step 7: Sample actual DB values (VERY IMPORTANT)
+    sample_rows = db.query(
+        Question.class_name,
+        Question.subject,
+        Question.difficulty,
+        Question.topic
+    ).limit(5).all()
+
+    print("\n🔍 Sample DB rows:")
+    for row in sample_rows:
+        print(f"   class='{row[0]}', subject='{row[1]}', difficulty='{row[2]}', topic='{row[3]}'")
+
+    # ✅ Step 8: Final query
     topics = (
         db.query(func.distinct(Question.topic))
         .filter(
@@ -10668,14 +10724,12 @@ def get_topics(
         .all()
     )
 
-
     topic_list = [{"name": t[0]} for t in topics]
 
-    print(f"✅ Topics found: {len(topic_list)}")
+    print(f"\n✅ Final Topics found: {len(topic_list)}")
+    print(f"📦 Topics: {topic_list}\n")
 
     return topic_list
-
-
 
 def normalize_topic_key(raw: str) -> str:
     """
