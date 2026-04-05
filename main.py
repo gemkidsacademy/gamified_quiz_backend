@@ -10829,7 +10829,8 @@ def get_question_bank_thinking_skills(
             func.count(Question.id).label("total_questions")
         )
         .filter(
-            Question.subject == "Thinking Skills"
+            Question.subject == "Thinking Skills",
+            Question.class_name == "Selective" 
         )
         .group_by(
             Question.difficulty,
