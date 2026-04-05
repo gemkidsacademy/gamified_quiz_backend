@@ -12678,36 +12678,40 @@ def delete_naplan_student_data(db: Session, student_id: str):
 def delete_oc_student_data(db: Session, student_id: str):
 
     print("🎯 Deleting OC data")
-    #deleting TS tables
 
+    # -----------------------------
+    # 1️⃣ THINKING SKILLS
+    # -----------------------------
     db.query(StudentExamResponseOCThinkingSkills)\
         .filter(StudentExamResponseOCThinkingSkills.student_id == student_id)\
         .delete(synchronize_session=False)
+
     db.query(StudentExamOCThinkingSkills)\
         .filter(StudentExamOCThinkingSkills.student_id == student_id)\
         .delete(synchronize_session=False)
-    StudentExamOCThinkingSkills
-    #deleting Math tables
-    db.query(StudentExamResponseOCMathematicalReasoning))\
-        .filter(StudentExamResponseOCMathematicalReasoning).student_id == student_id)\
-        .delete(synchronize_session=False)
-    db.query(StudentExamOCMathematicalReasoning))\
-        .filter(StudentExamOCMathematicalReasoning).student_id == student_id)\
+
+    # -----------------------------
+    # 2️⃣ MATHEMATICAL REASONING
+    # -----------------------------
+    db.query(StudentExamResponseOCMathematicalReasoning)\
+        .filter(StudentExamResponseOCMathematicalReasoning.student_id == student_id)\
         .delete(synchronize_session=False)
 
-    
-    #deleting from reading tables
-    db.query(StudentExamReportOCReading))\
-        .filter(StudentExamReportOCReading).student_id == student_id)\
+    db.query(StudentExamOCMathematicalReasoning)\
+        .filter(StudentExamOCMathematicalReasoning.student_id == student_id)\
         .delete(synchronize_session=False)
-    db.query(StudentExamReadingOC))\
-        .filter(StudentExamReadingOC).student_id == student_id)\
+
+    # -----------------------------
+    # 3️⃣ READING
+    # -----------------------------
+    db.query(StudentExamReportOCReading)\
+        .filter(StudentExamReportOCReading.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamReadingOC)\
+        .filter(StudentExamReadingOC.student_id == student_id)\
         .delete(synchronize_session=False)
     
-    
-        
-    
-    # 👉 add OC reading / math similarly
 def delete_selective_student_data(db: Session, student_id: str):
 
     print("🧠 Deleting SELECTIVE data")
