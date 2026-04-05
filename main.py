@@ -12764,13 +12764,13 @@ def delete_student_exam_module(
     print("➡ class_name:", class_name)
 
     try:
-        if class_name == "selective":
+        if class_name == "Selective":
             delete_selective_student_data(db, id)
 
-        elif class_name == "oc":
+        elif class_name == "OC":
             delete_oc_student_data(db, id)
 
-        elif class_name == "naplan":
+        elif class_name == "NAPLAN":
             delete_naplan_student_data(db, id)
 
         else:
