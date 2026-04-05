@@ -12643,13 +12643,112 @@ def get_student_selective_reports(
         })
 
     return response
+
+def delete_naplan_student_data(db: Session, student_id: str):
+
+    print("📘 Deleting NAPLAN data")
+    #delting numeracy
+    db.query(StudentExamResponseNaplanNumeracy)\
+        .filter(StudentExamResponseNaplanNumeracy.student_id == student_id)\
+        .delete(synchronize_session=False)
  
+    db.query(StudentExamNaplanNumeracy)\
+        .filter(StudentExamNaplanNumeracy.student_id == student_id)\
+        .delete(synchronize_session=False)
+    #deleting reading
+    
+    db.query(StudentExamResponseNaplanReading)\
+        .filter(StudentExamResponseNaplanReading.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamNaplanReading)\
+        .filter(StudentExamNaplanReading.student_id == student_id)\
+        .delete(synchronize_session=False)
+    #delting language conventions
+    
+    db.query(StudentExamResponseNaplanLanguageConventions)\
+        .filter(StudentExamNaplanLanguageConventions.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamNaplanLanguageConventions)\
+        .filter(StudentExamNaplanLanguageConventions.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+
+def delete_oc_student_data(db: Session, student_id: str):
+
+    print("🎯 Deleting OC data")
+    #deleting TS tables
+
+    db.query(StudentExamResponseOCThinkingSkills)\
+        .filter(StudentExamResponseOCThinkingSkills.student_id == student_id)\
+        .delete(synchronize_session=False)
+    db.query(StudentExamOCThinkingSkills)\
+        .filter(StudentExamOCThinkingSkills.student_id == student_id)\
+        .delete(synchronize_session=False)
+    StudentExamOCThinkingSkills
+    #deleting Math tables
+    db.query(StudentExamResponseOCMathematicalReasoning))\
+        .filter(StudentExamResponseOCMathematicalReasoning).student_id == student_id)\
+        .delete(synchronize_session=False)
+    db.query(StudentExamOCMathematicalReasoning))\
+        .filter(StudentExamOCMathematicalReasoning).student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    
+    #deleting from reading tables
+    db.query(StudentExamReportOCReading))\
+        .filter(StudentExamReportOCReading).student_id == student_id)\
+        .delete(synchronize_session=False)
+    db.query(StudentExamReadingOC))\
+        .filter(StudentExamReadingOC).student_id == student_id)\
+        .delete(synchronize_session=False)
+    
+    
+        
+    
+    # 👉 add OC reading / math similarly
+def delete_selective_student_data(db: Session, student_id: str):
+
+    print("🧠 Deleting SELECTIVE data")
+
+    db.query(StudentExamReportReading)\
+        .filter(StudentExamReportReading.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamReading)\
+        .filter(StudentExamReading.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamResponseThinkingSkills)\
+        .filter(StudentExamResponseThinkingSkills.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamResponseMathematicalReasoning)\
+        .filter(StudentExamResponseMathematicalReasoning.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamResultsThinkingSkills)\
+        .filter(StudentExamResultsThinkingSkills.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamResultsMathematicalReasoning)\
+        .filter(StudentExamResultsMathematicalReasoning.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamThinkingSkills)\
+        .filter(StudentExamThinkingSkills.student_id == student_id)\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamMathematicalReasoning)\
+        .filter(StudentExamMathematicalReasoning.student_id == student_id)\
+        .delete(synchronize_session=False) 
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
     id: str,
     db: Session = Depends(get_db)
 ):
-    print("\n================ DELETE STUDENT (EXAM MODULE) ================")
+    print("\n================ DELETE STUDENT ================")
     print("➡ student id:", id)
 
     student = db.query(Student).filter(Student.id == id).first()
@@ -12657,54 +12756,26 @@ def delete_student_exam_module(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
+    class_name = student.class_name
+    print("➡ class_name:", class_name)
+
     try:
-        # -----------------------------
-        # 0️⃣ READING MODULE (NO FK)
-        # -----------------------------
-        db.query(StudentExamReportReading)\
-            .filter(StudentExamReportReading.student_id == id)\
-            .delete(synchronize_session=False)
+        if class_name == "selective":
+            delete_selective_student_data(db, id)
 
-        db.query(StudentExamReading)\
-            .filter(StudentExamReading.student_id == id)\
-            .delete(synchronize_session=False)
+        elif class_name == "oc":
+            delete_oc_student_data(db, id)
 
-        # -----------------------------
-        # 1️⃣ RESPONSE tables
-        # -----------------------------
-        db.query(StudentExamResponseThinkingSkills)\
-            .filter(StudentExamResponseThinkingSkills.student_id == id)\
-            .delete(synchronize_session=False)
+        elif class_name == "naplan":
+            delete_naplan_student_data(db, id)
 
-        db.query(StudentExamResponseMathematicalReasoning)\
-            .filter(StudentExamResponseMathematicalReasoning.student_id == id)\
-            .delete(synchronize_session=False)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported class '{class_name}'"
+            )
 
-        # -----------------------------
-        # 2️⃣ RESULT tables
-        # -----------------------------
-        db.query(StudentExamResultsThinkingSkills)\
-            .filter(StudentExamResultsThinkingSkills.student_id == id)\
-            .delete(synchronize_session=False)
-
-        db.query(StudentExamResultsMathematicalReasoning)\
-            .filter(StudentExamResultsMathematicalReasoning.student_id == id)\
-            .delete(synchronize_session=False)
-
-        # -----------------------------
-        # 3️⃣ EXAM attempts
-        # -----------------------------
-        db.query(StudentExamThinkingSkills)\
-            .filter(StudentExamThinkingSkills.student_id == id)\
-            .delete(synchronize_session=False)
-
-        db.query(StudentExamMathematicalReasoning)\
-            .filter(StudentExamMathematicalReasoning.student_id == id)\
-            .delete(synchronize_session=False)
-
-        # -----------------------------
-        # 4️⃣ STUDENT
-        # -----------------------------
+        # 🔥 Finally delete student
         db.delete(student)
         db.commit()
 
@@ -12717,10 +12788,10 @@ def delete_student_exam_module(
         )
 
     return {
-        "message": "Student and all related data deleted successfully",
+        "message": f"{class_name} student deleted successfully",
         "deleted_id": id
     }
-
+ 
 def generate_ai_questions_strict_Mathematical_Reasoning(
     *,
     quiz,
