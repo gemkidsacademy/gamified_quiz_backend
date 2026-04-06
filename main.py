@@ -26984,13 +26984,13 @@ def start_exam(
       # --------------------------------------------------
     # 2️⃣ Extract class_year from student
     # --------------------------------------------------
-    if not student.class_year:
+    if not student.student_year:
         raise HTTPException(
             status_code=400,
             detail="Student does not have class_year assigned"
         )
 
-    class_year = student.class_year
+    class_year = student.student_year
 
     print(f"📘 Student class_year: {class_year}")
 
