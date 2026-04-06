@@ -10820,10 +10820,20 @@ def get_exam_topics(
     }
 
 
+from fastapi import Query
+
 @app.get("/api/admin/question-bank-thinking-skills")
 def get_question_bank_thinking_skills(
+    class_year: int = Query(...),   # ✅ REQUIRED PARAM
     db: Session = Depends(get_db)
 ):
+    """
+    Returns question bank grouped by difficulty + topic
+    filtered by class_year.
+    """
+
+    print(f"📚 Fetching question bank for class_year: {class_year}")
+
     results = (
         db.query(
             Question.difficulty,
@@ -10832,7 +10842,8 @@ def get_question_bank_thinking_skills(
         )
         .filter(
             Question.subject == "Thinking Skills",
-            Question.class_name == "Selective" 
+            Question.class_name == "Selective",
+            Question.class_year == class_year   # ✅ KEY CHANGE
         )
         .group_by(
             Question.difficulty,
@@ -10847,11 +10858,11 @@ def get_question_bank_thinking_skills(
 
     return [
         {
-            "difficulty": r.difficulty,
-            "topic": r.topic,
-            "total_questions": r.total_questions
+            "difficulty": row.difficulty,
+            "topic": row.topic,
+            "total_questions": row.total_questions
         }
-        for r in results
+        for row in results
     ]
 @app.get("/api/admin/question-bank-oc-thinking-skills")
 def get_question_bank_oc_thinking_skills(
@@ -13311,9 +13322,7 @@ def generate_thinking_skills_exam(
         Exam.class_year == class_year   # ✅ NEW FILTER
     )
 
-    db.query(StudentExam).filter(
-        StudentExam.exam_id.in_(exam_ids_subquery)
-    ).delete(synchronize_session=False)
+    
 
     # OPTIONAL: delete old exams too
     db.query(Exam).filter(
