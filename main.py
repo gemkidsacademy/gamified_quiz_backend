@@ -27039,7 +27039,7 @@ def start_exam(
         .filter(
             StudentExamThinkingSkills.student_id == student.id,
             StudentExamThinkingSkills.exam_id == exam.id,
-            StudentExamThinkingSkills.class_year == student.class_year,
+            StudentExamThinkingSkills.class_year == student.student_year,
             StudentExamThinkingSkills.completed_at.is_(None)
         )
         .order_by(StudentExamThinkingSkills.started_at.desc())
