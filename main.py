@@ -182,6 +182,20 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class HomeWorkQuiz(Base):
+    __tablename__ = "homework_quizzes"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    class_year = Column(Integer, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+    topics = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 class SendSelectiveReportEmailRequest(BaseModel):
     student_id: str
     exam_date: str
@@ -34069,6 +34083,83 @@ def create_quiz_oc_mathematical_reasoning(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
      
+@app.post("/api/quizzes-homework")
+def create_homework_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
+    """
+    Create a new homework quiz with controlled deletion (scoped).
+    """
+
+    print("\n========== HOMEWORK QUIZ CREATION START ==========")
+
+    # Debug incoming payload
+    try:
+        quiz_dict = quiz.dict()
+        print("📦 Parsed quiz payload:", quiz_dict)
+    except Exception as e:
+        print("❌ Failed to parse quiz:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    print("➡️ class_name:", quiz.class_name)
+    print("➡️ subject:", quiz.subject)
+    print("➡️ class_year:", quiz.class_year)
+    print("➡️ difficulty:", quiz.difficulty)
+    print("➡️ num_topics:", quiz.num_topics)
+    print("➡️ topics count:", len(quiz.topics))
+
+    # Validate topics
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(status_code=400, detail="topics must be a list")
+
+    try:
+        # ==================================================
+        # 1️⃣ SAFE DELETE (scoped)
+        # ==================================================
+        deleted_quizzes = db.query(HomeWorkQuiz).filter(
+            HomeWorkQuiz.class_name == quiz.class_name,
+            HomeWorkQuiz.subject == quiz.subject,
+            HomeWorkQuiz.class_year == quiz.class_year,
+            HomeWorkQuiz.difficulty == quiz.difficulty
+        ).delete(synchronize_session=False)
+
+        print(f"🗑️ Deleted homework quizzes (scoped): {deleted_quizzes}")
+
+        db.commit()
+        print("✅ Cleanup commit complete")
+
+        # ==================================================
+        # 2️⃣ CREATE HOMEWORK QUIZ
+        # ==================================================
+        print("\n--- Creating Homework Quiz ---")
+
+        new_quiz = HomeWorkQuiz(
+            class_name=quiz.class_name,
+            subject=quiz.subject,
+            class_year=quiz.class_year,
+            difficulty=quiz.difficulty,
+            num_topics=quiz.num_topics,
+            topics=[t.dict() for t in quiz.topics]
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        print("✅ Homework Quiz created with ID:", new_quiz.id)
+        print("========== HOMEWORK QUIZ CREATION COMPLETE ==========\n")
+
+        return {
+            "message": "Homework quiz created successfully",
+            "quiz_id": new_quiz.id
+        }
+
+    except Exception as e:
+        print("\n❌ DB ERROR ❌")
+        print(str(e))
+        traceback.print_exc()
+
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/api/quizzes")
 def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
