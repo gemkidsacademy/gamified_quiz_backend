@@ -13328,14 +13328,7 @@ def generate_thinking_skills_exam(
     
 
     # OPTIONAL: delete old exams too
-    db.query(Exam).filter(
-        Exam.subject == "thinking_skills",
-        Exam.class_name == "selective",
-        Exam.class_year == class_year   # ✅ IMPORTANT
-    ).delete(synchronize_session=False)
-
-    db.commit()
-
+    
     # ==================================================
     # 2️⃣ Fetch Quiz Based on Class Year
     # ==================================================
