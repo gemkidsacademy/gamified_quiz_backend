@@ -13306,6 +13306,95 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, text
 from typing import Optional, Dict
 
+@app.post("/api/exams/generate-thinking-skills-homework")
+def generate_thinking_skills_homework_exam(
+    payload: Optional[Dict] = Body(default=None),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a Thinking Skills homework exam based on class year.
+    """
+
+    payload = payload or {}
+
+    # ==================================================
+    # 0️⃣ Extract Input
+    # ==================================================
+    class_year = payload.get("class_year")
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required (e.g. year_5)"
+        )
+
+    print(f"📘 Generating Thinking Skills HOMEWORK for: {class_year}")
+
+    # ==================================================
+    # 1️⃣ Fetch Homework Quiz (NEW TABLE)
+    # ==================================================
+    quiz_query = db.query(HomeWorkQuiz).filter(
+        HomeWorkQuiz.subject == "thinking_skills",
+        HomeWorkQuiz.class_name == "selective",
+        HomeWorkQuiz.class_year == class_year
+    )
+
+    quiz = quiz_query.order_by(HomeWorkQuiz.id.desc()).first()
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Thinking Skills homework quiz found for {class_year}"
+        )
+
+    # ==================================================
+    # 2️⃣ Generate Questions (same logic)
+    # ==================================================
+    try:
+        generated_questions = generate_exam_questions(quiz, db)
+    except Exception as generation_error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate Thinking Skills homework: {str(generation_error)}"
+        )
+
+    if not generated_questions:
+        raise HTTPException(
+            status_code=500,
+            detail="No questions generated for Thinking Skills homework"
+        )
+
+    # ==================================================
+    # 3️⃣ Save Homework Exam (NEW TABLE)
+    # ==================================================
+    new_exam = HomeWorkExam(
+        quiz_id=quiz.id,
+        class_name=quiz.class_name,
+        subject=quiz.subject,
+        difficulty=quiz.difficulty,
+        class_year=class_year,
+        questions=generated_questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    # ==================================================
+    # 4️⃣ Response
+    # ==================================================
+    return {
+        "message": "Thinking Skills homework generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": quiz.id,
+        "class_name": quiz.class_name,
+        "class_year": class_year,
+        "subject": quiz.subject,
+        "difficulty": quiz.difficulty,
+        "total_questions": len(generated_questions),
+        "questions": generated_questions
+    }
+ 
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
     payload: Optional[Dict] = Body(default=None),
