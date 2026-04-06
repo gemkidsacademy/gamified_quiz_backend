@@ -29219,8 +29219,10 @@ def finish_thinking_skills_exam(
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamThinkingSkills)
-        .filter(StudentExamThinkingSkills.student_id == student.id,
-               StudentExamThinkingSkills.class_year == class_year
+        .filter(
+            StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.class_year == class_year,
+            StudentExamThinkingSkills.exam_id.isnot(None)
         )
         .order_by(StudentExamThinkingSkills.started_at.desc())
         .first()
