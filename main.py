@@ -26957,6 +26957,14 @@ def start_naplan_numeracy_exam(
 #         "remaining_time": new_attempt.duration_minutes * 60
 #     }
 
+
+def extract_class_year_numeric(raw_year):
+    if isinstance(raw_year, int):
+        return raw_year
+    if isinstance(raw_year, str):
+        return int(raw_year.replace("Year", "").strip())
+    raise ValueError("Invalid class_year format")
+ 
 @app.post("/api/student/start-exam-thinkingskills")
 def start_exam(
     req: StartExamRequest = Body(...),
@@ -26990,7 +26998,7 @@ def start_exam(
             detail="Student does not have class_year assigned"
         )
 
-    class_year = student.student_year
+    class_year = extract_class_year_numeric(student.student_year)
 
     print(f"📘 Student class_year: {class_year}")
 
