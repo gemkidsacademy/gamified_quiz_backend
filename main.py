@@ -2574,6 +2574,7 @@ class Exam(Base):
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
+    class_year = Column(Integer, nullable=False)
     difficulty = Column(String, nullable=False)
 
     questions = Column(JSON, nullable=False)
