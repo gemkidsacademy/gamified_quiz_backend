@@ -894,7 +894,7 @@ class StudentExamThinkingSkills(Base):
         ForeignKey("exams.id", ondelete="SET NULL"),
         nullable=True
     )
-
+    class_year = Column(Integer, nullable=False)
     started_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -1107,6 +1107,7 @@ class StudentExamResponseThinkingSkills(Base):
 
     selected_option = Column(String, nullable=True)
     correct_option = Column(String, nullable=True)
+    class_year = Column(Integer, nullable=False)
 
     is_correct = Column(Boolean, nullable=True) # NULL = not attempted
 
@@ -26980,6 +26981,19 @@ def start_exam(
         raise HTTPException(status_code=404, detail="Student not found")
 
     print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
+      # --------------------------------------------------
+    # 2️⃣ Extract class_year from student
+    # --------------------------------------------------
+    if not student.class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="Student does not have class_year assigned"
+        )
+
+    class_year = student.class_year
+
+    print(f"📘 Student class_year: {class_year}")
+
 
     now = datetime.now(timezone.utc)
     MAX_DURATION = timedelta(minutes=40)
@@ -26990,15 +27004,22 @@ def start_exam(
     exam = (
         db.query(Exam)
         .filter(
-            func.lower(Exam.class_name) == func.lower(student.class_name),
-            Exam.subject == "thinking_skills"
+            Exam.subject == "thinking_skills",
+            Exam.class_name == "selective",
+            Exam.class_year == class_year
         )
-        .order_by(Exam.created_at.desc())
+        .order_by(Exam.id.desc())
         .first()
     )
 
     if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No exam found for class_year={class_year}"
+        )
+
+    print(f"📝 Exam selected | exam_id={exam.id}")
+
 
     print(f"📘 Using exam_id={exam.id}")
 
@@ -27010,6 +27031,7 @@ def start_exam(
         .filter(
             StudentExamThinkingSkills.student_id == student.id,
             StudentExamThinkingSkills.exam_id == exam.id,
+            StudentExamThinkingSkills.class_year == student.class_year,
             StudentExamThinkingSkills.completed_at.is_(None)
         )
         .order_by(StudentExamThinkingSkills.started_at.desc())
@@ -27055,6 +27077,7 @@ def start_exam(
         .filter(
             StudentExamThinkingSkills.student_id == student.id,
             StudentExamThinkingSkills.exam_id == exam.id,
+            StudentExamThinkingSkills.class_year == exam.class_year,
             StudentExamThinkingSkills.completed_at.isnot(None)
         )
         .first()
@@ -27082,6 +27105,7 @@ def start_exam(
     new_attempt = StudentExamThinkingSkills(
         student_id=student.id,
         exam_id=exam.id,
+        class_year=exam.class_year,
         started_at=now,
         duration_minutes=40
     )
@@ -27101,6 +27125,7 @@ def start_exam(
                 student_id=student.id,
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
+                class_year=exam.class_year,
                 q_id=q["q_id"],
                 topic=q.get("topic"),
                 selected_option=None,
