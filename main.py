@@ -182,6 +182,22 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class HomeWorkExam(Base):
+    __tablename__ = "homework_exams"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    quiz_id = Column(Integer, nullable=False)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    class_year = Column(Integer, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    questions = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class HomeWorkQuiz(Base):
     __tablename__ = "homework_quizzes"
 
