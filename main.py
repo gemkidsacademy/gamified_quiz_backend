@@ -10826,15 +10826,14 @@ from fastapi import Query
 
 @app.get("/api/admin/question-bank-thinking-skills")
 def get_question_bank_thinking_skills(
-    class_year: int = Query(...),   # ✅ REQUIRED PARAM
     db: Session = Depends(get_db)
 ):
     """
     Returns question bank grouped by difficulty + topic
-    filtered by class_year.
+    for Thinking Skills (Selective).
     """
 
-    print(f"📚 Fetching question bank for class_year: {class_year}")
+    print("📚 Fetching full question bank for Thinking Skills")
 
     results = (
         db.query(
@@ -10844,8 +10843,7 @@ def get_question_bank_thinking_skills(
         )
         .filter(
             Question.subject == "Thinking Skills",
-            Question.class_name == "Selective",
-            Question.class_year == class_year   # ✅ KEY CHANGE
+            Question.class_name == "Selective"
         )
         .group_by(
             Question.difficulty,
@@ -10866,6 +10864,8 @@ def get_question_bank_thinking_skills(
         }
         for row in results
     ]
+ 
+
 @app.get("/api/admin/question-bank-oc-thinking-skills")
 def get_question_bank_oc_thinking_skills(
     db: Session = Depends(get_db)
