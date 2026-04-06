@@ -8564,7 +8564,8 @@ def get_exam_review_thinking_skills(
         db.query(StudentExamThinkingSkills)
         .filter(
             StudentExamThinkingSkills.id == exam_attempt_id,
-            StudentExamThinkingSkills.student_id == internal_student_id
+            StudentExamThinkingSkills.student_id == internal_student_id,
+            StudentExamThinkingSkills.exam_id.isnot(None)  # ✅ ADD THIS
         )
         .first()
     )
