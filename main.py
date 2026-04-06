@@ -1624,6 +1624,7 @@ class StudentExamResultsThinkingSkills(Base):
         nullable=False,
         index=True
     )
+    class_year = Column(Integer, nullable=False)
 
     total_questions = Column(Integer, nullable=False)
     correct_answers = Column(Integer, nullable=False)
@@ -29171,7 +29172,13 @@ def snapshot_thinking_skills_responses_for_admin(db, attempt):
                 attempt_completed_at=attempt.completed_at
             )
         )
-     
+def extract_class_year_numeric(raw_year):
+    if isinstance(raw_year, int):
+        return raw_year
+    if isinstance(raw_year, str):
+        return int(raw_year.replace("Year", "").strip())
+    raise ValueError("Invalid class_year format")
+ 
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
     req: FinishExamRequest,
@@ -29197,6 +29204,14 @@ def finish_thinking_skills_exam(
         "external_id": student.student_id,
         "internal_id": student.id
     })
+    if not student.student_year:
+        raise HTTPException(
+            status_code=400,
+            detail="Student does not have class_year assigned"
+        )
+
+    class_year = extract_class_year_numeric(student.student_year)
+
 
     # --------------------------------------------------
     # 2️⃣ Fetch MOST RECENT Thinking Skills attempt
@@ -29204,7 +29219,9 @@ def finish_thinking_skills_exam(
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamThinkingSkills)
-        .filter(StudentExamThinkingSkills.student_id == student.id)
+        .filter(StudentExamThinkingSkills.student_id == student.id,
+               StudentExamThinkingSkills.class_year == class_year
+        )
         .order_by(StudentExamThinkingSkills.started_at.desc())
         .first()
     )
@@ -29230,7 +29247,8 @@ def finish_thinking_skills_exam(
         db.query(Exam)
         .filter(
             Exam.id == attempt.exam_id,
-            Exam.subject == "thinking_skills"
+            Exam.subject == "thinking_skills",
+            Exam.class_year == class_year
         )
         .first()
     )
@@ -29276,7 +29294,8 @@ def finish_thinking_skills_exam(
             db.query(StudentExamResponseThinkingSkills)
             .filter(
                 StudentExamResponseThinkingSkills.exam_attempt_id == attempt.id,
-                StudentExamResponseThinkingSkills.q_id == q_id
+                StudentExamResponseThinkingSkills.q_id == q_id,
+                StudentExamResponseThinkingSkills.class_year == class_year
             )
             .first()
         )
@@ -29310,6 +29329,7 @@ def finish_thinking_skills_exam(
         StudentExamResultsThinkingSkills(
             student_id=student.id,
             exam_attempt_id=attempt.id,
+            class_year=class_year,
             total_questions=total_questions,
             correct_answers=correct,
             wrong_answers=wrong,
