@@ -13271,117 +13271,122 @@ def generate_oc_mathematical_reasoning_exam(
         "questions": questions
     }
  
+from fastapi import Body, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import select, text
+from typing import Optional, Dict
+
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
-    payload: Optional[dict] = Body(default=None),
+    payload: Optional[Dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
-    
     """
-    Generate a Thinking Skills exam based on difficulty only.
+    Generate a Thinking Skills exam based on class year.
     """
-    print("DATABASE URL:", db.bind.url)
-    print("QUIZ COUNT:", db.query(Quiz).count())
-    print("QUIZZES:", db.query(Quiz.id, Quiz.subject, Quiz.difficulty).all())
-    result = db.execute(text("select current_schema()")).scalar()
-    print("SCHEMA:", result)
-    
-    result = db.execute(text("select count(*) from quizzes")).scalar()
-    print("RAW QUIZ COUNT:", result)
-
 
     payload = payload or {}
-    # --------------------------------------------------
-    # 0️⃣ Clear previous Thinking Skills exams
-    # --------------------------------------------------
-    # 1️⃣ Delete student exams for thinking skills
-    # ✅ STEP 1: delete dependent StudentExam rows (SAFE)
-    exam_ids_subq = select(Exam.id).where(
-        Exam.subject == "thinking_skills"
+
+    # ==================================================
+    # 0️⃣ Extract Input
+    # ==================================================
+    class_year = payload.get("class_year")
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required (e.g. year_5)"
+        )
+
+    print(f"📘 Generating Thinking Skills exam for: {class_year}")
+
+    # ==================================================
+    # 1️⃣ Cleanup Previous Exams (Optional Safety)
+    # ==================================================
+    exam_ids_subquery = select(Exam.id).where(
+        Exam.subject == "thinking_skills",
+        Exam.class_name == "selective",
+        Exam.class_year == class_year   # ✅ NEW FILTER
     )
 
-    
     db.query(StudentExam).filter(
-        StudentExam.exam_id.in_(exam_ids_subq)
+        StudentExam.exam_id.in_(exam_ids_subquery)
     ).delete(synchronize_session=False)
-    
-    # ✅ STEP 2: delete Exam rows
-    #db.query(Exam).filter(
-     #   Exam.subject == "thinking_skills",
-      #  Exam.class_name == "selective"
-    #).delete(synchronize_session=False)
-    
-    #db.commit()
 
+    # OPTIONAL: delete old exams too
+    db.query(Exam).filter(
+        Exam.subject == "thinking_skills",
+        Exam.class_name == "selective",
+        Exam.class_year == class_year   # ✅ IMPORTANT
+    ).delete(synchronize_session=False)
 
-    # --------------------------------------------------
-    # 1️⃣ Fetch latest Thinking Skills quiz for difficulty
-    # --------------------------------------------------
-    # --------------------------------------------------
-    # 1️⃣ Fetch latest Thinking Skills quiz (difficulty optional)
-    # --------------------------------------------------
-    
-    query = db.query(Quiz).filter(
+    db.commit()
+
+    # ==================================================
+    # 2️⃣ Fetch Quiz Based on Class Year
+    # ==================================================
+    quiz_query = db.query(Quiz).filter(
         Quiz.subject == "thinking_skills",
-        Quiz.class_name == "selective"
+        Quiz.class_name == "selective",
+        Quiz.class_year == class_year   # ✅ KEY CHANGE
     )
-    
-    
-    
-    quiz = query.order_by(Quiz.id.desc()).first()
-    
+
+    quiz = quiz_query.order_by(Quiz.id.desc()).first()
+
     if not quiz:
         raise HTTPException(
             status_code=404,
-            detail="No Thinking Skills quiz found in database"
+            detail=f"No Thinking Skills quiz found for {class_year}"
         )
 
-    # --------------------------------------------------
-    # 2️⃣ Generate exam questions
-    # --------------------------------------------------
+    # ==================================================
+    # 3️⃣ Generate Questions
+    # ==================================================
     try:
-        questions = generate_exam_questions(quiz, db)
-    except Exception as e:
+        generated_questions = generate_exam_questions(quiz, db)
+    except Exception as generation_error:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate Thinking Skills exam: {str(e)}"
+            detail=f"Failed to generate Thinking Skills exam: {str(generation_error)}"
         )
 
-    if not questions:
+    if not generated_questions:
         raise HTTPException(
             status_code=500,
             detail="No questions generated for Thinking Skills exam"
         )
 
-    # --------------------------------------------------
-    # 3️⃣ Save generated exam
-    # --------------------------------------------------
+    # ==================================================
+    # 4️⃣ Save Exam
+    # ==================================================
     new_exam = Exam(
         quiz_id=quiz.id,
         class_name=quiz.class_name,
         subject=quiz.subject,
         difficulty=quiz.difficulty,
-        questions=questions
+        class_year=class_year,   # ✅ IMPORTANT
+        questions=generated_questions
     )
 
     db.add(new_exam)
     db.commit()
     db.refresh(new_exam)
 
-    # --------------------------------------------------
-    # 4️⃣ Return response
-    # --------------------------------------------------
+    # ==================================================
+    # 5️⃣ Response
+    # ==================================================
     return {
         "message": "Thinking Skills exam generated successfully",
         "exam_id": new_exam.id,
         "quiz_id": quiz.id,
         "class_name": quiz.class_name,
+        "class_year": class_year,   # ✅ INCLUDED
         "subject": quiz.subject,
         "difficulty": quiz.difficulty,
-        "total_questions": len(questions),
-        "questions": questions
+        "total_questions": len(generated_questions),
+        "questions": generated_questions
     }
-
+ 
 @app.post("/api/generate-exam-mathematical-reasoning")
 def generate_exam_mathematical_reasoning(
     db: Session = Depends(get_db)
@@ -34007,7 +34012,7 @@ def create_quiz_oc_mathematical_reasoning(
 @app.post("/api/quizzes")
 def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
-    Create a new quiz with controlled deletion (Selective only).
+    Create a new quiz with controlled deletion (scoped).
     """
 
     print("\n========== QUIZ CREATION START ==========")
@@ -34023,6 +34028,7 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
 
     print("➡️ class_name:", quiz.class_name)
     print("➡️ subject:", quiz.subject)
+    print("➡️ class_year:", quiz.class_year)   # ✅ NEW
     print("➡️ difficulty:", quiz.difficulty)
     print("➡️ num_topics:", quiz.num_topics)
     print("➡️ topics count:", len(quiz.topics))
@@ -34032,19 +34038,30 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="topics must be a list")
 
     try:
-        
-        # 2️⃣ Delete quizzes (you may later also scope this if needed)
-        deleted_quizzes = db.query(Quiz).delete(synchronize_session=False)
-        print(f"🗑️ Deleted quizzes: {deleted_quizzes}")
+        # ==================================================
+        # 1️⃣ SAFE DELETE (scoped, NOT global)
+        # ==================================================
+        deleted_quizzes = db.query(Quiz).filter(
+            Quiz.class_name == quiz.class_name,
+            Quiz.subject == quiz.subject,
+            Quiz.class_year == quiz.class_year,   # ✅ IMPORTANT
+            Quiz.difficulty == quiz.difficulty
+        ).delete(synchronize_session=False)
+
+        print(f"🗑️ Deleted quizzes (scoped): {deleted_quizzes}")
 
         db.commit()
         print("✅ Cleanup commit complete")
 
+        # ==================================================
+        # 2️⃣ CREATE QUIZ
+        # ==================================================
         print("\n--- Creating Quiz ---")
 
         new_quiz = Quiz(
-            class_name=quiz.class_name,
+            class_name=quiz.class_name,     # ✅ already correct
             subject=quiz.subject,
+            class_year=quiz.class_year,     # ✅ NEW (CRITICAL)
             difficulty=quiz.difficulty,
             num_topics=quiz.num_topics,
             topics=[t.dict() for t in quiz.topics]
@@ -34069,7 +34086,7 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
 
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
- 
+     
 @app.get("/api/quizzes")
 def get_quizzes(db: Session = Depends(get_db)):
     """
