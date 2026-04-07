@@ -13584,10 +13584,7 @@ def generate_oc_mathematical_reasoning_exam(
         "questions": questions
     }
  
-from fastapi import Body, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import select, text
-from typing import Optional, Dict
+
 
 @app.post("/api/exams/generate-thinking-skills-homework")
 def generate_thinking_skills_homework_exam(
