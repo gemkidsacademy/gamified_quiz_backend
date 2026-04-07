@@ -182,6 +182,87 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentHomeworkThinkingSkills(Base):
+    __tablename__ = "student_homework_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+
+    homework_exam_id = Column(
+        Integer,
+        ForeignKey("home_work_exams.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    class_year = Column(Integer, nullable=False)
+
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(Integer, nullable=False)
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship("Student")
+
+    homework_exam = relationship("HomeWorkExam")
+
+    responses = relationship(
+        "StudentHomeworkResponseThinkingSkills",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
+class StudentHomeworkResponseThinkingSkills(Base):
+    __tablename__ = "student_homework_response_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+
+    homework_exam_id = Column(
+        Integer,
+        ForeignKey("home_work_exams.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    homework_attempt_id = Column(
+        Integer,
+        ForeignKey("student_homework_thinking_skills.id"),
+        nullable=False
+    )
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    class_year = Column(Integer, nullable=False)
+
+    is_correct = Column(Boolean, nullable=True)
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentHomeworkThinkingSkills",
+        back_populates="responses"
+    )
+
+    student = relationship("Student")
+
+    homework_exam = relationship("HomeWorkExam")
+ 
 class HomeWorkExam(Base):
     __tablename__ = "homework_exams"
 
@@ -4077,6 +4158,188 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+@app.post("/api/student/start-homework-thinkingskills")
+def start_homework_exam(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ START HOMEWORK THINKING SKILLS =================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Extract class_year
+    # --------------------------------------------------
+    if not student.student_year:
+        raise HTTPException(
+            status_code=400,
+            detail="Student does not have class_year assigned"
+        )
+
+    class_year = extract_class_year_numeric(student.student_year)
+    print(f"📘 Student class_year: {class_year}")
+
+    now = datetime.now(timezone.utc)
+    MAX_DURATION = timedelta(minutes=40)
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch latest HOMEWORK exam
+    # --------------------------------------------------
+    homework_exam = (
+        db.query(HomeWorkExam)
+        .filter(
+            HomeWorkExam.subject == "thinking_skills",
+            HomeWorkExam.class_name == "selective",
+            HomeWorkExam.class_year == class_year
+        )
+        .order_by(HomeWorkExam.id.desc())
+        .first()
+    )
+
+    if not homework_exam:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No homework exam found for class_year={class_year}"
+        )
+
+    print(f"📝 Homework exam selected | exam_id={homework_exam.id}")
+
+    # --------------------------------------------------
+    # 4️⃣ Check ACTIVE attempt (resume)
+    # --------------------------------------------------
+    active_attempt = (
+        db.query(StudentHomeworkThinkingSkills)
+        .filter(
+            StudentHomeworkThinkingSkills.student_id == student.id,
+            StudentHomeworkThinkingSkills.homework_exam_id == homework_exam.id,
+            StudentHomeworkThinkingSkills.class_year == class_year,
+            StudentHomeworkThinkingSkills.completed_at.is_(None)
+        )
+        .order_by(StudentHomeworkThinkingSkills.started_at.desc())
+        .first()
+    )
+
+    if active_attempt:
+        print(f"🧠 Active homework attempt found | attempt_id={active_attempt.id}")
+
+        started_at = active_attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        expires_at = started_at + MAX_DURATION
+        elapsed = int((now - started_at).total_seconds())
+
+        # ⛔ Timeout
+        if now > expires_at:
+            print("⛔ Homework attempt expired → auto submit")
+            active_attempt.completed_at = expires_at
+            db.commit()
+            return {"completed": True}
+
+        remaining = max(0, active_attempt.duration_minutes * 60 - elapsed)
+
+        normalized_questions = normalize_thinking_skills_questions(
+            homework_exam.questions or [],
+            db
+        )
+
+        return {
+            "completed": False,
+            "exam_attempt_id": active_attempt.id,
+            "questions": jsonable_encoder(normalized_questions),
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 5️⃣ Check COMPLETED attempt (block)
+    # --------------------------------------------------
+    completed_attempt = (
+        db.query(StudentHomeworkThinkingSkills)
+        .filter(
+            StudentHomeworkThinkingSkills.student_id == student.id,
+            StudentHomeworkThinkingSkills.homework_exam_id == homework_exam.id,
+            StudentHomeworkThinkingSkills.class_year == homework_exam.class_year,
+            StudentHomeworkThinkingSkills.completed_at.isnot(None)
+        )
+        .first()
+    )
+
+    if completed_attempt:
+        print(f"🚫 Homework already completed | attempt_id={completed_attempt.id}")
+
+        return {
+            "completed": True,
+            "exam_attempt_id": completed_attempt.id,
+            "message": "Homework already attempted"
+        }
+
+    # --------------------------------------------------
+    # 6️⃣ Create NEW attempt
+    # --------------------------------------------------
+    print("🆕 Creating new homework attempt")
+
+    normalized_questions = normalize_thinking_skills_questions(
+        homework_exam.questions or [],
+        db
+    )
+
+    new_attempt = StudentHomeworkThinkingSkills(
+        student_id=student.id,
+        homework_exam_id=homework_exam.id,
+        class_year=homework_exam.class_year,
+        started_at=now,
+        duration_minutes=40
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    print(f"🆕 New homework attempt created | attempt_id={new_attempt.id}")
+
+    # --------------------------------------------------
+    # 7️⃣ Pre-create responses
+    # --------------------------------------------------
+    for q in normalized_questions:
+        db.add(
+            StudentHomeworkResponseThinkingSkills(
+                student_id=student.id,
+                homework_exam_id=homework_exam.id,
+                homework_attempt_id=new_attempt.id,
+                class_year=homework_exam.class_year,
+                q_id=q["q_id"],
+                topic=q.get("topic"),
+                selected_option=None,
+                correct_option=q["correct_answer"],
+                is_correct=None
+            )
+        )
+
+    db.commit()
+
+    return {
+        "completed": False,
+        "exam_attempt_id": new_attempt.id,
+        "questions": jsonable_encoder(normalized_questions),
+        "remaining_time": int(new_attempt.duration_minutes * 60)
+    }
+ 
 @app.get("/api/student/exam-attempts/oc-mathematical-reasoning")
 def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
 
