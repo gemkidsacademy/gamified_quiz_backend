@@ -4162,6 +4162,165 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+@app.get(
+    "/api/student/homework-review/thinking-skills",
+    response_model=ExamReviewResponse
+)
+def get_homework_review_thinking_skills(
+    student_id: str,
+    exam_attempt_id: int = None,
+    db: Session = Depends(get_db)
+):
+    print("\n================ HOMEWORK REVIEW (THINKING SKILLS) =================")
+    print(f"➡️ Incoming request (external student_id): {student_id}")
+
+    # ==================================================
+    # 0️⃣ Resolve INTERNAL student ID
+    # ==================================================
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND for external_id =", student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    internal_student_id = student.id
+    print(f"✅ Internal student_id resolved: {internal_student_id}")
+
+    # ==================================================
+    # 1️⃣ Resolve attempt
+    # ==================================================
+    if exam_attempt_id is None:
+        print("🔍 No attempt provided → fetching latest")
+
+        latest_attempt = (
+            db.query(StudentHomeworkResponseThinkingSkills.homework_attempt_id)
+            .filter(
+                StudentHomeworkResponseThinkingSkills.student_id == internal_student_id
+            )
+            .order_by(StudentHomeworkResponseThinkingSkills.homework_attempt_id.desc())
+            .first()
+        )
+
+        if not latest_attempt:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed homework attempt found"
+            )
+
+        exam_attempt_id = latest_attempt.homework_attempt_id
+    else:
+        print(f"🎯 Using provided exam_attempt_id: {exam_attempt_id}")
+
+    # ==================================================
+    # 2️⃣ Validate attempt ownership
+    # ==================================================
+    attempt = (
+        db.query(StudentHomeworkThinkingSkills)
+        .filter(
+            StudentHomeworkThinkingSkills.id == exam_attempt_id,
+            StudentHomeworkThinkingSkills.student_id == internal_student_id,
+            StudentHomeworkThinkingSkills.homework_exam_id.isnot(None)
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="Homework attempt not found for this student"
+        )
+
+    print(f"✅ Homework attempt verified: id={attempt.id}")
+
+    # ==================================================
+    # 3️⃣ Fetch responses
+    # ==================================================
+    responses = (
+        db.query(StudentHomeworkResponseThinkingSkills)
+        .filter(
+            StudentHomeworkResponseThinkingSkills.homework_attempt_id == exam_attempt_id
+        )
+        .order_by(StudentHomeworkResponseThinkingSkills.q_id)
+        .all()
+    )
+
+    print(f"📊 Response rows fetched: {len(responses)}")
+
+    if not responses:
+        return {
+            "exam_attempt_id": exam_attempt_id,
+            "questions": []
+        }
+
+    # ==================================================
+    # 4️⃣ Load homework exam
+    # ==================================================
+    homework_exam = (
+        db.query(HomeWorkExam)
+        .filter(HomeWorkExam.id == attempt.homework_exam_id)
+        .first()
+    )
+
+    if not homework_exam:
+        raise HTTPException(status_code=404, detail="Homework exam not found")
+
+    raw_questions = homework_exam.questions or []
+    print(f"📚 Raw questions loaded: {len(raw_questions)}")
+
+    normalized = normalize_questions_exam_review(raw_questions)
+    question_map = {q["q_id"]: q for q in normalized}
+
+    # ==================================================
+    # 5️⃣ Build review payload
+    # ==================================================
+    response_map = {r.q_id: r for r in responses}
+
+    review_questions = []
+
+    for q in normalized:
+        r = response_map.get(q["q_id"])
+
+        raw_options = q.get("options", {})
+        resolved_options = {}
+
+        for key, value in raw_options.items():
+            if isinstance(value, str) and value.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp")
+            ):
+                urls = resolve_image_options({key: value}, db)
+                resolved_options[key] = {
+                    "type": "image",
+                    "src": urls[key]
+                }
+            elif isinstance(value, dict):
+                resolved_options[key] = value
+            else:
+                resolved_options[key] = {
+                    "type": "text",
+                    "content": value
+                }
+
+        review_questions.append({
+            "q_id": q["q_id"],
+            "blocks": q.get("blocks", []),
+            "options": resolved_options,
+            "student_answer": r.selected_option if r else None,
+            "correct_answer": r.correct_option if r else None,
+        })
+
+    print(f"✅ Review questions prepared: {len(review_questions)}")
+
+    print("================ END HOMEWORK REVIEW =================\n")
+
+    return {
+        "exam_attempt_id": exam_attempt_id,
+        "questions": review_questions
+    }
+ 
 @app.post("/api/student/start-homework-thinkingskills")
 def start_homework_exam(
     req: StartExamRequest = Body(...),
