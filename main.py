@@ -9055,6 +9055,230 @@ def get_exam_review_thinking_skills(
         "exam_attempt_id": exam_attempt_id,
         "questions": review_questions
     }
+
+@app.get(
+    "/api/student/exam-review/thinking-skills",
+    response_model=ExamReviewResponse
+)
+def get_exam_review_thinking_skills(
+    student_id: str,  # external/public ID (e.g. Gem_temp3)
+    exam_attempt_id: int = None,
+    db: Session = Depends(get_db)
+):
+    print("\n================ EXAM REVIEW (THINKING SKILLS) =================")
+    print(f"➡️ Incoming request (external student_id): {student_id}")
+
+    # ==================================================
+    # 0️⃣ Resolve INTERNAL student ID (MANDATORY STEP)
+    # ==================================================
+    print("🔐 Resolving internal student ID...")
+
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND for external_id =", student_id)
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    internal_student_id = student.id
+    print(f"✅ Internal student_id resolved: {internal_student_id}")
+
+    
+    # ==================================================
+    # 1️⃣ Resolve exam_attempt_id
+    # ==================================================
+    if exam_attempt_id is None:
+        print("🔍 No attempt provided → fetching latest")
+    
+        latest_attempt = (
+            db.query(StudentExamResponseThinkingSkills.exam_attempt_id)
+            .filter(
+                StudentExamResponseThinkingSkills.student_id == internal_student_id
+            )
+            .order_by(StudentExamResponseThinkingSkills.exam_attempt_id.desc())
+            .first()
+        )
+    
+        if not latest_attempt:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed exam attempt found"
+            )
+    
+        exam_attempt_id = latest_attempt.exam_attempt_id
+    
+    else:
+        print(f"🎯 Using provided exam_attempt_id: {exam_attempt_id}")
+    # ==================================================
+    # 2️⃣ Validate exam attempt ownership
+    # ==================================================
+    print("🔍 Validating exam attempt ownership...")
+
+    attempt = (
+        db.query(StudentExamThinkingSkills)
+        .filter(
+            StudentExamThinkingSkills.id == exam_attempt_id,
+            StudentExamThinkingSkills.student_id == internal_student_id,
+            StudentExamThinkingSkills.exam_id.isnot(None)  # ✅ ADD THIS
+        )
+        .first()
+    )
+
+    if not attempt:
+        print(
+            "❌ Exam attempt ownership mismatch:",
+            f"attempt_id={exam_attempt_id},",
+            f"internal_student_id={internal_student_id}"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Exam attempt not found for this student"
+        )
+
+    print(
+        "✅ Exam attempt verified:",
+        f"id={attempt.id},",
+        f"exam_id={attempt.exam_id},",
+        f"student_id={attempt.student_id}"
+    )
+
+    # ==================================================
+    # 3️⃣ Fetch all responses for this attempt
+    # ==================================================
+    print("📥 Fetching student responses...")
+
+    responses = (
+        db.query(StudentExamResponseThinkingSkills)
+        .filter(
+            StudentExamResponseThinkingSkills.exam_attempt_id == exam_attempt_id
+        )
+        .order_by(StudentExamResponseThinkingSkills.q_id)
+        .all()
+    )
+
+    print(f"📊 Response rows fetched: {len(responses)}")
+
+    if not responses:
+        print("⚠️ No responses found for exam_attempt_id =", exam_attempt_id)
+        return {
+            "exam_attempt_id": exam_attempt_id,
+            "questions": []
+        }
+
+    for r in responses[:3]:
+        print(
+            f"   ↳ q_id={r.q_id}, "
+            f"selected={r.selected_option}, "
+            f"correct={r.correct_option}, "
+            f"is_correct={r.is_correct}"
+        )
+
+    # ==================================================
+    # 4️⃣ Load exam definition
+    # ==================================================
+    print("📘 Loading exam definition...")
+
+    exam = (
+        db.query(Exam)
+        .filter(Exam.id == attempt.exam_id)
+        .first()
+    )
+
+    if not exam:
+        print("❌ Exam NOT FOUND for exam_id =", attempt.exam_id)
+        raise HTTPException(
+            status_code=404,
+            detail="Exam not found"
+        )
+
+    raw_questions = exam.questions or []
+    print(f"📚 Raw questions loaded: {len(raw_questions)}")
+
+    normalized = normalize_questions_exam_review(raw_questions)
+    print(f"🧹 Normalized questions count: {len(normalized)}")
+
+    question_map = {q["q_id"]: q for q in normalized}
+    print(f"🗺️ Question map size: {len(question_map)}")
+
+    # ==================================================
+    # 5️⃣ Build review payload
+    # ==================================================
+    print("🧩 Building review payload...")
+
+    review_questions = []
+    missing_questions = 0
+
+    # Map responses by q_id for quick lookup
+    response_map = {r.q_id: r for r in responses}
+    
+    review_questions = []
+    
+    for q in normalized:
+        
+        r = response_map.get(q["q_id"])
+    
+        raw_options = q.get("options", {})
+
+        resolved_options = {}
+        
+        for key, value in raw_options.items():
+        
+            if isinstance(value, str) and value.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".webp")
+            ):
+                # resolve image to true GCS URL
+                urls = resolve_image_options({key: value}, db)
+                resolved_options[key] = {
+                    "type": "image",
+                    "src": urls[key]
+                }
+        
+            elif isinstance(value, dict):
+                resolved_options[key] = value
+        
+            else:
+                resolved_options[key] = {
+                    "type": "text",
+                    "content": value
+                }
+        
+        normalized_options = resolved_options
+    
+        review_questions.append({
+            "q_id": q["q_id"],
+            "blocks": q.get("blocks", []),
+            "options": normalized_options,   # ✅ now always Dict[str, Dict]
+            "student_answer": r.selected_option if r else None,
+            "correct_answer": r.correct_option if r else None,
+        })
+
+
+    print(f"✅ Review questions prepared: {len(review_questions)}")
+
+    if missing_questions:
+        print(f"⚠️ Questions missing definitions: {missing_questions}")
+
+    skipped = sum(1 for q in review_questions if q["student_answer"] is None)
+
+    print(
+        "📈 Review summary:",
+        f"total={len(review_questions)},",
+        f"attempted={len(review_questions) - skipped},",
+        f"skipped={skipped}"
+    )
+
+    print("================ END EXAM REVIEW =================\n")
+
+    return {
+        "exam_attempt_id": exam_attempt_id,
+        "questions": review_questions
+    }
 @app.get(
     "/api/student/exam-review/oc-thinking-skills",
     response_model=ExamReviewResponse
