@@ -4799,6 +4799,45 @@ def get_students_basic_info(db: Session = Depends(get_db)):
     ]
 
     return result
+@app.get("/api/student/homework-attempts/thinking-skills")
+def get_homework_attempts(student_id: str, db: Session = Depends(get_db)):
+    
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch completed homework attempts
+    # --------------------------------------------------
+    attempts = (
+        db.query(StudentHomeworkThinkingSkills)
+        .filter(
+            StudentHomeworkThinkingSkills.student_id == student.id,
+            StudentHomeworkThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(StudentHomeworkThinkingSkills.completed_at.desc())
+        .all()
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Return response
+    # --------------------------------------------------
+    return [
+        {
+            "exam_attempt_id": a.id,      # keep same key for UI reuse
+            "completed_at": a.completed_at
+        }
+        for a in attempts
+    ]
+ 
 @app.get("/api/student/exam-attempts/thinking-skills")
 def get_attempts(student_id: str, db: Session = Depends(get_db)):
     student = (
