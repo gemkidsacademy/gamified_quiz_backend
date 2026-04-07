@@ -261,7 +261,7 @@ class StudentHomeworkResponseThinkingSkills(Base):
 
     student = relationship("Student")
 
-    homework_exam = relationship("HomeWorkExam")
+    homework_exam = relationship("HomeWorkExam") 
  
 class HomeWorkExam(Base):
     __tablename__ = "homework_exams"
