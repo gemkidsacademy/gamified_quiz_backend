@@ -185,7 +185,7 @@ otp_store = {}
 class FinishExamRequestHomework(BaseModel):
     student_id: str
     exam_attempt_id: int   # ✅ REQUIRED
-    answers: List[dict]
+    answers: Union[Dict[str, str], List[dict]]
 class StudentHomeworkThinkingSkills(Base):
     __tablename__ = "student_homework_thinking_skills"
 
