@@ -187,7 +187,7 @@ class StudentHomeworkThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
 
     homework_exam_id = Column(
         Integer,
@@ -227,7 +227,7 @@ class StudentHomeworkResponseThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
 
     homework_exam_id = Column(
         Integer,
