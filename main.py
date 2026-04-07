@@ -191,7 +191,7 @@ class StudentHomeworkThinkingSkills(Base):
 
     homework_exam_id = Column(
         Integer,
-        ForeignKey("home_work_exams.id", ondelete="SET NULL"),
+        ForeignKey("homework_exams.id", ondelete="SET NULL"),  # ✅ FIX
         nullable=True
     )
 
@@ -231,7 +231,7 @@ class StudentHomeworkResponseThinkingSkills(Base):
 
     homework_exam_id = Column(
         Integer,
-        ForeignKey("home_work_exams.id", ondelete="SET NULL"),
+        ForeignKey("homework_exams.id", ondelete="SET NULL"),  # ✅ FIX
         nullable=True
     )
 
