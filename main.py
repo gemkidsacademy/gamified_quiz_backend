@@ -29555,6 +29555,99 @@ def extract_class_year_numeric(raw_year):
         return int(raw_year.replace("Year", "").strip())
     raise ValueError("Invalid class_year format")
  
+@app.post("/api/student/finish-homework-thinkingskills")
+def finish_homework_exam(
+    req: FinishExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ FINISH HOMEWORK THINKING SKILLS =================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkThinkingSkills)
+        .filter(
+            StudentHomeworkThinkingSkills.id == req.exam_attempt_id
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+
+    if attempt.completed_at:
+        print("⚠️ Attempt already completed")
+        return {"message": "Already submitted"}
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch all responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentHomeworkResponseThinkingSkills)
+        .filter(
+            StudentHomeworkResponseThinkingSkills.homework_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    response_map = {r.q_id: r for r in responses}
+
+    # --------------------------------------------------
+    # 3️⃣ Update responses from payload
+    # --------------------------------------------------
+    correct = 0
+    wrong = 0
+    total = len(responses)
+
+    for ans in req.answers:
+        q_id = ans.get("q_id")
+        selected = ans.get("selected_option")
+
+        if q_id not in response_map:
+            continue
+
+        resp = response_map[q_id]
+
+        resp.selected_option = selected
+
+        if selected is None:
+            resp.is_correct = None
+            continue
+
+        if selected == resp.correct_option:
+            resp.is_correct = True
+            correct += 1
+        else:
+            resp.is_correct = False
+            wrong += 1
+
+    # --------------------------------------------------
+    # 4️⃣ Mark attempt completed
+    # --------------------------------------------------
+    attempt.completed_at = datetime.now(timezone.utc)
+
+    db.commit()
+
+    # --------------------------------------------------
+    # 5️⃣ Calculate accuracy
+    # --------------------------------------------------
+    accuracy = round((correct / total) * 100, 2) if total > 0 else 0
+
+    print(f"📊 Homework Result | correct={correct} wrong={wrong} total={total}")
+
+    # --------------------------------------------------
+    # 6️⃣ Return response
+    # --------------------------------------------------
+    return {
+        "message": "Homework submitted successfully",
+        "exam_attempt_id": attempt.id,
+        "total_questions": total,
+        "correct_answers": correct,
+        "wrong_answers": wrong,
+        "accuracy_percent": accuracy
+    }
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
     req: FinishExamRequest,
