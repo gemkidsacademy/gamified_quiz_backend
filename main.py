@@ -29731,14 +29731,20 @@ def extract_class_year_numeric(raw_year):
     if isinstance(raw_year, str):
         return int(raw_year.replace("Year", "").strip())
     raise ValueError("Invalid class_year format")
- 
+
 @app.post("/api/student/finish-homework-thinkingskills")
 def finish_homework_exam(
     req: FinishExamRequestHomework = Body(...),
     db: Session = Depends(get_db)
 ):
     print("\n================ FINISH HOMEWORK THINKING SKILLS =================")
-    print("📥 Incoming payload:", req.dict())
+
+    try:
+        payload = req.dict()
+    except Exception:
+        payload = str(req)
+
+    print("📥 Incoming payload:", payload)
 
     # --------------------------------------------------
     # 1️⃣ Fetch attempt
@@ -29755,8 +29761,11 @@ def finish_homework_exam(
         raise HTTPException(status_code=404, detail="Attempt not found")
 
     if attempt.completed_at:
-        print("⚠️ Attempt already completed")
-        return {"message": "Already submitted"}
+        print(f"⚠️ Attempt already completed | attempt_id={attempt.id}")
+        return {
+            "message": "Already submitted",
+            "exam_attempt_id": attempt.id
+        }
 
     # --------------------------------------------------
     # 2️⃣ Fetch all responses
@@ -29769,23 +29778,45 @@ def finish_homework_exam(
         .all()
     )
 
+    if not responses:
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for this attempt"
+        )
+
     response_map = {r.q_id: r for r in responses}
 
     # --------------------------------------------------
-    # 3️⃣ Update responses from payload
+    # 3️⃣ Normalize answers (IMPORTANT FIX)
+    # --------------------------------------------------
+    if isinstance(req.answers, dict):
+        print("⚠️ Converting answers dict → list format")
+
+        normalized_answers = [
+            {"q_id": int(q_id), "selected_option": selected}
+            for q_id, selected in req.answers.items()
+        ]
+    else:
+        normalized_answers = req.answers
+
+    # --------------------------------------------------
+    # 4️⃣ Update responses
     # --------------------------------------------------
     correct = 0
     wrong = 0
     total = len(responses)
 
-    for ans in req.answers:
+    for ans in normalized_answers:
         q_id = ans.get("q_id")
         selected = ans.get("selected_option")
 
-        if q_id not in response_map:
+        if q_id is None:
             continue
 
-        resp = response_map[q_id]
+        resp = response_map.get(q_id)
+
+        if not resp:
+            continue
 
         resp.selected_option = selected
 
@@ -29801,30 +29832,41 @@ def finish_homework_exam(
             wrong += 1
 
     # --------------------------------------------------
-    # 4️⃣ Mark attempt completed
+    # 5️⃣ Mark attempt completed
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
 
     db.commit()
 
     # --------------------------------------------------
-    # 5️⃣ Calculate accuracy
+    # 6️⃣ Calculate metrics
     # --------------------------------------------------
-    accuracy = round((correct / total) * 100, 2) if total > 0 else 0
+    attempted = correct + wrong
+    not_attempted = total - attempted
 
-    print(f"📊 Homework Result | correct={correct} wrong={wrong} total={total}")
+    accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0
+    score_percent = round((correct / total) * 100, 2) if total > 0 else 0
+
+    print(
+        f"📊 Homework Result | attempt_id={attempt.id} "
+        f"correct={correct} wrong={wrong} total={total}"
+    )
 
     # --------------------------------------------------
-    # 6️⃣ Return response
+    # 7️⃣ Return response
     # --------------------------------------------------
     return {
         "message": "Homework submitted successfully",
         "exam_attempt_id": attempt.id,
         "total_questions": total,
+        "attempted": attempted,
         "correct_answers": correct,
         "wrong_answers": wrong,
-        "accuracy_percent": accuracy
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy,
+        "score_percent": score_percent
     }
+
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
     req: FinishExamRequest,
