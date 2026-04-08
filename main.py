@@ -197,8 +197,13 @@ class QuizMathematicalReasoningCreate(BaseModel):
     topics: List[TopicConfigMathematicalReasoning]
 
 
-class QuizMathematicalReasoningHomeworkCreate(QuizMathematicalReasoningCreate):
-    pass
+class QuizMathematicalReasoningHomeworkCreate(BaseModel):
+    class_name: str
+    subject: str
+    class_year: str   # 👈 MUST be here
+    difficulty: str
+    num_topics: int
+    topics: List[TopicConfigMathematicalReasoning]
 class QuizMathematicalReasoningHomework(Base):
     __tablename__ = "quiz_mathematical_reasoning_homework"
 
