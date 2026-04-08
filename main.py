@@ -11408,6 +11408,7 @@ def get_question_bank_mathematical_reasoning(
         )
         .filter(
             Question.subject == "Mathematical Reasoning"
+            func.lower(func.trim(Question.class_name)) == class_name.lower()
         )
         .group_by(
             Question.difficulty,
