@@ -9127,12 +9127,13 @@ def normalize_options_list_to_dict(options):
     if isinstance(options, list):
         result = {}
         for idx, opt in enumerate(options):
-            key = chr(65 + idx)  # A, B, C, D...
-            result[key] = opt
+            key = chr(65 + idx)  # A, B, C...
+            result[key] = {
+                "text": opt   # ✅ FIX HERE
+            }
         return result
 
     return {}
-
 
 @app.get(
     "/api/student/homework-review/mathematical-reasoning",
