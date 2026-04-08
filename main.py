@@ -9119,6 +9119,164 @@ def review_oc_reading_exam(
     print("================ END REVIEW OC READING EXAM ================\n")
 
     return response_payload
+
+
+@app.get(
+    "/api/student/homework-review/mathematical-reasoning",
+    response_model=ExamReviewResponse
+)
+def get_homework_review_mathematical_reasoning(
+    student_id: str,
+    exam_id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n============= HOMEWORK REVIEW (MATHEMATICAL REASONING) =============")
+    print(f"➡️ Incoming request (external student_id): {student_id}")
+
+    # ==================================================
+    # 0️⃣ Resolve INTERNAL student ID
+    # ==================================================
+    print("🔐 Resolving internal student ID...")
+
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND for external_id =", student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    internal_student_id = student.id
+    print(f"✅ Internal student_id resolved: {internal_student_id}")
+
+    # ==================================================
+    # 1️⃣ Resolve latest homework attempt
+    # ==================================================
+    print("🔍 Resolving homework attempt...")
+
+    attempt = (
+        db.query(StudentHomeworkMathematicalReasoning)
+        .filter(
+            StudentHomeworkMathematicalReasoning.student_id == internal_student_id,
+            StudentHomeworkMathematicalReasoning.homework_id == exam_id
+        )
+        .order_by(StudentHomeworkMathematicalReasoning.id.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No homework attempt found")
+        raise HTTPException(
+            status_code=404,
+            detail="No homework attempt found"
+        )
+
+    homework_attempt_id = attempt.id
+    print(f"✅ Using homework_attempt_id: {homework_attempt_id}")
+
+    # ==================================================
+    # 2️⃣ Validate ownership
+    # ==================================================
+    if attempt.student_id != internal_student_id:
+        print("❌ Ownership mismatch")
+        raise HTTPException(
+            status_code=404,
+            detail="Homework attempt not found for this student"
+        )
+
+    print("✅ Homework attempt verified")
+
+    # ==================================================
+    # 3️⃣ Fetch responses
+    # ==================================================
+    print("📥 Fetching homework responses...")
+
+    responses = (
+        db.query(StudentHomeworkResponseMathematicalReasoning)
+        .filter(
+            StudentHomeworkResponseMathematicalReasoning.attempt_id
+            == homework_attempt_id
+        )
+        .order_by(StudentHomeworkResponseMathematicalReasoning.question_id)
+        .all()
+    )
+
+    print(f"📊 Response rows fetched: {len(responses)}")
+
+    if not responses:
+        return {
+            "exam_attempt_id": homework_attempt_id,
+            "questions": []
+        }
+
+    # ==================================================
+    # 4️⃣ Load homework definition
+    # ==================================================
+    print("📘 Loading homework definition...")
+
+    homework = (
+        db.query(HomeworkExamMathematicalReasoning)
+        .filter(HomeworkExamMathematicalReasoning.id == exam_id)
+        .first()
+    )
+
+    if not homework:
+        print("❌ Homework NOT FOUND")
+        raise HTTPException(
+            status_code=404,
+            detail="Homework not found"
+        )
+
+    raw_questions = homework.questions or []
+    print(f"📚 Raw questions loaded: {len(raw_questions)}")
+
+    # If you have normalization, reuse it. Otherwise use raw.
+    normalized = raw_questions  # or normalize_mr_questions_exam_review(...)
+
+    question_map = {q["q_id"]: q for q in normalized}
+
+    # ==================================================
+    # 5️⃣ Build review payload
+    # ==================================================
+    print("🧩 Building review payload...")
+
+    response_map = {r.question_id: r for r in responses}
+    review_questions = []
+
+    for q in normalized:
+        r = response_map.get(q["q_id"])
+
+        review_questions.append({
+            "q_id": q["q_id"],
+            "blocks": q.get("blocks", []),
+            "options": q.get("options", {}),
+            "student_answer": r.selected_option if r else None,
+            "correct_answer": q.get("correct"),  # 👈 from JSON (not DB)
+        })
+
+    print(f"✅ Review questions prepared: {len(review_questions)}")
+
+    skipped = sum(
+        1 for q in review_questions
+        if q["student_answer"] is None
+    )
+
+    print(
+        "📈 Review summary:",
+        f"total={len(review_questions)},",
+        f"attempted={len(review_questions) - skipped},",
+        f"skipped={skipped}"
+    )
+
+    print("============= END HOMEWORK REVIEW =================\n")
+
+    return {
+        "exam_attempt_id": homework_attempt_id,
+        "questions": review_questions
+    }
+
 @app.get(
     "/api/student/exam-review/mathematical-reasoning",
     response_model=ExamReviewResponse
