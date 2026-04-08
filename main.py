@@ -192,6 +192,7 @@ class HomeworkExamMathematicalReasoning(Base):
     subject = Column(String)
     difficulty = Column(String)
     questions = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
  
 class TopicConfigMathematicalReasoning(BaseModel):
     name: str
@@ -4900,6 +4901,62 @@ def get_oc_thinking_skills_attempts(
     ]
 
     return result 
+
+@app.get("/api/student/homework-dates/mathematical-reasoning")
+def get_homework_dates_mathematical_reasoning(
+    student_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    print("\n📅 FETCH HOMEWORK DATES (MR)")
+    print("➡ student_id:", student_id)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        return []
+
+    print(f"✅ Student resolved: id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch homework attempts
+    # --------------------------------------------------
+    rows = (
+        db.query(
+            HomeworkExamMathematicalReasoning.id.label("homework_id"),
+            HomeworkExamMathematicalReasoning.created_at.label("date")
+        )
+        .join(
+            StudentHomeworkMathematicalReasoning,
+            StudentHomeworkMathematicalReasoning.homework_id == HomeworkExamMathematicalReasoning.id
+        )
+        .filter(
+            StudentHomeworkMathematicalReasoning.student_id == student.id
+        )
+        .order_by(HomeworkExamMathematicalReasoning.created_at.desc())
+        .all()
+    )
+
+    print(f"📊 Found {len(rows)} homework attempts")
+
+    # --------------------------------------------------
+    # 3️⃣ Format response
+    # --------------------------------------------------
+    return [
+        {
+            "exam_id": r.homework_id,  # 👈 keep same key for frontend reuse
+            "date": r.date.isoformat() if r.date else None
+        }
+        for r in rows
+    ]
+ 
 @app.get("/api/student/exam-dates/mathematical-reasoning")
 def get_exam_dates_mathematical_reasoning(
     student_id: str = Query(...),
