@@ -221,7 +221,7 @@ class StudentHomeworkMathematicalReasoning(Base):
 
     score = Column(Integer, default=0)
     total_questions = Column(Integer)
- class StudentHomeworkResponseMathematicalReasoning(Base):
+class StudentHomeworkResponseMathematicalReasoning(Base):
     __tablename__ = "student_homework_response_mathematical_reasoning"
 
     id = Column(Integer, primary_key=True, index=True)
