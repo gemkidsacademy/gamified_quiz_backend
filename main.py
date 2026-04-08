@@ -266,6 +266,7 @@ class StudentHomeworkResponseMathematicalReasoning(Base):
     question_id = Column(Integer, nullable=False)
 
     selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
     is_correct = Column(Boolean, default=False)
   
 class FinishExamRequestHomework(BaseModel):
@@ -20665,7 +20666,7 @@ def finish_homework_math_reasoning(
             db.query(StudentHomeworkResponseMathematicalReasoning)
             .filter(
                 StudentHomeworkResponseMathematicalReasoning.attempt_id == attempt.id,
-                StudentHomeworkResponseMathematicalReasoning.q_id == q_id
+                StudentHomeworkResponseMathematicalReasoning.question_id == q_id
             )
             .first()
         )
@@ -20675,7 +20676,7 @@ def finish_homework_math_reasoning(
             continue
 
         response.selected_option = selected
-        response.correct_option = correct_answer
+        response.correct_option = correct_answer 
         response.is_correct = is_correct
 
         saved_responses += 1
