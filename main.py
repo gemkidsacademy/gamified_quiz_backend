@@ -11407,7 +11407,7 @@ def get_question_bank_mathematical_reasoning(
             func.count(Question.id).label("total_questions")
         )
         .filter(
-            Question.subject == "Mathematical Reasoning"
+            Question.subject == "Mathematical Reasoning",
             func.lower(func.trim(Question.class_name)) == class_name.lower()
         )
         .group_by(
