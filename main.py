@@ -20557,6 +20557,157 @@ def advance_foundational_section(
     }
 
 
+@app.post("/api/student/finish-homework-math-reasoning")
+def finish_homework_math_reasoning(
+    req: FinishExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ FINISH HOMEWORK MATHEMATICAL REASONING START ================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND:", req.student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved → id:", student.id)
+
+    # --------------------------------------------------
+    # 2️⃣ Get active homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkMathematicalReasoning)
+        .filter(
+            StudentHomeworkMathematicalReasoning.student_id == student.id,
+            StudentHomeworkMathematicalReasoning.completed_at.is_(None)
+        )
+        .order_by(StudentHomeworkMathematicalReasoning.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("⚠️ No active homework attempt found")
+        return {"status": "completed"}
+
+    print("✅ Active homework attempt found → id:", attempt.id)
+
+    # --------------------------------------------------
+    # 3️⃣ Load homework exam
+    # --------------------------------------------------
+    homework = (
+        db.query(HomeworkExamMathematicalReasoning)
+        .filter(
+            HomeworkExamMathematicalReasoning.id == attempt.homework_id,
+            func.lower(HomeworkExamMathematicalReasoning.subject) ==
+            func.lower("mathematical_reasoning"),
+            func.lower(HomeworkExamMathematicalReasoning.class_name) ==
+            func.lower(student.class_name)
+        )
+        .first()
+    )
+
+    if not homework:
+        raise HTTPException(
+            status_code=400,
+            detail="Finish endpoint called for invalid homework exam"
+        )
+
+    questions = homework.questions or []
+    total_questions = len(questions)
+
+    print("📘 Homework loaded → questions:", total_questions)
+
+    question_map = {q["q_id"]: q for q in questions}
+
+    # --------------------------------------------------
+    # 4️⃣ Evaluate answers
+    # --------------------------------------------------
+    correct = 0
+    saved_responses = 0
+
+    for q_id_str, selected in req.answers.items():
+        try:
+            q_id = int(q_id_str)
+        except ValueError:
+            continue
+
+        q = question_map.get(q_id)
+        if not q:
+            continue
+
+        correct_answer = q.get("correct")
+
+        print("🧪 EVALUATING QUESTION")
+        print("Question ID:", q_id)
+        print("Student Answer:", selected)
+        print("Correct Answer:", correct_answer)
+
+        is_correct = selected == correct_answer
+
+        print("➡️ MATCH RESULT:", is_correct)
+        print("------------------------------------")
+
+        if is_correct:
+            correct += 1
+
+        response = (
+            db.query(StudentHomeworkResponseMathematicalReasoning)
+            .filter(
+                StudentHomeworkResponseMathematicalReasoning.attempt_id == attempt.id,
+                StudentHomeworkResponseMathematicalReasoning.q_id == q_id
+            )
+            .first()
+        )
+
+        if not response:
+            print(f"⚠️ Missing response row for q_id={q_id}, attempt_id={attempt.id}")
+            continue
+
+        response.selected_option = selected
+        response.correct_option = correct_answer
+        response.is_correct = is_correct
+
+        saved_responses += 1
+
+    wrong = saved_responses - correct
+    accuracy = round((correct / total_questions) * 100, 2) if total_questions else 0
+
+    print("📊 Result computed → correct:", correct, "wrong:", wrong)
+
+    # --------------------------------------------------
+    # 5️⃣ Update attempt summary
+    # --------------------------------------------------
+    attempt.score = correct
+    attempt.total_questions = total_questions
+    attempt.completed_at = datetime.utcnow()
+
+    # --------------------------------------------------
+    # 6️⃣ Commit
+    # --------------------------------------------------
+    db.commit()
+
+    print("================ FINISH HOMEWORK MATHEMATICAL REASONING END =================\n")
+
+    return {
+        "status": "completed",
+        "total_questions": total_questions,
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    }
+ 
 
 @app.post("/api/student/finish-exam")
 def finish_exam(
