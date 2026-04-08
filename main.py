@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from weasyprint import HTML
 import docx  
-from datetime import date   
+from datetime import date    
 from fastapi.encoders import jsonable_encoder   
 from io import BytesIO   
 from typing import List,Union 
