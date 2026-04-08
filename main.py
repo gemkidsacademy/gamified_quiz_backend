@@ -10,7 +10,7 @@ from datetime import date
 from fastapi.encoders import jsonable_encoder   
 from io import BytesIO   
 from typing import List,Union  
-from sendgrid import SendGridAPIClient
+from sendgrid import SendGridAPIClient 
 from urllib.parse import quote 
 from datetime import datetime, timedelta,date, timezone
 from sqlalchemy.dialects.postgresql import JSONB
