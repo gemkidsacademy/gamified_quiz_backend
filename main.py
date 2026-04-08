@@ -4260,7 +4260,7 @@ def start_homework_mr(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"✅ Student resolved: id={student.id}, year={student.class_year}")
+    print(f"✅ Student resolved: id={student.id}, year={student.student_year}")
 
     # --------------------------------------------------
     # 2️⃣ Load homework exam (by class + year)
@@ -4270,7 +4270,7 @@ def start_homework_mr(
         .filter(
             func.lower(HomeworkExamMathematicalReasoning.class_name) ==
             func.lower(student.class_name),
-            HomeworkExamMathematicalReasoning.class_year == student.class_year,
+            HomeworkExamMathematicalReasoning.class_year == student.student_year,  # ✅ FIXED
             HomeworkExamMathematicalReasoning.subject == "mathematical_reasoning"
         )
         .order_by(HomeworkExamMathematicalReasoning.id.desc())
@@ -4328,11 +4328,9 @@ def start_homework_mr(
                 )
             db.commit()
 
-        normalized = homework.questions  # same structure already
-
         return {
             "completed": False,
-            "questions": normalized
+            "questions": homework.questions
         }
 
     # --------------------------------------------------
@@ -4343,7 +4341,8 @@ def start_homework_mr(
     new_attempt = StudentHomeworkMathematicalReasoning(
         student_id=student.id,
         homework_id=homework.id,
-        started_at=datetime.utcnow()
+        started_at=datetime.utcnow(),
+        total_questions=len(homework.questions or [])  # ✅ good addition
     )
 
     db.add(new_attempt)
@@ -4353,7 +4352,7 @@ def start_homework_mr(
     print("✅ New homework attempt:", new_attempt.id)
 
     # --------------------------------------------------
-    # 🧱 CREATE RESPONSES
+    # 🧱 CREATE RESPONSE ROWS
     # --------------------------------------------------
     for q in homework.questions or []:
         db.add(
@@ -4371,7 +4370,7 @@ def start_homework_mr(
         "completed": False,
         "questions": homework.questions
     }
- 
+
 @app.post("/api/quizzes/mathematical-reasoning/homework")
 def create_quiz_mathematical_reasoning_homework(
     quiz: QuizMathematicalReasoningHomeworkCreate,
