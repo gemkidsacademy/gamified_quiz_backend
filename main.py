@@ -9247,7 +9247,7 @@ def get_homework_review_mathematical_reasoning(
     print(f"📚 Raw questions loaded: {len(raw_questions)}")
 
     # If you have normalization, reuse it. Otherwise use raw.
-    normalized = raw_questions  # or normalize_mr_questions_exam_review(...)
+    normalized = normalize_mr_questions_exam_review(raw_questions, db)  # or normalize_mr_questions_exam_review(...)
 
     question_map = {q["q_id"]: q for q in normalized}
 
