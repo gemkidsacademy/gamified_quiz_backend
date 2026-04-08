@@ -182,6 +182,61 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class QuizMathematicalReasoningHomeworkCreate(QuizMathematicalReasoningCreate):
+    pass
+class QuizMathematicalReasoningHomework(Base):
+    __tablename__ = "quiz_mathematical_reasoning_homework"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+
+    class_year = Column(String, nullable=False)   # 👈 important
+
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+
+    topics = Column(JSON, nullable=False)   # stores topic config list
+class StudentHomeworkMathematicalReasoning(Base):
+    __tablename__ = "student_homework_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(
+        Text,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    homework_id = Column(
+        Integer,
+        ForeignKey("homework_exam.id"),
+        nullable=False
+    )
+
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    score = Column(Integer, default=0)
+    total_questions = Column(Integer)
+ class StudentHomeworkResponseMathematicalReasoning(Base):
+    __tablename__ = "student_homework_response_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    attempt_id = Column(
+        Integer,
+        ForeignKey("student_homework_mathematical_reasoning.id"),
+        nullable=False
+    )
+
+    question_id = Column(Integer, nullable=False)
+
+    selected_option = Column(String, nullable=True)
+    is_correct = Column(Boolean, default=False)
+  
 class FinishExamRequestHomework(BaseModel):
     student_id: str
     exam_attempt_id: int   # ✅ REQUIRED
@@ -4162,6 +4217,84 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+@app.post("/api/quizzes/mathematical-reasoning/homework")
+def create_quiz_mathematical_reasoning_homework(
+    quiz: QuizMathematicalReasoningHomeworkCreate,
+    db: Session = Depends(get_db)
+):
+    print("\n========== MR HOMEWORK QUIZ CREATION START ==========")
+
+    print("🔍 Incoming payload:", quiz)
+
+    try:
+        quiz_dict = quiz.dict()
+        print("📦 Parsed quiz payload:", quiz_dict)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Subject validation
+    if quiz.subject != "mathematical_reasoning":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid subject. Expected 'mathematical_reasoning'."
+        )
+
+    # Class year validation
+    if not quiz.class_year or not quiz.class_year.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    # Topics validation
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a list"
+        )
+
+    try:
+        print("\n--- Deleting existing HOMEWORK quizzes for this class year ---")
+
+        db.query(QuizMathematicalReasoningHomework).filter(
+            QuizMathematicalReasoningHomework.class_year == quiz.class_year
+        ).delete()
+
+        db.commit()
+
+        print("🗑️ Previous homework quiz deleted for year:", quiz.class_year)
+
+        print("\n--- Creating SQLAlchemy object ---")
+
+        new_quiz = QuizMathematicalReasoningHomework(
+            class_name=quiz.class_name.strip(),
+            subject="mathematical_reasoning",
+            class_year=quiz.class_year.strip(),
+            difficulty=quiz.difficulty.strip(),
+            num_topics=quiz.num_topics,
+            topics=[t.dict() for t in quiz.topics]
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        print("✅ Homework quiz saved with ID:", new_quiz.id)
+        print("========== HOMEWORK QUIZ CREATION COMPLETE ==========\n")
+
+        return {
+            "message": "Mathematical Reasoning homework quiz created successfully",
+            "quiz_id": new_quiz.id
+        }
+
+    except Exception as e:
+        print("❌ DB error:", str(e))
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Error creating homework quiz"
+        )
+     
 @app.get(
     "/api/student/homework-review/thinking-skills",
     response_model=ExamReviewResponse
