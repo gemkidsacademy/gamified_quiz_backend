@@ -11396,8 +11396,10 @@ def get_question_bank_reading(
         }
         for r in results
     ]
+
 @app.get("/api/admin/question-bank-mathematical-reasoning")
 def get_question_bank_mathematical_reasoning(
+    class_name: str = Query(...),   # 👈 REQUIRED
     db: Session = Depends(get_db)
 ):
     results = (
@@ -11407,8 +11409,10 @@ def get_question_bank_mathematical_reasoning(
             func.count(Question.id).label("total_questions")
         )
         .filter(
-            Question.subject == "Mathematical Reasoning",
-            func.lower(func.trim(Question.class_name)) == class_name.lower()
+            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            func.lower(func.trim(Question.class_name)) == class_name.lower(),
+            Question.topic.isnot(None),   # 👈 consistency
+            Question.topic != ""          # 👈 consistency
         )
         .group_by(
             Question.difficulty,
@@ -11429,6 +11433,7 @@ def get_question_bank_mathematical_reasoning(
         }
         for r in results
     ]
+ 
 @app.get("/api/writing/topics")
 def get_writing_topics(
     difficulty: str = Query(...),
