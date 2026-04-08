@@ -9267,7 +9267,7 @@ def get_homework_review_mathematical_reasoning(
             "blocks": q.get("blocks", []),
             "options": normalize_options_list_to_dict(q.get("options")),
             "student_answer": r.selected_option if r else None,
-            "correct_answer": q.get("correct") or "",  # 👈 from JSON (not DB)
+            "correct_answer": r.correct_option if r and r.correct_option else "",  # 👈 from JSON (not DB)
         })
 
     print(f"✅ Review questions prepared: {len(review_questions)}")
