@@ -182,6 +182,13 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class TopicConfigMathematicalReasoning(BaseModel):
+    name: str
+    ai: int
+    db: int
+    total: int
+
+
 class QuizMathematicalReasoningCreate(BaseModel):
     class_name: str
     subject: str
@@ -1583,11 +1590,6 @@ class StudentExamResponseNaplanNumeracy(Base):
 
  
 
-class TopicConfigMathematicalReasoning(BaseModel):
-    name: str
-    ai: int
-    db: int
-    total: int
 
 class TopicConfigMathematicalReasoningCreate(BaseModel):
     class_name: str
