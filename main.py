@@ -9120,6 +9120,19 @@ def review_oc_reading_exam(
 
     return response_payload
 
+def normalize_options_list_to_dict(options):
+    if isinstance(options, dict):
+        return options
+
+    if isinstance(options, list):
+        result = {}
+        for idx, opt in enumerate(options):
+            key = chr(65 + idx)  # A, B, C, D...
+            result[key] = opt
+        return result
+
+    return {}
+
 
 @app.get(
     "/api/student/homework-review/mathematical-reasoning",
@@ -9251,7 +9264,7 @@ def get_homework_review_mathematical_reasoning(
         review_questions.append({
             "q_id": q["q_id"],
             "blocks": q.get("blocks", []),
-            "options": q.get("options", {}),
+            "options": normalize_options_list_to_dict(q.get("options")),
             "student_answer": r.selected_option if r else None,
             "correct_answer": q.get("correct"),  # 👈 from JSON (not DB)
         })
@@ -9276,6 +9289,8 @@ def get_homework_review_mathematical_reasoning(
         "exam_attempt_id": homework_attempt_id,
         "questions": review_questions
     }
+
+ 
 
 @app.get(
     "/api/student/exam-review/mathematical-reasoning",
