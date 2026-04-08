@@ -236,14 +236,14 @@ class StudentHomeworkMathematicalReasoning(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     student_id = Column(
-        Text,
+        Integer,
         ForeignKey("students.id"),
         nullable=False
     )
 
     homework_id = Column(
         Integer,
-        ForeignKey("homework_exam.id"),
+        ForeignKey("homework_exam_mathematical_reasoning.id"),
         nullable=False
     )
 
@@ -4237,6 +4237,141 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+@app.post("/api/student/start-homework-mr")
+def start_homework_mr(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n📘 START-HOMEWORK REQUEST")
+    print("➡ payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"✅ Student resolved: id={student.id}, year={student.class_year}")
+
+    # --------------------------------------------------
+    # 2️⃣ Load homework exam (by class + year)
+    # --------------------------------------------------
+    homework = (
+        db.query(HomeworkExamMathematicalReasoning)
+        .filter(
+            func.lower(HomeworkExamMathematicalReasoning.class_name) ==
+            func.lower(student.class_name),
+            HomeworkExamMathematicalReasoning.class_year == student.class_year,
+            HomeworkExamMathematicalReasoning.subject == "mathematical_reasoning"
+        )
+        .order_by(HomeworkExamMathematicalReasoning.id.desc())
+        .first()
+    )
+
+    if not homework:
+        raise HTTPException(status_code=404, detail="Homework not found")
+
+    # --------------------------------------------------
+    # 🧮 CHECK EXISTING ATTEMPT
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkMathematicalReasoning)
+        .filter(
+            StudentHomeworkMathematicalReasoning.student_id == student.id,
+            StudentHomeworkMathematicalReasoning.homework_id == homework.id
+        )
+        .order_by(StudentHomeworkMathematicalReasoning.started_at.desc())
+        .first()
+    )
+
+    # --------------------------------------------------
+    # 🟢 CASE A — COMPLETED
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is not None:
+        print("✅ Homework already completed")
+        return {"completed": True}
+
+    # --------------------------------------------------
+    # 🟡 CASE B — RESUME
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is None:
+        print("⏳ Resuming homework")
+
+        existing_responses = (
+            db.query(StudentHomeworkResponseMathematicalReasoning)
+            .filter(
+                StudentHomeworkResponseMathematicalReasoning.attempt_id == attempt.id
+            )
+            .count()
+        )
+
+        if existing_responses == 0:
+            print("⚠️ Missing responses → recreating")
+
+            for q in homework.questions or []:
+                db.add(
+                    StudentHomeworkResponseMathematicalReasoning(
+                        attempt_id=attempt.id,
+                        question_id=q["q_id"],
+                        selected_option=None,
+                        is_correct=False
+                    )
+                )
+            db.commit()
+
+        normalized = homework.questions  # same structure already
+
+        return {
+            "completed": False,
+            "questions": normalized
+        }
+
+    # --------------------------------------------------
+    # 🔵 CASE C — NEW ATTEMPT
+    # --------------------------------------------------
+    print("🆕 Starting new homework attempt")
+
+    new_attempt = StudentHomeworkMathematicalReasoning(
+        student_id=student.id,
+        homework_id=homework.id,
+        started_at=datetime.utcnow()
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    print("✅ New homework attempt:", new_attempt.id)
+
+    # --------------------------------------------------
+    # 🧱 CREATE RESPONSES
+    # --------------------------------------------------
+    for q in homework.questions or []:
+        db.add(
+            StudentHomeworkResponseMathematicalReasoning(
+                attempt_id=new_attempt.id,
+                question_id=q["q_id"],
+                selected_option=None,
+                is_correct=False
+            )
+        )
+
+    db.commit()
+
+    return {
+        "completed": False,
+        "questions": homework.questions
+    }
+ 
 @app.post("/api/quizzes/mathematical-reasoning/homework")
 def create_quiz_mathematical_reasoning_homework(
     quiz: QuizMathematicalReasoningHomeworkCreate,
