@@ -182,6 +182,14 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class QuizMathematicalReasoningCreate(BaseModel):
+    class_name: str
+    subject: str
+    difficulty: str
+    num_topics: int
+    topics: List[TopicConfigMathematicalReasoning]
+
+
 class QuizMathematicalReasoningHomeworkCreate(QuizMathematicalReasoningCreate):
     pass
 class QuizMathematicalReasoningHomework(Base):
@@ -1588,12 +1596,6 @@ class TopicConfigMathematicalReasoningCreate(BaseModel):
     num_topics: int
     topics: List[TopicConfigMathematicalReasoning]
 
-class QuizMathematicalReasoningCreate(BaseModel):
-    class_name: str
-    subject: str
-    difficulty: str
-    num_topics: int
-    topics: List[TopicConfigMathematicalReasoning]
 class QuizMathematicalReasoning(Base):
     __tablename__ = "quiz_mathematical_reasoning"
 
