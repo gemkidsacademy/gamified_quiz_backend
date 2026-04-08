@@ -17030,6 +17030,187 @@ def get_thinking_skills_report(
 
 
 
+@app.get("/api/student/homework-report/mathematical-reasoning")
+def get_homework_mathematical_reasoning_report(
+    student_id: str = Query(...),
+    exam_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    print("\n📊 HOMEWORK REPORT (MR)")
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get completed homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkMathematicalReasoning)
+        .filter(
+            StudentHomeworkMathematicalReasoning.student_id == student.id,
+            StudentHomeworkMathematicalReasoning.homework_id == exam_id,
+            StudentHomeworkMathematicalReasoning.completed_at.isnot(None)
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed homework found"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentHomeworkResponseMathematicalReasoning)
+        .filter(
+            StudentHomeworkResponseMathematicalReasoning.attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for homework"
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ Load homework exam (for topics)
+    # --------------------------------------------------
+    homework = (
+        db.query(HomeworkExamMathematicalReasoning)
+        .filter(HomeworkExamMathematicalReasoning.id == exam_id)
+        .first()
+    )
+
+    questions = homework.questions or []
+
+    # Build topic map from questions
+    question_map = {q["q_id"]: q for q in questions}
+
+    # --------------------------------------------------
+    # 5️⃣ OVERALL SUMMARY
+    # --------------------------------------------------
+    total_questions = len(responses)
+    attempted = sum(1 for r in responses if r.selected_option is not None)
+    correct = sum(1 for r in responses if r.is_correct is True)
+    incorrect = attempted - correct
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
+    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent,
+        "pass": None
+    }
+
+    # --------------------------------------------------
+    # 6️⃣ TOPIC-WISE PERFORMANCE
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        q = question_map.get(r.question_id, {})
+        topic = q.get("topic", "Unknown")
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        topic_map[topic]["total"] += 1
+
+        if r.selected_option is None:
+            topic_map[topic]["not_attempted"] += 1
+        else:
+            topic_map[topic]["attempted"] += 1
+            if r.is_correct:
+                topic_map[topic]["correct"] += 1
+            else:
+                topic_map[topic]["incorrect"] += 1
+
+    topic_wise_performance = list(topic_map.values())
+
+    # --------------------------------------------------
+    # 7️⃣ TOPIC ACCURACY
+    # --------------------------------------------------
+    topic_accuracy = []
+
+    for t in topic_wise_performance:
+        attempted_t = t["attempted"]
+
+        accuracy_t = (
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
+        )
+
+        score_t = round((t["correct"] / t["total"]) * 100, 2)
+
+        topic_accuracy.append({
+            "topic": t["topic"],
+            "total_questions": t["total"],
+            "attempted": attempted_t,
+            "correct": t["correct"],
+            "incorrect": t["incorrect"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": score_t,
+            "pass": None
+        })
+
+    # --------------------------------------------------
+    # 8️⃣ IMPROVEMENT AREAS
+    # --------------------------------------------------
+    improvement_areas = []
+
+    for t in topic_accuracy:
+        limited_data = t["total_questions"] < 5
+
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy_percent": t["accuracy_percent"],
+            "score_percent": t["score_percent"],
+            "total_questions": t["total_questions"],
+            "limited_data": limited_data
+        })
+
+    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+
+    # --------------------------------------------------
+    # 9️⃣ Final response
+    # --------------------------------------------------
+    return {
+        "exam_id": exam_id,  # 👈 keeps frontend consistent
+        "overall": overall,
+        "topic_wise_performance": topic_wise_performance,
+        "topic_accuracy": topic_accuracy,
+        "improvement_areas": improvement_areas,
+        "exam_attempt_id": attempt.id
+    }
+
 @app.get("/api/student/exam-report/mathematical-reasoning")
 def get_mathematical_reasoning_report(
     student_id: str = Query(...),
