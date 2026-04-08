@@ -4237,6 +4237,33 @@ def normalize_question_blocks(raw_blocks):
     raise ValueError(
         f"Unsupported question_blocks type: {type(raw_blocks)}"
     )
+def normalize_questions_for_homework(raw_questions):
+    normalized = []
+
+    for q in raw_questions or []:
+        fixed = dict(q)
+
+        # normalize blocks
+        fixed["blocks"] = fixed.get("question_blocks") or []
+
+        # normalize options
+        opts = fixed.get("options")
+
+        if isinstance(opts, dict):
+            fixed["options"] = {
+                k: {"content": v} for k, v in opts.items()
+            }
+        elif isinstance(opts, list):
+            fixed["options"] = {
+                chr(65 + i): {"content": v}
+                for i, v in enumerate(opts)
+            }
+        else:
+            fixed["options"] = {}
+
+        normalized.append(fixed)
+
+    return normalized
 @app.post("/api/student/start-homework-mr")
 def start_homework_mr(
     req: StartExamRequest = Body(...),
@@ -4328,9 +4355,12 @@ def start_homework_mr(
                 )
             db.commit()
 
+        normalized = normalize_questions_for_homework(homework.questions)
+
         return {
             "completed": False,
-            "questions": homework.questions
+            "questions": normalized,
+            "remaining_time": 40 * 60
         }
 
     # --------------------------------------------------
@@ -4366,9 +4396,12 @@ def start_homework_mr(
 
     db.commit()
 
+    normalized = normalize_questions_for_homework(homework.questions)
+
     return {
         "completed": False,
-        "questions": homework.questions
+        "questions": normalized,
+        "remaining_time": 40 * 60
     }
 
 @app.post("/api/quizzes/mathematical-reasoning/homework")
