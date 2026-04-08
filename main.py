@@ -182,6 +182,17 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class HomeworkExamMathematicalReasoning(Base):
+    __tablename__ = "homework_exam_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer)
+    class_name = Column(String)
+    class_year = Column(String, index=True)  # 👈 added (important)
+    subject = Column(String)
+    difficulty = Column(String)
+    questions = Column(JSON)
+ 
 class TopicConfigMathematicalReasoning(BaseModel):
     name: str
     ai: int
@@ -12691,6 +12702,167 @@ def get_naplan_topics(
     return [{"name": topic} for (topic,) in rows]
 
 
+@app.post("/generate-new-mr-homework")
+def generate_homework_exam(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 0️⃣ Extract + validate class_year
+    # --------------------------------------------------
+    class_year = payload.get("class_year")
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch latest quiz
+    # --------------------------------------------------
+    quiz = (
+        db.query(QuizMathematicalReasoning)
+        .filter(
+            QuizMathematicalReasoning.subject == "mathematical_reasoning",
+            QuizMathematicalReasoning.class_name == "selective"
+        )
+        .order_by(QuizMathematicalReasoning.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No Mathematical Reasoning quiz found"
+        )
+
+    difficulty = quiz.difficulty
+
+    # --------------------------------------------------
+    # 2️⃣ PRE-FLIGHT VALIDATION
+    # --------------------------------------------------
+    for topic in quiz.topics:
+        topic_name = topic["name"]
+        db_required = int(topic.get("db", 0))
+
+        available = (
+            db.query(Question)
+              .filter(
+                  func.lower(Question.topic) == topic_name.lower(),
+                  func.lower(Question.difficulty) == difficulty.lower()
+              )
+              .count()
+        )
+
+        if available < db_required:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough DB questions for topic '{topic_name}'"
+            )
+
+    # --------------------------------------------------
+    # 3️⃣ Generate questions
+    # --------------------------------------------------
+    questions = []
+    q_id = 1
+
+    for topic in quiz.topics:
+        topic_name = topic["name"]
+        ai_count = int(topic.get("ai", 0))
+        db_count = int(topic.get("db", 0))
+
+        # DB questions
+        db_questions = (
+            db.query(Question)
+              .filter(
+                  func.lower(Question.topic) == topic_name.lower(),
+                  func.lower(Question.difficulty) == difficulty.lower()
+              )
+              .order_by(func.random())
+              .limit(db_count)
+              .all()
+        )
+
+        for q in db_questions:
+            sanitized_blocks = sanitize_question_blocks(q.question_blocks)
+
+            questions.append({
+                "q_id": q_id,
+                "topic": topic_name,
+                "question_blocks": sanitized_blocks,
+                "options": normalize_options(q.options),
+                "correct": q.correct_answer
+            })
+            q_id += 1
+
+        # AI questions
+        if ai_count > 0:
+            ai_questions = generate_ai_questions_strict_Mathematical_Reasoning(
+                quiz=quiz,
+                topic_name=topic_name,
+                ai_count=ai_count,
+                db=db
+            )
+
+            for item in ai_questions:
+                questions.append({
+                    "q_id": q_id,
+                    "topic": topic_name,
+                    "question_blocks": [
+                        {
+                            "type": "text",
+                            "content": clean_question_text(item["question"])
+                        }
+                    ],
+                    "options": normalize_options(item["options"]),
+                    "correct": item["correct"]
+                })
+                q_id += 1
+
+    # --------------------------------------------------
+    # 4️⃣ VALIDATION
+    # --------------------------------------------------
+    expected_total = sum(
+        int(t.get("db", 0)) + int(t.get("ai", 0))
+        for t in quiz.topics
+    )
+
+    if len(questions) != expected_total:
+        raise HTTPException(
+            status_code=500,
+            detail="Mismatch in generated questions"
+        )
+
+    # --------------------------------------------------
+    # 5️⃣ SAVE INTO HOMEWORK TABLE (WITH YEAR)
+    # --------------------------------------------------
+    new_homework = HomeworkExamMathematicalReasoning(
+        quiz_id=quiz.id,
+        class_name=quiz.class_name,
+        class_year=class_year,   # 👈 KEY ADDITION
+        subject=quiz.subject,
+        difficulty=quiz.difficulty,
+        questions=questions,
+    )
+
+    db.add(new_homework)
+    db.commit()
+    db.refresh(new_homework)
+
+    # --------------------------------------------------
+    # 6️⃣ RESPONSE
+    # --------------------------------------------------
+    return {
+        "message": "Homework exam generated successfully",
+        "exam_id": new_homework.id,
+        "quiz_id": quiz.id,
+        "class_year": class_year,  # 👈 useful for frontend
+        "type": "homework",
+        "total_questions": len(questions),
+        "questions": questions,
+    }
+ 
 @app.post("/generate-new-mr")
 def generate_exam(
     db: Session = Depends(get_db)
