@@ -2389,6 +2389,13 @@ class QuizCreate(BaseModel):
     difficulty: str
     num_topics: int
     topics: List[TopicInput]
+class QuizCreate_OC_MR(BaseModel):
+    class_name: str
+    subject: str
+    difficulty: str
+    num_topics: int
+    topics: List[TopicInput]
+
 class Quiz(Base):
     __tablename__ = "quizzes"
 
@@ -36158,7 +36165,7 @@ def create_quiz_oc_thinking_skills(
         raise HTTPException(status_code=500, detail=str(e))
 @app.post("/api/quizzes/oc-mathematical-reasoning")
 def create_quiz_oc_mathematical_reasoning(
-    quiz: QuizCreate,
+    quiz: QuizCreate_OC_MR,
     db: Session = Depends(get_db)
 ):
     """
