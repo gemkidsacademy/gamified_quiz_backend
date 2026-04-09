@@ -2540,6 +2540,14 @@ class QuizCreate(BaseModel):
     difficulty: str
     num_topics: int
     topics: List[TopicInput]
+ QuizCreate
+class QuizCreateOC_TS(BaseModel):
+    class_name: str
+    subject: str    
+    difficulty: str
+    num_topics: int
+    topics: List[TopicInput]
+
 class QuizCreate_OC_MR(BaseModel):
     class_name: str
     subject: str
@@ -37540,7 +37548,7 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/quizzes/oc-thinking-skills")
 def create_quiz_oc_thinking_skills(
-    quiz: QuizCreate,
+    quiz: QuizCreateOC_TS,
     db: Session = Depends(get_db)
 ):
     """
