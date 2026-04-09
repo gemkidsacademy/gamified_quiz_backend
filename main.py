@@ -4480,7 +4480,7 @@ def get_homework_writing_content(
     attempt = (
         db.query(StudentHomeworkWriting)
         .filter(
-            StudentHomeworkWriting.student_id == student.id,
+            StudentHomeworkWriting.student_id == student.student_id,
             StudentHomeworkWriting.homework_id == homework_id,
             StudentHomeworkWriting.completed_at.is_(None)
         )
