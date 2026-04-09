@@ -13531,6 +13531,74 @@ def get_writing_exam_dates(student_id: str, db: Session = Depends(get_db)):
     }
 
 
+
+@app.get("/api/student/homework-writing-report")
+def get_homework_writing_report(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n📊 HOMEWORK WRITING REPORT")
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest COMPLETED homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkWriting)
+        .filter(
+            StudentHomeworkWriting.student_id == student.student_id,
+            StudentHomeworkWriting.completed_at.isnot(None)
+        )
+        .order_by(StudentHomeworkWriting.completed_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="Homework writing result not found"
+        )
+
+    if not attempt.report_json:
+        raise HTTPException(
+            status_code=404,
+            detail="Homework evaluation not ready yet"
+        )
+
+    evaluation = attempt.report_json
+
+    # --------------------------------------------------
+    # 3️⃣ Extract score + band
+    # --------------------------------------------------
+    score = int(evaluation.get("overall_score", 0))
+    band = evaluation.get("selective_readiness_band")
+
+    # --------------------------------------------------
+    # 4️⃣ Final response (match frontend)
+    # --------------------------------------------------
+    return {
+        "exam_type": "Writing",
+        "score": score,
+        "max_score": 25,
+
+        "selective_readiness_band": band,
+
+        "evaluation": evaluation,
+
+        "advisory": "This report is advisory only and does not guarantee placement."
+    }
+
 @app.get("/api/exams/writing/result")
 def get_writing_result(
     student_id: str,
