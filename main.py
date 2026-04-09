@@ -20783,9 +20783,11 @@ def submit_homework_writing(
 
         ai_text = response.output_text
         print("🧠 AI TEXT:", ai_text)
+        
 
         if ai_text:
             evaluation = json.loads(ai_text)
+            print("✅ PARSED JSON:", evaluation)
             
             # 🔁 NORMALIZE TO EXAM FORMAT (FINAL FIXED VERSION)
             # --------------------------------------------------
