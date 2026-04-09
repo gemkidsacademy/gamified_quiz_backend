@@ -182,6 +182,18 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class HomeworkReadingConfig(Base):
+    __tablename__ = "homework_reading_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    class_name = Column(String)
+    class_year = Column(String)  # ✅ NEW
+    subject = Column(String)
+    difficulty = Column(String)
+    num_topics = Column(Integer)
+    topics = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+ 
 class WritingGenerateSchemaHomeWork(BaseModel):
     class_name: str
     class_year: str   # ✅ REQUIRED
@@ -2407,6 +2419,9 @@ class ReadingExamConfigCreate(BaseModel):
     subject: str
     difficulty: str
     topics: List[ReadingTopicItem]
+
+class ReadingHomeworkConfigCreate(ReadingExamConfigCreate):
+    class_year: str
 
 class Student(Base):
     __tablename__ = "students"
@@ -27545,6 +27560,78 @@ async def upload_word_reading_comparative_ai(
    }
 
 #here line 8452
+@app.post("/api/admin/create-reading-homework")
+def create_reading_homework(
+    payload: ReadingHomeworkConfigCreate,
+    db: Session = Depends(get_db)
+):
+    # ---------------------------------------
+    # VALIDATION
+    # ---------------------------------------
+    if len(payload.topics) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one topic must be provided."
+        )
+
+    if not payload.class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required for homework."
+        )
+
+    num_topics = len(payload.topics)
+
+    topics_json = [
+        {
+            "name": t.name,
+            "num_questions": t.num_questions
+        }
+        for t in payload.topics
+    ]
+
+    class_name_clean = payload.class_name.strip().lower()
+    class_year_clean = payload.class_year.strip().lower()
+
+    print("\n--- Deleting dependent Reading HOMEWORK configs ---")
+    print(f"   class_name={class_name_clean}, class_year={class_year_clean}")
+
+    # ---------------------------------------
+    # DELETE EXISTING HOMEWORK CONFIG (SCOPED)
+    # ---------------------------------------
+    db.query(HomeworkReadingConfig).filter(
+        func.lower(func.trim(HomeworkReadingConfig.class_name)) == class_name_clean,
+        func.lower(func.trim(HomeworkReadingConfig.class_year)) == class_year_clean
+    ).delete(synchronize_session=False)
+
+    db.commit()
+    print("🗑️ Previous reading homework configs deleted (scoped)")
+
+    # ---------------------------------------
+    # CREATE NEW HOMEWORK CONFIG
+    # ---------------------------------------
+    print("\n--- Creating new Reading HOMEWORK config ---")
+
+    new_config = HomeworkReadingConfig(
+        class_name=payload.class_name,
+        class_year=payload.class_year,  # ✅ KEY DIFFERENCE
+        subject=payload.subject,
+        difficulty=payload.difficulty,
+        num_topics=num_topics,
+        topics=topics_json
+    )
+
+    db.add(new_config)
+    db.commit()
+    db.refresh(new_config)
+
+    return {
+        "status": "success",
+        "id": new_config.id,
+        "message": f"{payload.class_name} {payload.class_year} reading homework created successfully.",
+        "created_at": new_config.created_at
+    }
+
 @app.post("/api/admin/create-reading-config")
 def create_reading_config(
     payload: ReadingExamConfigCreate,
