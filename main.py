@@ -20727,13 +20727,57 @@ def submit_homework_writing(
     band = "Pending"
 
     try:
-        prompt = f"""
-        Evaluate the student writing strictly.
-        Return ONLY valid JSON.
+        #prompt = f"""
+        #Evaluate the student writing strictly.
+        #Return ONLY valid JSON.
 
+        #Writing type: {payload.writing_type}
+        #Prompt: {homework.question_text}
+        #Response: {payload.answer_text}
+        #"""
+        prompt = f"""
+        Evaluate the student writing strictly using NSW Selective Writing criteria.
+        
+        Return ONLY valid JSON in this EXACT structure:
+        
+        {{
+          "overall_score": number (0–25),
+          "selective_readiness_band": "Below / Approaching / Strong / Outstanding",
+          "categories": {{
+            "audience_purpose_form": {{
+              "score": number (0–5),
+              "strengths": [],
+              "improvements": []
+            }},
+            "ideas_content": {{
+              "score": number (0–5),
+              "strengths": [],
+              "improvements": []
+            }},
+            "structure_organisation": {{
+              "score": number (0–5),
+              "strengths": [],
+              "improvements": []
+            }},
+            "language_vocabulary": {{
+              "score": number (0–5),
+              "strengths": [],
+              "improvements": []
+            }},
+            "grammar_spelling_punctuation": {{
+              "score": number (0–5),
+              "strengths": [],
+              "improvements": []
+            }}
+          }},
+          "teacher_feedback": "string"
+        }}
+        
+        Do NOT include any explanation outside JSON.
+        
         Writing type: {payload.writing_type}
         Prompt: {homework.question_text}
-        Response: {payload.answer_text}
+        Student Response: {payload.answer_text}
         """
 
         response = client.responses.create(
@@ -20754,11 +20798,11 @@ def submit_homework_writing(
                 raw = evaluation["evaluation"]
             
                 evaluation = {
-                    "overall_score": 0,
+                    "overall_score": int(raw.get("overall_score", 0)),
                     "selective_readiness_band": "Pending",
                     "categories": {
                         "audience_purpose_form": {
-                            "score": 0,
+                            "score": raw.get("score", 0),
                             "strengths": raw.get("strengths", []),
                             "improvements": raw.get("areas_for_improvement", [])
                         },
