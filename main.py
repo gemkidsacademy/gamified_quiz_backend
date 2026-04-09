@@ -209,8 +209,8 @@ class StudentHomeworkWriting(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    # ✅ STRING FK (matches DB)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
 
     homework_id = Column(
         Integer,
@@ -225,8 +225,7 @@ class StudentHomeworkWriting(Base):
 
     answer_text = Column(Text, nullable=True)
     report_json = Column(JSON, nullable=True)
-
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+ 
 class GeneratedHomeworkWriting(Base):
     __tablename__ = "generated_homework_writing"
 
