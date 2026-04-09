@@ -182,16 +182,36 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class ReadingHomeworkExamRequest(BaseModel):
+    class_name: str
+    class_year: str   # ✅ REQUIRED
+    difficulty: str
+
 class HomeworkReadingConfig(Base):
     __tablename__ = "homework_reading_configs"
 
     id = Column(Integer, primary_key=True, index=True)
-    class_name = Column(String)
-    class_year = Column(String)  # ✅ NEW
+    class_name = Column(String, index=True)
+    class_year = Column(String, index=True)  # ✅ KEY FIELD
     subject = Column(String)
     difficulty = Column(String)
     num_topics = Column(Integer)
     topics = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+class GeneratedHomeworkReading(Base):
+    __tablename__ = "generated_homework_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+    config_id = Column(Integer)
+
+    class_name = Column(String)
+    class_year = Column(String)  # ✅ KEY FIELD
+    subject = Column(String)
+    difficulty = Column(String)
+
+    total_questions = Column(Integer)
+    exam_json = Column(JSON)
+
     created_at = Column(DateTime, default=datetime.utcnow)
  
 class WritingGenerateSchemaHomeWork(BaseModel):
@@ -23121,6 +23141,154 @@ def generate_exam_oc_reading(
         "warnings": warnings,
         "exam_json": exam_json,
     }
+@app.post("/api/exams/generate-reading-homework")
+def generate_exam_reading_homework(
+    payload: ReadingHomeworkExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ GENERATE READING HOMEWORK ================")
+    print("Incoming payload:", payload.dict())
+
+    class_name = payload.class_name.strip()
+    class_year = payload.class_year.strip()
+    difficulty = payload.difficulty.strip()
+
+    # --------------------------------------------------
+    # 1️⃣ LOAD HOMEWORK CONFIG
+    # --------------------------------------------------
+    cfg = (
+        db.query(HomeworkReadingConfig)
+        .filter(
+            func.lower(HomeworkReadingConfig.class_name) == class_name.lower(),
+            func.lower(HomeworkReadingConfig.class_year) == class_year.lower(),
+            func.lower(HomeworkReadingConfig.difficulty) == difficulty.lower(),
+        )
+        .first()
+    )
+
+    if not cfg:
+        raise HTTPException(404, "No reading homework config found")
+
+    subject = cfg.subject
+    topics = cfg.topics
+    warnings = []
+    sections = []
+
+    # --------------------------------------------------
+    # 2️⃣ PROCESS TOPICS (SAME LOGIC)
+    # --------------------------------------------------
+    for section_index, topic_spec in enumerate(topics, start=1):
+        topic_name = topic_spec["name"].strip()
+        required = int(topic_spec["num_questions"])
+        topic_lower = topic_name.lower()
+
+        section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
+
+        matched_bundle = (
+            db.query(QuestionReading)
+            .filter(
+                func.lower(func.trim(QuestionReading.class_name)) == class_name.lower(),
+                func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
+                func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
+                func.lower(QuestionReading.topic) == topic_lower,
+                QuestionReading.total_questions == required,
+            )
+            .order_by(QuestionReading.id.desc())
+            .first()
+        )
+
+        if not matched_bundle:
+            raise HTTPException(
+                400,
+                f"Invalid homework config: '{topic_name}' requires {required} questions"
+            )
+
+        bundle_json = matched_bundle.exam_bundle or {}
+
+        question_type = bundle_json.get("question_type")
+        reading_material = bundle_json.get("reading_material")
+        answer_options = bundle_json.get("answer_options")
+
+        passage_style = (
+            "literary"
+            if question_type in ("main_idea", "literary_analysis")
+            else "informational"
+        )
+
+        render_hint = (
+            "gapped_text"
+            if question_type == "gapped_text"
+            else "standard"
+        )
+
+        options_scope = "shared" if answer_options else "per_question"
+
+        collected_questions = [
+            copy.deepcopy(q) for q in bundle_json.get("questions", [])
+        ]
+
+        for idx, q in enumerate(collected_questions, start=1):
+            q["question_number"] = idx
+            q["question_id"] = f"{section_id}_Q{idx}"
+
+        section = {
+            "section_id": section_id,
+            "section_index": section_index,
+            "question_type": question_type,
+            "topic": topic_name,
+            "reading_material": reading_material,
+            "passage_style": passage_style,
+            "render_hint": render_hint,
+            "options_scope": options_scope,
+            "questions": collected_questions,
+        }
+
+        if answer_options:
+            section["answer_options"] = answer_options
+
+        sections.append(section)
+
+    # --------------------------------------------------
+    # 3️⃣ FINALIZE
+    # --------------------------------------------------
+    if not sections:
+        raise HTTPException(400, "No homework sections generated")
+
+    total_questions = sum(len(s["questions"]) for s in sections)
+
+    exam_json = {
+        "class_name": class_name,
+        "class_year": class_year,  # ✅ KEY ADDITION
+        "subject": subject,
+        "difficulty": difficulty,
+        "duration_minutes": 40,
+        "total_questions": total_questions,
+        "sections": sections,
+    }
+
+    saved = GeneratedHomeworkReading(
+        config_id=cfg.id,
+        class_name=class_name,
+        class_year=class_year,  # ✅ KEY
+        subject=subject,
+        difficulty=difficulty,
+        total_questions=total_questions,
+        exam_json=exam_json,
+    )
+
+    db.add(saved)
+    db.commit()
+    db.refresh(saved)
+
+    print("✅ Homework generated. ID:", saved.id)
+
+    return {
+        "generated_exam_id": saved.id,
+        "total_questions": total_questions,
+        "warnings": warnings,
+        "exam_json": exam_json,
+    }
+ 
 
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(
