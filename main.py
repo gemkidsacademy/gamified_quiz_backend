@@ -182,6 +182,23 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentHomeworkWriting(Base):
+    __tablename__ = "student_homework_writing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
+    homework_id = Column(Integer, ForeignKey("generated_homework_writing.id"), nullable=False)
+
+    started_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    duration_minutes = Column(Integer, nullable=False)
+
+    answer_text = Column(Text, nullable=True)
+    report_json = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 class GeneratedHomeworkWriting(Base):
     __tablename__ = "generated_homework_writing"
 
