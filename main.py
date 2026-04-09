@@ -210,7 +210,7 @@ class StudentHomeworkWriting(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     
-    student_id = Column(String, ForeignKey("students.student_id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
 
     homework_id = Column(
         Integer,
