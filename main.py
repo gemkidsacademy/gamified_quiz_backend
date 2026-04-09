@@ -20747,8 +20747,38 @@ def submit_homework_writing(
 
         if ai_text:
             evaluation = json.loads(ai_text)
-            writing_score = int(evaluation.get("overall_score", 0))
-            band = evaluation.get("selective_readiness_band", "Pending")
+            
+            # 🔁 NORMALIZE TO EXAM FORMAT (FINAL FIXED VERSION)
+            # --------------------------------------------------
+            if "evaluation" in evaluation:
+                raw = evaluation["evaluation"]
+            
+                evaluation = {
+                    "overall_score": 0,
+                    "selective_readiness_band": "Pending",
+                    "categories": {
+                        "audience_purpose_form": {
+                            "score": 0,
+                            "strengths": raw.get("strengths", []),
+                            "improvements": raw.get("areas_for_improvement", [])
+                        },
+                        "ideas_content": {"score": 0, "strengths": [], "improvements": []},
+                        "structure_organisation": {"score": 0, "strengths": [], "improvements": []},
+                        "language_vocabulary": {"score": 0, "strengths": [], "improvements": []},
+                        "grammar_spelling_punctuation": {"score": 0, "strengths": [], "improvements": []}
+                    },
+                    "teacher_feedback": raw.get("overall_assessment", "")
+                }
+            
+            # ✅ ALWAYS ensure categories exist (NOT elif)
+            if not evaluation.get("categories"):
+                evaluation["categories"] = {
+                    "audience_purpose_form": {"score": 0, "strengths": [], "improvements": []},
+                    "ideas_content": {"score": 0, "strengths": [], "improvements": []},
+                    "structure_organisation": {"score": 0, "strengths": [], "improvements": []},
+                    "language_vocabulary": {"score": 0, "strengths": [], "improvements": []},
+                    "grammar_spelling_punctuation": {"score": 0, "strengths": [], "improvements": []}
+                }
 
     except Exception as e:
         print("❌ AI failed:", str(e))
@@ -20760,10 +20790,17 @@ def submit_homework_writing(
         evaluation = {
             "overall_score": 0,
             "selective_readiness_band": "Pending",
-            "categories": {},
+            "categories": {
+                "audience_purpose_form": {"score": 0, "strengths": [], "improvements": []},
+                "ideas_content": {"score": 0, "strengths": [], "improvements": []},
+                "structure_organisation": {"score": 0, "strengths": [], "improvements": []},
+                "language_vocabulary": {"score": 0, "strengths": [], "improvements": []},
+                "grammar_spelling_punctuation": {"score": 0, "strengths": [], "improvements": []}
+            },
             "teacher_feedback": "Evaluation pending"
         }
-
+    writing_score = int(evaluation.get("overall_score") or 0)
+    band = evaluation.get("selective_readiness_band", "Pending")
     # --------------------------------------------------
     # 8️⃣ Store results (LIKE EXAM)
     # --------------------------------------------------
