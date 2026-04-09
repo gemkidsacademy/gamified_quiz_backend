@@ -182,6 +182,21 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class QuizSetupWritingHomework(Base):
+    __tablename__ = "quiz_setup_writing_homework"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)   # ✅ NEW FIELD
+
+    subject = Column(String, nullable=False)
+
+    topic = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class WritingQuizSchemaHomeWork(BaseModel):
     class_name: str
     class_year: str   # ✅ ADD THIS
@@ -20109,7 +20124,7 @@ async def upload_word_writing(
 
 @app.post("/api/quizzes-writing-homework")
 def save_writing_homework_quiz(
-    payload: WritingQuizSchema,
+    payload: WritingQuizSchemaHomeWork,
     db: Session = Depends(get_db)
 ):
     print("\n--- Deleting existing Writing HOMEWORK quiz setup for this class/year ---")
