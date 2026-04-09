@@ -20194,6 +20194,101 @@ def get_foundational_classes(db: Session = Depends(get_db)):
 
     return [{"class_name": r.class_name} for r in rows]
  
+@app.post("/api/student/start-homework-writing")
+def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get current homework writing (class scoped)
+    # --------------------------------------------------
+    homework = (
+        db.query(GeneratedHomeworkWriting)
+        .filter(
+            GeneratedHomeworkWriting.class_name == student.class_name,
+            GeneratedHomeworkWriting.class_year == student.class_year
+        )
+        .order_by(GeneratedHomeworkWriting.created_at.desc())
+        .first()
+    )
+
+    if not homework:
+        raise HTTPException(404, "No homework writing found for this class")
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch latest attempt for THIS homework
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkWriting)
+        .filter(
+            StudentHomeworkWriting.student_id == student.id,
+            StudentHomeworkWriting.homework_id == homework.id
+        )
+        .order_by(StudentHomeworkWriting.started_at.desc())
+        .first()
+    )
+
+    # --------------------------------------------------
+    # 🟥 CASE A — Already completed
+    # --------------------------------------------------
+    if attempt and attempt.completed_at:
+        return {"completed": True}
+
+    # --------------------------------------------------
+    # 🟡 CASE B — Resume active attempt
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is None:
+        started_at = attempt.started_at
+
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+
+        # ⏱️ auto complete if time finished
+        if remaining == 0:
+            attempt.completed_at = now
+            db.commit()
+            return {"completed": True}
+
+        return {
+            "completed": False,
+            "remaining_time": remaining,
+            "homework_id": homework.id
+        }
+
+    # --------------------------------------------------
+    # 🔵 CASE C — Start new attempt
+    # --------------------------------------------------
+    new_attempt = StudentHomeworkWriting(
+        student_id=student.id,
+        homework_id=homework.id,
+        started_at=datetime.now(timezone.utc),
+        duration_minutes=homework.duration_minutes
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    return {
+        "completed": False,
+        "remaining_time": new_attempt.duration_minutes * 60,
+        "homework_id": homework.id
+    }
+ 
 @app.post("/api/student/start-writing-exam")
 def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
