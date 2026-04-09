@@ -19837,6 +19837,8 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
         }
     }
 
+
+
 @app.post("/api/exams/generate-writing-homework")
 def generate_exam_writing_homework(
     payload: WritingGenerateSchemaHomeWork,
@@ -19847,7 +19849,7 @@ def generate_exam_writing_homework(
         # Normalize inputs
         # ----------------------------------
         class_name = payload.class_name.strip().lower()
-        class_year = payload.class_year.strip().lower()   # ✅ NEW
+        class_year = payload.class_year.strip()   # ✅ NEW
         difficulty = payload.difficulty.strip().lower()
 
         # ----------------------------------
@@ -19857,7 +19859,7 @@ def generate_exam_writing_homework(
             db.query(QuizSetupWritingHomework)
             .filter(
                 func.trim(func.lower(QuizSetupWritingHomework.class_name)) == class_name,
-                func.trim(func.lower(QuizSetupWritingHomework.class_year)) == class_year,
+                func.trim(QuizSetupWritingHomework.class_year) == class_year,
                 func.trim(func.lower(QuizSetupWritingHomework.difficulty)) == difficulty
             )
             .first()
@@ -19876,7 +19878,7 @@ def generate_exam_writing_homework(
         # ----------------------------------
         db.query(GeneratedExamWritingHomework).filter(
             func.lower(func.trim(GeneratedExamWritingHomework.class_name)) == class_name,
-            func.lower(func.trim(GeneratedExamWritingHomework.class_year)) == class_year
+            func.trim(GeneratedExamWritingHomework.class_year) == class_year  
         ).delete(synchronize_session=False)
         # ----------------------------------
         # Fetch ONE random writing question
