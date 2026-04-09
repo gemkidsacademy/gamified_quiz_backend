@@ -8964,6 +8964,151 @@ def review_reading_exam(
     print("================ END REVIEW READING EXAM ================\n")
 
     return response_payload
+@app.get("/api/student/homework-review/reading")
+def review_homework_reading_by_exam_id(
+    student_id: str = Query(...),
+    exam_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    print("\n=========== HOMEWORK REVIEW BY EXAM_ID ===========")
+    print("📥 Incoming:", {
+        "student_id": student_id,
+        "exam_id": exam_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved:", student.id)
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest finished homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkReading)   # ✅ CHANGED
+        .filter(
+            StudentHomeworkReading.student_id == student.id,
+            StudentHomeworkReading.exam_id == exam_id,
+            StudentHomeworkReading.finished.is_(True)
+        )
+        .order_by(StudentHomeworkReading.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No homework attempt found")
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    print("✅ Attempt found:", {
+        "attempt_id": attempt.id
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Load homework exam content
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedHomeworkReading)   # ✅ CHANGED
+        .filter(GeneratedHomeworkReading.id == exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        print("❌ Homework exam content missing")
+        raise HTTPException(status_code=500, detail="Homework content missing")
+
+    exam_json = exam.exam_json
+
+    # 🔥 handle string JSON
+    if isinstance(exam_json, str):
+        try:
+            exam_json = json.loads(exam_json)
+        except json.JSONDecodeError as e:
+            print("❌ Invalid exam_json:", e)
+            raise HTTPException(status_code=500, detail="Invalid exam JSON")
+
+    sections = exam_json.get("sections", [])
+    print(f"📘 Sections loaded: {len(sections)}")
+
+    # --------------------------------------------------
+    # 4️⃣ Load student answers
+    # --------------------------------------------------
+    reports = (
+        db.query(StudentHomeworkReportReading)   # ✅ CHANGED
+        .filter(StudentHomeworkReportReading.session_id == attempt.id)
+        .all()
+    )
+
+    print(f"📝 Answer rows found: {len(reports)}")
+
+    report_map = {r.question_id: r for r in reports}
+
+    # --------------------------------------------------
+    # 5️⃣ Build review payload
+    # --------------------------------------------------
+    review_questions = []
+
+    for section in sections:
+        topic = section.get("topic", "Other")
+        passage_style = section.get("passage_style", "informational")
+        reading_material = section.get("reading_material")
+
+        questions = section.get("questions", [])
+
+        for q in questions:
+            qid = q.get("question_id")
+            r = report_map.get(qid)
+
+            options_scope = section.get("options_scope", "per_question")
+
+            if options_scope == "shared":
+                answer_options = section.get("answer_options", {})
+            else:
+                answer_options = q.get("answer_options", {})
+
+            answer_options = answer_options or {}
+
+            review_questions.append({
+                "question_id": qid,
+                "question_number": q.get("question_number"),
+                "question_text": q.get("question_text"),
+                "answer_options": answer_options,
+                "student_answer": r.selected_answer if r else None,
+                "correct_answer": r.correct_answer if r else None,
+                "is_correct": r.is_correct if r else False,
+                "topic": topic,
+                "passage_style": passage_style,
+                "reading_material": reading_material
+            })
+
+    # --------------------------------------------------
+    # 6️⃣ Response
+    # --------------------------------------------------
+    response_payload = {
+        "exam_id": exam_id,
+        "attempt_id": attempt.id,
+        "questions": review_questions
+    }
+
+    print("📤 HOMEWORK REVIEW SUMMARY:", {
+        "exam_id": exam_id,
+        "attempt_id": attempt.id,
+        "total_questions": len(review_questions)
+    })
+
+    print("=========== END HOMEWORK REVIEW ===========\n")
+
+    return response_payload
+
 @app.get("/api/student/exam-review/reading")
 def review_reading_exam_by_exam_id(
     student_id: str = Query(...),
@@ -15843,6 +15988,71 @@ def get_reading_report(
         "exam_id": session.exam_id,
         "answer_count": answer_count
     }
+@app.get("/api/student/homework-report/reading")
+def get_homework_report_by_exam_id(
+    student_id: str = Query(...),
+    exam_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    print("\n=========== GET HOMEWORK REPORT BY EXAM_ID ===========")
+    print("📥 Incoming:", {
+        "student_id": student_id,
+        "exam_id": exam_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved:", student.id)
+
+    # --------------------------------------------------
+    # 2️⃣ Find latest finished homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkReading)   # ✅ CHANGED
+        .filter(
+            StudentHomeworkReading.student_id == student.id,
+            StudentHomeworkReading.exam_id == exam_id,
+            StudentHomeworkReading.finished == True
+        )
+        .order_by(StudentHomeworkReading.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No homework attempt found for this exam")
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    print("✅ Attempt found:", {
+        "attempt_id": attempt.id,
+        "has_report": bool(attempt.report_json)
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Return report_json
+    # --------------------------------------------------
+    if attempt.report_json:
+        print("🟢 Returning homework report_json")
+        print("============================================\n")
+        return attempt.report_json
+
+    print("❌ report_json missing")
+    raise HTTPException(
+        status_code=404,
+        detail="Report not available"
+    )
+ 
+
 @app.get("/api/student/exam-report/reading")
 def get_exam_report_by_exam_id(
     student_id: str = Query(...),
