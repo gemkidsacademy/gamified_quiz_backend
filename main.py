@@ -13570,7 +13570,7 @@ def get_writing_exam_dates(student_id: str, db: Session = Depends(get_db)):
 
 @app.get("/api/student/homework-writing-report")
 def get_homework_writing_report(
-    student_id: str,
+    student_id: int,
     db: Session = Depends(get_db)
 ):
     print("\n📊 HOMEWORK WRITING REPORT")
