@@ -13578,7 +13578,7 @@ def get_homework_writing_report(
     attempt = (
         db.query(StudentHomeworkWriting)
         .filter(
-            StudentHomeworkWriting.student_id == student.student_id,
+            StudentHomeworkWriting.student_id == student.id,
             StudentHomeworkWriting.completed_at.isnot(None)
         )
         .order_by(StudentHomeworkWriting.completed_at.desc())
