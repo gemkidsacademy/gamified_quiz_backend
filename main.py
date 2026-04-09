@@ -20548,6 +20548,137 @@ def archive_writing_response_to_admin_table(
 
     db.add(admin_record)
  
+@app.post("/api/student/submit-homework-writing")
+def submit_homework_writing(
+    payload: WritingSubmitSchema,
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n================ SUBMIT HOMEWORK WRITING =================")
+    print("➡️ student_id:", student_id)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get ACTIVE homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkWriting)
+        .filter(
+            StudentHomeworkWriting.student_id == student.student_id,
+            StudentHomeworkWriting.completed_at.is_(None)
+        )
+        .order_by(StudentHomeworkWriting.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No active homework writing attempt"
+        )
+
+    print("✅ Found homework attempt:", attempt.id)
+
+    # --------------------------------------------------
+    # 3️⃣ Load homework definition
+    # --------------------------------------------------
+    homework = (
+        db.query(GeneratedHomeworkWriting)
+        .filter(GeneratedHomeworkWriting.id == attempt.homework_id)
+        .first()
+    )
+
+    topic = homework.topic if homework else None
+
+    # --------------------------------------------------
+    # 4️⃣ Save answer
+    # --------------------------------------------------
+    attempt.answer_text = payload.answer_text
+    attempt.completed_at = datetime.now(timezone.utc)
+
+    print("💾 Answer saved, length:", len(payload.answer_text or ""))
+
+    # --------------------------------------------------
+    # 5️⃣ AI Evaluation (same as exam)
+    # --------------------------------------------------
+    prompt = f"""
+    You are an expert NSW Selective School writing marker.
+
+    Evaluate the student's writing.
+
+    Writing type:
+    {payload.writing_type}
+
+    Writing prompt:
+    {homework.question_text}
+
+    Student response:
+    {payload.answer_text}
+
+    Return ONLY valid JSON with:
+    - overall_score
+    - selective_readiness_band
+    - categories
+    - teacher_feedback
+    """
+
+    try:
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            input=prompt,
+            temperature=0.4
+        )
+
+        ai_result = response.output_text
+        evaluation = json.loads(ai_result)
+
+    except Exception as e:
+        print("❌ AI evaluation failed:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Homework writing evaluation failed"
+        )
+
+    # --------------------------------------------------
+    # 6️⃣ Store evaluation
+    # --------------------------------------------------
+    attempt.report_json = evaluation
+
+    writing_score = int(evaluation.get("overall_score", 0))
+
+    print("✅ Evaluation score:", writing_score)
+
+    # --------------------------------------------------
+    # 7️⃣ Commit
+    # --------------------------------------------------
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Database commit failed"
+        )
+
+    print("🎉 Homework writing submitted successfully")
+
+    return {
+        "message": "Homework writing submitted successfully",
+        "homework_id": attempt.homework_id,
+        "writing_score": writing_score
+    }
+
 @app.post("/api/exams/writing/submit")
 def submit_writing_exam(
     payload: WritingSubmitSchema,
