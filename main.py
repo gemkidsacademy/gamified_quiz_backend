@@ -19837,7 +19837,7 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
         }
     }
 
-
+ 
 
 @app.post("/api/exams/generate-writing-homework")
 def generate_exam_writing_homework(
