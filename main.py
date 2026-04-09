@@ -6049,6 +6049,46 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
         print("🔥 EXCEPTION OCCURRED:", str(e))
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/student/homework-dates/reading")
+def get_homework_dates_reading(student_id: str, db: Session = Depends(get_db)):
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve internal student ID
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        return []
+
+    internal_id = student.id
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch homework attempts
+    # --------------------------------------------------
+    exams = (
+        db.query(StudentHomeworkReading)
+        .filter(
+            StudentHomeworkReading.student_id == str(internal_id),
+            StudentHomeworkReading.finished == True
+        )
+        .order_by(StudentHomeworkReading.id.desc())
+        .all()
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Return formatted response
+    # --------------------------------------------------
+    return [
+        {
+            "exam_id": exam.exam_id,
+            "date": exam.completed_at  # ✅ SAFE (always exists after submit)
+        }
+        for exam in exams
+    ]
 @app.get("/api/student/exam-dates/reading")
 def get_exam_dates_reading(student_id: str, db: Session = Depends(get_db)):
 
