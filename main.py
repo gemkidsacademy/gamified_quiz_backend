@@ -182,6 +182,44 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class GeneratedHomeworkWriting(Base):
+    __tablename__ = "generated_homework_writing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # ----------------------------------
+    # Scope (VERY IMPORTANT)
+    # ----------------------------------
+    class_name = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)   # ✅ NEW (KEY FIELD)
+
+    # ----------------------------------
+    # Metadata
+    # ----------------------------------
+    subject = Column(String, nullable=False)
+    topic = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    # ----------------------------------
+    # Content
+    # ----------------------------------
+    question_text = Column(Text, nullable=False)
+
+    # ----------------------------------
+    # Exam settings
+    # ----------------------------------
+    duration_minutes = Column(Integer, default=30)
+
+    # ----------------------------------
+    # Status
+    # ----------------------------------
+    is_current = Column(Boolean, default=True)
+
+    # ----------------------------------
+    # Timestamp
+    # ----------------------------------
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class ReadingHomeworkExamRequest(BaseModel):
     class_name: str
     class_year: str   # ✅ REQUIRED
@@ -4386,6 +4424,165 @@ def normalize_questions_for_homework(raw_questions):
         normalized.append(fixed)
 
     return normalized
+@app.post("/api/exams/generate-writing-homework")
+def generate_writing_homework(
+    payload: WritingGenerateSchemaHomeWork,
+    db: Session = Depends(get_db)
+):
+    try:
+        print("\n=========== GENERATE WRITING HOMEWORK ===========")
+
+        # ----------------------------------
+        # 1️⃣ Normalize inputs
+        # ----------------------------------
+        class_name = payload.class_name.strip()
+        class_year = payload.class_year.strip().lower()
+        difficulty = payload.difficulty.strip().lower()
+
+        print("📥 Payload:", {
+            "class_name": class_name,
+            "class_year": class_year,
+            "difficulty": difficulty
+        })
+
+        # ----------------------------------
+        # 2️⃣ Load homework setup (BY CLASS YEAR)
+        # ----------------------------------
+        setup = (
+            db.query(QuizSetupWritingHomework)
+            .filter(
+                func.lower(func.trim(QuizSetupWritingHomework.class_year)) == class_year
+            )
+            .first()
+        )
+
+        if not setup:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No homework writing setup found for year '{class_year}'"
+            )
+
+        topic = setup.topic.strip().lower()
+
+        print("✅ Setup found:", {
+            "topic": topic,
+            "difficulty": setup.difficulty
+        })
+
+        # ----------------------------------
+        # 3️⃣ DELETE EXISTING (SCOPED BY YEAR ONLY)
+        # ----------------------------------
+        print("🗑 Deleting existing homework writing exams for year:", class_year)
+
+        db.query(GeneratedHomeworkWriting).filter(
+            func.lower(func.trim(GeneratedHomeworkWriting.class_year)) == class_year
+        ).delete(synchronize_session=False)
+
+        db.commit()
+
+        # ----------------------------------
+        # 4️⃣ Fetch ONE random writing question
+        # ----------------------------------
+        question = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(func.trim(WritingQuestionBank.class_name)) == class_name.lower(),
+                func.lower(func.trim(WritingQuestionBank.difficulty)) == difficulty,
+                func.lower(func.trim(WritingQuestionBank.topic)) == topic
+            )
+            .order_by(func.random())
+            .first()
+        )
+
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No writing question found for year '{class_year}', topic '{topic}', difficulty '{difficulty}'"
+            )
+
+        print("📝 Question selected:", {
+            "topic": question.topic
+        })
+
+        # ----------------------------------
+        # 5️⃣ Build exam text (UI-ready)
+        # ----------------------------------
+        exam_text_parts = []
+
+        if question.title:
+            exam_text_parts.append(f"TITLE:\n{question.title}\n")
+
+        exam_text_parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
+
+        if question.statement:
+            exam_text_parts.append(
+                f"STATEMENT:\n{question.statement}\n"
+            )
+
+        exam_text_parts.append(
+            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+            exam_text_parts.append(
+                f"OPENING SENTENCE:\n{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+            formatted_guidelines = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            exam_text_parts.append(
+                f"GUIDELINES:\n{formatted_guidelines}\n"
+            )
+
+        full_exam_text = "\n".join(exam_text_parts).strip()
+
+        # ----------------------------------
+        # 6️⃣ Save homework exam
+        # ----------------------------------
+        exam = GeneratedHomeworkWriting(
+            class_name=class_name,
+            class_year=payload.class_year,  # keep original casing
+            subject="writing",
+            topic=question.topic,
+            difficulty=difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            is_current=True
+        )
+
+        db.add(exam)
+        db.commit()
+        db.refresh(exam)
+
+        print("✅ Homework exam created:", {
+            "exam_id": exam.id,
+            "class_year": exam.class_year
+        })
+
+        # ----------------------------------
+        # 7️⃣ Response
+        # ----------------------------------
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "exam_text": full_exam_text,
+        }
+
+    except Exception as e:
+        print("❌ ERROR:", str(e))
+        db.rollback()
+        raise e
 @app.post("/api/student/start-homework-mr")
 def start_homework_mr(
     req: StartExamRequest = Body(...),
@@ -20793,128 +20990,6 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
  
 
-@app.post("/api/exams/generate-writing-homework")
-def generate_exam_writing_homework(
-    payload: WritingGenerateSchemaHomeWork,
-    db: Session = Depends(get_db)
-):
-    try:
-        # ----------------------------------
-        # Normalize inputs
-        # ----------------------------------
-        class_name = payload.class_name.strip().lower()
-        class_year = payload.class_year.strip()   # ✅ NEW
-        difficulty = payload.difficulty.strip().lower()
-
-        # ----------------------------------
-        # Read homework setup configuration
-        # ----------------------------------
-        setup = (
-            db.query(QuizSetupWritingHomework)
-            .filter(
-                func.trim(func.lower(QuizSetupWritingHomework.class_name)) == class_name,
-                func.trim(QuizSetupWritingHomework.class_year) == class_year,
-                func.trim(func.lower(QuizSetupWritingHomework.difficulty)) == difficulty
-            )
-            .first()
-        )
-
-        if not setup:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No writing homework setup found for class '{class_name}', year '{class_year}' and difficulty '{difficulty}'."
-            )
-
-        topic = setup.topic.strip().lower()
-
-        # ----------------------------------
-        # Reset ONLY homework exam system
-        # ----------------------------------
-        db.query(GeneratedExamWritingHomework).filter(
-            func.lower(func.trim(GeneratedExamWritingHomework.class_name)) == class_name,
-            func.trim(GeneratedExamWritingHomework.class_year) == class_year  
-        ).delete(synchronize_session=False)
-        # ----------------------------------
-        # Fetch ONE random writing question
-        # ----------------------------------
-        question = (
-            db.query(WritingQuestionBank)
-            .filter(
-                func.trim(func.lower(WritingQuestionBank.class_name)) == class_name,
-                func.trim(func.lower(WritingQuestionBank.difficulty)) == difficulty,
-                func.trim(func.lower(WritingQuestionBank.topic)) == topic
-            )
-            .order_by(func.random())
-            .first()
-        )
-
-        if not question:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No writing question found for class '{class_name}', topic '{topic}', and difficulty '{difficulty}'."
-            )
-
-        # ----------------------------------
-        # Compose FULL exam text
-        # ----------------------------------
-        exam_text_parts = []
-
-        if question.title:
-            exam_text_parts.append(f"TITLE:\n{question.title}\n")
-
-        exam_text_parts.append(f"TASK:\n{question.question_text}\n")
-
-        if question.statement:
-            exam_text_parts.append(f"STATEMENT:\n{question.statement}\n")
-
-        exam_text_parts.append(f"INSTRUCTIONS:\n{question.question_prompt}\n")
-
-        if question.opening_sentence:
-            exam_text_parts.append(f"OPENING SENTENCE:\n{question.opening_sentence}\n")
-
-        if question.guidelines:
-            formatted_guidelines = "\n".join(
-                f"- {line.strip()}"
-                for line in question.guidelines.splitlines()
-                if line.strip()
-            )
-            exam_text_parts.append(f"GUIDELINES:\n{formatted_guidelines}\n")
-
-        full_exam_text = "\n".join(exam_text_parts).strip()
-
-        # ----------------------------------
-        # Persist generated homework exam
-        # ----------------------------------
-        exam = GeneratedExamWritingHomework(
-            class_name=class_name.capitalize(),
-            class_year=class_year,   # ✅ NEW FIELD
-            subject="writing",
-            topic=question.topic,
-            difficulty=difficulty.capitalize(),
-            question_text=full_exam_text,
-            duration_minutes=30,
-        )
-
-        db.add(exam)
-        db.commit()
-        db.refresh(exam)
-
-        # ----------------------------------
-        # Return response
-        # ----------------------------------
-        return {
-            "exam_id": exam.id,
-            "class_name": exam.class_name,
-            "class_year": exam.class_year,   # ✅ RETURN IT
-            "difficulty": exam.difficulty,
-            "topic": exam.topic,
-            "duration_minutes": exam.duration_minutes,
-            "exam_text": full_exam_text,
-        }
-
-    except Exception as e:
-        db.rollback()
-        raise e
 
 @app.post("/api/exams/generate-writing")
 def generate_exam_writing(
