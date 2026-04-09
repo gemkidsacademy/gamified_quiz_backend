@@ -4502,7 +4502,7 @@ def get_homework_writing_content(
     attempt = (
         db.query(StudentHomeworkWriting)
         .filter(
-            StudentHomeworkWriting.student_id == student.student_id,
+            StudentHomeworkWriting.student_id == student.id,
             StudentHomeworkWriting.homework_id == homework_id,
             StudentHomeworkWriting.completed_at.is_(None)
         )
@@ -20472,7 +20472,7 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
     # 🔵 CASE C — Start new attempt
     # --------------------------------------------------
     new_attempt = StudentHomeworkWriting(
-        student_id=student.student_id,
+        student_id=student.id,
         homework_id=homework.id,
         started_at=datetime.now(timezone.utc),
         duration_minutes=homework.duration_minutes
@@ -20664,7 +20664,7 @@ def submit_homework_writing(
     attempt = (
         db.query(StudentHomeworkWriting)
         .filter(
-            StudentHomeworkWriting.student_id == student.student_id,
+            StudentHomeworkWriting.student_id == student.id,
             StudentHomeworkWriting.completed_at.is_(None)
         )
         .order_by(StudentHomeworkWriting.started_at.desc())
@@ -20727,13 +20727,51 @@ def submit_homework_writing(
     band = "Pending"
 
     try:
+        #come here123
         prompt = f"""
-        Evaluate the student writing strictly.
-        Return ONLY valid JSON.
-
-        Writing type: {payload.writing_type}
-        Prompt: {homework.question_text}
-        Response: {payload.answer_text}
+        You are an expert NSW Selective School writing marker.
+        
+        CRITICAL OUTPUT RULES (MUST FOLLOW EXACTLY):
+        - Respond with ONLY a valid JSON object
+        - Do NOT include markdown, headings, emojis, numbering symbols, or formatting characters
+        - Do NOT include explanations, notes, or extra text outside the JSON
+        - Do NOT include triple backticks or language tags
+        - Output must be directly parsable using json.loads()
+        - Use double quotes for all JSON keys and string values
+        
+        TASK:
+        Assess the student's writing response strictly according to NSW Selective School writing standards.
+        
+        WRITING TYPE:
+        {payload.writing_type}
+        
+        SCORING CRITERIA (TOTAL 25 MARKS):
+        Each category is scored out of 5.
+        
+        1. Audience, Purpose and Form
+        2. Ideas and Content
+        3. Structure and Organisation
+        4. Language and Vocabulary
+        5. Grammar, Spelling and Punctuation
+        
+        SELECTIVE READINESS BAND:
+        - 22–25: Strong selective standard – very competitive
+        - 18–21: On track for selective with minor improvements
+        - 14–17: Developing – selective readiness needs strengthening
+        - 10–13: Below selective standard – significant improvement needed
+        - Below 10: Well below selective standard at this stage
+        
+        REQUIRED JSON RESPONSE FORMAT:
+        - overall_score
+        - selective_readiness_band
+        - categories
+        - teacher_feedback
+        
+        Writing prompt:
+        {homework.question_text}
+        
+        Student response:
+        {payload.answer_text}
         """
         
 
@@ -21341,7 +21379,7 @@ def get_homework_writing_report(
     attempt = (
         db.query(StudentHomeworkWriting)
         .filter(
-            StudentHomeworkWriting.student_id == student.student_id,
+            StudentHomeworkWriting.student_id == student.id,
             StudentHomeworkWriting.completed_at.isnot(None)
         )
         .order_by(StudentHomeworkWriting.completed_at.desc())
