@@ -20114,9 +20114,9 @@ def save_writing_homework_quiz(
 ):
     print("\n--- Deleting existing Writing HOMEWORK quiz setup for this class/year ---")
 
-    db.query(QuizSetupWritingHomework).filter(
-        QuizSetupWritingHomework.class_name == payload.class_name,
-        QuizSetupWritingHomework.class_year == payload.class_year
+    db.query(QuizSetupWritingHomeWork).filter(
+        QuizSetupWritingHomeWork.class_name == payload.class_name,
+        QuizSetupWritingHomeWork.class_year == payload.class_year
     ).delete(synchronize_session=False)
 
     db.commit()
@@ -20124,7 +20124,7 @@ def save_writing_homework_quiz(
     print("🗑️ Existing config deleted (if any)")
     print("\n--- Creating new Writing HOMEWORK quiz setup ---")
 
-    quiz = QuizSetupWritingHomework(
+    quiz = QuizSetupWritingHomeWork(
         class_name=payload.class_name,
         class_year=payload.class_year,
         subject=payload.subject,
