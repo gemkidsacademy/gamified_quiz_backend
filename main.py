@@ -20727,58 +20727,15 @@ def submit_homework_writing(
     band = "Pending"
 
     try:
-        #prompt = f"""
-        #Evaluate the student writing strictly.
-        #Return ONLY valid JSON.
-
-        #Writing type: {payload.writing_type}
-        #Prompt: {homework.question_text}
-        #Response: {payload.answer_text}
-        #"""
         prompt = f"""
-        Evaluate the student writing strictly using NSW Selective Writing criteria.
-        
-        Return ONLY valid JSON in this EXACT structure:
-        
-        {{
-          "overall_score": number (0–25),
-          "selective_readiness_band": "Below / Approaching / Strong / Outstanding",
-          "categories": {{
-            "audience_purpose_form": {{
-              "score": number (0–5),
-              "strengths": [],
-              "improvements": []
-            }},
-            "ideas_content": {{
-              "score": number (0–5),
-              "strengths": [],
-              "improvements": []
-            }},
-            "structure_organisation": {{
-              "score": number (0–5),
-              "strengths": [],
-              "improvements": []
-            }},
-            "language_vocabulary": {{
-              "score": number (0–5),
-              "strengths": [],
-              "improvements": []
-            }},
-            "grammar_spelling_punctuation": {{
-              "score": number (0–5),
-              "strengths": [],
-              "improvements": []
-            }}
-          }},
-          "teacher_feedback": "string"
-        }}
-        
-        Do NOT include any explanation outside JSON.
-        
+        Evaluate the student writing strictly.
+        Return ONLY valid JSON.
+
         Writing type: {payload.writing_type}
         Prompt: {homework.question_text}
-        Student Response: {payload.answer_text}
+        Response: {payload.answer_text}
         """
+        
 
         response = client.responses.create(
             model="gpt-4o-mini",
