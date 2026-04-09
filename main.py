@@ -20303,7 +20303,7 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
         db.query(GeneratedHomeworkWriting)
         .filter(
             GeneratedHomeworkWriting.class_name == student.class_name,
-            GeneratedHomeworkWriting.class_year == student.class_year
+            GeneratedHomeworkWriting.class_year == student.student_year
         )
         .order_by(GeneratedHomeworkWriting.created_at.desc())
         .first()
