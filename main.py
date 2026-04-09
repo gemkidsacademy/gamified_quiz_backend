@@ -2457,6 +2457,38 @@ class Student(Base):
     class_day = Column(String, nullable=True)
      # ✅ NAPLAN year (e.g. 3, 5)
     student_year = Column(String, nullable=False)
+
+class StudentHomeworkReportReading(Base):
+    __tablename__ = "student_homework_report_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, index=True)
+    exam_id = Column(Integer, index=True)
+    session_id = Column(Integer, index=True)
+
+    topic = Column(String)
+    question_id = Column(String)
+
+    selected_answer = Column(String, nullable=True)
+    correct_answer = Column(String)
+
+    is_correct = Column(Boolean)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class StudentHomeworkReading(Base):
+    __tablename__ = "student_homework_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, index=True)
+    exam_id = Column(Integer, index=True)
+
+    started_at = Column(DateTime)
+    finished = Column(Boolean, default=False)
+    completed_at = Column(DateTime, nullable=True)
+    report_json = Column(JSON, nullable=True)
 class TopicInput(BaseModel):
     name: str
     ai: int
@@ -18481,6 +18513,137 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         import traceback
         traceback.print_exc()
         raise
+def auto_submit_homework_reading(session: StudentHomeworkReading, db: Session):
+    """
+    Auto-submit homework reading on timeout.
+    Mirrors exam logic but uses homework tables.
+    """
+
+    print("🟡 AUTO-SUBMIT HOMEWORK triggered for session:", session.id)
+    if session.finished and session.report_json:
+        print("⚠️ Auto-submit skipped — session already finalized")
+        return
+
+    if session.finished:
+        print("⚠️ Already finished — skipping")
+        return
+
+    existing_rows = (
+        db.query(StudentHomeworkReportReading)
+        .filter(StudentHomeworkReportReading.session_id == session.id)
+        .count()
+    )
+
+    if existing_rows > 0:
+        print("⚠️ Report rows already exist — skipping")
+        return
+
+    # --------------------------------------------------
+    # 🔑 USE HOMEWORK EXAM TABLE
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedHomeworkReading)
+        .filter(GeneratedHomeworkReading.id == session.exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        raise Exception("Homework exam data missing during auto-submit")
+
+    sections = exam.exam_json.get("sections", [])
+
+    TOPIC_LABELS = {
+        "main_idea": "Main Idea and Summary",
+        "main_idea_and_summary": "Main Idea and Summary",
+        "comparative_analysis": "Comparative Analysis",
+        "gapped_text": "Gapped Text",
+    }
+
+    topic_stats = {}
+    total = attempted = correct = incorrect = not_attempted = 0
+
+    # --------------------------------------------------
+    # PROCESS QUESTIONS
+    # --------------------------------------------------
+    for section in sections:
+        raw_topic = section.get("topic") or section.get("question_type")
+        topic = TOPIC_LABELS.get(raw_topic, "Other")
+        questions = section.get("questions", [])
+
+        topic_stats.setdefault(topic, {
+            "total": 0,
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "not_attempted": 0
+        })
+
+        for q in questions:
+            question_id = q.get("question_id")
+            correct_answer = q.get("correct_answer")
+
+            total += 1
+            not_attempted += 1
+
+            topic_stats[topic]["total"] += 1
+            topic_stats[topic]["not_attempted"] += 1
+
+            db.add(StudentHomeworkReportReading(
+                student_id=session.student_id,
+                exam_id=session.exam_id,
+                session_id=session.id,
+                topic=topic,
+                question_id=question_id,
+                selected_answer=None,
+                correct_answer=correct_answer,
+                is_correct=False
+            ))
+
+    # --------------------------------------------------
+    # BUILD REPORT JSON (same structure)
+    # --------------------------------------------------
+    topics_report = []
+
+    for topic, stats in topic_stats.items():
+        topics_report.append({
+            "topic": topic,
+            "total": stats["total"],
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "accuracy": 0.0
+        })
+
+    report_json = {
+        "overall": {
+            "total_questions": total,
+            "attempted": attempted,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy": 0.0,
+            "score": 0.0,
+            "result": "Fail"
+        },
+        "topics": topics_report,
+        "has_sufficient_data": False,
+        "improvement_order": []
+    }
+
+    # --------------------------------------------------
+    # FINALIZE SESSION
+    # --------------------------------------------------
+    session.finished = True
+    session.completed_at = datetime.now(timezone.utc)
+
+    # ⚠️ IMPORTANT: Do you have report_json column?
+    session.report_json = report_json
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 def auto_submit_reading_exam(session: StudentExamReading, db: Session):
     """
@@ -18850,7 +19013,125 @@ def start_exam_oc_reading(
 
     return payload
 
+@app.post("/api/student/start-homework-reading")
+def start_homework_reading(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ START-HOMEWORK-READING ==================")
+    print("📘 Incoming request payload:", req.dict())
 
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(req.student_id.strip()))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    class_name = student.class_name.strip().lower()
+    class_year = student.student_year.strip().lower()
+
+    print("✅ Student resolved:", {
+        "student_pk": student.id,
+        "class_name": class_name,
+        "class_year": class_year
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Get latest homework exam (SCOPED)
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedHomeworkReading)
+        .filter(
+            func.lower(GeneratedHomeworkReading.class_name) == class_name,
+            func.lower(GeneratedHomeworkReading.class_year) == class_year
+        )
+        .order_by(GeneratedHomeworkReading.id.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No homework exam found for {class_name} {class_year}"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkReading)
+        .filter(
+            StudentHomeworkReading.student_id == student.id,
+            StudentHomeworkReading.exam_id == exam.id
+        )
+        .order_by(StudentHomeworkReading.started_at.desc())
+        .first()
+    )
+
+    # 🚫 Already finished
+    if attempt and attempt.finished:
+        return {
+            "completed": True,
+            "attempt_id": attempt.id,
+            "exam_id": exam.id
+        }
+
+    duration_minutes = exam.exam_json.get("duration_minutes", 40)
+
+    # 🔁 Resume
+    if attempt and not attempt.finished:
+        now = datetime.now(timezone.utc)
+        started_at = attempt.started_at
+
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, duration_minutes * 60 - elapsed)
+
+        if remaining == 0:
+            auto_submit_homework_reading(attempt, db)
+
+            return {
+                "completed": True,
+                "attempt_id": attempt.id,
+                "exam_id": exam.id
+            }
+
+        return {
+            "completed": False,
+            "attempt_id": attempt.id,
+            "exam_id": exam.id,
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 4️⃣ Create new attempt
+    # --------------------------------------------------
+    new_attempt = StudentHomeworkReading(
+        student_id=student.id,
+        exam_id=exam.id,
+        started_at=datetime.now(timezone.utc),
+        finished=False
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    return {
+        "completed": False,
+        "attempt_id": new_attempt.id,
+        "exam_id": exam.id,
+        "remaining_time": duration_minutes * 60
+    }
+ 
 @app.post("/api/exams/start-reading")
 def start_exam_reading(
     req: StartExamRequest = Body(...),
@@ -18999,6 +19280,65 @@ def start_exam_reading(
 
     return payload
 
+
+@app.get("/api/student/homework-reading-content/{exam_id}")
+def get_homework_reading_content(exam_id: int, db: Session = Depends(get_db)):
+    print("\n📘 GET HOMEWORK READING CONTENT")
+    print("➡ exam_id:", exam_id)
+
+    exam = (
+        db.query(GeneratedHomeworkReading)   # ✅ CHANGED TABLE
+        .filter(GeneratedHomeworkReading.id == exam_id)
+        .first()
+    )
+
+    if not exam:
+        print("❌ ERROR: GeneratedHomeworkReading not found")
+        raise HTTPException(status_code=404, detail="Homework content not found")
+
+    if not exam.exam_json:
+        print("❌ ERROR: exam.exam_json is NULL or empty")
+        raise HTTPException(status_code=404, detail="Homework content not found")
+
+    # 🔍 DEBUG
+    print("✅ exam.exam_json type:", type(exam.exam_json))
+    print("🔑 exam.exam_json keys:", exam.exam_json.keys())
+
+    sections = exam.exam_json.get("sections", [])
+    print("📚 sections type:", type(sections))
+    print("📚 sections length:", len(sections) if isinstance(sections, list) else "N/A")
+
+    if isinstance(sections, list) and len(sections) > 0:
+        first_section = sections[0]
+        print("🧱 FIRST SECTION KEYS:", first_section.keys())
+
+        for key in ["questions", "items", "question_list"]:
+            if key in first_section:
+                print(f"🧩 FOUND QUESTIONS UNDER KEY: '{key}'")
+                print("🧩 questions count:", len(first_section[key]))
+                if len(first_section[key]) > 0:
+                    print("🧩 FIRST QUESTION KEYS:", first_section[key][0].keys())
+                break
+        else:
+            print("⚠️ NO QUESTION ARRAY FOUND in first section")
+
+    # 🔧 SAME NORMALIZATION LOGIC
+    for section in sections:
+        rm = section.get("reading_material")
+
+        if isinstance(rm, str):
+            print("🛠 Normalizing reading_material for section:", section.get("section_id"))
+
+            section["reading_material"] = {
+                "title": section.get("topic") or "Reading Passage",
+                "content": rm
+            }
+
+    print("📤 RETURNING HOMEWORK exam_json TO FRONTEND\n")
+
+    return {
+        "exam_json": exam.exam_json
+    }
 
 @app.get("/api/exams/reading-content/{exam_id}")
 def get_reading_content(exam_id: int, db: Session = Depends(get_db)):
