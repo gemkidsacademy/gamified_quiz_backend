@@ -20450,7 +20450,7 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
     # 🔵 CASE C — Start new attempt
     # --------------------------------------------------
     new_attempt = StudentHomeworkWriting(
-        student_id=student.id,
+        student_id=student.student_id,
         homework_id=homework.id,
         started_at=datetime.now(timezone.utc),
         duration_minutes=homework.duration_minutes
