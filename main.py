@@ -2540,7 +2540,7 @@ class QuizCreate(BaseModel):
     difficulty: str
     num_topics: int
     topics: List[TopicInput]
- QuizCreate
+ 
 class QuizCreateOC_TS(BaseModel):
     class_name: str
     subject: str    
