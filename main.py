@@ -187,10 +187,16 @@ class StudentHomeworkWriting(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
-    homework_id = Column(Integer, ForeignKey("generated_homework_writing.id"), nullable=False)
+    # ✅ FIX: student_id is VARCHAR (not Integer)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
 
-    started_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    homework_id = Column(
+        Integer,
+        ForeignKey("generated_homework_writing.id"),
+        nullable=False
+    )
+
+    started_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     duration_minutes = Column(Integer, nullable=False)
