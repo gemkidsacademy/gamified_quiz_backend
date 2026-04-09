@@ -18205,6 +18205,199 @@ def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
         import traceback
         traceback.print_exc()
         raise
+@app.post("/api/student/submit-homework-reading")
+def submit_homework_reading(payload: dict, db: Session = Depends(get_db)):
+
+    print("\n================ SUBMIT HOMEWORK READING ================")
+    print("📥 Raw payload received:", payload)
+
+    try:
+        # --------------------------------------------------
+        # 0️⃣ Validate payload
+        # --------------------------------------------------
+        session_id = payload.get("session_id")
+        answers = payload.get("answers", {})
+
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required")
+
+        if not isinstance(answers, dict):
+            raise HTTPException(status_code=400, detail="answers must be a dictionary")
+
+        # --------------------------------------------------
+        # 1️⃣ Load session
+        # --------------------------------------------------
+        session = (
+            db.query(StudentHomeworkReading)
+            .filter(StudentHomeworkReading.id == session_id)
+            .first()
+        )
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        if session.finished:
+            return {
+                "status": "ok",
+                "message": "Homework already submitted"
+            }
+
+        # --------------------------------------------------
+        # 2️⃣ Resolve student
+        # --------------------------------------------------
+        student = (
+            db.query(Student)
+            .filter(Student.id == session.student_id)
+            .first()
+        )
+
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        # --------------------------------------------------
+        # 3️⃣ Load homework exam
+        # --------------------------------------------------
+        exam = (
+            db.query(GeneratedHomeworkReading)
+            .filter(GeneratedHomeworkReading.id == session.exam_id)
+            .first()
+        )
+
+        if not exam or not exam.exam_json:
+            raise HTTPException(status_code=500, detail="Homework data not found")
+
+        sections = exam.exam_json.get("sections", [])
+
+        # --------------------------------------------------
+        # 4️⃣ Evaluate answers
+        # --------------------------------------------------
+        CANONICAL_TOPICS = {
+            "main_idea": "main_idea",
+            "main_idea_and_summary": "main_idea",
+            "comparative_analysis": "comparative_analysis",
+            "gapped_text": "gapped_text",
+        }
+
+        topic_stats = {}
+        total_questions = attempted = correct = incorrect = not_attempted = 0
+
+        for section in sections:
+            raw_topic = section.get("question_type")
+            topic = CANONICAL_TOPICS.get(raw_topic, "other")
+
+            questions = section.get("questions", [])
+
+            topic_stats.setdefault(topic, {
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            })
+
+            for q in questions:
+                question_id = q.get("question_id")
+                correct_answer = q.get("correct_answer")
+                selected_answer = answers.get(question_id)
+
+                is_attempted = selected_answer is not None
+                is_correct = is_attempted and selected_answer == correct_answer
+
+                total_questions += 1
+                topic_stats[topic]["total"] += 1
+
+                if is_attempted:
+                    attempted += 1
+                    topic_stats[topic]["attempted"] += 1
+                    if is_correct:
+                        correct += 1
+                        topic_stats[topic]["correct"] += 1
+                    else:
+                        incorrect += 1
+                        topic_stats[topic]["incorrect"] += 1
+                else:
+                    not_attempted += 1
+                    topic_stats[topic]["not_attempted"] += 1
+
+                db.add(StudentHomeworkReportReading(
+                    student_id=session.student_id,
+                    exam_id=session.exam_id,
+                    session_id=session.id,
+                    topic=topic,
+                    question_id=question_id,
+                    selected_answer=selected_answer,
+                    correct_answer=correct_answer,
+                    is_correct=is_correct
+                ))
+
+        # --------------------------------------------------
+        # 5️⃣ Build report
+        # --------------------------------------------------
+        topics_report = []
+        for topic, stats in topic_stats.items():
+            accuracy = (
+                round((stats["correct"] / stats["attempted"]) * 100, 2)
+                if stats["attempted"] > 0 else 0.0
+            )
+
+            topics_report.append({
+                "topic": topic,
+                "total": stats["total"],
+                "attempted": stats["attempted"],
+                "correct": stats["correct"],
+                "incorrect": stats["incorrect"],
+                "accuracy": accuracy
+            })
+
+        accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+        coverage = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
+        score_percent = round((correct / total_questions) * 100, 2) if total_questions > 0 else 0.0
+
+        result = "Pass" if score_percent >= 50 else "Fail"
+
+        MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
+        has_sufficient_data = attempted >= MIN_ATTEMPTS
+
+        report_json = {
+            "overall": {
+                "total_questions": total_questions,
+                "attempted": attempted,
+                "correct": correct,
+                "incorrect": incorrect,
+                "not_attempted": not_attempted,
+                "accuracy": accuracy,
+                "coverage": coverage,
+                "score": score_percent,
+                "result": result
+            },
+            "topics": topics_report,
+            "has_sufficient_data": has_sufficient_data,
+            "improvement_order": (
+                [t["topic"] for t in sorted(topics_report, key=lambda x: x["accuracy"])]
+                if has_sufficient_data else []
+            )
+        }
+
+        # --------------------------------------------------
+        # 6️⃣ Finalize session
+        # --------------------------------------------------
+        session.finished = True
+        session.completed_at = datetime.now(timezone.utc)
+        session.report_json = report_json
+
+        db.commit()
+
+        return {
+            "status": "submitted",
+            "message": "Homework submitted successfully",
+            "report": report_json
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise
+
 @app.post("/api/exams/submit-reading")
 def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
