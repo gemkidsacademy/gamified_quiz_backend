@@ -20623,7 +20623,6 @@ def submit_homework_writing(
     db: Session = Depends(get_db)
 ):
     print("\n================ SUBMIT HOMEWORK WRITING =================")
-    print("➡️ student_id:", student_id)
 
     # --------------------------------------------------
     # 1️⃣ Resolve student
@@ -20635,10 +20634,10 @@ def submit_homework_writing(
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
+        raise HTTPException(404, "Student not found")
 
     # --------------------------------------------------
-    # 2️⃣ Get ACTIVE homework attempt
+    # 2️⃣ Load active homework attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentHomeworkWriting)
@@ -20651,12 +20650,7 @@ def submit_homework_writing(
     )
 
     if not attempt:
-        raise HTTPException(
-            status_code=404,
-            detail="No active homework writing attempt"
-        )
-
-    print("✅ Found homework attempt:", attempt.id)
+        raise HTTPException(404, "No active homework attempt")
 
     # --------------------------------------------------
     # 3️⃣ Load homework definition
@@ -20670,137 +20664,105 @@ def submit_homework_writing(
     topic = homework.topic if homework else None
 
     # --------------------------------------------------
-    # 4️⃣ Save answer
+    # 4️⃣ Save answer (SAME AS EXAM)
     # --------------------------------------------------
     attempt.answer_text = payload.answer_text
     attempt.completed_at = datetime.now(timezone.utc)
 
-    print("💾 Answer saved, length:", len(payload.answer_text or ""))
+    # --------------------------------------------------
+    # 5️⃣ Store response snapshot (LIKE EXAM)
+    # --------------------------------------------------
+    existing_response = (
+        db.query(StudentHomeworkResponseWriting)
+        .filter(
+            StudentHomeworkResponseWriting.homework_attempt_id == attempt.id
+        )
+        .first()
+    )
+
+    if existing_response:
+        response_row = existing_response
+    else:
+        response_row = StudentHomeworkResponseWriting(
+            student_id=student.student_id,
+            homework_id=attempt.homework_id,
+            homework_attempt_id=attempt.id,
+            topic=topic,
+            essay_text=payload.answer_text
+        )
+        db.add(response_row)
 
     # --------------------------------------------------
-    # 5️⃣ AI Evaluation (same as exam)
+    # 🔥 COMMIT BEFORE AI (CRITICAL DIFFERENCE)
     # --------------------------------------------------
-    prompt = f"""
-    You are an expert NSW Selective School writing marker.
+    db.commit()
 
-    Evaluate the student's writing.
-
-    Writing type:
-    {payload.writing_type}
-
-    Writing prompt:
-    {homework.question_text}
-
-    Student response:
-    {payload.answer_text}
-
-    Return ONLY valid JSON with:
-    - overall_score
-    - selective_readiness_band
-    - categories
-    - teacher_feedback
-    """
+    # --------------------------------------------------
+    # 6️⃣ AI Evaluation (SAFE VERSION)
+    # --------------------------------------------------
+    evaluation = None
+    writing_score = 0
+    band = "Pending"
 
     try:
+        prompt = f"""
+        Evaluate the student writing strictly.
+        Return ONLY valid JSON.
+
+        Writing type: {payload.writing_type}
+        Prompt: {homework.question_text}
+        Response: {payload.answer_text}
+        """
+
         response = client.responses.create(
             model="gpt-4o-mini",
             input=prompt,
-            temperature=0.4,
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "writing_eval",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "overall_score": {
-                                "type": "integer",
-                                "minimum": 0,
-                                "maximum": 25
-                            },
-                            "selective_readiness_band": {
-                                "type": "string"
-                            },
-                            "categories": {
-                                "type": "object",
-                                "properties": {
-                                    "audience_purpose_form": {"type": "object"},
-                                    "ideas_content": {"type": "object"},
-                                    "structure_organisation": {"type": "object"},
-                                    "language_vocabulary": {"type": "object"},
-                                    "grammar_spelling_punctuation": {"type": "object"}
-                                },
-                                "required": [
-                                    "audience_purpose_form",
-                                    "ideas_content",
-                                    "structure_organisation",
-                                    "language_vocabulary",
-                                    "grammar_spelling_punctuation"
-                                ]
-                            },
-                            "teacher_feedback": {
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "overall_score",
-                            "selective_readiness_band",
-                            "categories",
-                            "teacher_feedback"
-                        ]
-                    }
-                }
-            }
+            temperature=0.4
         )
-        try:
-            raw = response.output[0].content[0].text
-            evaluation = json.loads(raw)
-        except Exception as e:
-            print("❌ Structured output failed:", str(e))
-            evaluation = {
-                "overall_score": 0,
-                "selective_readiness_band": "Evaluation failed",
-                "categories": {},
-                "teacher_feedback": "Could not evaluate response."
-            }
-        
+
+        ai_text = response.output_text
+        print("🧠 AI TEXT:", ai_text)
+
+        if ai_text:
+            evaluation = json.loads(ai_text)
+            writing_score = int(evaluation.get("overall_score", 0))
+            band = evaluation.get("selective_readiness_band", "Pending")
 
     except Exception as e:
-        print("❌ AI evaluation failed:", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="Homework writing evaluation failed"
-        )
+        print("❌ AI failed:", str(e))
 
     # --------------------------------------------------
-    # 6️⃣ Store evaluation
+    # 7️⃣ Fallback (MANDATORY)
+    # --------------------------------------------------
+    if not evaluation:
+        evaluation = {
+            "overall_score": 0,
+            "selective_readiness_band": "Pending",
+            "categories": {},
+            "teacher_feedback": "Evaluation pending"
+        }
+
+    # --------------------------------------------------
+    # 8️⃣ Store results (LIKE EXAM)
     # --------------------------------------------------
     attempt.report_json = evaluation
 
-    writing_score = int(evaluation.get("overall_score", 0))
-
-    print("✅ Evaluation score:", writing_score)
+    response_row.writing_score = writing_score
+    response_row.readiness_band = band
 
     # --------------------------------------------------
-    # 7️⃣ Commit
+    # 9️⃣ Final commit
     # --------------------------------------------------
-    try:
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Database commit failed"
-        )
+    db.commit()
 
     print("🎉 Homework writing submitted successfully")
 
     return {
-        "message": "Homework writing submitted successfully",
+        "message": "Homework submitted",
         "homework_id": attempt.homework_id,
         "writing_score": writing_score
     }
-
+ 
 @app.post("/api/exams/writing/submit")
 def submit_writing_exam(
     payload: WritingSubmitSchema,
@@ -21294,7 +21256,78 @@ def submit_writing_exam(
         "exam_id": exam_state.exam_id,
         "writing_score": writing_score
     } 
+@app.get("/api/student/homework-writing-report")
+def get_homework_writing_report(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n📊 HOMEWORK WRITING REPORT")
 
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (EXTERNAL → INTERNAL)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Load latest COMPLETED homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkWriting)
+        .filter(
+            StudentHomeworkWriting.student_id == student.student_id,
+            StudentHomeworkWriting.completed_at.isnot(None)
+        )
+        .order_by(StudentHomeworkWriting.completed_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="Homework writing result not found"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Validate evaluation exists (like exam mode)
+    # --------------------------------------------------
+    if not attempt.report_json:
+        raise HTTPException(
+            status_code=500,
+            detail="AI evaluation missing for homework writing"
+        )
+
+    evaluation = attempt.report_json
+
+    # --------------------------------------------------
+    # 4️⃣ Extract score + readiness band
+    # --------------------------------------------------
+    score = int(evaluation.get("overall_score", 0))
+    band = evaluation.get("selective_readiness_band", "Pending")
+
+    # --------------------------------------------------
+    # 5️⃣ Final response (MATCHES EXAM STRUCTURE)
+    # --------------------------------------------------
+    return {
+        "exam_type": "Writing",
+        "score": score,
+        "max_score": 25,
+
+        # ✅ same field as exam endpoint
+        "selective_readiness_band": band,
+
+        # ✅ same structure as exam
+        "evaluation": evaluation,
+
+        "advisory": "This report is advisory only and does not guarantee placement."
+    }
+ 
 @app.get("/api/exams/writing/result")
 def get_writing_result(
     student_id: str,
