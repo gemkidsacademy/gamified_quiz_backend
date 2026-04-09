@@ -182,6 +182,28 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentHomeworkResponseWriting(Base):
+    __tablename__ = "student_homework_response_writing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, nullable=False)
+    homework_id = Column(Integer, nullable=False)
+    homework_attempt_id = Column(
+        Integer,
+        ForeignKey("student_homework_writing.id"),
+        nullable=False
+    )
+
+    topic = Column(Text, nullable=True)
+    essay_text = Column(Text, nullable=True)
+
+    writing_score = Column(Integer, nullable=True)
+    readiness_band = Column(String, nullable=True)
+
+    evaluation_json = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 class StudentHomeworkWriting(Base):
     __tablename__ = "student_homework_writing"
 
