@@ -20302,13 +20302,12 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
     homework = (
         db.query(GeneratedHomeworkWriting)
         .filter(
-            GeneratedHomeworkWriting.class_name == student.class_name,
-            GeneratedHomeworkWriting.class_year == student.student_year
+            func.lower(GeneratedHomeworkWriting.class_name) == func.lower(student.class_name),
+            func.lower(GeneratedHomeworkWriting.class_year) == func.lower(student.student_year)
         )
         .order_by(GeneratedHomeworkWriting.created_at.desc())
         .first()
     )
-
     if not homework:
         raise HTTPException(404, "No homework writing found for this class")
 
