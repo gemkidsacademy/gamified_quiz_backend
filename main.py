@@ -4432,6 +4432,93 @@ def normalize_questions_for_homework(raw_questions):
         normalized.append(fixed)
 
     return normalized
+@app.get("/api/student/homework-writing-content/{homework_id}")
+def get_homework_writing_content(
+    homework_id: int,
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+
+    # --------------------------------------------------
+    # 0️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch ACTIVE homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkWriting)
+        .filter(
+            StudentHomeworkWriting.student_id == student.id,
+            StudentHomeworkWriting.homework_id == homework_id,
+            StudentHomeworkWriting.completed_at.is_(None)
+        )
+        .order_by(StudentHomeworkWriting.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No active homework attempt"
+        )
+
+    # --------------------------------------------------
+    # 2️⃣ Load homework definition
+    # --------------------------------------------------
+    homework = (
+        db.query(GeneratedHomeworkWriting)
+        .filter(GeneratedHomeworkWriting.id == homework_id)
+        .first()
+    )
+
+    if not homework:
+        raise HTTPException(
+            status_code=404,
+            detail="Homework writing not found"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Compute remaining time
+    # --------------------------------------------------
+    started_at = attempt.started_at
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    elapsed = int((now - started_at).total_seconds())
+    total_seconds = attempt.duration_minutes * 60
+    remaining = max(0, total_seconds - elapsed)
+
+    # --------------------------------------------------
+    # 4️⃣ Timeout → auto-complete
+    # --------------------------------------------------
+    if remaining == 0:
+        attempt.completed_at = now
+        db.commit()
+        return {"completed": True}
+
+    # --------------------------------------------------
+    # 5️⃣ Active homework response
+    # --------------------------------------------------
+    return {
+        "completed": False,
+        "remaining_seconds": remaining,
+        "exam": {   # 👈 keep "exam" for frontend compatibility
+            "exam_id": homework.id,  # 👈 alias (important)
+            "writing_type": homework.topic,
+            "question_text": homework.question_text,
+            "duration_minutes": attempt.duration_minutes
+        }
+    }
 @app.post("/api/exams/generate-writing-homework")
 def generate_writing_homework(
     payload: WritingGenerateSchemaHomeWork,
