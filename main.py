@@ -8819,6 +8819,142 @@ def get_naplan_question_bank(
 
 
 
+@app.get("/api/student/homework-review-by-session/reading")
+def review_homework_reading_by_session(
+    session_id: int = Query(..., description="Homework reading session ID"),
+    db: Session = Depends(get_db)
+):
+    print("\n================ REVIEW HOMEWORK (SESSION) ================")
+    print("🆔 session_id:", session_id)
+
+    # --------------------------------------------------
+    # 1️⃣ Load session
+    # --------------------------------------------------
+    session = (
+        db.query(StudentHomeworkReading)
+        .filter(StudentHomeworkReading.id == session_id)
+        .first()
+    )
+
+    if not session:
+        print("❌ Session not found")
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if not session.finished:
+        print("❌ Session not finished yet")
+        raise HTTPException(status_code=400, detail="Homework not finished yet")
+
+    print("✅ Session loaded:", {
+        "session_id": session.id,
+        "student_id": session.student_id,
+        "exam_id": session.exam_id,
+        "completed_at": session.completed_at
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Load exam content
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedHomeworkReading)
+        .filter(GeneratedHomeworkReading.id == session.exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        print("❌ Homework exam content missing")
+        raise HTTPException(status_code=500, detail="Homework content missing")
+
+    # --------------------------------------------------
+    # 3️⃣ Normalize exam_json
+    # --------------------------------------------------
+    exam_json = exam.exam_json
+
+    if isinstance(exam_json, str):
+        try:
+            exam_json = json.loads(exam_json)
+        except json.JSONDecodeError as e:
+            print("❌ Invalid exam_json:", e)
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid homework JSON structure"
+            )
+
+    sections = exam_json.get("sections", [])
+    print(f"📘 Sections loaded: {len(sections)}")
+
+    # --------------------------------------------------
+    # 4️⃣ Load student answers
+    # --------------------------------------------------
+    reports = (
+        db.query(StudentHomeworkReportReading)
+        .filter(StudentHomeworkReportReading.session_id == session.id)
+        .all()
+    )
+
+    print(f"📝 Answer rows found: {len(reports)}")
+
+    report_map = {r.question_id: r for r in reports}
+
+    # --------------------------------------------------
+    # 5️⃣ Build review payload
+    # --------------------------------------------------
+    review_questions = []
+
+    for section_idx, section in enumerate(sections):
+        topic = section.get("topic", "Other")
+        passage_style = section.get("passage_style", "informational")
+        reading_material = section.get("reading_material")
+
+        questions = section.get("questions", [])
+
+        print(f"🧱 Section {section_idx + 1}: {topic} | questions: {len(questions)}")
+
+        for q in questions:
+            qid = q.get("question_id")
+            r = report_map.get(qid)
+
+            # Handle shared vs per-question options
+            options_scope = section.get("options_scope", "per_question")
+
+            if options_scope == "shared":
+                answer_options = section.get("answer_options", {})
+            else:
+                answer_options = q.get("answer_options", {})
+
+            answer_options = answer_options or {}
+
+            review_questions.append({
+                "question_id": qid,
+                "question_number": q.get("question_number"),
+                "question_text": q.get("question_text"),
+                "answer_options": answer_options,
+                "student_answer": r.selected_answer if r else None,
+                "correct_answer": r.correct_answer if r else None,
+                "is_correct": r.is_correct if r else False,
+                "topic": topic,
+                "passage_style": passage_style,
+                "reading_material": reading_material
+            })
+
+    # --------------------------------------------------
+    # 6️⃣ Response
+    # --------------------------------------------------
+    response_payload = {
+        "session_id": session.id,
+        "exam_id": session.exam_id,
+        "questions": review_questions
+    }
+
+    print("📤 HOMEWORK REVIEW SUMMARY:", {
+        "session_id": response_payload["session_id"],
+        "exam_id": response_payload["exam_id"],
+        "total_questions": len(review_questions)
+    })
+
+    print("================ END REVIEW HOMEWORK (SESSION) ================\n")
+
+    return response_payload
+
 @app.get("/api/exams/review-reading")
 def review_reading_exam(
     session_id: int = Query(..., description="Reading exam session ID"),
