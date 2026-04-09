@@ -4609,16 +4609,31 @@ def generate_writing_homework(
         })
 
         # ----------------------------------
-        # 3️⃣ DELETE EXISTING (SCOPED BY YEAR ONLY)
+        # 3️⃣ RESET STUDENT ATTEMPTS + DELETE OLD HOMEWORK
         # ----------------------------------
-        print("🗑 Deleting existing homework writing exams for year:", class_year)
-
-        db.query(GeneratedHomeworkWriting).filter(
+        print("🗑 Resetting student homework attempts for year:", class_year)
+        
+        homework_ids = db.query(GeneratedHomeworkWriting.id).filter(
             func.lower(func.trim(GeneratedHomeworkWriting.class_year)) == class_year
-        ).delete(synchronize_session=False)
-
+        ).all()
+        
+        homework_ids = [h[0] for h in homework_ids]
+        
+        if homework_ids:
+            db.query(StudentHomeworkResponseWriting).filter(
+                StudentHomeworkResponseWriting.homework_id.in_(homework_ids)
+            ).delete(synchronize_session=False)
+        
+            db.query(StudentHomeworkWriting).filter(
+                StudentHomeworkWriting.homework_id.in_(homework_ids)
+            ).delete(synchronize_session=False)
+        
+            # 🔥 ADD THIS
+            db.query(GeneratedHomeworkWriting).filter(
+                GeneratedHomeworkWriting.id.in_(homework_ids)
+            ).delete(synchronize_session=False)
+        
         db.commit()
-
         # ----------------------------------
         # 4️⃣ Fetch ONE random writing question
         # ----------------------------------
