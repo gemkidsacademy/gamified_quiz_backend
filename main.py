@@ -20705,11 +20705,65 @@ def submit_homework_writing(
         response = client.responses.create(
             model="gpt-4o-mini",
             input=prompt,
-            temperature=0.4
+            temperature=0.4,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "writing_eval",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "overall_score": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 25
+                            },
+                            "selective_readiness_band": {
+                                "type": "string"
+                            },
+                            "categories": {
+                                "type": "object",
+                                "properties": {
+                                    "audience_purpose_form": {"type": "object"},
+                                    "ideas_content": {"type": "object"},
+                                    "structure_organisation": {"type": "object"},
+                                    "language_vocabulary": {"type": "object"},
+                                    "grammar_spelling_punctuation": {"type": "object"}
+                                },
+                                "required": [
+                                    "audience_purpose_form",
+                                    "ideas_content",
+                                    "structure_organisation",
+                                    "language_vocabulary",
+                                    "grammar_spelling_punctuation"
+                                ]
+                            },
+                            "teacher_feedback": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "overall_score",
+                            "selective_readiness_band",
+                            "categories",
+                            "teacher_feedback"
+                        ]
+                    }
+                }
+            }
         )
-
-        ai_result = response.output_text
-        evaluation = json.loads(ai_result)
+        try:
+            raw = response.output[0].content[0].text
+            evaluation = json.loads(raw)
+        except Exception as e:
+            print("❌ Structured output failed:", str(e))
+            evaluation = {
+                "overall_score": 0,
+                "selective_readiness_band": "Evaluation failed",
+                "categories": {},
+                "teacher_feedback": "Could not evaluate response."
+            }
+        
 
     except Exception as e:
         print("❌ AI evaluation failed:", str(e))
