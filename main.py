@@ -20636,7 +20636,43 @@ def archive_writing_response_to_admin_table(
     )
 
     db.add(admin_record)
- 
+def normalize_homework_evaluation_structure(evaluation: dict) -> dict:
+    CATEGORY_KEYS = {
+        "Audience, Purpose and Form": "audience_purpose_form",
+        "Ideas and Content": "ideas_content",
+        "Structure and Organisation": "structure_organisation",
+        "Language and Vocabulary": "language_vocabulary",
+        "Grammar, Spelling and Punctuation": "grammar_spelling_punctuation"
+    }
+
+    normalized_categories = {}
+
+    raw_categories = evaluation.get("categories", {})
+
+    for raw_key, mapped_key in CATEGORY_KEYS.items():
+        value = raw_categories.get(raw_key)
+
+        if isinstance(value, dict):
+            # Already correct format
+            normalized_categories[mapped_key] = value
+        else:
+            # Convert number → structured format
+            normalized_categories[mapped_key] = {
+                "score": int(value or 0),
+                "strengths": [],
+                "improvements": []
+            }
+
+    evaluation["categories"] = normalized_categories
+
+    # Ensure required fields exist
+    if "selective_readiness_band" not in evaluation:
+        evaluation["selective_readiness_band"] = "Pending"
+
+    if "teacher_feedback" not in evaluation:
+        evaluation["teacher_feedback"] = ""
+
+    return evaluation
 @app.post("/api/student/submit-homework-writing")
 def submit_homework_writing(
     payload: WritingSubmitSchema,
@@ -20786,6 +20822,7 @@ def submit_homework_writing(
 
         if ai_text:
             evaluation = json.loads(ai_text)
+            evaluation = normalize_homework_evaluation_structure(evaluation)
             print("✅ PARSED JSON:", evaluation)
             
             # 🔁 NORMALIZE TO EXAM FORMAT (FINAL FIXED VERSION)
