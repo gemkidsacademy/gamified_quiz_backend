@@ -182,6 +182,13 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class WritingQuizSchemaHomeWork(BaseModel):
+    class_name: str
+    class_year: str   # ✅ ADD THIS
+    subject: str
+    topic: str
+    difficulty: str
+ 
 class HomeworkExamMathematicalReasoning(Base):
     __tablename__ = "homework_exam_mathematical_reasoning"
 
@@ -20100,7 +20107,39 @@ async def upload_word_writing(
     }
 
 
- 
+@app.post("/api/quizzes-writing-homework")
+def save_writing_homework_quiz(
+    payload: WritingQuizSchema,
+    db: Session = Depends(get_db)
+):
+    print("\n--- Deleting existing Writing HOMEWORK quiz setup for this class/year ---")
+
+    db.query(QuizSetupWritingHomework).filter(
+        QuizSetupWritingHomework.class_name == payload.class_name,
+        QuizSetupWritingHomework.class_year == payload.class_year
+    ).delete(synchronize_session=False)
+
+    db.commit()
+
+    print("🗑️ Existing config deleted (if any)")
+    print("\n--- Creating new Writing HOMEWORK quiz setup ---")
+
+    quiz = QuizSetupWritingHomework(
+        class_name=payload.class_name,
+        class_year=payload.class_year,
+        subject=payload.subject,
+        topic=payload.topic,
+        difficulty=payload.difficulty
+    )
+
+    db.add(quiz)
+    db.commit()
+    db.refresh(quiz)
+
+    return {
+        "message": "Writing homework quiz setup saved",
+        "quiz_id": quiz.id
+    } 
 @app.post("/api/quizzes-writing")
 def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db)):
     print("\n--- Deleting previous Writing quiz setups ---")
