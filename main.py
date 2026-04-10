@@ -1567,6 +1567,92 @@ class StudentExamResponseOCThinkingSkills(Base):
     )
     student = relationship("Student")
     exam = relationship("Exam")
+
+
+class StudentHomeworkOCThinkingSkills(Base):
+    __tablename__ = "student_homework_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # ✅ SAME TYPE as students.id (String)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+
+    # 🔥 Points to HomeworkExamOCThinkingSkills
+    homework_exam_id = Column(
+        Integer,
+        ForeignKey("homework_exams_oc_thinking_skills.id"),
+        nullable=False
+    )
+
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(Integer, nullable=False)
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship("Student")
+
+    homework_exam = relationship("HomeworkExamOCThinkingSkills")
+
+    responses = relationship(
+        "StudentHomeworkResponseOCThinkingSkills",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
+
+
+class StudentHomeworkResponseOCThinkingSkills(Base):
+    __tablename__ = "student_homework_response_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # ✅ SAME TYPE as students.id
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+
+    # 🔥 Homework reference
+    homework_exam_id = Column(
+        Integer,
+        ForeignKey("homework_exams_oc_thinking_skills.id"),
+        nullable=False
+    )
+
+    # 🔥 Attempt reference
+    homework_attempt_id = Column(
+        Integer,
+        ForeignKey("student_homework_oc_thinking_skills.id"),
+        nullable=False
+    )
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)  # NULL = not attempted
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentHomeworkOCThinkingSkills",
+        back_populates="responses"
+    )
+
+    student = relationship("Student")
+
+    homework_exam = relationship("HomeworkExamOCThinkingSkills")
+
  
 class StudentExamResponseWriting(Base):
     __tablename__ = "student_exam_response_writing"
@@ -34124,7 +34210,170 @@ def copy_to_admin_snapshot_oc_thinking_skills(
         )
 
     db.bulk_save_objects(admin_rows)
- 
+
+
+
+@app.post("/api/student/submit-homework-oc-thinking-skills")
+def submit_homework_oc_thinking_skills(
+    req: FinishExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ SUBMIT OC HOMEWORK START ================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Validate student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == req.student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ ABORT: Student not found for student_id =", req.student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved:", {
+        "external_id": student.student_id,
+        "internal_id": student.id
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch MOST RECENT homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkOCThinkingSkills)
+        .filter(StudentHomeworkOCThinkingSkills.student_id == student.student_id)
+        .order_by(StudentHomeworkOCThinkingSkills.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("❌ ABORT: No homework attempt exists for student")
+        raise HTTPException(
+            status_code=404,
+            detail="No OC Thinking Skills homework attempt found"
+        )
+
+    print("✅ Latest homework attempt found:", {
+        "attempt_id": attempt.id,
+        "homework_exam_id": attempt.homework_exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Load homework exam definition
+    # --------------------------------------------------
+    homework = (
+        db.query(HomeworkExamOCThinkingSkills)
+        .filter(
+            HomeworkExamOCThinkingSkills.id == attempt.homework_exam_id,
+            HomeworkExamOCThinkingSkills.subject == "thinking_skills"
+        )
+        .first()
+    )
+
+    if not homework:
+        print("❌ ABORT: Homework exam not found")
+        raise HTTPException(status_code=404, detail="Homework exam not found")
+
+    questions = homework.questions or []
+    total_questions = len(questions)
+    question_map = {q["q_id"]: q for q in questions}
+
+    print("📊 Homework loaded:", {
+        "total_questions": total_questions
+    })
+
+    # --------------------------------------------------
+    # 4️⃣ Update responses (idempotent)
+    # --------------------------------------------------
+    correct = 0
+    saved_responses = 0
+
+    for q_id_str, selected in req.answers.items():
+        try:
+            q_id = int(q_id_str)
+        except ValueError:
+            print("⚠️ Skipping invalid q_id:", q_id_str)
+            continue
+
+        q = question_map.get(q_id)
+        if not q:
+            print("⚠️ Question not found in homework JSON:", q_id)
+            continue
+
+        is_correct = selected == q.get("correct")
+
+        if is_correct:
+            correct += 1
+
+        response = (
+            db.query(StudentHomeworkResponseOCThinkingSkills)
+            .filter(
+                StudentHomeworkResponseOCThinkingSkills.homework_attempt_id == attempt.id,
+                StudentHomeworkResponseOCThinkingSkills.q_id == q_id
+            )
+            .first()
+        )
+
+        if not response:
+            print("❌ Homework response row missing:", {
+                "attempt_id": attempt.id,
+                "q_id": q_id
+            })
+            continue
+
+        response.selected_option = selected
+        response.correct_option = q.get("correct")
+        response.is_correct = is_correct
+
+        saved_responses += 1
+
+    wrong = saved_responses - correct
+    accuracy = round((correct / saved_responses) * 100, 2) if saved_responses else 0
+
+    print("📈 Homework scoring summary:", {
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    })
+
+    # --------------------------------------------------
+    # 5️⃣ Mark attempt completed
+    # --------------------------------------------------
+    if attempt.completed_at is None:
+        attempt.completed_at = datetime.now(timezone.utc)
+        print("✅ Homework attempt marked completed")
+
+    db.commit()
+
+    # --------------------------------------------------
+    # 6️⃣ (Optional) Admin snapshot
+    # --------------------------------------------------
+    try:
+        copy_to_admin_snapshot_oc_thinking_skills(
+            db,
+            attempt.id
+        )
+        db.commit()
+    except Exception as e:
+        print("⚠️ Snapshot skipped:", repr(e))
+
+    print("================ SUBMIT OC HOMEWORK END =================\n")
+
+    return {
+        "status": "completed",
+        "total_questions": total_questions,
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    }
+
 
 
 @app.post("/api/student/finish-exam/oc-thinking-skills")
