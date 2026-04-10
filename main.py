@@ -202,16 +202,28 @@ class HomeworkExamOCThinkingSkills(Base):
 class StudentHomeworkOCThinkingSkills(Base):
     __tablename__ = "student_homework_oc_thinking_skills"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"))
-    homework_id = Column(Integer, ForeignKey("generated_homework_oc_thinking_skills.id"))
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
 
-    started_at = Column(DateTime)
-    completed_at = Column(DateTime, nullable=True)
+    # 🔥 FIXED FK (points to your real table)
+    homework_exam_id = Column(
+        Integer,
+        ForeignKey("homework_exams_oc_thinking_skills.id"),
+        nullable=False
+    )
 
-    duration_minutes = Column(Integer)  # 🔥 SAME AS EXAM
+    started_at = Column(DateTime(timezone=True), nullable=False)
 
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    duration_minutes = Column(Integer, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+ 
 class StudentHomeworkResponseOCThinkingSkills(Base):
     __tablename__ = "student_homework_response_oc_thinking_skills"
 
