@@ -1569,47 +1569,6 @@ class StudentExamResponseOCThinkingSkills(Base):
     exam = relationship("Exam")
 
 
-class StudentHomeworkOCThinkingSkills(Base):
-    __tablename__ = "student_homework_oc_thinking_skills"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # ✅ SAME TYPE as students.id (String)
-    student_id = Column(String, ForeignKey("students.id"), nullable=False)
-
-    # 🔥 Points to HomeworkExamOCThinkingSkills
-    homework_exam_id = Column(
-        Integer,
-        ForeignKey("homework_exams_oc_thinking_skills.id"),
-        nullable=False
-    )
-
-    started_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False
-    )
-
-    completed_at = Column(
-        DateTime(timezone=True),
-        nullable=True
-    )
-
-    duration_minutes = Column(Integer, nullable=False)
-
-    # -----------------------------
-    # Relationships
-    # -----------------------------
-    student = relationship("Student")
-
-    homework_exam = relationship("HomeworkExamOCThinkingSkills")
-
-    responses = relationship(
-        "StudentHomeworkResponseOCThinkingSkills",
-        back_populates="attempt",
-        cascade="all, delete-orphan"
-    )
-
 
 class StudentHomeworkResponseOCThinkingSkills(Base):
     __tablename__ = "student_homework_response_oc_thinking_skills"
