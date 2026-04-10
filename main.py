@@ -18089,12 +18089,12 @@ def get_oc_thinking_skills_report(
     "topic_accuracy": topic_accuracy,
     "improvement_areas": improvement_areas
 }
-@router.get("/api/student/homework-report/oc-thinking-skills")
+
+@app.get("/api/student/homework-report/oc-thinking-skills")
 def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depends(get_db)):
 
-    # 1️⃣ Resolve student (external → internal)
+    # 1️⃣ Resolve student
     student = db.query(Student).filter(Student.student_id == student_id).first()
-
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
@@ -18110,7 +18110,7 @@ def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depend
     )
 
     if not attempt:
-        raise HTTPException(status_code=404, detail="No completed homework attempt found")
+        raise HTTPException(status_code=404, detail="No completed attempt")
 
     # 3️⃣ Fetch responses
     responses = (
@@ -18121,29 +18121,85 @@ def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depend
         .all()
     )
 
-    # 4️⃣ Compute score
-    total_questions = len(responses)
-    correct_answers = sum(1 for r in responses if r.is_correct)
-    score = correct_answers
+    # 4️⃣ Basic counts
+    total = len(responses)
 
-    # 5️⃣ Build breakdown
-    breakdown = []
+    attempted = sum(1 for r in responses if r.selected_option is not None)
+    correct = sum(1 for r in responses if r.is_correct)
+    incorrect = sum(
+        1 for r in responses
+        if r.selected_option is not None and not r.is_correct
+    )
+    not_attempted = total - attempted
+
+    score_percent = round((correct / total) * 100, 2) if total else 0
+
+    # 5️⃣ Topic-wise (⚠️ depends on your question data)
+    # For now fallback to "General" if no topic stored
+    topic_map = {}
+
     for r in responses:
-        breakdown.append({
-            "q_id": r.q_id,
-            "selected_option": r.selected_option,
-            "correct_option": r.correct_option,
-            "is_correct": r.is_correct
+        topic = getattr(r, "topic", "General")
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        t = topic_map[topic]
+        t["total"] += 1
+
+        if r.selected_option is None:
+            t["not_attempted"] += 1
+        else:
+            t["attempted"] += 1
+            if r.is_correct:
+                t["correct"] += 1
+            else:
+                t["incorrect"] += 1
+
+    topic_wise_performance = list(topic_map.values())
+
+    # 6️⃣ Improvement Areas
+    improvement_areas = []
+
+    for t in topic_wise_performance:
+        if t["total"] == 0:
+            continue
+
+        accuracy = round((t["correct"] / t["total"]) * 100, 2)
+
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy_percent": accuracy,
+            "limited_data": t["total"] < 3
         })
 
-    # 6️⃣ Return response
+    # sort weakest first
+    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+
+    # 7️⃣ Final response
     return {
-        "score": score,
-        "total": total_questions,
-        "percentage": round((score / total_questions) * 100, 2) if total_questions else 0,
-        "breakdown": breakdown,
-        "completed_at": attempt.completed_at
+        "overall": {
+            "total_questions": total,
+            "attempted": attempted,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "score_percent": score_percent
+        },
+        "topic_wise_performance": topic_wise_performance,
+        "topic_accuracy": topic_wise_performance,  # reuse for now
+        "improvement_areas": improvement_areas,
+        "exam_attempt_id": attempt.id
     }
+
+
 @app.get("/api/student/exam-report/oc-mathematical-reasoning")
 def get_oc_mathematical_reasoning_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
