@@ -204,9 +204,10 @@ class StudentHomeworkOCThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    # ✅ MATCHES students.id (VARCHAR)
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
 
-    # 🔥 FIXED FK (points to your real table)
+    # ✅ matches homework table
     homework_exam_id = Column(
         Integer,
         ForeignKey("homework_exams_oc_thinking_skills.id"),
