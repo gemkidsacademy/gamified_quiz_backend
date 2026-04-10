@@ -15398,28 +15398,28 @@ def sanitize_question_blocks(blocks):
 
 
 
-@app.post("/api/exams/generate-oc-thinking-skills-homework")
+
+@router.post("/api/exams/generate-oc-thinking-skills-homework")
 def generate_oc_thinking_skills_homework_exam(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
     """
-    Generate OC Thinking Skills Homework Exam
+    Generate OC Thinking Skills Homework Exam (scoped by class_year)
     """
 
     print("\n========== OC HOMEWORK EXAM GENERATION START ==========")
 
     class_year = payload.get("class_year")
-    difficulty = payload.get("difficulty")
 
-    if not class_year or not difficulty:
+    if not class_year:
         raise HTTPException(
             status_code=400,
-            detail="class_year and difficulty are required"
+            detail="class_year is required"
         )
 
     # --------------------------------------------------
-    # 1️⃣ Fetch correct homework quiz (SCOPED)
+    # 1️⃣ Fetch latest homework quiz for class_year
     # --------------------------------------------------
     print("\n--- Fetching homework quiz ---")
 
@@ -15428,8 +15428,7 @@ def generate_oc_thinking_skills_homework_exam(
         .filter(
             func.lower(HomeworkQuizOC_TS.subject) == "thinking_skills",
             func.lower(HomeworkQuizOC_TS.class_name) == "oc",
-            HomeworkQuizOC_TS.class_year == class_year,
-            func.lower(HomeworkQuizOC_TS.difficulty) == difficulty.lower()
+            HomeworkQuizOC_TS.class_year == class_year
         )
         .order_by(HomeworkQuizOC_TS.id.desc())
         .first()
@@ -15438,13 +15437,15 @@ def generate_oc_thinking_skills_homework_exam(
     if not quiz:
         raise HTTPException(
             status_code=404,
-            detail="No homework quiz config found"
+            detail=f"No homework quiz found for class_year={class_year}"
         )
 
     print(f"✅ Using Homework Quiz ID: {quiz.id}")
+    print(f"➡️ class_year: {quiz.class_year}")
+    print(f"➡️ difficulty: {quiz.difficulty}")
 
     # --------------------------------------------------
-    # 2️⃣ Generate questions (reuse same engine)
+    # 2️⃣ Generate questions
     # --------------------------------------------------
     print("\n--- Generating questions ---")
 
@@ -15465,7 +15466,7 @@ def generate_oc_thinking_skills_homework_exam(
     print(f"✅ Generated {len(questions)} questions")
 
     # --------------------------------------------------
-    # 3️⃣ Save Homework Exam (NEW TABLE)
+    # 3️⃣ Save Homework Exam
     # --------------------------------------------------
     print("\n--- Saving Homework exam ---")
 
@@ -15493,13 +15494,12 @@ def generate_oc_thinking_skills_homework_exam(
         "message": "OC Thinking Skills homework exam generated successfully",
         "exam_id": new_exam.id,
         "quiz_id": quiz.id,
-        "class_name": "oc",
         "class_year": quiz.class_year,
-        "subject": "thinking_skills",
         "difficulty": quiz.difficulty,
         "total_questions": len(questions),
         "questions": questions
     }
+
 @app.post("/api/exams/generate-oc-thinking-skills")
 def generate_oc_thinking_skills_exam(
     payload: Optional[dict] = Body(default=None),
