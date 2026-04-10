@@ -198,6 +198,37 @@ class HomeworkExamOCThinkingSkills(Base):
     questions = Column(JSON, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class StudentHomeworkOCThinkingSkills(Base):
+    __tablename__ = "student_homework_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(Integer, ForeignKey("students.id"))
+    homework_id = Column(Integer, ForeignKey("generated_homework_oc_thinking_skills.id"))
+
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime, nullable=True)
+
+    duration_minutes = Column(Integer)  # 🔥 SAME AS EXAM
+
+class StudentHomeworkResponseOCThinkingSkills(Base):
+    __tablename__ = "student_homework_response_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(Integer)
+    homework_id = Column(Integer)
+    homework_attempt_id = Column(Integer, ForeignKey("student_homework_oc_thinking_skills.id"))
+
+    q_id = Column(String)
+    topic = Column(String)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String)
+
+    is_correct = Column(Boolean, nullable=True)
+ 
  
 class TopicConfig(BaseModel):
     name: str
@@ -31447,6 +31478,189 @@ def start_exam(
         "questions": jsonable_encoder(normalized_questions),
         "remaining_time": int(new_attempt.duration_minutes * 60)
     } 
+
+
+@app.post("/api/student/start-homework-oc-thinking-skills")
+def start_homework_oc_thinking_skills(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ START OC HOMEWORK =================")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found:", repr(req.student_id))
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch latest homework exam
+    # --------------------------------------------------
+    homework = (
+        db.query(HomeworkExamOCThinkingSkills)
+        .filter(
+            func.lower(HomeworkExamOCThinkingSkills.class_name) == "oc",
+            HomeworkExamOCThinkingSkills.subject == "thinking_skills"
+        )
+        .order_by(HomeworkExamOCThinkingSkills.created_at.desc())
+        .first()
+    )
+
+    if not homework:
+        raise HTTPException(
+            status_code=404,
+            detail="OC Thinking Skills homework not found"
+        )
+
+    print(f"📘 Homework loaded | homework_id={homework.id}")
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch latest attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkOCThinkingSkills)
+        .filter(
+            StudentHomeworkOCThinkingSkills.student_id == student.id,
+            StudentHomeworkOCThinkingSkills.homework_exam_id == homework.id
+        )
+        .order_by(StudentHomeworkOCThinkingSkills.started_at.desc())
+        .first()
+    )
+
+    MAX_DURATION = timedelta(minutes=40)
+    now = datetime.now(timezone.utc)
+
+    # --------------------------------------------------
+    # Normalize questions
+    # --------------------------------------------------
+    normalized_questions = normalize_thinking_skills_questions(
+        homework.questions or [],
+        db
+    )
+
+    # --------------------------------------------------
+    # 4️⃣ Existing attempt logic (SAME AS EXAM)
+    # --------------------------------------------------
+    if attempt:
+        print(
+            "🧠 Existing homework attempt found | "
+            f"attempt_id={attempt.id} | "
+            f"started_at={attempt.started_at} | "
+            f"completed_at={attempt.completed_at}"
+        )
+
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        expires_at = started_at + MAX_DURATION
+        elapsed = int((now - started_at).total_seconds())
+
+        print(
+            "⏱️ Timer evaluation | "
+            f"now={now} | "
+            f"expires_at={expires_at} | "
+            f"elapsed_seconds={elapsed}"
+        )
+
+        # ⛔ Timeout
+        if attempt.completed_at is None and now > expires_at:
+            print("⛔ Homework attempt expired")
+
+            attempt.completed_at = expires_at
+            db.commit()
+
+            return {"completed": True}
+
+        # ✅ Already completed
+        if attempt.completed_at is not None:
+            print("✅ Homework already completed")
+            return {"completed": True}
+
+        # ▶ Resume
+        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+
+        print(
+            "▶ Resuming homework | "
+            f"remaining_seconds={remaining}"
+        )
+
+        return {
+            "completed": False,
+            "questions": jsonable_encoder(normalized_questions),
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 🆕 Create new attempt
+    # --------------------------------------------------
+    print("🆕 Creating new homework attempt")
+
+    new_attempt = StudentHomeworkOCThinkingSkills(
+        student_id=student.id,
+        homework_exam_id=homework.id,
+        started_at=now,
+        duration_minutes=40
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    print(
+        "🆕 New homework attempt created | "
+        f"attempt_id={new_attempt.id}"
+    )
+
+    # --------------------------------------------------
+    # 5️⃣ Pre-create response rows
+    # --------------------------------------------------
+    for q in normalized_questions:
+        try:
+            db.add(
+                StudentHomeworkResponseOCThinkingSkills(
+                    student_id=student.id,
+                    homework_exam_id=homework.id,
+                    homework_attempt_id=new_attempt.id,
+                    q_id=q["q_id"],
+                    topic=q.get("topic"),
+                    selected_option=None,
+                    correct_option=q["correct_answer"],
+                    is_correct=None
+                )
+            )
+        except Exception as e:
+            print("⚠️ Skipping homework response row:", q["q_id"], repr(e))
+
+    db.commit()
+
+    print(
+        "➡️ Homework started | "
+        f"questions={len(normalized_questions)} | "
+        f"remaining_seconds={new_attempt.duration_minutes * 60}"
+    )
+
+    print("================ END START OC HOMEWORK =================\n")
+
+    return {
+        "completed": False,
+        "questions": jsonable_encoder(normalized_questions),
+        "remaining_time": int(new_attempt.duration_minutes * 60)
+    }
+ 
 @app.post("/api/student/start-exam-oc-thinking-skills")
 def start_exam_oc_thinking_skills(
     req: StartExamRequest = Body(...),
