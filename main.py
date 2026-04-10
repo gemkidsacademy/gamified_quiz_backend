@@ -182,6 +182,19 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class TopicConfig(BaseModel):
+    name: str
+    ai: int
+    db: int
+    total: int
+
+class HomeworkQuizCreateOC_TS(BaseModel):
+    class_name: str
+    class_year: str  # ✅ REQUIRED
+    subject: str
+    difficulty: str
+    num_topics: int
+    topics: List[TopicConfig]
 class StudentHomeworkResponseWriting(Base):
     __tablename__ = "student_homework_response_writing"
 
