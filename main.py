@@ -38221,7 +38221,7 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
     }
 
 #endpoint to save a certain exam for Exam module
-@router.post("/api/quizzes/oc-thinking-skills-homework")
+@app.post("/api/quizzes/oc-thinking-skills-homework")
 def create_homework_quiz_oc_thinking_skills(
     quiz: HomeworkQuizCreateOC_TS,
     db: Session = Depends(get_db)
