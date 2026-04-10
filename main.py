@@ -14340,27 +14340,70 @@ def generate_homework_exam(
     # --------------------------------------------------
     # 2️⃣ PRE-FLIGHT VALIDATION
     # --------------------------------------------------
+    print("\n===== DEBUG START =====")
+    print(f"Quiz ID: {quiz.id}")
+    print(f"Quiz class_name: '{quiz.class_name}'")
+    print(f"Quiz subject: '{quiz.subject}'")
+    print(f"Quiz difficulty: '{quiz.difficulty}'")
+    print("======================\n")
+    # --------------------------------------------------
+    # 2️⃣ PRE-FLIGHT VALIDATION (DEBUG MODE)
+    # --------------------------------------------------
     for topic in quiz.topics:
         topic_name = topic["name"]
         db_required = int(topic.get("db", 0))
-
-        available = (
-            db.query(Question)
-              .filter(
-                  func.lower(Question.topic) == topic_name.lower(),
-                  func.lower(Question.difficulty) == difficulty.lower(),
-                  func.lower(Question.class_name) == quiz.class_name.lower(),
-                  func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower()
-              )
-              .count()
-        )
-
+    
+        print("\n----- TOPIC DEBUG -----")
+        print(f"Topic from quiz: '{topic_name}'")
+        print(f"Required DB count: {db_required}")
+    
+        # Show normalized values
+        print(f"Normalized topic: '{topic_name.lower().strip()}'")
+        print(f"Normalized subject (quiz): '{quiz.subject.lower().replace(' ', '_')}'")
+        print(f"Difficulty (quiz): '{difficulty}'")
+        print(f"Class (quiz): '{quiz.class_name}'")
+    
+        # Raw count WITHOUT filters
+        raw_count = db.query(Question).filter(
+            func.lower(Question.topic) == topic_name.lower()
+        ).count()
+    
+        print(f"Raw topic-only count: {raw_count}")
+    
+        # Difficulty filter
+        diff_count = db.query(Question).filter(
+            func.lower(Question.topic) == topic_name.lower(),
+            func.lower(Question.difficulty) == difficulty.lower()
+        ).count()
+    
+        print(f"After difficulty filter: {diff_count}")
+    
+        # Class filter
+        class_count = db.query(Question).filter(
+            func.lower(Question.topic) == topic_name.lower(),
+            func.lower(Question.difficulty) == difficulty.lower(),
+            func.lower(Question.class_name) == quiz.class_name.lower()
+        ).count()
+    
+        print(f"After class filter: {class_count}")
+    
+        # FULL filter (your actual logic)
+        available = db.query(Question).filter(
+            func.lower(Question.topic) == topic_name.lower(),
+            func.lower(Question.difficulty) == difficulty.lower(),
+            func.lower(Question.class_name) == quiz.class_name.lower(),
+            func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower().replace(" ", "_")
+        ).count()
+    
+        print(f"After FULL filter (available): {available}")
+        print("--------------------------\n")
+    
         if available < db_required:
+            print("❌ FAILING HERE")
             raise HTTPException(
                 status_code=400,
                 detail=f"Not enough DB questions for topic '{topic_name}'"
             )
-
     # --------------------------------------------------
     # 3️⃣ Generate questions
     # --------------------------------------------------
@@ -14379,7 +14422,7 @@ def generate_homework_exam(
                   func.lower(Question.topic) == topic_name.lower(),
                   func.lower(Question.difficulty) == difficulty.lower(),
                   func.lower(Question.class_name) == quiz.class_name.lower(),
-                  func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower()
+                  func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower().replace(" ", "_")
               )
               .order_by(func.random())
               .limit(db_count)
