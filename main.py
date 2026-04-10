@@ -18089,6 +18089,61 @@ def get_oc_thinking_skills_report(
     "topic_accuracy": topic_accuracy,
     "improvement_areas": improvement_areas
 }
+@router.get("/api/student/homework-report/oc-thinking-skills")
+def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depends(get_db)):
+
+    # 1️⃣ Resolve student (external → internal)
+    student = db.query(Student).filter(Student.student_id == student_id).first()
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # 2️⃣ Get latest completed attempt
+    attempt = (
+        db.query(StudentHomeworkOCThinkingSkills)
+        .filter(
+            StudentHomeworkOCThinkingSkills.student_id == student.id,
+            StudentHomeworkOCThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(StudentHomeworkOCThinkingSkills.completed_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(status_code=404, detail="No completed homework attempt found")
+
+    # 3️⃣ Fetch responses
+    responses = (
+        db.query(StudentHomeworkResponseOCThinkingSkills)
+        .filter(
+            StudentHomeworkResponseOCThinkingSkills.homework_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    # 4️⃣ Compute score
+    total_questions = len(responses)
+    correct_answers = sum(1 for r in responses if r.is_correct)
+    score = correct_answers
+
+    # 5️⃣ Build breakdown
+    breakdown = []
+    for r in responses:
+        breakdown.append({
+            "q_id": r.q_id,
+            "selected_option": r.selected_option,
+            "correct_option": r.correct_option,
+            "is_correct": r.is_correct
+        })
+
+    # 6️⃣ Return response
+    return {
+        "score": score,
+        "total": total_questions,
+        "percentage": round((score / total_questions) * 100, 2) if total_questions else 0,
+        "breakdown": breakdown,
+        "completed_at": attempt.completed_at
+    }
 @app.get("/api/student/exam-report/oc-mathematical-reasoning")
 def get_oc_mathematical_reasoning_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
