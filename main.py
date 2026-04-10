@@ -182,6 +182,23 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class HomeworkExamOCThinkingSkills(Base):
+    __tablename__ = "homework_exams_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    quiz_id = Column(Integer, nullable=False)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    class_year = Column(Integer, nullable=False)
+
+    difficulty = Column(String, nullable=False)
+
+    questions = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class TopicConfig(BaseModel):
     name: str
     ai: int
@@ -15380,8 +15397,109 @@ def sanitize_question_blocks(blocks):
 
 
 
-#5037
 
+@app.post("/api/exams/generate-oc-thinking-skills-homework")
+def generate_oc_thinking_skills_homework_exam(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate OC Thinking Skills Homework Exam
+    """
+
+    print("\n========== OC HOMEWORK EXAM GENERATION START ==========")
+
+    class_year = payload.get("class_year")
+    difficulty = payload.get("difficulty")
+
+    if not class_year or not difficulty:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year and difficulty are required"
+        )
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch correct homework quiz (SCOPED)
+    # --------------------------------------------------
+    print("\n--- Fetching homework quiz ---")
+
+    quiz = (
+        db.query(HomeworkQuizOC_TS)
+        .filter(
+            func.lower(HomeworkQuizOC_TS.subject) == "thinking_skills",
+            func.lower(HomeworkQuizOC_TS.class_name) == "oc",
+            HomeworkQuizOC_TS.class_year == class_year,
+            func.lower(HomeworkQuizOC_TS.difficulty) == difficulty.lower()
+        )
+        .order_by(HomeworkQuizOC_TS.id.desc())
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No homework quiz config found"
+        )
+
+    print(f"✅ Using Homework Quiz ID: {quiz.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Generate questions (reuse same engine)
+    # --------------------------------------------------
+    print("\n--- Generating questions ---")
+
+    try:
+        questions = generate_exam_questions(quiz, db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate homework exam: {str(e)}"
+        )
+
+    if not questions:
+        raise HTTPException(
+            status_code=500,
+            detail="No questions generated"
+        )
+
+    print(f"✅ Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 3️⃣ Save Homework Exam (NEW TABLE)
+    # --------------------------------------------------
+    print("\n--- Saving Homework exam ---")
+
+    new_exam = HomeworkExamOCThinkingSkills(
+        quiz_id=quiz.id,
+        class_name="oc",
+        subject="thinking_skills",
+        class_year=quiz.class_year,
+        difficulty=quiz.difficulty,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"✅ Homework Exam saved with ID: {new_exam.id}")
+
+    # --------------------------------------------------
+    # 4️⃣ Response
+    # --------------------------------------------------
+    print("========== OC HOMEWORK EXAM GENERATION COMPLETE ==========\n")
+
+    return {
+        "message": "OC Thinking Skills homework exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": quiz.id,
+        "class_name": "oc",
+        "class_year": quiz.class_year,
+        "subject": "thinking_skills",
+        "difficulty": quiz.difficulty,
+        "total_questions": len(questions),
+        "questions": questions
+    }
 @app.post("/api/exams/generate-oc-thinking-skills")
 def generate_oc_thinking_skills_exam(
     payload: Optional[dict] = Body(default=None),
