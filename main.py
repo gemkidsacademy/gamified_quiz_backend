@@ -31645,6 +31645,8 @@ def start_homework_oc_thinking_skills(
     # --------------------------------------------------
     # 5️⃣ Pre-create response rows
     # --------------------------------------------------
+    print("🧪 normalized_questions count:", len(normalized_questions))
+    print("🧪 sample question:", normalized_questions[:1])
     for q in normalized_questions:
         try:
             db.add(
@@ -31655,7 +31657,7 @@ def start_homework_oc_thinking_skills(
                     q_id=q["q_id"],
                     topic=q.get("topic"),
                     selected_option=None,
-                    correct_option=q["correct_answer"],
+                    correct_option = q.get("correct") or q.get("correct_answer"),
                     is_correct=None
                 )
             )
@@ -34162,7 +34164,7 @@ def submit_homework_oc_thinking_skills(
     # --------------------------------------------------
     attempt = (
         db.query(StudentHomeworkOCThinkingSkills)
-        .filter(StudentHomeworkOCThinkingSkills.student_id == student.student_id)
+        .filter(StudentHomeworkOCThinkingSkills.student_id == student.id)
         .order_by(StudentHomeworkOCThinkingSkills.started_at.desc())
         .first()
     )
