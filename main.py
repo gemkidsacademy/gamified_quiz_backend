@@ -14320,12 +14320,13 @@ def generate_homework_exam(
     # 1️⃣ Fetch latest quiz
     # --------------------------------------------------
     quiz = (
-        db.query(QuizMathematicalReasoning)
+        db.query(QuizMathematicalReasoningHomework)
         .filter(
-            QuizMathematicalReasoning.subject == "mathematical_reasoning",
-            QuizMathematicalReasoning.class_name == "selective"
+            func.lower(QuizMathematicalReasoningHomework.subject) == "mathematical_reasoning",
+            func.lower(QuizMathematicalReasoningHomework.class_name) == "selective",
+            QuizMathematicalReasoningHomework.class_year == class_year  # 👈 IMPORTANT
         )
-        .order_by(QuizMathematicalReasoning.id.desc())
+        .order_by(QuizMathematicalReasoningHomework.id.desc())
         .first()
     )
 
@@ -14392,7 +14393,7 @@ def generate_homework_exam(
             func.lower(Question.topic) == topic_name.lower(),
             func.lower(Question.difficulty) == difficulty.lower(),
             func.lower(Question.class_name) == quiz.class_name.lower(),
-            func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower().replace(" ", "_")
+            func.lower(Question.subject) == quiz.subject.lower()
         ).count()
     
         print(f"After FULL filter (available): {available}")
@@ -14422,7 +14423,7 @@ def generate_homework_exam(
                   func.lower(Question.topic) == topic_name.lower(),
                   func.lower(Question.difficulty) == difficulty.lower(),
                   func.lower(Question.class_name) == quiz.class_name.lower(),
-                  func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower().replace(" ", "_")
+                  func.lower(Question.subject) == quiz.subject.lower()
               )
               .order_by(func.random())
               .limit(db_count)
