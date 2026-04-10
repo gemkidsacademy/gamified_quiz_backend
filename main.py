@@ -5423,6 +5423,58 @@ def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
     ]
 
     return {"attempts": result}
+
+
+@app.get("/api/student/homework-attempts/oc-thinking-skills")
+def get_homework_oc_thinking_skills_attempts(
+    student_id: str = Query(..., description="External student id e.g. Gem002"),
+    db: Session = Depends(get_db)
+):
+    print("\n📅 FETCHING HOMEWORK ATTEMPTS")
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found:", student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print(f"✅ Student resolved | internal_id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Get ONLY completed homework attempts
+    # --------------------------------------------------
+    attempts = (
+        db.query(StudentHomeworkOCThinkingSkills)
+        .filter(
+            StudentHomeworkOCThinkingSkills.student_id == student.id,
+            StudentHomeworkOCThinkingSkills.completed_at.isnot(None)  # ✅ same rule
+        )
+        .order_by(StudentHomeworkOCThinkingSkills.completed_at.desc())  # latest first
+        .all()
+    )
+
+    print(f"📊 Homework attempts found: {len(attempts)}")
+
+    # --------------------------------------------------
+    # 3️⃣ Format response (MATCH EXAM STRUCTURE)
+    # --------------------------------------------------
+    result = [
+        {
+            "exam_attempt_id": attempt.id,  # 🔥 KEEP SAME KEY (frontend reuse)
+            "completed_at": attempt.completed_at.isoformat()
+        }
+        for attempt in attempts
+    ]
+
+    return result
+
 @app.get("/api/student/exam-attempts/oc-thinking-skills")
 def get_oc_thinking_skills_attempts(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
