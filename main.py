@@ -14348,7 +14348,9 @@ def generate_homework_exam(
             db.query(Question)
               .filter(
                   func.lower(Question.topic) == topic_name.lower(),
-                  func.lower(Question.difficulty) == difficulty.lower()
+                  func.lower(Question.difficulty) == difficulty.lower(),
+                  func.lower(Question.class_name) == quiz.class_name.lower(),
+                  func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower()
               )
               .count()
         )
@@ -14375,7 +14377,9 @@ def generate_homework_exam(
             db.query(Question)
               .filter(
                   func.lower(Question.topic) == topic_name.lower(),
-                  func.lower(Question.difficulty) == difficulty.lower()
+                  func.lower(Question.difficulty) == difficulty.lower(),
+                  func.lower(Question.class_name) == quiz.class_name.lower(),
+                  func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower()
               )
               .order_by(func.random())
               .limit(db_count)
