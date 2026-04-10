@@ -31790,7 +31790,7 @@ def start_homework_oc_thinking_skills(
     
             row = StudentHomeworkResponseOCThinkingSkills(
                 student_id=student.id,
-                homework_exam_id=homework.id,
+                homework_id=homework.id,
                 homework_attempt_id=new_attempt.id,
                 q_id=q_id,  # ✅ FORCE STRING
                 topic=q.get("topic"),
