@@ -14393,7 +14393,7 @@ def generate_homework_exam(
             func.lower(Question.topic) == topic_name.lower(),
             func.lower(Question.difficulty) == difficulty.lower(),
             func.lower(Question.class_name) == quiz.class_name.lower(),
-            func.lower(Question.subject) == quiz.subject.lower()
+            func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower()
         ).count()
     
         print(f"After FULL filter (available): {available}")
@@ -14423,7 +14423,7 @@ def generate_homework_exam(
                   func.lower(Question.topic) == topic_name.lower(),
                   func.lower(Question.difficulty) == difficulty.lower(),
                   func.lower(Question.class_name) == quiz.class_name.lower(),
-                  func.lower(Question.subject) == quiz.subject.lower()
+                  func.replace(func.lower(Question.subject), " ", "_") == quiz.subject.lower()
               )
               .order_by(func.random())
               .limit(db_count)
