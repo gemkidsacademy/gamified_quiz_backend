@@ -18143,28 +18143,64 @@ def get_oc_thinking_skills_report(
 }
 
 @app.get("/api/student/homework-report/oc-thinking-skills")
-def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depends(get_db)):
+def get_homework_report_oc_thinking_skills(
+    student_id: str,
+    exam_attempt_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    print("\n================ HOMEWORK REPORT =================")
 
-    # 1️⃣ Resolve student
-    student = db.query(Student).filter(Student.student_id == student_id).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    # 2️⃣ Get latest completed attempt
-    attempt = (
-        db.query(StudentHomeworkOCThinkingSkills)
-        .filter(
-            StudentHomeworkOCThinkingSkills.student_id == student.id,
-            StudentHomeworkOCThinkingSkills.completed_at.isnot(None)
-        )
-        .order_by(StudentHomeworkOCThinkingSkills.completed_at.desc())
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
         .first()
     )
 
-    if not attempt:
-        raise HTTPException(status_code=404, detail="No completed attempt")
+    if not student:
+        print("❌ Student not found:", student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
 
+    print(f"✅ Student resolved | internal_id={student.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Select attempt (CRITICAL FIX)
+    # --------------------------------------------------
+    if exam_attempt_id is not None:
+        print(f"🎯 Using selected attempt_id={exam_attempt_id}")
+
+        attempt = (
+            db.query(StudentHomeworkOCThinkingSkills)
+            .filter(
+                StudentHomeworkOCThinkingSkills.id == exam_attempt_id,
+                StudentHomeworkOCThinkingSkills.student_id == student.id
+            )
+            .first()
+        )
+    else:
+        print("📌 Using latest completed attempt")
+
+        attempt = (
+            db.query(StudentHomeworkOCThinkingSkills)
+            .filter(
+                StudentHomeworkOCThinkingSkills.student_id == student.id,
+                StudentHomeworkOCThinkingSkills.completed_at.isnot(None)
+            )
+            .order_by(StudentHomeworkOCThinkingSkills.completed_at.desc())
+            .first()
+        )
+
+    if not attempt:
+        print("❌ No valid attempt found")
+        raise HTTPException(status_code=404, detail="Attempt not found")
+
+    print(f"📘 Attempt selected | attempt_id={attempt.id}")
+
+    # --------------------------------------------------
     # 3️⃣ Fetch responses
+    # --------------------------------------------------
     responses = (
         db.query(StudentHomeworkResponseOCThinkingSkills)
         .filter(
@@ -18173,7 +18209,11 @@ def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depend
         .all()
     )
 
-    # 4️⃣ Basic counts
+    print(f"📊 Responses fetched: {len(responses)}")
+
+    # --------------------------------------------------
+    # 4️⃣ Compute overall stats
+    # --------------------------------------------------
     total = len(responses)
 
     attempted = sum(1 for r in responses if r.selected_option is not None)
@@ -18186,12 +18226,18 @@ def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depend
 
     score_percent = round((correct / total) * 100, 2) if total else 0
 
-    # 5️⃣ Topic-wise (⚠️ depends on your question data)
-    # For now fallback to "General" if no topic stored
+    print(
+        f"📈 Stats | total={total}, attempted={attempted}, "
+        f"correct={correct}, incorrect={incorrect}"
+    )
+
+    # --------------------------------------------------
+    # 5️⃣ Topic-wise performance
+    # --------------------------------------------------
     topic_map = {}
 
     for r in responses:
-        topic = getattr(r, "topic", "General")
+        topic = r.topic or "General"
 
         if topic not in topic_map:
             topic_map[topic] = {
@@ -18217,7 +18263,9 @@ def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depend
 
     topic_wise_performance = list(topic_map.values())
 
-    # 6️⃣ Improvement Areas
+    # --------------------------------------------------
+    # 6️⃣ Improvement areas (weakest topics first)
+    # --------------------------------------------------
     improvement_areas = []
 
     for t in topic_wise_performance:
@@ -18232,11 +18280,14 @@ def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depend
             "limited_data": t["total"] < 3
         })
 
-    # sort weakest first
     improvement_areas.sort(key=lambda x: x["accuracy_percent"])
 
-    # 7️⃣ Final response
-    return {
+    print("📉 Improvement areas computed")
+
+    # --------------------------------------------------
+    # 7️⃣ Final response (FRONTEND CONTRACT SAFE)
+    # --------------------------------------------------
+    result = {
         "overall": {
             "total_questions": total,
             "attempted": attempted,
@@ -18246,12 +18297,15 @@ def get_homework_report_oc_thinking_skills(student_id: str, db: Session = Depend
             "score_percent": score_percent
         },
         "topic_wise_performance": topic_wise_performance,
-        "topic_accuracy": topic_wise_performance,  # reuse for now
+        "topic_accuracy": topic_wise_performance,  # reuse
         "improvement_areas": improvement_areas,
-        "exam_attempt_id": attempt.id
+        "exam_attempt_id": attempt.id   # 🔥 IMPORTANT for dropdown sync
     }
 
+    print("✅ REPORT READY")
+    print("================ END HOMEWORK REPORT =================\n")
 
+    return result
 @app.get("/api/student/exam-report/oc-mathematical-reasoning")
 def get_oc_mathematical_reasoning_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
