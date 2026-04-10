@@ -31753,35 +31753,94 @@ def start_homework_oc_thinking_skills(
         f"attempt_id={new_attempt.id}"
     )
 
+    
+    # 5️⃣ Pre-create response rows (DEEP DEBUG MODE)
     # --------------------------------------------------
-    # 5️⃣ Pre-create response rows
-    # --------------------------------------------------
+    print("\n🧪 ===== RESPONSE INSERT DEBUG START =====")
+    
     print("🧪 normalized_questions count:", len(normalized_questions))
-    print("🧪 sample question:", normalized_questions[:1])
-    for q in normalized_questions:
+    
+    if not normalized_questions:
+        print("❌ CRITICAL: normalized_questions is EMPTY")
+    
+    inserted_count = 0
+    
+    for idx, q in enumerate(normalized_questions):
+        print(f"\n🔍 Processing question #{idx}")
+    
         try:
-            db.add(
-                StudentHomeworkResponseOCThinkingSkills(
-                    student_id=student.id,
-                    homework_exam_id=homework.id,
-                    homework_attempt_id=new_attempt.id,
-                    q_id=q["q_id"],
-                    topic=q.get("topic"),
-                    selected_option=None,
-                    correct_option = q.get("correct") or q.get("correct_answer"),
-                    is_correct=None
-                )
+            print("   raw q:", q)
+    
+            q_id_raw = q.get("q_id")
+            q_id = str(q_id_raw) if q_id_raw is not None else None
+    
+            correct_option = q.get("correct") or q.get("correct_answer")
+    
+            print(f"   q_id_raw: {q_id_raw} | q_id(str): {q_id}")
+            print(f"   correct_option: {correct_option}")
+            print(f"   topic: {q.get('topic')}")
+    
+            # 🚨 VALIDATION
+            if not q_id:
+                print("❌ SKIP: q_id is missing")
+                continue
+    
+            if correct_option is None:
+                print("⚠️ WARNING: correct_option is NULL")
+    
+            row = StudentHomeworkResponseOCThinkingSkills(
+                student_id=student.id,
+                homework_exam_id=homework.id,
+                homework_attempt_id=new_attempt.id,
+                q_id=q_id,  # ✅ FORCE STRING
+                topic=q.get("topic"),
+                selected_option=None,
+                correct_option=correct_option,
+                is_correct=None
             )
+    
+            db.add(row)
+            inserted_count += 1
+    
+            print(f"   ✅ Row prepared for insert (q_id={q_id})")
+    
         except Exception as e:
-            print("⚠️ Skipping homework response row:", q["q_id"], repr(e))
-
-    db.commit()
-
-    print(
-        "➡️ Homework started | "
-        f"questions={len(normalized_questions)} | "
-        f"remaining_seconds={new_attempt.duration_minutes * 60}"
+            print("❌ EXCEPTION during row creation")
+            print("   q:", q)
+            print("   error:", repr(e))
+    
+    
+    print("\n🧪 Attempting DB COMMIT...")
+    
+    try:
+        db.commit()
+        print("✅ DB COMMIT SUCCESS")
+    
+    except Exception as e:
+        print("❌ DB COMMIT FAILED")
+        print("   error:", repr(e))
+        db.rollback()
+        raise
+    
+    # --------------------------------------------------
+    # VERIFY INSERTION (VERY IMPORTANT)
+    # --------------------------------------------------
+    print("\n🧪 Verifying inserted rows...")
+    
+    rows = (
+        db.query(StudentHomeworkResponseOCThinkingSkills)
+        .filter(
+            StudentHomeworkResponseOCThinkingSkills.homework_attempt_id == new_attempt.id
+        )
+        .all()
     )
+    
+    print(f"📊 Rows found in DB: {len(rows)} (expected: {inserted_count})")
+    
+    if len(rows) != inserted_count:
+        print("❌ MISMATCH: Some rows were NOT inserted!")
+    
+    print("🧪 ===== RESPONSE INSERT DEBUG END =====\n")
 
     print("================ END START OC HOMEWORK =================\n")
 
