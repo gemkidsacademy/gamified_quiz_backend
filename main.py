@@ -34399,7 +34399,7 @@ def submit_homework_oc_thinking_skills(
 
         if is_correct:
             correct += 1
-
+        q_id = str(q_id)
         response = (
             db.query(StudentHomeworkResponseOCThinkingSkills)
             .filter(
