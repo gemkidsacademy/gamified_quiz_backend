@@ -15399,7 +15399,7 @@ def sanitize_question_blocks(blocks):
 
 
 
-@router.post("/api/exams/generate-oc-thinking-skills-homework")
+@app.post("/api/exams/generate-oc-thinking-skills-homework")
 def generate_oc_thinking_skills_homework_exam(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
