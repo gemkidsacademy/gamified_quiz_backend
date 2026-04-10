@@ -1570,47 +1570,6 @@ class StudentExamResponseOCThinkingSkills(Base):
 
 
 
-class StudentHomeworkResponseOCThinkingSkills(Base):
-    __tablename__ = "student_homework_response_oc_thinking_skills"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # ✅ SAME TYPE as students.id
-    student_id = Column(String, ForeignKey("students.id"), nullable=False)
-
-    # 🔥 Homework reference
-    homework_exam_id = Column(
-        Integer,
-        ForeignKey("homework_exams_oc_thinking_skills.id"),
-        nullable=False
-    )
-
-    # 🔥 Attempt reference
-    homework_attempt_id = Column(
-        Integer,
-        ForeignKey("student_homework_oc_thinking_skills.id"),
-        nullable=False
-    )
-
-    q_id = Column(Integer, nullable=False)
-    topic = Column(String, nullable=True)
-
-    selected_option = Column(String, nullable=True)
-    correct_option = Column(String, nullable=True)
-
-    is_correct = Column(Boolean, nullable=True)  # NULL = not attempted
-
-    # -----------------------------
-    # Relationships
-    # -----------------------------
-    attempt = relationship(
-        "StudentHomeworkOCThinkingSkills",
-        back_populates="responses"
-    )
-
-    student = relationship("Student")
-
-    homework_exam = relationship("HomeworkExamOCThinkingSkills")
 
  
 class StudentExamResponseWriting(Base):
