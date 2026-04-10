@@ -2615,6 +2615,21 @@ class Quiz(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class HomeworkQuizOC_TS(Base):
+    __tablename__ = "homework_quizzes_oc_thinking_skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    class_year = Column(Integer, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+    topics = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class QuizOCThinkingSkills(Base):
     __tablename__ = "quizzes_oc_thinking_skills"
 
@@ -38206,6 +38221,70 @@ def get_pending_quiz(user_id: int, db: Session = Depends(get_db)):
     }
 
 #endpoint to save a certain exam for Exam module
+@router.post("/api/quizzes/oc-thinking-skills-homework")
+def create_homework_quiz_oc_thinking_skills(
+    quiz: HomeworkQuizCreateOC_TS,
+    db: Session = Depends(get_db)
+):
+    print("\n========== OC HOMEWORK QUIZ CREATION START ==========")
+
+    try:
+        print("📦 Payload:", quiz.dict())
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # ✅ Validate topics
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(status_code=400, detail="topics must be a list")
+
+    try:
+        # ----------------------------------
+        # ✅ Scoped cleanup (SAFE VERSION)
+        # ----------------------------------
+        deleted = (
+            db.query(HomeworkQuizOC_TS)
+            .filter(
+                func.lower(HomeworkQuizOC_TS.class_name) == quiz.class_name.lower(),
+                HomeworkQuizOC_TS.class_year == quiz.class_year,
+                func.lower(HomeworkQuizOC_TS.subject) == quiz.subject.lower(),
+                func.lower(HomeworkQuizOC_TS.difficulty) == quiz.difficulty.lower()
+            )
+            .delete(synchronize_session=False)
+        )
+
+        print(f"🗑️ Deleted existing homework configs: {deleted}")
+
+        db.commit()
+
+        # ----------------------------------
+        # ✅ Create new config
+        # ----------------------------------
+        new_quiz = HomeworkQuizOC_TS(
+            class_name=quiz.class_name,
+            subject=quiz.subject,
+            class_year=quiz.class_year,  # ✅ now consistent
+            difficulty=quiz.difficulty,
+            num_topics=quiz.num_topics,
+            topics=[t.dict() for t in quiz.topics]
+        )
+
+        db.add(new_quiz)
+        db.commit()
+        db.refresh(new_quiz)
+
+        print("✅ Homework Quiz created with ID:", new_quiz.id)
+
+        return {
+            "message": "Homework config saved successfully",
+            "quiz_id": new_quiz.id
+        }
+
+    except Exception as e:
+        print("\n❌ DB ERROR ❌")
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/quizzes/oc-thinking-skills")
 def create_quiz_oc_thinking_skills(
