@@ -182,6 +182,58 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class StudentHomeworkReportOCReading(Base):
+    __tablename__ = "student_homework_report_oc_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Text, nullable=False)
+    exam_id = Column(Integer, nullable=False)
+    session_id = Column(Integer, nullable=False)
+
+    topic = Column(String, nullable=False)
+    question_id = Column(String, nullable=False)
+
+    selected_answer = Column(String, nullable=True)
+    correct_answer = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, default=False)
+ 
+class StartHomeworkExamRequest(BaseModel):
+    student_id: str
+    class_year: str   # ✅ REQUIRED
+ 
+class StudentHomeworkReadingOC(Base):
+    __tablename__ = "student_homework_reading_oc"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(Text, nullable=False)
+
+    exam_id = Column(Integer, nullable=False)
+
+    class_year = Column(String, nullable=False)  # ✅ IMPORTANT
+
+    started_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    finished = Column(Boolean, default=False, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
+    report_json = Column(JSON, nullable=True)
+ 
 class ReadingHomeworkExamRequest(BaseModel):
     class_name: str
     difficulty: str
@@ -21250,6 +21302,250 @@ def auto_submit_oc_reading_exam(session: StudentExamReading, db: Session):
     except Exception:
         db.rollback()
         raise
+def auto_submit_oc_reading_homework(session: StudentHomeworkReadingOC, db: Session):
+    """
+    Auto-submit OC Reading HOMEWORK on timeout.
+    Mirrors exam logic but uses homework tables.
+    """
+
+    print("🟡 AUTO-SUBMIT HOMEWORK triggered for session:", session.id)
+
+    # --------------------------------------------------
+    # 🚫 Already finalized
+    # --------------------------------------------------
+    if session.finished and session.report_json:
+        print("⚠️ Auto-submit skipped — session already finalized")
+        return
+
+    existing_rows = (
+        db.query(StudentHomeworkReportOCReading)
+        .filter(StudentHomeworkReportOCReading.session_id == session.id)
+        .count()
+    )
+
+    if existing_rows > 0:
+        print("⚠️ Auto-submit skipped — report rows already exist")
+        return
+
+    # --------------------------------------------------
+    # 📘 Fetch generated HOMEWORK exam
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedHomeworkExamReading)
+        .filter(GeneratedHomeworkExamReading.id == session.exam_id)
+        .first()
+    )
+
+    if not exam or not exam.exam_json:
+        raise Exception("Homework exam data missing during auto-submit")
+
+    sections = exam.exam_json.get("sections", [])
+
+    TOPIC_LABELS = {
+        "main_idea": "Main Idea and Summary",
+        "main_idea_and_summary": "Main Idea and Summary",
+        "comparative_analysis": "Comparative Analysis",
+        "gapped_text": "Gapped Text",
+    }
+
+    topic_stats = {}
+    total = attempted = correct = incorrect = not_attempted = 0
+
+    # --------------------------------------------------
+    # 🧠 Process all questions (no answers → all unattempted)
+    # --------------------------------------------------
+    for section in sections:
+        raw_topic = section.get("topic") or section.get("question_type")
+        topic = TOPIC_LABELS.get(raw_topic, "Other")
+
+        questions = section.get("questions", [])
+
+        topic_stats.setdefault(topic, {
+            "total": 0,
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "not_attempted": 0
+        })
+
+        for q in questions:
+            question_id = q.get("question_id")
+            correct_answer = q.get("correct_answer")
+
+            total += 1
+            not_attempted += 1
+
+            topic_stats[topic]["total"] += 1
+            topic_stats[topic]["not_attempted"] += 1
+
+            db.add(StudentHomeworkReportOCReading(
+                student_id=session.student_id,
+                exam_id=session.exam_id,
+                session_id=session.id,
+                topic=topic,
+                question_id=question_id,
+                selected_answer=None,
+                correct_answer=correct_answer,
+                is_correct=False
+            ))
+
+    # --------------------------------------------------
+    # 📊 Build report
+    # --------------------------------------------------
+    topics_report = []
+
+    for topic, stats in topic_stats.items():
+        topics_report.append({
+            "topic": topic,
+            "total": stats["total"],
+            "attempted": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "accuracy": 0.0
+        })
+
+    report_json = {
+        "overall": {
+            "total_questions": total,
+            "attempted": attempted,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy": 0.0,
+            "score": 0.0,
+            "result": "Fail"
+        },
+        "topics": topics_report,
+        "has_sufficient_data": False,
+        "improvement_order": []
+    }
+
+    # --------------------------------------------------
+    # ✅ Finalize session
+    # --------------------------------------------------
+    session.finished = True
+    session.completed_at = datetime.now(timezone.utc)
+    session.report_json = report_json
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    print("✅ Homework auto-submit completed for session:", session.id)
+
+@app.post("/api/exams/start-oc-reading-homework")
+def start_exam_oc_reading_homework(
+    req: StartHomeworkExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ START-OC-READING-HOMEWORK ==================")
+    print("📘 Incoming request payload:", req.dict())
+
+    student_id = req.student_id.strip()
+    class_year = req.class_year.strip()
+
+    if not student_id:
+        raise HTTPException(status_code=400, detail="Invalid student_id")
+
+    if not class_year:
+        raise HTTPException(status_code=400, detail="Invalid class_year")
+
+    print("✅ Using:", {"student_id": student_id, "class_year": class_year})
+
+    # --------------------------------------------------
+    # 1️⃣ Get latest homework exam (WITH class_year)
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedHomeworkExamReading)
+        .filter(
+            GeneratedHomeworkExamReading.class_name == "oc",
+            GeneratedHomeworkExamReading.class_year == class_year   # ✅ IMPORTANT
+        )
+        .order_by(GeneratedHomeworkExamReading.id.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(404, "OC reading homework exam not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch existing attempt (ONE per exam)
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkReadingOC)
+        .filter(
+            StudentHomeworkReadingOC.student_id == student_id,
+            StudentHomeworkReadingOC.exam_id == exam.id
+        )
+        .order_by(StudentHomeworkReadingOC.started_at.desc())
+        .first()
+    )
+
+    # --------------------------------------------------
+    # 🚫 Already finished
+    # --------------------------------------------------
+    if attempt and attempt.finished:
+        return {
+            "completed": True,
+            "attempt_id": attempt.id
+        }
+
+    duration_minutes = exam.exam_json.get("duration_minutes", 40)
+
+    # --------------------------------------------------
+    # 🔁 Resume attempt
+    # --------------------------------------------------
+    if attempt and not attempt.finished:
+        now = datetime.now(timezone.utc)
+        started_at = attempt.started_at
+
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, duration_minutes * 60 - elapsed)
+
+        if remaining == 0:
+            auto_submit_oc_reading_homework(
+                session=attempt,
+                db=db
+            )
+
+            return {
+                "completed": True,
+                "attempt_id": attempt.id
+            }
+
+        return {
+            "completed": False,
+            "attempt_id": attempt.id,
+            "exam_id": exam.id,
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 🆕 Create new attempt
+    # --------------------------------------------------
+    new_attempt = StudentHomeworkReadingOC(
+        student_id=student_id,
+        exam_id=exam.id,
+        class_year=class_year,   # ✅ IMPORTANT
+        started_at=datetime.now(timezone.utc),
+        finished=False
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    return {
+        "completed": False,
+        "attempt_id": new_attempt.id,
+        "exam_id": exam.id,
+        "remaining_time": duration_minutes * 60
+    }
 
 
 @app.post("/api/exams/start-oc-reading")
