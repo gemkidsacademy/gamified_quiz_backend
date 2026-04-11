@@ -31931,7 +31931,7 @@ def start_homework_oc_mathematical_reasoning(
     print("\n🚀 START OC MR HOMEWORK REQUEST")
     print("➡ payload:", req)
 
-    #student_id = req.get("student_id")
+    student_id = req.get("student_id")
     if not student_id:
         raise HTTPException(status_code=400, detail="student_id required")
     # --------------------------------------------------
