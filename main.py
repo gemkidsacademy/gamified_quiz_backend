@@ -182,6 +182,28 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class ReadingHomeworkExamConfig(Base):
+    __tablename__ = "reading_homework_exam_config"
+
+    id = Column(Integer, primary_key=True, index=True)
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)   # ✅ NEW
+    num_topics = Column(Integer, nullable=False)
+    topics = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+class TopicConfig(BaseModel):
+    name: str
+    num_questions: int
+
+class ReadingHomeworkExamConfigCreate(BaseModel):
+    class_name: str
+    subject: str
+    difficulty: str
+    class_year: str   # ✅ NEW
+    topics: List[TopicConfig]
+ 
 class HomeworkExamOCMathematicalReasoning(Base):
     __tablename__ = "homework_exam_oc_mr"
 
@@ -30959,6 +30981,74 @@ def create_reading_homework(
         "status": "success",
         "id": new_config.id,
         "message": f"{payload.class_name} {payload.class_year} reading homework created successfully.",
+        "created_at": new_config.created_at
+    }
+
+@app.post("/api/admin/create-reading-homework-config")
+def create_reading_homework_config(
+    payload: ReadingHomeworkExamConfigCreate,
+    db: Session = Depends(get_db)
+):
+    # ---------------------------------------
+    # VALIDATION
+    # ---------------------------------------
+    if len(payload.topics) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one topic must be provided."
+        )
+
+    num_topics = len(payload.topics)
+
+    topics_json = [
+        {
+            "name": t.name,
+            "num_questions": t.num_questions
+        }
+        for t in payload.topics
+    ]
+
+    class_name_clean = payload.class_name.strip().lower()
+    subject_clean = payload.subject.strip().lower()
+    class_year_clean = payload.class_year.strip().lower()
+
+    print("\n--- Deleting dependent Reading HOMEWORK configs ---")
+    print(f"   class_name={class_name_clean}, subject={subject_clean}, class_year={class_year_clean}")
+
+    # ---------------------------------------
+    # DELETE EXISTING (SCOPED CORRECTLY)
+    # ---------------------------------------
+    db.query(ReadingHomeworkExamConfig).filter(
+        func.lower(func.trim(ReadingHomeworkExamConfig.class_name)) == class_name_clean,
+        func.lower(func.trim(ReadingHomeworkExamConfig.subject)) == subject_clean,
+        func.lower(func.trim(ReadingHomeworkExamConfig.class_year)) == class_year_clean
+    ).delete(synchronize_session=False)
+
+    db.commit()
+    print("🗑️ Previous homework configs deleted (scoped)")
+
+    # ---------------------------------------
+    # CREATE NEW CONFIG
+    # ---------------------------------------
+    print("\n--- Creating new Reading HOMEWORK config ---")
+
+    new_config = ReadingHomeworkExamConfig(
+        class_name=payload.class_name,
+        subject=payload.subject,
+        difficulty=payload.difficulty,
+        class_year=payload.class_year,   # ✅ IMPORTANT
+        num_topics=num_topics,
+        topics=topics_json
+    )
+
+    db.add(new_config)
+    db.commit()
+    db.refresh(new_config)
+
+    return {
+        "status": "success",
+        "config_id": new_config.id,
+        "message": f"{payload.class_name} reading homework configuration saved successfully.",
         "created_at": new_config.created_at
     }
 
