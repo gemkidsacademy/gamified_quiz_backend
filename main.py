@@ -783,7 +783,81 @@ class StudentExamResponseOCMathematicalReasoning(Base):
     )
     student = relationship("Student")
     exam = relationship("Exam")
+
+class StudentHomeworkOCMathematicalReasoning(Base):
+    __tablename__ = "student_homework_oc_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, ForeignKey("students.id"))
+
+    homework_exam_id = Column(
+        Integer,
+        ForeignKey("homework_exam_oc_mr.id"),
+        nullable=False
+    )
+
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(Integer, nullable=False, default=40)
+
+    # relationships
+    student = relationship("Student")
+
+    homework_exam = relationship("HomeworkExamOCMathematicalReasoning")
+
+    responses = relationship(
+        "StudentHomeworkResponseOCMathematicalReasoning",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
  
+
+class StudentHomeworkResponseOCMathematicalReasoning(Base):
+    __tablename__ = "student_homework_response_oc_mathematical_reasoning"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, ForeignKey("students.id"), nullable=False)
+
+    homework_exam_id = Column(
+        Integer,
+        ForeignKey("homework_exam_oc_mr.id"),
+        nullable=False
+    )
+
+    homework_attempt_id = Column(
+        Integer,
+        ForeignKey("student_homework_oc_mathematical_reasoning.id"),
+        nullable=False
+    )
+
+    q_id = Column(Integer, nullable=False)
+    topic = Column(String, nullable=True)
+
+    selected_option = Column(String, nullable=True)
+    correct_option = Column(String, nullable=True)
+
+    is_correct = Column(Boolean, nullable=True)
+
+    # relationships
+    attempt = relationship(
+        "StudentHomeworkOCMathematicalReasoning",
+        back_populates="responses"
+    )
+
+    student = relationship("Student")
+    homework_exam = relationship("HomeworkExamOCMathematicalReasoning")
+
 class ExplainReadingRequest(BaseModel):
     question_text: str
     options: Optional[Dict[str, str]] = {}
@@ -30628,7 +30702,190 @@ def start_exam(
         "questions": normalized,
         "remaining_time": 40 * 60
     }
- 
+
+
+@app.post("/api/student/start-homework-oc-mathematical-reasoning")
+def start_homework_oc_mathematical_reasoning(
+    req: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n🚀 START OC MR HOMEWORK REQUEST")
+    print("➡ payload:", req)
+
+    student_id = req.get("student_id")
+    class_year = req.get("class_year")
+
+    if not student_id or not class_year:
+        raise HTTPException(status_code=400, detail="student_id and class_year required")
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == student_id.lower().strip())
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Load homework exam (class_year + latest)
+    # --------------------------------------------------
+    homework_exam = (
+        db.query(HomeworkExamOCMathematicalReasoning)
+        .filter(
+            func.lower(HomeworkExamOCMathematicalReasoning.class_name) == "oc",
+            func.lower(HomeworkExamOCMathematicalReasoning.subject) == "mathematical_reasoning",
+            func.lower(HomeworkExamOCMathematicalReasoning.class_year) == class_year.lower()
+        )
+        .order_by(HomeworkExamOCMathematicalReasoning.created_at.desc())
+        .first()
+    )
+
+    if not homework_exam:
+        raise HTTPException(status_code=404, detail="Homework exam not generated")
+
+    # --------------------------------------------------
+    # 🔧 NORMALIZER (same as exam)
+    # --------------------------------------------------
+    def normalize_questions(raw_questions):
+        normalized = []
+
+        for q in raw_questions or []:
+            fixed = dict(q)
+
+            raw_blocks = (
+                fixed.get("question_blocks")
+                or fixed.get("blocks")
+                or []
+            )
+
+            fixed["blocks"] = raw_blocks
+            resolve_images(fixed["blocks"], db, "start-homework-oc-mr")
+
+            opts = fixed.get("options")
+
+            if isinstance(opts, dict):
+                fixed["options"] = {
+                    k: {"content": v} for k, v in opts.items()
+                }
+            elif isinstance(opts, list):
+                fixed["options"] = {
+                    chr(65 + i): {"content": v}
+                    for i, v in enumerate(opts)
+                }
+            else:
+                fixed["options"] = {}
+
+            resolve_option_images(fixed["options"], db, "start-homework-oc-mr")
+
+            normalized.append(fixed)
+
+        return normalized
+
+    # --------------------------------------------------
+    # 🔍 CHECK ATTEMPT
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkOCMathematicalReasoning)
+        .filter(
+            StudentHomeworkOCMathematicalReasoning.student_id == student.id,
+            StudentHomeworkOCMathematicalReasoning.homework_exam_id == homework_exam.id
+        )
+        .order_by(StudentHomeworkOCMathematicalReasoning.started_at.desc())
+        .first()
+    )
+
+    # --------------------------------------------------
+    # 🟢 COMPLETED
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is not None:
+        return {"completed": True}
+
+    # --------------------------------------------------
+    # 🟡 ACTIVE → RESUME
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is None:
+
+        existing_count = (
+            db.query(StudentHomeworkResponseOCMathematicalReasoning)
+            .filter(
+                StudentHomeworkResponseOCMathematicalReasoning.homework_attempt_id == attempt.id
+            )
+            .count()
+        )
+
+        if existing_count == 0:
+            for q in homework_exam.questions or []:
+                db.add(
+                    StudentHomeworkResponseOCMathematicalReasoning(
+                        student_id=student.id,
+                        homework_exam_id=homework_exam.id,
+                        homework_attempt_id=attempt.id,
+                        q_id=q["q_id"],
+                        topic=q.get("topic"),
+                        selected_option=None,
+                        correct_option=q.get("correct"),
+                        is_correct=None
+                    )
+                )
+            db.commit()
+
+        started_at = attempt.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        elapsed = int((now - started_at).total_seconds())
+        remaining = max(0, 40 * 60 - elapsed)
+
+        if remaining == 0:
+            attempt.completed_at = now
+            db.commit()
+            return {"completed": True}
+
+        return {
+            "completed": False,
+            "questions": normalize_questions(homework_exam.questions),
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 🔵 NEW ATTEMPT
+    # --------------------------------------------------
+    new_attempt = StudentHomeworkOCMathematicalReasoning(
+        student_id=student.id,
+        homework_exam_id=homework_exam.id,
+        started_at=datetime.now(timezone.utc)
+    )
+
+    db.add(new_attempt)
+    db.commit()
+
+    for q in homework_exam.questions or []:
+        db.add(
+            StudentHomeworkResponseOCMathematicalReasoning(
+                student_id=student.id,
+                homework_exam_id=homework_exam.id,
+                homework_attempt_id=new_attempt.id,
+                q_id=q["q_id"],
+                topic=q.get("topic"),
+                selected_option=None,
+                correct_option=q.get("correct"),
+                is_correct=None
+            )
+        )
+
+    db.commit()
+
+    return {
+        "completed": False,
+        "questions": normalize_questions(homework_exam.questions),
+        "remaining_time": 40 * 60
+    }
+
 @app.post("/api/student/start-exam-oc-mathematical-reasoning")
 def start_exam_oc_mathematical_reasoning(
     req: StartExamRequest = Body(...),
