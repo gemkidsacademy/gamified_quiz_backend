@@ -182,6 +182,22 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class HomeworkExamOCMathematicalReasoning(Base):
+    __tablename__ = "homework_exam_oc_mr"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    homework_quiz_id = Column(Integer, nullable=False)
+
+    class_name = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+
+    questions = Column(JSON, nullable=False)
+
+    created_at = Column(DateTime, server_default=func.now())
+ 
 class HomeworkQuiz_OC_MR(Base):
     __tablename__ = "homework_quiz_oc_mr"
 
@@ -16112,9 +16128,10 @@ def generate_oc_mathematical_reasoning_homework(
     # --------------------------------------------------
     print("\n--- Saving OC MR Homework ---")
 
-    new_exam = Exam(
-        quiz_id=None,  # ⚠️ important (not from Quiz table)
-        class_name="OC",
+    new_exam = HomeworkExamOCMathematicalReasoning(
+        homework_quiz_id=homework_quiz.id,
+        class_name="oc",
+        class_year=class_year,
         subject="mathematical_reasoning",
         difficulty=homework_quiz.difficulty,
         questions=questions
