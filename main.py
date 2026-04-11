@@ -17412,6 +17412,117 @@ def edit_student_exam_module(
         "message": "Student updated successfully",
         "student_id": student.student_id
     }
+@app.get("/api/exams/oc-reading-homework-report")
+def get_oc_reading_homework_report(
+    session_id: int = Query(..., description="OC Reading Homework session ID"),
+    db: Session = Depends(get_db)
+):
+    print("\n================ GET OC READING HOMEWORK REPORT ================")
+    print("🆔 Incoming session_id:", session_id)
+
+    # --------------------------------------------------
+    # 1️⃣ Load session (HOMEWORK)
+    # --------------------------------------------------
+    print("🟡 STEP 1: Loading StudentHomeworkReadingOC session")
+
+    session = (
+        db.query(StudentHomeworkReadingOC)
+        .filter(StudentHomeworkReadingOC.id == session_id)
+        .first()
+    )
+
+    if not session:
+        print("❌ ERROR: Session not found for session_id =", session_id)
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    print("✅ Session loaded:", {
+        "session_id": session.id,
+        "student_id": session.student_id,
+        "exam_id": session.exam_id,
+        "started_at": session.started_at,
+        "finished": session.finished,
+        "has_report_json": bool(session.report_json)
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Finished guard
+    # --------------------------------------------------
+    print("🟡 STEP 2: Checking finished flag")
+
+    if not session.finished:
+        print("❌ ERROR: Session exists but homework is NOT finished")
+        raise HTTPException(status_code=400, detail="Homework not finished yet")
+
+    print("✅ Session is marked as finished")
+
+    # --------------------------------------------------
+    # 3️⃣ Happy path — report snapshot exists
+    # --------------------------------------------------
+    print("🟡 STEP 3: Checking report_json snapshot")
+
+    if session.report_json:
+        print("🟢 report_json FOUND — returning stored report")
+        print("📦 Report top-level keys:", list(session.report_json.keys()))
+        print("================ END GET OC READING HOMEWORK REPORT ================\n")
+        return session.report_json
+
+    print("⚠️ report_json MISSING — entering diagnostic mode")
+
+    # --------------------------------------------------
+    # 4️⃣ Inspect per-question report rows (HOMEWORK table)
+    # --------------------------------------------------
+    print("🟡 STEP 4: Counting StudentHomeworkReportOCReading rows")
+
+    answer_count = (
+        db.query(StudentHomeworkReportOCReading)
+        .filter(StudentHomeworkReportOCReading.session_id == session.id)
+        .count()
+    )
+
+    print("📝 StudentHomeworkReportOCReading row count:", answer_count)
+
+    # --------------------------------------------------
+    # 5️⃣ Finished but no answers → abandoned / timeout
+    # --------------------------------------------------
+    if answer_count == 0:
+        print("❌ DIAGNOSIS: Finished session with ZERO answers")
+        print("➡️ Likely causes: timeout, tab closed, submit not called")
+        print("================ END GET OC READING HOMEWORK REPORT ================\n")
+
+        return {
+            "status": "no_report",
+            "reason": "Homework finished without submission data",
+            "attempt_id": session.id,
+            "student_id": session.student_id,
+            "exam_id": session.exam_id,
+            "can_retake": True
+        }
+
+    # --------------------------------------------------
+    # 6️⃣ Answers exist but snapshot missing → inconsistency
+    # --------------------------------------------------
+    print("❌ DIAGNOSIS: Answers exist but report_json is missing")
+    print("➡️ Likely causes: crash during submit, DB rollback, manual DB edit")
+
+    print("🧨 Diagnostic summary:", {
+        "session_id": session.id,
+        "answer_count": answer_count,
+        "finished": session.finished,
+        "has_report_json": False
+    })
+
+    print("================ END GET OC READING HOMEWORK REPORT ================\n")
+
+    return {
+        "status": "report_missing",
+        "reason": "Submission data exists but report snapshot is missing",
+        "attempt_id": session.id,
+        "student_id": session.student_id,
+        "exam_id": session.exam_id,
+        "answer_count": answer_count
+    }
+
+
 @app.get("/api/exams/oc-reading-report")
 def get_oc_reading_report(
     session_id: int = Query(..., description="OC Reading Exam session ID"),
