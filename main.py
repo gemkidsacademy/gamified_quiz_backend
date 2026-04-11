@@ -6960,6 +6960,31 @@ def get_naplan_numeracy_exam_dates(
 
     return exam_dates
 
+@app.get("/api/exams/oc-reading-homework-attempts")
+def get_oc_reading_homework_attempts(
+    student_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    attempts = (
+        db.query(StudentHomeworkReadingOC)   # ✅ CHANGED TABLE
+        .filter(
+            func.lower(StudentHomeworkReadingOC.student_id) == student_id.lower(),
+            StudentHomeworkReadingOC.finished == True
+        )
+        .order_by(desc(StudentHomeworkReadingOC.completed_at))
+        .all()
+    )
+
+    return {
+        "attempts": [
+            {
+                "session_id": a.id,
+                "created_at": a.completed_at or a.created_at
+            }
+            for a in attempts
+        ]
+    }
+
 
 @app.get("/api/exams/oc-reading-attempts")
 def get_oc_reading_attempts(
