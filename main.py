@@ -20508,7 +20508,7 @@ def submit_oc_reading_homework(payload: dict, db: Session = Depends(get_db)):
         # --------------------------------------------------
         # 0️⃣ Validate payload
         # --------------------------------------------------
-        session_id = payload.get("session_id")
+        #session_id = payload.get("session_id")
         answers = payload.get("answers", {})
 
         if not session_id:
