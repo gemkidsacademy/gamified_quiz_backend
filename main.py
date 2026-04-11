@@ -182,6 +182,10 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class ReadingHomeworkExamRequest(BaseModel):
+    class_name: str
+    difficulty: str
+    class_year: str   # ✅ REQUIRED
 class GeneratedHomeworkExamReading(Base):
     __tablename__ = "generated_homework_exam_reading"
 
@@ -26182,7 +26186,7 @@ def save_quiz_setup(
 
 @app.post("/api/exams/generate-oc-reading-homework")
 def generate_exam_oc_reading_homework(
-    payload: ReadingExamRequest,   # we can reuse this if it includes class_year
+    payload: ReadingHomeworkExamRequest,   # we can reuse this if it includes class_year
     db: Session = Depends(get_db)
 ):
     """
