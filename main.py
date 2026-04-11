@@ -4830,6 +4830,52 @@ def generate_writing_homework(
         print("❌ ERROR:", str(e))
         db.rollback()
         raise e
+
+def normalize_questions_for_homework(raw_questions, db: Session):
+    normalized = []
+
+    for q in raw_questions or []:
+        fixed = dict(q)
+
+        # -----------------------------
+        # ✅ NORMALIZE BLOCKS
+        # -----------------------------
+        raw_blocks = (
+            fixed.get("question_blocks")
+            or fixed.get("blocks")
+            or []
+        )
+
+        fixed["blocks"] = raw_blocks
+
+        # 🔥 resolve question images (you were missing this too btw)
+        resolve_images(fixed["blocks"], db, "start-homework")
+
+        # -----------------------------
+        # ✅ NORMALIZE OPTIONS
+        # -----------------------------
+        opts = fixed.get("options")
+
+        if isinstance(opts, dict):
+            fixed["options"] = {
+                k: {"content": v} for k, v in opts.items()
+            }
+        elif isinstance(opts, list):
+            fixed["options"] = {
+                chr(65 + i): {"content": v}
+                for i, v in enumerate(opts)
+            }
+        else:
+            fixed["options"] = {}
+
+        # 🔥 THIS IS THE MISSING PIECE
+        resolve_option_images(fixed["options"], db, "start-homework")
+
+        normalized.append(fixed)
+
+    return normalized
+ 
+
 @app.post("/api/student/start-homework-mr")
 def start_homework_mr(
     req: StartExamRequest = Body(...),
@@ -4921,7 +4967,7 @@ def start_homework_mr(
                 )
             db.commit()
 
-        normalized = normalize_questions_for_homework(homework.questions)
+        normalized = normalize_questions_for_homework(homework.questions, db)
 
         return {
             "completed": False,
@@ -4962,7 +5008,7 @@ def start_homework_mr(
 
     db.commit()
 
-    normalized = normalize_questions_for_homework(homework.questions)
+    normalized = normalize_questions_for_homework(homework.questions, db)
 
     return {
         "completed": False,
