@@ -30868,11 +30868,8 @@ def start_homework_oc_mathematical_reasoning(
     print("➡ payload:", req)
 
     student_id = req.get("student_id")
-    class_year = req.get("class_year")
-
-    if not student_id or not class_year:
-        raise HTTPException(status_code=400, detail="student_id and class_year required")
-
+    if not student_id:
+        raise HTTPException(status_code=400, detail="student_id required")
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
@@ -30884,6 +30881,8 @@ def start_homework_oc_mathematical_reasoning(
 
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
+    class_year = student.student_year
+    print("🎯 Resolved class_year from student:", class_year)
 
     # --------------------------------------------------
     # 2️⃣ Load homework exam (class_year + latest)
