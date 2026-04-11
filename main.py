@@ -21456,7 +21456,10 @@ def start_exam_oc_reading_homework(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
     
-    class_year = str(student.student_year).strip()
+    raw_year = str(student.student_year).strip()
+
+    # Extract number (handles "Year 4", "4", etc.)
+    class_year = raw_year.split()[-1]
 
     
     
