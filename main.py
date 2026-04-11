@@ -201,7 +201,7 @@ class StudentHomeworkReportOCReading(Base):
  
 class StartHomeworkExamRequest(BaseModel):
     student_id: str
-    class_year: str   # ✅ REQUIRED
+    
  
 class StudentHomeworkReadingOC(Base):
     __tablename__ = "student_homework_reading_oc"
@@ -21442,16 +21442,24 @@ def start_exam_oc_reading_homework(
 ):
     print("\n================ START-OC-READING-HOMEWORK ==================")
     print("📘 Incoming request payload:", req.dict())
-
     student_id = req.student_id.strip()
-    class_year = req.class_year.strip()
-
+    
     if not student_id:
         raise HTTPException(status_code=400, detail="Invalid student_id")
 
-    if not class_year:
-        raise HTTPException(status_code=400, detail="Invalid class_year")
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == student_id.lower())
+        .first()
+    )
+    
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    class_year = str(student.student_year).strip().lower()
 
+    
+    
     print("✅ Using:", {"student_id": student_id, "class_year": class_year})
 
     # --------------------------------------------------
@@ -21460,8 +21468,8 @@ def start_exam_oc_reading_homework(
     exam = (
         db.query(GeneratedHomeworkExamReading)
         .filter(
-            GeneratedHomeworkExamReading.class_name == "oc",
-            GeneratedHomeworkExamReading.class_year == class_year   # ✅ IMPORTANT
+            func.lower(GeneratedHomeworkExamReading.class_name) == "oc",
+            func.lower(GeneratedHomeworkExamReading.class_year) == class_year   # ✅ IMPORTANT
         )
         .order_by(GeneratedHomeworkExamReading.id.desc())
         .first()
@@ -21476,7 +21484,7 @@ def start_exam_oc_reading_homework(
     attempt = (
         db.query(StudentHomeworkReadingOC)
         .filter(
-            StudentHomeworkReadingOC.student_id == student_id,
+            func.lower(StudentHomeworkReadingOC.student_id) == student_id.lower(),
             StudentHomeworkReadingOC.exam_id == exam.id
         )
         .order_by(StudentHomeworkReadingOC.started_at.desc())
