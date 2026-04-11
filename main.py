@@ -16039,6 +16039,109 @@ def generate_oc_thinking_skills_exam(
         "questions": questions
     }
 
+
+@app.post("/api/exams/generate-oc-mathematical-reasoning-homework")
+def generate_oc_mathematical_reasoning_homework(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate OC Mathematical Reasoning Homework exam
+    Uses HomeworkQuiz_OC_MR table
+    """
+
+    print("\n========== OC MR HOMEWORK GENERATION START ==========")
+
+    # --------------------------------------------------
+    # 0️⃣ Extract class_year
+    # --------------------------------------------------
+    class_year = payload.get("class_year")
+
+    if not class_year:
+        raise HTTPException(status_code=400, detail="class_year is required")
+
+    print("➡️ class_year:", class_year)
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch homework quiz config
+    # --------------------------------------------------
+    print("\n--- Fetching OC MR homework quiz ---")
+
+    homework_quiz = (
+        db.query(HomeworkQuiz_OC_MR)
+        .filter(
+            func.lower(HomeworkQuiz_OC_MR.subject) == "mathematical_reasoning",
+            func.lower(HomeworkQuiz_OC_MR.class_name) == "oc",
+            func.lower(HomeworkQuiz_OC_MR.class_year) == class_year.lower()
+        )
+        .order_by(HomeworkQuiz_OC_MR.id.desc())
+        .first()
+    )
+
+    if not homework_quiz:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No homework config found for {class_year}"
+        )
+
+    print(f"✅ Using Homework Config ID: {homework_quiz.id}")
+
+    # --------------------------------------------------
+    # 2️⃣ Generate questions (reuse same logic)
+    # --------------------------------------------------
+    print("\n--- Generating homework questions ---")
+
+    try:
+        questions = generate_exam_questions(homework_quiz, db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate homework: {str(e)}"
+        )
+
+    if not questions:
+        raise HTTPException(
+            status_code=500,
+            detail="No questions generated"
+        )
+
+    print(f"✅ Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 3️⃣ Save homework exam (OPTION 1: reuse Exam table)
+    # --------------------------------------------------
+    print("\n--- Saving OC MR Homework ---")
+
+    new_exam = Exam(
+        quiz_id=None,  # ⚠️ important (not from Quiz table)
+        class_name="OC",
+        subject="mathematical_reasoning",
+        difficulty=homework_quiz.difficulty,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"✅ Homework saved with ID: {new_exam.id}")
+
+    # --------------------------------------------------
+    # 4️⃣ Response
+    # --------------------------------------------------
+    print("========== OC MR HOMEWORK GENERATION COMPLETE ==========\n")
+
+    return {
+        "message": "OC Mathematical Reasoning homework generated successfully",
+        "exam_id": new_exam.id,
+        "class_name": "oc",
+        "class_year": class_year,
+        "subject": "mathematical_reasoning",
+        "difficulty": homework_quiz.difficulty,
+        "total_questions": len(questions),
+        "questions": questions
+    }
+
 @app.post("/api/exams/generate-oc-mathematical-reasoning")
 def generate_oc_mathematical_reasoning_exam(
     payload: Optional[dict] = Body(default=None),
