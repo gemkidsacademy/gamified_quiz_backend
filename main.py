@@ -26240,7 +26240,6 @@ def generate_exam_oc_reading_homework(
                 func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
                 func.lower(QuestionReading.difficulty) == difficulty.lower(),
                 func.lower(QuestionReading.topic) == topic_lower,
-                func.lower(QuestionReading.class_year) == class_year.lower(),  # ✅ IMPORTANT
             )
             .all()
         )
