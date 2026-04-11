@@ -21456,7 +21456,7 @@ def start_exam_oc_reading_homework(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
     
-    class_year = str(student.student_year).strip().lower()
+    class_year = str(student.student_year).strip()
 
     
     
@@ -21465,11 +21465,15 @@ def start_exam_oc_reading_homework(
     # --------------------------------------------------
     # 1️⃣ Get latest homework exam (WITH class_year)
     # --------------------------------------------------
+    print("🔍 DB MATCH CHECK:", {
+        "expected_class_year": class_year,
+        "type": type(class_year)
+    })
     exam = (
         db.query(GeneratedHomeworkExamReading)
         .filter(
             func.lower(GeneratedHomeworkExamReading.class_name) == "oc",
-            func.lower(GeneratedHomeworkExamReading.class_year) == class_year   # ✅ IMPORTANT
+            GeneratedHomeworkExamReading.class_year == class_year  # ✅ IMPORTANT
         )
         .order_by(GeneratedHomeworkExamReading.id.desc())
         .first()
