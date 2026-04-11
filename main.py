@@ -5592,7 +5592,41 @@ def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
 
     return {"attempts": result}
 
+@app.get("/api/student/homework-attempts/oc-mathematical-reasoning")
+def get_homework_attempts(student_id: str, db: Session = Depends(get_db)):
 
+    # 🔹 STEP 1: Resolve internal student using EXTERNAL ID
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # 🔹 STEP 2: Query homework attempts using INTERNAL ID
+    attempts = (
+        db.query(StudentHomeworkOCMathematicalReasoning)
+        .filter(
+            StudentHomeworkOCMathematicalReasoning.student_id == student.id,
+            StudentHomeworkOCMathematicalReasoning.completed_at.isnot(None)
+        )
+        .order_by(StudentHomeworkOCMathematicalReasoning.completed_at.desc())
+        .all()
+    )
+
+    # 🔹 STEP 3: Format response
+    result = [
+        {
+            "attempt_id": a.id,
+            "completed_at": a.completed_at
+        }
+        for a in attempts
+    ]
+
+    return {"attempts": result}
+ 
 @app.get("/api/student/homework-attempts/oc-thinking-skills")
 def get_homework_oc_thinking_skills_attempts(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
