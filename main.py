@@ -4999,8 +4999,8 @@ def start_homework_mr(
                 )
             db.commit()
 
-        #normalized = normalize_questions_for_homework(homework.questions, db)
-        normalized = normalize_questions_for_homework(homework.questions)
+        normalized = normalize_questions_for_homework(homework.questions, db)
+        
         return {
             "completed": False,
             "questions": normalized,
@@ -5040,8 +5040,8 @@ def start_homework_mr(
 
     db.commit()
 
-    #normalized = normalize_questions_for_homework(homework.questions, db)
-    normalized = normalize_questions_for_homework(homework.questions)
+    normalized = normalize_questions_for_homework(homework.questions, db)
+    
     return {
         "completed": False,
         "questions": normalized,
