@@ -22025,6 +22025,67 @@ def get_homework_reading_content(exam_id: int, db: Session = Depends(get_db)):
         "exam_json": exam.exam_json
     }
 
+
+
+@app.get("/api/exams/reading-content-homework/{exam_id}")
+def get_reading_content_homework(exam_id: int, db: Session = Depends(get_db)):
+    print("\n📘 GET READING CONTENT (HOMEWORK)")
+    print("➡ exam_id:", exam_id)
+
+    exam = (
+        db.query(GeneratedHomeworkExamReading)   # ✅ CHANGED
+        .filter(GeneratedHomeworkExamReading.id == exam_id)
+        .first()
+    )
+
+    if not exam:
+        print("❌ ERROR: GeneratedHomeworkExamReading not found")
+        raise HTTPException(status_code=404, detail="Homework exam content not found")
+
+    if not exam.exam_json:
+        print("❌ ERROR: exam.exam_json is NULL or empty")
+        raise HTTPException(status_code=404, detail="Homework exam content not found")
+
+    # 🔍 DEBUG
+    print("✅ exam.exam_json type:", type(exam.exam_json))
+    print("🔑 exam.exam_json keys:", exam.exam_json.keys())
+
+    sections = exam.exam_json.get("sections", [])
+    print("📚 sections type:", type(sections))
+    print("📚 sections length:", len(sections) if isinstance(sections, list) else "N/A")
+
+    if isinstance(sections, list) and len(sections) > 0:
+        first_section = sections[0]
+        print("🧱 FIRST SECTION KEYS:", first_section.keys())
+
+        for key in ["questions", "items", "question_list"]:
+            if key in first_section:
+                print(f"🧩 FOUND QUESTIONS UNDER KEY: '{key}'")
+                print("🧩 questions count:", len(first_section[key]))
+                if len(first_section[key]) > 0:
+                    print("🧩 FIRST QUESTION KEYS:", first_section[key][0].keys())
+                break
+        else:
+            print("⚠️ NO QUESTION ARRAY FOUND in first section")
+
+    # 🔧 Normalize reading_material
+    for section in sections:
+        rm = section.get("reading_material")
+
+        if isinstance(rm, str):
+            print("🛠 Normalizing reading_material for section:", section.get("section_id"))
+
+            section["reading_material"] = {
+                "title": section.get("topic") or "Reading Passage",
+                "content": rm
+            }
+
+    print("📤 RETURNING HOMEWORK exam_json TO FRONTEND\n")
+
+    return {
+        "exam_json": exam.exam_json
+    }
+
 @app.get("/api/exams/reading-content/{exam_id}")
 def get_reading_content(exam_id: int, db: Session = Depends(get_db)):
     print("\n📘 GET READING CONTENT")
