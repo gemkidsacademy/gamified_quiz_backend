@@ -182,6 +182,19 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class GeneratedHomeworkExamReading(Base):
+    __tablename__ = "generated_homework_exam_reading"
+
+    id = Column(Integer, primary_key=True, index=True)
+    config_id = Column(Integer, nullable=False)
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)   # ✅ NEW
+    total_questions = Column(Integer, nullable=False)
+    exam_json = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+ 
 class ReadingHomeworkExamConfig(Base):
     __tablename__ = "reading_homework_exam_config"
 
@@ -26163,6 +26176,173 @@ def save_quiz_setup(
     return {
         "message": "Quiz setup saved successfully",
         "quiz_id": quiz.id,
+    }
+
+
+
+@app.post("/api/exams/generate-oc-reading-homework")
+def generate_exam_oc_reading_homework(
+    payload: ReadingExamRequest,   # we can reuse this if it includes class_year
+    db: Session = Depends(get_db)
+):
+    """
+    Generate an OC Reading HOMEWORK exam.
+    Includes class_year filtering.
+    """
+
+    print("\n================ GENERATE OC READING HOMEWORK ================")
+    print("Incoming payload:", payload.dict())
+
+    class_name = payload.class_name.strip()
+    difficulty = payload.difficulty.strip()
+    class_year = payload.class_year.strip()   # ✅ NEW
+
+    # --------------------------------------------------
+    # 1️⃣ LOAD HOMEWORK CONFIG
+    # --------------------------------------------------
+    cfg = (
+        db.query(ReadingHomeworkExamConfig)
+        .filter(
+            func.lower(ReadingHomeworkExamConfig.class_name) == class_name.lower(),
+            func.lower(ReadingHomeworkExamConfig.difficulty) == difficulty.lower(),
+            func.lower(ReadingHomeworkExamConfig.class_year) == class_year.lower(),  # ✅ NEW
+        )
+        .first()
+    )
+
+    if not cfg:
+        raise HTTPException(404, "No OC reading homework config found")
+
+    subject = cfg.subject
+    topics = cfg.topics
+    warnings = []
+
+    sections = []
+
+    # --------------------------------------------------
+    # 2️⃣ PROCESS EACH TOPIC (same logic)
+    # --------------------------------------------------
+    for section_index, topic_spec in enumerate(topics, start=1):
+        topic_name = topic_spec["name"].strip()
+        required = int(topic_spec["num_questions"])
+        topic_lower = topic_name.lower()
+
+        section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
+
+        bundles = (
+            db.query(QuestionReading)
+            .filter(
+                func.lower(QuestionReading.class_name) == class_name.lower(),
+                func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
+                func.lower(QuestionReading.difficulty) == difficulty.lower(),
+                func.lower(QuestionReading.topic) == topic_lower,
+                func.lower(QuestionReading.class_year) == class_year.lower(),  # ✅ IMPORTANT
+            )
+            .all()
+        )
+
+        if not bundles:
+            warnings.append(f"No bundles found for topic '{topic_name}'")
+            continue
+
+        matched_bundle = next(
+            (b for b in bundles if b.total_questions == required),
+            None
+        )
+
+        if not matched_bundle:
+            raise HTTPException(
+                400,
+                f"Invalid homework config: '{topic_name}' requires {required} questions"
+            )
+
+        bundle_json = matched_bundle.exam_bundle or {}
+
+        question_type = bundle_json.get("question_type")
+        reading_material = bundle_json.get("reading_material")
+        answer_options = bundle_json.get("answer_options")
+
+        # Rendering hints
+        if question_type in ("main_idea", "literary_analysis"):
+            passage_style = "literary"
+        else:
+            passage_style = "informational"
+
+        render_hint = (
+            "gapped_text"
+            if question_type == "gapped_text"
+            else "standard"
+        )
+
+        options_scope = "shared" if answer_options else "per_question"
+
+        collected_questions = [
+            copy.deepcopy(q) for q in bundle_json.get("questions", [])
+        ]
+
+        for idx, q in enumerate(collected_questions, start=1):
+            q["question_number"] = idx
+            q["question_id"] = f"{section_id}_Q{idx}"
+
+        section = {
+            "section_id": section_id,
+            "section_index": section_index,
+            "question_type": question_type,
+            "topic": topic_name,
+            "reading_material": reading_material,
+            "passage_style": passage_style,
+            "render_hint": render_hint,
+            "options_scope": options_scope,
+            "questions": collected_questions,
+        }
+
+        if answer_options:
+            section["answer_options"] = answer_options
+
+        sections.append(section)
+
+    # --------------------------------------------------
+    # 3️⃣ FINALIZE
+    # --------------------------------------------------
+    if not sections:
+        raise HTTPException(400, "No OC reading homework sections generated")
+
+    total_questions = sum(len(s["questions"]) for s in sections)
+
+    exam_json = {
+        "class_name": class_name,
+        "subject": subject,
+        "difficulty": difficulty,
+        "class_year": class_year,   # ✅ NEW
+        "duration_minutes": 40,
+        "total_questions": total_questions,
+        "sections": sections,
+    }
+
+    # --------------------------------------------------
+    # 4️⃣ SAVE (SEPARATE TABLE)
+    # --------------------------------------------------
+    saved = GeneratedHomeworkExamReading(
+        config_id=cfg.id,
+        class_name=class_name,
+        subject=subject,
+        difficulty=difficulty,
+        class_year=class_year,   # ✅ NEW
+        total_questions=total_questions,
+        exam_json=exam_json,
+    )
+
+    db.add(saved)
+    db.commit()
+    db.refresh(saved)
+
+    print("✅ OC Reading HOMEWORK generated. ID:", saved.id)
+
+    return {
+        "generated_exam_id": saved.id,
+        "total_questions": total_questions,
+        "warnings": warnings,
+        "exam_json": exam_json,
     }
 
 
