@@ -182,6 +182,38 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class HomeworkQuiz_OC_MR(Base):
+    __tablename__ = "homework_quiz_oc_mr"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)   # "oc"
+    class_year = Column(String, nullable=False)   # "Year 5"
+    subject = Column(String, nullable=False)      # "mathematical_reasoning"
+    difficulty = Column(String, nullable=False)
+
+    num_topics = Column(Integer, nullable=False)
+
+    topics = Column(JSON, nullable=False)  # same structure
+
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class TopicCreate(BaseModel):
+    name: str
+    ai: int
+    db: int
+    total: int
+
+
+class QuizCreate_OC_MR_Homework(BaseModel):
+    class_name: str
+    class_year: str
+    subject: str
+    difficulty: str
+    num_topics: int
+    topics: List[TopicCreate]
+ 
 class HomeworkExamOCThinkingSkills(Base):
     __tablename__ = "homework_exams_oc_thinking_skills"
 
@@ -39453,6 +39485,99 @@ def create_quiz_oc_thinking_skills(
 
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/quizzes/oc-mathematical-reasoning-homework")
+def create_quiz_oc_mathematical_reasoning_homework(
+    quiz: QuizCreate_OC_MR_Homework,
+    db: Session = Depends(get_db)
+):
+    """
+    Create OC Mathematical Reasoning Homework quiz
+    - Uses separate table
+    - Deletes only same class_year config
+    - Fully isolated from exam flow
+    """
+
+    print("\n========== OC MR HOMEWORK CREATION START ==========")
+
+    # -----------------------------
+    # 1️⃣ Debug payload
+    # -----------------------------
+    try:
+        quiz_dict = quiz.dict()
+        print("📦 Payload:", quiz_dict)
+    except Exception as e:
+        print("❌ Payload parsing failed:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    print("➡️ class_name:", quiz.class_name)
+    print("➡️ class_year:", quiz.class_year)
+    print("➡️ subject:", quiz.subject)
+    print("➡️ difficulty:", quiz.difficulty)
+    print("➡️ num_topics:", quiz.num_topics)
+    print("➡️ topics count:", len(quiz.topics))
+
+    # -----------------------------
+    # 2️⃣ Validate topics
+    # -----------------------------
+    if not isinstance(quiz.topics, list):
+        raise HTTPException(status_code=400, detail="topics must be a list")
+
+    try:
+
+        # -----------------------------
+        # 3️⃣ Scoped delete (ONLY same class_year)
+        # -----------------------------
+        deleted_homework = (
+            db.query(HomeworkQuiz_OC_MR)
+            .filter(
+                func.lower(HomeworkQuiz_OC_MR.subject) == "mathematical_reasoning",
+                func.lower(HomeworkQuiz_OC_MR.class_name) == "oc",
+                func.lower(HomeworkQuiz_OC_MR.class_year) == quiz.class_year.lower()
+            )
+            .delete(synchronize_session=False)
+        )
+
+        print(f"🗑️ Deleted OC MR homework (same class_year): {deleted_homework}")
+
+        db.commit()
+        print("✅ Cleanup commit complete")
+
+        # -----------------------------
+        # 4️⃣ Create new homework config
+        # -----------------------------
+        print("\n--- Creating OC MR Homework ---")
+
+        new_homework = HomeworkQuiz_OC_MR(
+            class_name=quiz.class_name.lower(),   # store normalized
+            class_year=quiz.class_year,
+            subject="mathematical_reasoning",     # enforce
+            difficulty=quiz.difficulty,
+            num_topics=quiz.num_topics,
+            topics=[t.dict() for t in quiz.topics]
+        )
+
+        db.add(new_homework)
+        db.commit()
+        db.refresh(new_homework)
+
+        print("✅ Homework created with ID:", new_homework.id)
+        print("========== OC MR HOMEWORK CREATION COMPLETE ==========\n")
+
+        return {
+            "message": "OC Mathematical Reasoning homework created successfully",
+            "homework_id": new_homework.id
+        }
+
+    except Exception as e:
+        print("\n❌ DB ERROR ❌")
+        print(str(e))
+        traceback.print_exc()
+
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/quizzes/oc-mathematical-reasoning")
 def create_quiz_oc_mathematical_reasoning(
     quiz: QuizCreate_OC_MR,
