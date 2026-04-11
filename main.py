@@ -24226,6 +24226,161 @@ def copy_to_admin_snapshot_oc_mathematical_reasoning(
 
     db.bulk_save_objects(admin_rows)
  
+
+@app.post("/api/student/finish-homework-oc-mathematical-reasoning")
+def finish_homework_oc_mathematical_reasoning(
+    req: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ FINISH OC MATHEMATICAL REASONING HOMEWORK START ================")
+    print("📥 Incoming payload:", req)
+
+    student_id = req.get("student_id")
+    class_year = req.get("class_year")
+    answers = req.get("answers", {})
+
+    if not student_id or not class_year:
+        raise HTTPException(status_code=400, detail="student_id and class_year required")
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student NOT FOUND:", student_id)
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    print("✅ Student resolved → id:", student.id)
+
+    # --------------------------------------------------
+    # 2️⃣ Get active homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkOCMathematicalReasoning)
+        .filter(
+            StudentHomeworkOCMathematicalReasoning.student_id == student.id,
+            StudentHomeworkOCMathematicalReasoning.completed_at.is_(None)
+        )
+        .order_by(StudentHomeworkOCMathematicalReasoning.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        print("⚠️ No active homework attempt found")
+        return {"status": "completed"}
+
+    print("✅ Active homework attempt found → id:", attempt.id)
+
+    # --------------------------------------------------
+    # 3️⃣ Load homework exam (STRICT guard)
+    # --------------------------------------------------
+    homework_exam = (
+        db.query(HomeworkExamOCMathematicalReasoning)
+        .filter(
+            HomeworkExamOCMathematicalReasoning.id == attempt.homework_exam_id,
+            func.lower(HomeworkExamOCMathematicalReasoning.subject) == "mathematical_reasoning",
+            func.lower(HomeworkExamOCMathematicalReasoning.class_name) == "oc",
+            func.lower(HomeworkExamOCMathematicalReasoning.class_year) == class_year.lower()
+        )
+        .first()
+    )
+
+    if not homework_exam:
+        raise HTTPException(
+            status_code=400,
+            detail="Finish endpoint called for invalid OC MR homework"
+        )
+
+    questions = homework_exam.questions or []
+    total_questions = len(questions)
+
+    print("📘 Homework loaded → questions:", total_questions)
+
+    question_map = {q["q_id"]: q for q in questions}
+
+    # --------------------------------------------------
+    # 4️⃣ Update responses (NO inserts)
+    # --------------------------------------------------
+    correct = 0
+    saved_responses = 0
+
+    for q_id_str, selected in answers.items():
+        try:
+            q_id = int(q_id_str)
+        except ValueError:
+            continue
+
+        q = question_map.get(q_id)
+        if not q:
+            continue
+
+        correct_answer = q.get("correct")
+
+        print("🧪 EVALUATING QUESTION")
+        print("Question ID:", q_id)
+        print("Student Answer:", selected)
+        print("Correct Answer:", correct_answer)
+
+        is_correct = selected == correct_answer
+
+        if is_correct:
+            correct += 1
+
+        response = (
+            db.query(StudentHomeworkResponseOCMathematicalReasoning)
+            .filter(
+                StudentHomeworkResponseOCMathematicalReasoning.homework_attempt_id == attempt.id,
+                StudentHomeworkResponseOCMathematicalReasoning.q_id == q_id
+            )
+            .first()
+        )
+
+        if not response:
+            print(f"⚠️ Missing response row for q_id={q_id}")
+            continue
+
+        response.selected_option = selected
+        response.correct_option = correct_answer
+        response.is_correct = is_correct
+
+        saved_responses += 1
+
+    wrong = saved_responses - correct
+    accuracy = round((correct / total_questions) * 100, 2) if total_questions else 0
+
+    print("📊 Result → correct:", correct, "wrong:", wrong)
+
+    # --------------------------------------------------
+    # 5️⃣ Mark attempt completed
+    # --------------------------------------------------
+    attempt.completed_at = datetime.now(timezone.utc)
+
+    # --------------------------------------------------
+    # 6️⃣ Commit
+    # --------------------------------------------------
+    db.commit()
+
+    print("================ FINISH OC MATHEMATICAL REASONING HOMEWORK END =================\n")
+
+    return {
+        "status": "completed",
+        "attempt_id": attempt.id,
+        "total_questions": total_questions,
+        "attempted": saved_responses,
+        "correct": correct,
+        "wrong": wrong,
+        "accuracy": accuracy
+    }
+ 
+
 @app.post("/api/student/finish-exam-oc-mathematical-reasoning")
 def finish_exam_oc_mathematical_reasoning(
     req: FinishExamRequest,
