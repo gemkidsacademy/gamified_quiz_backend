@@ -26895,7 +26895,10 @@ def generate_exam_oc_reading_homework(
 
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
-    class_year = payload.class_year.strip()   # ✅ NEW
+    raw_year = str(payload.class_year).strip()
+
+    # Normalize: "Year 4" → "4"
+    class_year = raw_year.split()[-1]   # ✅ NEW
 
     # --------------------------------------------------
     # 1️⃣ LOAD HOMEWORK CONFIG
@@ -26905,7 +26908,7 @@ def generate_exam_oc_reading_homework(
         .filter(
             func.lower(ReadingHomeworkExamConfig.class_name) == class_name.lower(),
             func.lower(ReadingHomeworkExamConfig.difficulty) == difficulty.lower(),
-            func.lower(ReadingHomeworkExamConfig.class_year) == class_year.lower(),  # ✅ NEW
+            ReadingHomeworkExamConfig.class_year == class_year,  # ✅ NEW
         )
         .first()
     )
