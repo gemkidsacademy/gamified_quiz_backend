@@ -373,7 +373,7 @@ class StudentHomeworkResponseOCThinkingSkills(Base):
     homework_id = Column(Integer)
     homework_attempt_id = Column(Integer, ForeignKey("student_homework_oc_thinking_skills.id"))
 
-    q_id = Column(String)
+    q_id = Column(String) 
     topic = Column(String)
 
     selected_option = Column(String, nullable=True)
