@@ -4823,42 +4823,60 @@ def get_writing_result_by_attempt(
     db: Session = Depends(get_db)
 ):
     # --------------------------------------------------
-    # 1️⃣ Get admin report
+    # 1️⃣ Get admin report (SOURCE OF TRUTH - MATCH ORIGINAL)
     # --------------------------------------------------
     admin_report = (
         db.query(AdminExamReport)
-        .filter(AdminExamReport.exam_attempt_id == attempt_id)
+        .filter(
+            AdminExamReport.exam_attempt_id == attempt_id,
+            AdminExamReport.exam_type == "writing"   # ✅ IMPORTANT
+        )
         .first()
     )
 
     if not admin_report:
-        raise HTTPException(404, "Report not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Writing result not found"
+        )
 
     # --------------------------------------------------
-    # 2️⃣ Get exam state
+    # 2️⃣ Load writing attempt (for AI details - SAME AS ORIGINAL)
     # --------------------------------------------------
     exam_state = (
         db.query(StudentExamWriting)
-        .filter(StudentExamWriting.id == attempt_id)
+        .filter(
+            StudentExamWriting.id == admin_report.exam_attempt_id
+        )
         .first()
     )
 
     if not exam_state or not exam_state.ai_evaluation_json:
-        raise HTTPException(404, "Result not ready")
+        raise HTTPException(
+            status_code=404,
+            detail="Writing result not ready yet"
+        )
 
     # --------------------------------------------------
-    # 3️⃣ Return SAME structure (important)
+    # 3️⃣ Final response (IDENTICAL STRUCTURE)
     # --------------------------------------------------
     return {
         "exam_type": "Writing",
         "score": admin_report.overall_score,
         "max_score": 25,
+
+        # ✅ EXACT SAME FIELD
         "selective_readiness_band": admin_report.readiness_band,
+
+        # ✅ EXACT SAME SOURCE
         "evaluation": exam_state.ai_evaluation_json,
-        "attempt_id": attempt_id,
+
+        # ✅ SAME FIELD NAME
+        "attempt_id": admin_report.exam_attempt_id,
+
         "advisory": "This report is advisory only and does not guarantee placement."
     }
- 
+
 @app.get("/api/student/homework-writing-content/{homework_id}")
 def get_homework_writing_content(
     homework_id: int,
