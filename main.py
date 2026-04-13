@@ -4965,9 +4965,13 @@ def get_homework_writing_content(
         }
     }
 @app.get("/api/exams/writing/history-by-attempt")
-def get_history_by_attempt(attempt_id: int, db: Session = Depends(get_db)):
-
-    # 1️⃣ find the attempt
+def get_history_by_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Find the attempt
+    # --------------------------------------------------
     attempt = (
         db.query(StudentExamWriting)
         .filter(StudentExamWriting.id == attempt_id)
@@ -4975,29 +4979,38 @@ def get_history_by_attempt(attempt_id: int, db: Session = Depends(get_db)):
     )
 
     if not attempt:
-        raise HTTPException(404, "Attempt not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Attempt not found"
+        )
 
     # --------------------------------------------------
-    # 2️⃣ Resolve student (internal → external)
+    # 2️⃣ Resolve student (INT → STRING FIX)
     # --------------------------------------------------
     student = (
         db.query(Student)
-        .filter(Student.id == attempt.student_id)
+        .filter(Student.id == str(attempt.student_id))  # 🔥 FIX
         .first()
     )
 
     if not student:
-        raise HTTPException(404, "Student not found")
-
-    external_student_id = student.student_id  # ✅ STRING
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
 
     # --------------------------------------------------
-    # 3️⃣ fetch reports using EXTERNAL ID
+    # 3️⃣ Use external student_id (STRING)
+    # --------------------------------------------------
+    external_student_id = student.student_id
+
+    # --------------------------------------------------
+    # 4️⃣ Fetch reports (SOURCE OF TRUTH)
     # --------------------------------------------------
     reports = (
         db.query(AdminExamReport)
         .filter(
-            AdminExamReport.student_id == external_student_id,  # ✅ FIX
+            AdminExamReport.student_id == external_student_id,  # ✅ STRING MATCH
             AdminExamReport.exam_type == "writing"
         )
         .order_by(AdminExamReport.created_at.desc())
@@ -5005,7 +5018,7 @@ def get_history_by_attempt(attempt_id: int, db: Session = Depends(get_db)):
     )
 
     # --------------------------------------------------
-    # 4️⃣ return response
+    # 5️⃣ Format response
     # --------------------------------------------------
     return [
         {
@@ -5014,7 +5027,7 @@ def get_history_by_attempt(attempt_id: int, db: Session = Depends(get_db)):
             "score": r.overall_score
         }
         for r in reports
-    ] 
+    ]
 @app.get("/api/student/writing/review/{attempt_id}")
 def review_writing(attempt_id: int, db: Session = Depends(get_db)):
 
