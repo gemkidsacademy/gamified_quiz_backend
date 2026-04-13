@@ -1797,15 +1797,19 @@ class StudentExamResponseWriting(Base):
     exam_attempt_id = Column(
         Integer,
         ForeignKey("student_exam_writing.id"),
-        nullable=False
+        nullable=False,
+        unique=True   # ✅ ADD THIS
     )
 
     topic = Column(String, nullable=True)
 
-    essay_text = Column(Text, nullable=True)
+    essay_text = Column(Text, nullable=False)
 
     writing_score = Column(Integer, nullable=True)
     readiness_band = Column(String, nullable=True)
+    word_count = Column(Integer, nullable=True)
+    question_text = Column(Text, nullable=True)
+    writing_type = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -1814,6 +1818,7 @@ class StudentExamResponseWriting(Base):
 
     # FIXED RELATIONSHIP
     exam = relationship("GeneratedExamWriting")
+    ai_evaluation_json = Column(JSON, nullable=True)
  
 class AdminExamResponseThinkingSkills(Base):
     __tablename__ = "admin_exam_response_thinking_skills"
@@ -23244,13 +23249,24 @@ def submit_writing_exam(
     
     if existing_response:
         writing_response = existing_response
+
+        # ✅ ALWAYS update (VERY IMPORTANT)
+        writing_response.essay_text = payload.answer_text
+        writing_response.topic = topic
+        writing_response.question_text = generated_exam.question_text
+        writing_response.writing_type = payload.writing_type
+        writing_response.word_count = len(payload.answer_text.split())
+        
     else:
         writing_response = StudentExamResponseWriting(
             student_id=exam_state.student_id,
             exam_id=exam_state.exam_id,
             exam_attempt_id=exam_state.id,
             topic=topic,
-            essay_text=payload.answer_text
+            essay_text=payload.answer_text,
+            question_text=generated_exam.question_text,
+            writing_type=payload.writing_type,
+            word_count=len(payload.answer_text.split())
         )
         db.add(writing_response)
     # --------------------------------------------------
@@ -23470,6 +23486,11 @@ def submit_writing_exam(
         # Save performance snapshot in response table
         writing_response.writing_score = writing_score
         writing_response.readiness_band = band
+        writing_response.ai_evaluation_json = evaluation
+        #writing_response.ai_evaluation_json = evaluation
+        #writing_response.writing_type = payload.writing_type
+        #writing_response.question_text = generated_exam.question_text
+        #writing_response.word_count = len(payload.answer_text.split())
 
         archive_writing_response_to_admin_table(
             db=db,
