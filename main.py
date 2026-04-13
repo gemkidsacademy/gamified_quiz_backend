@@ -4977,20 +4977,36 @@ def get_history_by_attempt(attempt_id: int, db: Session = Depends(get_db)):
     if not attempt:
         raise HTTPException(404, "Attempt not found")
 
-    # 2️⃣ get student_id from attempt
-    student_id = attempt.student_id
+    # --------------------------------------------------
+    # 2️⃣ Resolve student (internal → external)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.id == attempt.student_id)
+        .first()
+    )
 
-    # 3️⃣ fetch all reports for this student
+    if not student:
+        raise HTTPException(404, "Student not found")
+
+    external_student_id = student.student_id  # ✅ STRING
+
+    # --------------------------------------------------
+    # 3️⃣ fetch reports using EXTERNAL ID
+    # --------------------------------------------------
     reports = (
         db.query(AdminExamReport)
         .filter(
-            AdminExamReport.student_id == student_id,
+            AdminExamReport.student_id == external_student_id,  # ✅ FIX
             AdminExamReport.exam_type == "writing"
         )
         .order_by(AdminExamReport.created_at.desc())
         .all()
     )
 
+    # --------------------------------------------------
+    # 4️⃣ return response
+    # --------------------------------------------------
     return [
         {
             "attempt_id": r.exam_attempt_id,
@@ -4998,8 +5014,7 @@ def get_history_by_attempt(attempt_id: int, db: Session = Depends(get_db)):
             "score": r.overall_score
         }
         for r in reports
-    ]
- 
+    ] 
 @app.get("/api/student/writing/review/{attempt_id}")
 def review_writing(attempt_id: int, db: Session = Depends(get_db)):
 
