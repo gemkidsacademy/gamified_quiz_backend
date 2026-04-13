@@ -463,7 +463,7 @@ class StudentHomeworkResponseWriting(Base):
         nullable=False
     )
 
-    topic = Column(Text, nullable=True)
+    #topic = Column(Text, nullable=True)
     essay_text = Column(Text, nullable=True)
 
     writing_score = Column(Integer, nullable=True)
@@ -23048,7 +23048,7 @@ def start_homework_writing(student_id: int, db: Session = Depends(get_db)):
     }
  
 @app.post("/api/student/start-writing-exam")
-def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
+def start_writing_exam(student_id: int, db: Session = Depends(get_db)):
 
     student = (
         db.query(Student)
