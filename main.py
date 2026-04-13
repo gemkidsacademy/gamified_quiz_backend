@@ -4845,23 +4845,10 @@ def get_writing_result_by_attempt(
     attempt_id: int,
     db: Session = Depends(get_db)
 ):
-    # --------------------------------------------------
-    # 1️⃣ Admin report
-    # --------------------------------------------------
-    admin_report = (
-        db.query(AdminExamReport)
-        .filter(
-            AdminExamReport.exam_attempt_id == attempt_id,
-            AdminExamReport.exam_type == "writing"
-        )
-        .first()
-    )
-
-    if not admin_report:
-        raise HTTPException(404, "Writing result not found")
+    print(f"\n📊 RESULT (SNAPSHOT) for attempt: {attempt_id}")
 
     # --------------------------------------------------
-    # 2️⃣ Snapshot (NEW SOURCE)
+    # 1️⃣ Snapshot ONLY
     # --------------------------------------------------
     snapshot = (
         db.query(StudentWritingSnapshot)
@@ -4869,17 +4856,20 @@ def get_writing_result_by_attempt(
         .first()
     )
 
-    if not snapshot or not snapshot.ai_evaluation_json:
-        raise HTTPException(404, "Writing result not ready yet")
+    if not snapshot:
+        print("❌ Snapshot not found")
+        raise HTTPException(404, "Snapshot not found")
+
+    print("✅ Snapshot found")
 
     # --------------------------------------------------
-    # 3️⃣ Response
+    # 2️⃣ Return everything from snapshot
     # --------------------------------------------------
     return {
         "exam_type": "Writing",
-        "score": admin_report.overall_score,
+        "score": snapshot.writing_score,
         "max_score": 25,
-        "selective_readiness_band": admin_report.readiness_band,
+        "selective_readiness_band": snapshot.readiness_band,
         "evaluation": snapshot.ai_evaluation_json,
         "attempt_id": attempt_id,
         "advisory": "This report is advisory only and does not guarantee placement."
