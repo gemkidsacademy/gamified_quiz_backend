@@ -9728,12 +9728,13 @@ def review_homework_reading_by_session(
             r = report_map.get(qid)
 
             # Handle shared vs per-question options
-            options_scope = section.get("options_scope", "per_question")
-
-            if options_scope == "shared":
+            # ✅ ALWAYS prefer question-level options first
+            answer_options = q.get("answer_options")
+            
+            if not answer_options:
                 answer_options = section.get("answer_options", {})
-            else:
-                answer_options = q.get("answer_options", {})
+            
+            answer_options = answer_options or {}
 
             answer_options = answer_options or {}
 
@@ -9862,12 +9863,13 @@ def review_reading_exam(
             r = report_map.get(qid)
 
             # Resolve answer options correctly
-            options_scope = section.get("options_scope", "per_question")
-            if options_scope == "shared":
+            # ✅ ALWAYS prefer question-level options first
+            answer_options = q.get("answer_options")
+            
+            if not answer_options:
                 answer_options = section.get("answer_options", {})
-            else:
-                answer_options = q.get("answer_options", {})
-
+            
+            answer_options = answer_options or {}
             answer_options = answer_options or {}
 
             review_questions.append({
