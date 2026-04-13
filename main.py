@@ -463,7 +463,7 @@ class StudentHomeworkResponseWriting(Base):
         nullable=False
     )
 
-    
+    topic = Column(Text, nullable=True)
     essay_text = Column(Text, nullable=True)
 
     writing_score = Column(Integer, nullable=True)
