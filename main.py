@@ -4787,6 +4787,78 @@ def normalize_questions_for_homework(raw_questions):
         normalized.append(fixed)
 
     return normalized
+@app.get("/api/exams/writing/history")
+def get_writing_history(student_id: str, db: Session = Depends(get_db)):
+
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(404, "Student not found")
+
+    reports = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student.student_id,
+            AdminExamReport.exam_type == "writing"
+        )
+        .order_by(AdminExamReport.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "attempt_id": r.exam_attempt_id,
+            "date": r.created_at.strftime("%d %b %Y"),
+            "score": r.overall_score
+        }
+        for r in reports
+    ]
+@app.get("/api/exams/writing/result-by-attempt")
+def get_writing_result_by_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ Get admin report
+    # --------------------------------------------------
+    admin_report = (
+        db.query(AdminExamReport)
+        .filter(AdminExamReport.exam_attempt_id == attempt_id)
+        .first()
+    )
+
+    if not admin_report:
+        raise HTTPException(404, "Report not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Get exam state
+    # --------------------------------------------------
+    exam_state = (
+        db.query(StudentExamWriting)
+        .filter(StudentExamWriting.id == attempt_id)
+        .first()
+    )
+
+    if not exam_state or not exam_state.ai_evaluation_json:
+        raise HTTPException(404, "Result not ready")
+
+    # --------------------------------------------------
+    # 3️⃣ Return SAME structure (important)
+    # --------------------------------------------------
+    return {
+        "exam_type": "Writing",
+        "score": admin_report.overall_score,
+        "max_score": 25,
+        "selective_readiness_band": admin_report.readiness_band,
+        "evaluation": exam_state.ai_evaluation_json,
+        "attempt_id": attempt_id,
+        "advisory": "This report is advisory only and does not guarantee placement."
+    }
+ 
 @app.get("/api/student/homework-writing-content/{homework_id}")
 def get_homework_writing_content(
     homework_id: int,
