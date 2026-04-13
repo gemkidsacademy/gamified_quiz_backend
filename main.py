@@ -4874,6 +4874,21 @@ def get_homework_writing_content(
             "duration_minutes": attempt.duration_minutes
         }
     }
+@app.get("/api/student/writing/review/{attempt_id}")
+def review_writing(attempt_id: int, db: Session = Depends(get_db)):
+
+    response = (
+        db.query(StudentExamResponseWriting)
+        .filter(StudentExamResponseWriting.exam_attempt_id == attempt_id)
+        .first()
+    )
+
+    if not response:
+        raise HTTPException(status_code=404, detail="Response not found")
+
+    return {
+        "essay_text": response.essay_text
+    }
 @app.post("/api/exams/generate-writing-homework")
 def generate_writing_homework(
     payload: WritingGenerateSchemaHomeWork,
@@ -14721,6 +14736,9 @@ def get_writing_result(
 
         # ✅ full AI breakdown
         "evaluation": exam_state.ai_evaluation_json,
+        # ✅ ADD THIS (CRITICAL)
+        "attempt_id": admin_report.exam_attempt_id,
+
 
         "advisory": "This report is advisory only and does not guarantee placement."
     }
