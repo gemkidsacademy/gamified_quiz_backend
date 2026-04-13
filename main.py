@@ -4964,6 +4964,42 @@ def get_homework_writing_content(
             "duration_minutes": attempt.duration_minutes
         }
     }
+@app.get("/api/exams/writing/history-by-attempt")
+def get_history_by_attempt(attempt_id: int, db: Session = Depends(get_db)):
+
+    # 1️⃣ find the attempt
+    attempt = (
+        db.query(StudentExamWriting)
+        .filter(StudentExamWriting.id == attempt_id)
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(404, "Attempt not found")
+
+    # 2️⃣ get student_id from attempt
+    student_id = attempt.student_id
+
+    # 3️⃣ fetch all reports for this student
+    reports = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student_id,
+            AdminExamReport.exam_type == "writing"
+        )
+        .order_by(AdminExamReport.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "attempt_id": r.exam_attempt_id,
+            "date": r.created_at.strftime("%d %b %Y"),
+            "score": r.overall_score
+        }
+        for r in reports
+    ]
+ 
 @app.get("/api/student/writing/review/{attempt_id}")
 def review_writing(attempt_id: int, db: Session = Depends(get_db)):
 
