@@ -4846,60 +4846,44 @@ def get_writing_result_by_attempt(
     db: Session = Depends(get_db)
 ):
     # --------------------------------------------------
-    # 1️⃣ Get admin report (SOURCE OF TRUTH - MATCH ORIGINAL)
+    # 1️⃣ Admin report
     # --------------------------------------------------
     admin_report = (
         db.query(AdminExamReport)
         .filter(
             AdminExamReport.exam_attempt_id == attempt_id,
-            AdminExamReport.exam_type == "writing"   # ✅ IMPORTANT
+            AdminExamReport.exam_type == "writing"
         )
         .first()
     )
 
     if not admin_report:
-        raise HTTPException(
-            status_code=404,
-            detail="Writing result not found"
-        )
+        raise HTTPException(404, "Writing result not found")
 
     # --------------------------------------------------
-    # 2️⃣ Load writing attempt (for AI details - SAME AS ORIGINAL)
+    # 2️⃣ Snapshot (NEW SOURCE)
     # --------------------------------------------------
-    exam_state = (
-        db.query(StudentExamWriting)
-        .filter(
-            StudentExamWriting.id == admin_report.exam_attempt_id
-        )
+    snapshot = (
+        db.query(StudentWritingSnapshot)
+        .filter(StudentWritingSnapshot.exam_attempt_id == attempt_id)
         .first()
     )
 
-    if not exam_state or not exam_state.ai_evaluation_json:
-        raise HTTPException(
-            status_code=404,
-            detail="Writing result not ready yet"
-        )
+    if not snapshot or not snapshot.ai_evaluation_json:
+        raise HTTPException(404, "Writing result not ready yet")
 
     # --------------------------------------------------
-    # 3️⃣ Final response (IDENTICAL STRUCTURE)
+    # 3️⃣ Response
     # --------------------------------------------------
     return {
         "exam_type": "Writing",
         "score": admin_report.overall_score,
         "max_score": 25,
-
-        # ✅ EXACT SAME FIELD
         "selective_readiness_band": admin_report.readiness_band,
-
-        # ✅ EXACT SAME SOURCE
-        "evaluation": exam_state.ai_evaluation_json,
-
-        # ✅ SAME FIELD NAME
-        "attempt_id": admin_report.exam_attempt_id,
-
+        "evaluation": snapshot.ai_evaluation_json,
+        "attempt_id": attempt_id,
         "advisory": "This report is advisory only and does not guarantee placement."
     }
-
 @app.get("/api/student/homework-writing-content/{homework_id}")
 def get_homework_writing_content(
     homework_id: int,
@@ -4992,65 +4976,60 @@ def get_history_by_attempt(
     attempt_id: int,
     db: Session = Depends(get_db)
 ):
+    print("\n📜 HISTORY (SNAPSHOT-BASED)")
+
     # --------------------------------------------------
-    # 1️⃣ Find the attempt
+    # 1️⃣ Find current snapshot
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamWriting)
-        .filter(StudentExamWriting.id == attempt_id)
+    current_snapshot = (
+        db.query(StudentWritingSnapshot)
+        .filter(StudentWritingSnapshot.exam_attempt_id == attempt_id)
         .first()
     )
 
-    if not attempt:
-        raise HTTPException(
-            status_code=404,
-            detail="Attempt not found"
-        )
+    if not current_snapshot:
+        raise HTTPException(404, "Snapshot not found")
+
+    student_id = current_snapshot.student_id  # ✅ external ID
+
+    print("✅ Student (external):", student_id)
 
     # --------------------------------------------------
-    # 2️⃣ Resolve student (INT → STRING FIX)
+    # 2️⃣ Get ALL snapshots for this student
     # --------------------------------------------------
-    student = (
-        db.query(Student)
-        .filter(Student.id == str(attempt.student_id))  # 🔥 FIX
-        .first()
-    )
-
-    if not student:
-        raise HTTPException(
-            status_code=404,
-            detail="Student not found"
-        )
-
-    # --------------------------------------------------
-    # 3️⃣ Use external student_id (STRING)
-    # --------------------------------------------------
-    external_student_id = student.student_id
-
-    # --------------------------------------------------
-    # 4️⃣ Fetch reports (SOURCE OF TRUTH)
-    # --------------------------------------------------
-    reports = (
-        db.query(AdminExamReport)
-        .filter(
-            AdminExamReport.student_id == external_student_id,  # ✅ STRING MATCH
-            AdminExamReport.exam_type == "writing"
-        )
-        .order_by(AdminExamReport.created_at.desc())
+    snapshots = (
+        db.query(StudentWritingSnapshot)
+        .filter(StudentWritingSnapshot.student_id == student_id)
+        .order_by(StudentWritingSnapshot.created_at.desc())
         .all()
     )
 
+    print(f"📊 Found {len(snapshots)} snapshots")
+
     # --------------------------------------------------
-    # 5️⃣ Format response
+    # 3️⃣ Build response (join with AdminExamReport)
     # --------------------------------------------------
-    return [
-        {
-            "attempt_id": r.exam_attempt_id,
-            "date": r.created_at.strftime("%d %b %Y"),
-            "score": r.overall_score
-        }
-        for r in reports
-    ]
+    result = []
+
+    for s in snapshots:
+        admin_report = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.exam_attempt_id == s.exam_attempt_id,
+                AdminExamReport.exam_type == "writing"
+            )
+            .first()
+        )
+
+        score = admin_report.overall_score if admin_report else None
+
+        result.append({
+            "attempt_id": s.exam_attempt_id,
+            "date": s.created_at.strftime("%d %b %Y"),
+            "score": score
+        })
+
+    return result
 @app.get("/api/student/writing/review/{attempt_id}")
 def review_writing(attempt_id: int, db: Session = Depends(get_db)):
 
