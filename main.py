@@ -14961,6 +14961,7 @@ def get_homework_writing_report(
         "selective_readiness_band": band,
 
         "evaluation": evaluation,
+        "attempt_id": attempt.id,
 
         "advisory": "This report is advisory only and does not guarantee placement."
     }
