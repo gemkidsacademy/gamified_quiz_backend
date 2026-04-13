@@ -205,6 +205,38 @@ class StudentWritingSnapshot(Base):
     ai_evaluation_json = Column(JSON, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class StudentHomeworkWritingSnapshot(Base):
+    __tablename__ = "student_homework_writing_snapshot"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(String, nullable=False)  # external ID
+    exam_attempt_id = Column(Integer, nullable=False)
+
+    # 👇 homework-specific linkage
+    homework_id = Column(Integer, nullable=False)
+
+    # 👇 optional but useful (depends on your schema)
+    exam_id = Column(Integer, nullable=True)
+
+    # 👇 prompt snapshot (VERY important for consistency)
+    topic = Column(String, nullable=True)
+    question_text = Column(Text, nullable=True)
+    writing_type = Column(String, nullable=True)
+
+    # 👇 student response
+    essay_text = Column(Text, nullable=False)
+    word_count = Column(Integer, nullable=True)
+
+    # 👇 evaluation snapshot (DO NOT recompute later)
+    writing_score = Column(Integer, nullable=True)
+    readiness_band = Column(String, nullable=True)
+
+    ai_evaluation_json = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class StudentHomeworkReportOCReading(Base):
     __tablename__ = "student_homework_report_oc_reading"
 
@@ -4874,6 +4906,45 @@ def get_writing_result_by_attempt(
         "attempt_id": attempt_id,
         "advisory": "This report is advisory only and does not guarantee placement."
     }
+
+
+@app.get("/api/student/homework-writing-result-by-attempt")
+def get_homework_writing_result_by_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db)
+):
+    print(f"\n📊 HOMEWORK RESULT (SNAPSHOT) for attempt: {attempt_id}")
+
+    # --------------------------------------------------
+    # 1️⃣ Snapshot ONLY
+    # --------------------------------------------------
+    snapshot = (
+        db.query(StudentHomeworkWritingSnapshot)
+        .filter(
+            StudentHomeworkWritingSnapshot.exam_attempt_id == attempt_id
+        )
+        .first()
+    )
+
+    if not snapshot:
+        print("❌ Homework snapshot not found")
+        raise HTTPException(404, "Snapshot not found")
+
+    print("✅ Homework snapshot found")
+
+    # --------------------------------------------------
+    # 2️⃣ Return everything from snapshot
+    # --------------------------------------------------
+    return {
+        "exam_type": "Writing",
+        "score": snapshot.writing_score,
+        "max_score": 25,
+        "selective_readiness_band": snapshot.readiness_band,
+        "evaluation": snapshot.ai_evaluation_json,
+        "attempt_id": attempt_id,
+        "advisory": "This report is advisory only and does not guarantee placement."
+    }
+
 @app.get("/api/student/homework-writing-content/{homework_id}")
 def get_homework_writing_content(
     homework_id: int,
@@ -5008,6 +5079,58 @@ def get_history_by_attempt(
         }
         for s in snapshots
     ]
+@app.get("/api/student/homework-writing-history-by-attempt")
+def get_homework_history_by_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n📜 HOMEWORK HISTORY (PURE SNAPSHOT)")
+
+    # --------------------------------------------------
+    # 1️⃣ Find current snapshot
+    # --------------------------------------------------
+    current = (
+        db.query(StudentHomeworkWritingSnapshot)
+        .filter(
+            StudentHomeworkWritingSnapshot.exam_attempt_id == attempt_id
+        )
+        .first()
+    )
+
+    if not current:
+        raise HTTPException(404, "Snapshot not found")
+
+    student_id = current.student_id  # external id
+
+    print("✅ Student:", student_id)
+
+    # --------------------------------------------------
+    # 2️⃣ Get all snapshots for this student
+    # --------------------------------------------------
+    snapshots = (
+        db.query(StudentHomeworkWritingSnapshot)
+        .filter(
+            StudentHomeworkWritingSnapshot.student_id == student_id
+        )
+        .order_by(StudentHomeworkWritingSnapshot.created_at.desc())
+        .all()
+    )
+
+    print(f"📊 Found {len(snapshots)} homework snapshots")
+
+    # --------------------------------------------------
+    # 3️⃣ Return clean response
+    # --------------------------------------------------
+    return [
+        {
+            "attempt_id": s.exam_attempt_id,
+            "date": s.created_at.strftime("%d %b %Y"),
+            "score": s.writing_score,
+            "band": s.readiness_band
+        }
+        for s in snapshots
+    ]
+ 
 @app.get("/api/student/writing/review/{attempt_id}")
 def review_writing(attempt_id: int, db: Session = Depends(get_db)):
 
@@ -5032,6 +5155,34 @@ def review_writing(attempt_id: int, db: Session = Depends(get_db)):
         "word_count": snapshot.word_count,
         "created_at": snapshot.created_at
     }
+
+@app.get("/api/student/homework-writing/review/{attempt_id}")
+def review_homework_writing(attempt_id: int, db: Session = Depends(get_db)):
+
+    print(f"\n🔍 HOMEWORK SNAPSHOT REVIEW for attempt: {attempt_id}")
+
+    snapshot = (
+        db.query(StudentHomeworkWritingSnapshot)
+        .filter(
+            StudentHomeworkWritingSnapshot.exam_attempt_id == attempt_id
+        )
+        .first()
+    )
+
+    if not snapshot:
+        print("❌ Homework snapshot not found")
+        raise HTTPException(404, "Snapshot not found")
+
+    print("✅ Homework snapshot found")
+
+    return {
+        "essay_text": snapshot.essay_text,
+        "question_text": snapshot.question_text,
+        "writing_type": snapshot.writing_type,
+        "word_count": snapshot.word_count,
+        "created_at": snapshot.created_at
+    }
+
 @app.post("/api/exams/generate-writing-homework")
 def generate_writing_homework(
     payload: WritingGenerateSchemaHomeWork,
@@ -23313,6 +23464,38 @@ def submit_homework_writing(
 
     response_row.writing_score = writing_score
     response_row.readiness_band = band
+    # --------------------------------------------------
+    # 🔥 8.5️⃣ CREATE SNAPSHOT (CRITICAL)
+    # --------------------------------------------------
+    
+    existing_snapshot = (
+        db.query(StudentHomeworkWritingSnapshot)
+        .filter(
+            StudentHomeworkWritingSnapshot.exam_attempt_id == attempt.id
+        )
+        .first()
+    )
+    
+    if not existing_snapshot:
+        snapshot = StudentHomeworkWritingSnapshot(
+            student_id=student.student_id,   # external ID (correct)
+            exam_attempt_id=attempt.id,
+            homework_id=attempt.homework_id,
+    
+            topic=topic,
+            question_text=homework.question_text if homework else None,
+            writing_type=payload.writing_type,
+    
+            essay_text=payload.answer_text,
+            word_count=len(payload.answer_text.split()) if payload.answer_text else 0,
+    
+            writing_score=writing_score,
+            readiness_band=band,
+    
+            ai_evaluation_json=evaluation
+        )
+    
+        db.add(snapshot)
 
     # --------------------------------------------------
     # 9️⃣ Final commit
@@ -23859,16 +24042,13 @@ def submit_writing_exam(
         "exam_id": exam_state.exam_id,
         "writing_score": writing_score
     } 
+
+
 @app.get("/api/student/homework-writing-report")
 def get_homework_writing_report(
     student_id: str,
     db: Session = Depends(get_db)
 ):
-    print("\n📊 HOMEWORK WRITING REPORT")
-
-    # --------------------------------------------------
-    # 1️⃣ Resolve student (EXTERNAL → INTERNAL)
-    # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(func.lower(Student.student_id) == func.lower(student_id))
@@ -23878,59 +24058,37 @@ def get_homework_writing_report(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # --------------------------------------------------
-    # 2️⃣ Load latest COMPLETED homework attempt
-    # --------------------------------------------------
-    attempt = (
-        db.query(StudentHomeworkWriting)
+    # ✅ USE SNAPSHOT
+    snapshot = (
+        db.query(StudentHomeworkWritingSnapshot)
         .filter(
-            StudentHomeworkWriting.student_id == student.id,
-            StudentHomeworkWriting.completed_at.isnot(None)
+            StudentHomeworkWritingSnapshot.student_id == student.student_id
         )
-        .order_by(StudentHomeworkWriting.completed_at.desc())
+        .order_by(StudentHomeworkWritingSnapshot.created_at.desc())
         .first()
     )
 
-    if not attempt:
+    if not snapshot:
         raise HTTPException(
             status_code=404,
             detail="Homework writing result not found"
         )
 
-    # --------------------------------------------------
-    # 3️⃣ Validate evaluation exists (like exam mode)
-    # --------------------------------------------------
-    if not attempt.report_json:
-        raise HTTPException(
-            status_code=500,
-            detail="AI evaluation missing for homework writing"
-        )
+    evaluation = snapshot.ai_evaluation_json
+    score = snapshot.writing_score or 0
+    band = snapshot.readiness_band or "Pending"
 
-    evaluation = attempt.report_json
-
-    # --------------------------------------------------
-    # 4️⃣ Extract score + readiness band
-    # --------------------------------------------------
-    score = int(evaluation.get("overall_score", 0))
-    band = evaluation.get("selective_readiness_band", "Pending")
-
-    # --------------------------------------------------
-    # 5️⃣ Final response (MATCHES EXAM STRUCTURE)
-    # --------------------------------------------------
     return {
         "exam_type": "Writing",
         "score": score,
         "max_score": 25,
-
-        # ✅ same field as exam endpoint
         "selective_readiness_band": band,
-
-        # ✅ same structure as exam
         "evaluation": evaluation,
-
+        "attempt_id": snapshot.exam_attempt_id,   # ✅ IMPORTANT
         "advisory": "This report is advisory only and does not guarantee placement."
     }
- 
+
+
 @app.get("/api/exams/writing/result")
 def get_writing_result(
     student_id: str,
