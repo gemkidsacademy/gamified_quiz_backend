@@ -4976,26 +4976,26 @@ def get_history_by_attempt(
     attempt_id: int,
     db: Session = Depends(get_db)
 ):
-    print("\n📜 HISTORY (SNAPSHOT-BASED)")
+    print("\n📜 HISTORY (PURE SNAPSHOT)")
 
     # --------------------------------------------------
     # 1️⃣ Find current snapshot
     # --------------------------------------------------
-    current_snapshot = (
+    current = (
         db.query(StudentWritingSnapshot)
         .filter(StudentWritingSnapshot.exam_attempt_id == attempt_id)
         .first()
     )
 
-    if not current_snapshot:
+    if not current:
         raise HTTPException(404, "Snapshot not found")
 
-    student_id = current_snapshot.student_id  # ✅ external ID
+    student_id = current.student_id  # external id
 
-    print("✅ Student (external):", student_id)
+    print("✅ Student:", student_id)
 
     # --------------------------------------------------
-    # 2️⃣ Get ALL snapshots for this student
+    # 2️⃣ Get all snapshots
     # --------------------------------------------------
     snapshots = (
         db.query(StudentWritingSnapshot)
@@ -5007,29 +5007,17 @@ def get_history_by_attempt(
     print(f"📊 Found {len(snapshots)} snapshots")
 
     # --------------------------------------------------
-    # 3️⃣ Build response (join with AdminExamReport)
+    # 3️⃣ Return clean response
     # --------------------------------------------------
-    result = []
-
-    for s in snapshots:
-        admin_report = (
-            db.query(AdminExamReport)
-            .filter(
-                AdminExamReport.exam_attempt_id == s.exam_attempt_id,
-                AdminExamReport.exam_type == "writing"
-            )
-            .first()
-        )
-
-        score = admin_report.overall_score if admin_report else None
-
-        result.append({
+    return [
+        {
             "attempt_id": s.exam_attempt_id,
             "date": s.created_at.strftime("%d %b %Y"),
-            "score": score
-        })
-
-    return result
+            "score": s.writing_score,              # ✅ from snapshot
+            "band": s.readiness_band               # optional
+        }
+        for s in snapshots
+    ]
 @app.get("/api/student/writing/review/{attempt_id}")
 def review_writing(attempt_id: int, db: Session = Depends(get_db)):
 
