@@ -22954,7 +22954,7 @@ def get_foundational_classes(db: Session = Depends(get_db)):
     return [{"class_name": r.class_name} for r in rows]
  
 @app.post("/api/student/start-homework-writing")
-def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
+def start_homework_writing(student_id: int, db: Session = Depends(get_db)):
 
     # --------------------------------------------------
     # 1️⃣ Resolve student
