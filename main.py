@@ -23212,11 +23212,11 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
     }
  
 @app.post("/api/student/start-writing-exam")
-def start_writing_exam(student_id: int, db: Session = Depends(get_db)):
+def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
     student = (
         db.query(Student)
-        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .filter(func.lower(Student.student_id) == student_id.lower())
         .first()
     )
     
