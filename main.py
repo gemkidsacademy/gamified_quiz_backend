@@ -10632,16 +10632,16 @@ def review_oc_reading_homework(
             qid = q.get("question_id")
             r = report_map.get(qid)
 
-            options_scope = section.get("options_scope", "per_question")
-
-            if options_scope == "shared":
+            # ✅ ALWAYS prefer question-level options first (OC-safe)
+            answer_options = (
+                q.get("answer_options")
+                or q.get("options")
+            )
+            
+            if not answer_options:
                 answer_options = section.get("answer_options", {})
-            else:
-                answer_options = (
-                    q.get("answer_options")
-                    or q.get("options")
-                    or {}
-                )
+            
+            answer_options = answer_options or {}
 
             review_questions.append({
                 "question_id": qid,
