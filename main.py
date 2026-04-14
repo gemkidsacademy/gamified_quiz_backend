@@ -5183,6 +5183,81 @@ def review_homework_writing(attempt_id: int, db: Session = Depends(get_db)):
         "created_at": snapshot.created_at
     }
 
+
+@app.get("/api/student/available-subjects")
+def get_available_subjects(
+    student_id: str,
+    mode: str,
+    db: Session = Depends(get_db)
+):
+    print("\n📡 AVAILABLE-SUBJECTS REQUEST")
+    print("➡ student_id:", student_id)
+    print("➡ mode:", mode)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Load latest Mathematical Reasoning exam
+    # --------------------------------------------------
+    exam = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.class_name) == func.lower(student.class_name),
+            Exam.subject == "mathematical_reasoning"
+        )
+        .order_by(Exam.created_at.desc())
+        .first()
+    )
+
+    # If no exam exists → disable
+    if not exam:
+        return {
+            "mathematical_reasoning": False
+        }
+
+    # --------------------------------------------------
+    # 3️⃣ Get latest attempt
+    # --------------------------------------------------
+    math_attempt = (
+        db.query(StudentExamMathematicalReasoning)
+        .filter(
+            StudentExamMathematicalReasoning.student_id == student.id,
+            StudentExamMathematicalReasoning.exam_id == exam.id
+        )
+        .order_by(StudentExamMathematicalReasoning.started_at.desc())
+        .first()
+    )
+
+    # --------------------------------------------------
+    # 4️⃣ Decide availability
+    # --------------------------------------------------
+    is_enabled = True
+
+    if math_attempt and math_attempt.completed_at is not None:
+        # ❌ Completed → disable
+        is_enabled = False
+
+    # Active attempt OR no attempt → stays True
+
+    print("✅ mathematical_reasoning enabled:", is_enabled)
+
+    return {
+        "mathematical_reasoning": is_enabled
+    }
+
 @app.post("/api/exams/generate-writing-homework")
 def generate_writing_homework(
     payload: WritingGenerateSchemaHomeWork,
