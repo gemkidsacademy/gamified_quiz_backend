@@ -5209,10 +5209,12 @@ def get_available_subjects(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # --------------------------------------------------
-    # 2️⃣ Load latest Mathematical Reasoning exam
-    # --------------------------------------------------
-    exam = (
+    # ==================================================
+    # 🧮 MATHEMATICAL REASONING
+    # ==================================================
+    math_enabled = True
+
+    math_exam = (
         db.query(Exam)
         .filter(
             func.lower(Exam.class_name) == func.lower(student.class_name),
@@ -5222,42 +5224,72 @@ def get_available_subjects(
         .first()
     )
 
-    # If no exam exists → disable
-    if not exam:
-        return {
-            "mathematical_reasoning": False
-        }
-
-    # --------------------------------------------------
-    # 3️⃣ Get latest attempt
-    # --------------------------------------------------
-    math_attempt = (
-        db.query(StudentExamMathematicalReasoning)
-        .filter(
-            StudentExamMathematicalReasoning.student_id == student.id,
-            StudentExamMathematicalReasoning.exam_id == exam.id
+    if not math_exam:
+        math_enabled = False
+    else:
+        math_attempt = (
+            db.query(StudentExamMathematicalReasoning)
+            .filter(
+                StudentExamMathematicalReasoning.student_id == student.id,
+                StudentExamMathematicalReasoning.exam_id == math_exam.id
+            )
+            .order_by(StudentExamMathematicalReasoning.started_at.desc())
+            .first()
         )
-        .order_by(StudentExamMathematicalReasoning.started_at.desc())
-        .first()
-    )
 
-    # --------------------------------------------------
-    # 4️⃣ Decide availability
-    # --------------------------------------------------
-    is_enabled = True
+        if math_attempt and math_attempt.completed_at is not None:
+            math_enabled = False
 
-    if math_attempt and math_attempt.completed_at is not None:
-        # ❌ Completed → disable
-        is_enabled = False
+    # ==================================================
+    # 🧠 THINKING SKILLS
+    # ==================================================
+    thinking_enabled = True
 
-    # Active attempt OR no attempt → stays True
+    if not student.student_year:
+        thinking_enabled = False
+    else:
+        class_year = extract_class_year_numeric(student.student_year)
 
-    print("✅ mathematical_reasoning enabled:", is_enabled)
+        thinking_exam = (
+            db.query(Exam)
+            .filter(
+                Exam.subject == "thinking_skills",
+                Exam.class_name == "selective",
+                Exam.class_year == class_year
+            )
+            .order_by(Exam.id.desc())
+            .first()
+        )
 
-    return {
-        "mathematical_reasoning": is_enabled
+        if not thinking_exam:
+            thinking_enabled = False
+        else:
+            # 🔍 Check completed attempt
+            completed_attempt = (
+                db.query(StudentExamThinkingSkills)
+                .filter(
+                    StudentExamThinkingSkills.student_id == student.id,
+                    StudentExamThinkingSkills.exam_id == thinking_exam.id,
+                    StudentExamThinkingSkills.class_year == class_year,
+                    StudentExamThinkingSkills.completed_at.isnot(None)
+                )
+                .first()
+            )
+
+            if completed_attempt:
+                thinking_enabled = False
+
+    # ==================================================
+    # 🎯 FINAL RESPONSE
+    # ==================================================
+    response = {
+        "mathematical_reasoning": math_enabled,
+        "thinking_skills": thinking_enabled
     }
 
+    print("✅ Availability response:", response)
+
+    return response
 @app.post("/api/exams/generate-writing-homework")
 def generate_writing_homework(
     payload: WritingGenerateSchemaHomeWork,
