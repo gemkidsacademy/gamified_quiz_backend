@@ -35415,6 +35415,72 @@ def get_oc_available_subjects(
     
         if attempt and attempt.completed_at is not None:
             math_homework_enabled = False
+
+    # ==================================================
+    # 📖 OC READING
+    # ==================================================
+    reading_exam_enabled = True
+    reading_homework_enabled = True
+    
+    # -----------------------------
+    # 1️⃣ NORMAL EXAM
+    # -----------------------------
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.class_name == "oc")
+        .order_by(GeneratedExamReading.id.desc())
+        .first()
+    )
+    
+    if not exam:
+        reading_exam_enabled = False
+    else:
+        attempt = (
+            db.query(StudentExamReadingOC)
+            .filter(
+                StudentExamReadingOC.student_id == student.student_id,  # ⚠️ string-based
+                StudentExamReadingOC.exam_id == exam.id
+            )
+            .order_by(StudentExamReadingOC.started_at.desc())
+            .first()
+        )
+    
+        if attempt and attempt.finished:
+            reading_exam_enabled = False
+    
+    
+    # -----------------------------
+    # 2️⃣ HOMEWORK
+    # -----------------------------
+    # extract class_year same way as your endpoint
+    raw_year = str(student.student_year).strip()
+    class_year = raw_year.split()[-1]
+    
+    homework = (
+        db.query(GeneratedHomeworkExamReading)
+        .filter(
+            func.lower(GeneratedHomeworkExamReading.class_name) == "oc",
+            GeneratedHomeworkExamReading.class_year == class_year
+        )
+        .order_by(GeneratedHomeworkExamReading.id.desc())
+        .first()
+    )
+    
+    if not homework:
+        reading_homework_enabled = False
+    else:
+        attempt = (
+            db.query(StudentHomeworkReadingOC)
+            .filter(
+                func.lower(StudentHomeworkReadingOC.student_id) == student.student_id.lower(),
+                StudentHomeworkReadingOC.exam_id == homework.id
+            )
+            .order_by(StudentHomeworkReadingOC.started_at.desc())
+            .first()
+        )
+    
+        if attempt and attempt.finished:
+            reading_homework_enabled = False
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
@@ -35426,6 +35492,10 @@ def get_oc_available_subjects(
         "mathematical_reasoning": {
             "exam": math_exam_enabled,
             "homework": math_homework_enabled
+        },
+        "reading": {
+            "exam": reading_exam_enabled,
+            "homework": reading_homework_enabled
         }
     }
 
