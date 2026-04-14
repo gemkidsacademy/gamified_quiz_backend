@@ -35350,7 +35350,71 @@ def get_oc_available_subjects(
 
         if attempt and attempt.completed_at is not None:
             thinking_homework_enabled = False
-
+    # ==================================================
+    # 🧮 OC MATHEMATICAL REASONING
+    # ==================================================
+    math_exam_enabled = True
+    math_homework_enabled = True
+    
+    # -----------------------------
+    # 1️⃣ NORMAL EXAM
+    # -----------------------------
+    exam = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.class_name) == "oc",
+            func.lower(Exam.subject) == "mathematical_reasoning"
+        )
+        .order_by(Exam.created_at.desc())
+        .first()
+    )
+    
+    if not exam:
+        math_exam_enabled = False
+    else:
+        attempt = (
+            db.query(StudentExamOCMathematicalReasoning)
+            .filter(
+                StudentExamOCMathematicalReasoning.student_id == student.id,
+                StudentExamOCMathematicalReasoning.exam_id == exam.id
+            )
+            .order_by(StudentExamOCMathematicalReasoning.started_at.desc())
+            .first()
+        )
+    
+        if attempt and attempt.completed_at is not None:
+            math_exam_enabled = False
+    
+    
+    # -----------------------------
+    # 2️⃣ HOMEWORK
+    # -----------------------------
+    homework = (
+        db.query(HomeworkExamOCMathematicalReasoning)
+        .filter(
+            func.lower(HomeworkExamOCMathematicalReasoning.class_name) == "oc",
+            func.lower(HomeworkExamOCMathematicalReasoning.subject) == "mathematical_reasoning",
+            func.lower(HomeworkExamOCMathematicalReasoning.class_year) == func.lower(student.student_year)
+        )
+        .order_by(HomeworkExamOCMathematicalReasoning.created_at.desc())
+        .first()
+    )
+    
+    if not homework:
+        math_homework_enabled = False
+    else:
+        attempt = (
+            db.query(StudentHomeworkOCMathematicalReasoning)
+            .filter(
+                StudentHomeworkOCMathematicalReasoning.student_id == student.id,
+                StudentHomeworkOCMathematicalReasoning.homework_exam_id == homework.id
+            )
+            .order_by(StudentHomeworkOCMathematicalReasoning.started_at.desc())
+            .first()
+        )
+    
+        if attempt and attempt.completed_at is not None:
+            math_homework_enabled = False
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
@@ -35358,6 +35422,10 @@ def get_oc_available_subjects(
         "oc_thinking_skills": {
             "exam": thinking_exam_enabled,
             "homework": thinking_homework_enabled
+        },
+        "mathematical_reasoning": {
+            "exam": math_exam_enabled,
+            "homework": math_homework_enabled
         }
     }
 
