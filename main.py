@@ -23936,83 +23936,6 @@ def submit_writing_exam(
     # --------------------------------------------------
     # STRICT EMPTY / LOW-EFFORT CHECK (IMPROVED)
     # --------------------------------------------------
-    if word_count < 5:
-        zero_evaluation = {
-            "overall_score": 0,
-            "selective_readiness_band": "Well below selective standard at this stage",
-            "categories": {
-                "audience_purpose_form": {"score": 0, "strengths": [], "improvements": ["No response provided"]},
-                "ideas_content": {"score": 0, "strengths": [], "improvements": ["No ideas presented"]},
-                "structure_organisation": {"score": 0, "strengths": [], "improvements": ["No structure present"]},
-                "language_vocabulary": {"score": 0, "strengths": [], "improvements": ["No language used"]},
-                "grammar_spelling_punctuation": {"score": 0, "strengths": [], "improvements": ["No writing to assess"]}
-            },
-            "teacher_feedback": "No meaningful response was submitted. The student must attempt the task properly to receive a score."
-        }
-    
-        # ✅ Mark attempt completed (FIXED)
-        exam_state.answer_text = payload.answer_text
-        exam_state.completed_at = datetime.now(timezone.utc)
-    
-        # ✅ Save evaluation
-        exam_state.ai_evaluation_json = zero_evaluation
-        exam_state.ai_score = 0
-    
-        writing_response.essay_text = payload.answer_text
-        writing_response.topic = topic
-        writing_response.question_text = generated_exam.question_text
-        writing_response.writing_type = payload.writing_type
-        writing_response.word_count = word_count
-    
-        writing_response.writing_score = 0
-        writing_response.readiness_band = "Well below selective standard at this stage"
-        writing_response.ai_evaluation_json = zero_evaluation
-    
-        # ⚠️ OPTIONAL: If you want full pipeline consistency, DO NOT return here
-        db.commit()
-    
-        return {
-            "message": "Empty or insufficient response submitted",
-            "exam_id": exam_state.exam_id,
-            "writing_score": 0
-        }
-    exam_state.answer_text = payload.answer_text
-    exam_state.completed_at = datetime.now(timezone.utc)
-    print("📝 Saving writing response...")
-     
-    existing_response = (
-        db.query(StudentExamResponseWriting)
-        .filter(StudentExamResponseWriting.exam_attempt_id == exam_state.id)
-        .first()
-    )
-    
-    if existing_response:
-        writing_response = existing_response
-
-        # ✅ ALWAYS update (VERY IMPORTANT)
-        writing_response.essay_text = payload.answer_text
-        writing_response.topic = topic
-        writing_response.question_text = generated_exam.question_text
-        writing_response.writing_type = payload.writing_type
-        writing_response.word_count = len(payload.answer_text.split())
-        
-    else:
-        writing_response = StudentExamResponseWriting(
-            student_id=exam_state.student_id,
-            exam_id=exam_state.exam_id,
-            exam_attempt_id=exam_state.id,
-            topic=topic,
-            essay_text=payload.answer_text,
-            question_text=generated_exam.question_text,
-            writing_type=payload.writing_type,
-            word_count=len(payload.answer_text.split())
-        )
-        db.add(writing_response)
-    # --------------------------------------------------
-    # 3️⃣ Evaluate essay using OpenAI
-    # --------------------------------------------------
-    print("🤖 Preparing OpenAI prompt...")
-
     prompt = f"""
     You are an expert NSW Selective School writing marker.
     
@@ -24144,43 +24067,57 @@ def submit_writing_exam(
     Student response:
     {payload.answer_text}
     """
+    is_low_quality = word_count < 5
 
-
-
-
-    try:
-        print("🚀 Calling OpenAI Responses API...")
-
+    if is_low_quality:
+        evaluation = {
+            "overall_score": 0,
+            "selective_readiness_band": "Well below selective standard at this stage",
+            "categories": {
+                "audience_purpose_form": {"score": 0, "strengths": [], "improvements": ["No response provided"]},
+                "ideas_content": {"score": 0, "strengths": [], "improvements": ["No ideas presented"]},
+                "structure_organisation": {"score": 0, "strengths": [], "improvements": ["No structure present"]},
+                "language_vocabulary": {"score": 0, "strengths": [], "improvements": ["No language used"]},
+                "grammar_spelling_punctuation": {"score": 0, "strengths": [], "improvements": ["No writing to assess"]}
+            },
+            "teacher_feedback": "No meaningful response was submitted. The student must attempt the task properly to receive a score."
+        }
+    
+        writing_score = 0
+    
+    else:
         response = client.responses.create(
             model="gpt-4o-mini",
             input=prompt,
             temperature=0.4
         )
-
-
-        print("🧠 Raw OpenAI response object:", response)
-
+    
         ai_result = response.output_text
-        print("🧠 OpenAI output_text:")
-        print(ai_result)
-
-    except Exception as e:
-        print("❌ OpenAI evaluation failed!")
-        print("❌ Exception type:", type(e))
-        print("❌ Exception details:", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="Writing evaluation failed"
-        )
-
+        evaluation = json.loads(ai_result)
+    
+        writing_score = int(evaluation.get("overall_score", 0))
+    
+    
+    # ✅ SAFE: use evaluation directly (no ai_result dependency)
+    categories = evaluation.get("categories", {})
+    band = evaluation.get("selective_readiness_band")
+    exam_state.answer_text = payload.answer_text
+    exam_state.completed_at = datetime.now(timezone.utc)
+    print("📝 Saving writing response...")
+     
+    writing_response.essay_text = payload.answer_text
+    writing_response.topic = topic
+    writing_response.question_text = generated_exam.question_text if generated_exam else ""
+    writing_response.writing_type = payload.writing_type
+    writing_response.word_count = word_count    
     # --------------------------------------------------
     # 4️⃣ Parse AI response
     # --------------------------------------------------
-    print("🧪 Parsing AI response as JSON...")
+    print("🧪 Validating evaluation structure...")
 
     try:
         
-        evaluation = json.loads(ai_result)
+        
 
         writing_score = int(evaluation.get("overall_score", 0))
         
@@ -24256,7 +24193,7 @@ def submit_writing_exam(
             writing_type=payload.writing_type,
         
             essay_text=payload.answer_text,
-            word_count=len(payload.answer_text.split()),
+            word_count=word_count,
         
             writing_score=writing_score,
             readiness_band=band,
@@ -24288,7 +24225,7 @@ def submit_writing_exam(
     except Exception as e:
         print("❌ Failed to parse AI response as JSON")
         print("❌ Raw AI text was:")
-        print(ai_result)
+        
         print("❌ Exception:", str(e))
         raise HTTPException(
             status_code=500,
