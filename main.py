@@ -23911,6 +23911,71 @@ def submit_writing_exam(
     print("💾 Saving student answer...")
     print("✏️ Essay length:", len(payload.answer_text or ""))
 
+    clean_text = (payload.answer_text or "").strip()
+    word_count = len(clean_text.split())
+    
+    # --------------------------------------------------
+    # Create or fetch writing_response FIRST (FIXED)
+    # --------------------------------------------------
+    existing_response = (
+        db.query(StudentExamResponseWriting)
+        .filter(StudentExamResponseWriting.exam_attempt_id == exam_state.id)
+        .first()
+    )
+    
+    if existing_response:
+        writing_response = existing_response
+    else:
+        writing_response = StudentExamResponseWriting(
+            student_id=exam_state.student_id,
+            exam_id=exam_state.exam_id,
+            exam_attempt_id=exam_state.id,
+        )
+        db.add(writing_response)
+    
+    # --------------------------------------------------
+    # STRICT EMPTY / LOW-EFFORT CHECK (IMPROVED)
+    # --------------------------------------------------
+    if word_count < 5:
+        zero_evaluation = {
+            "overall_score": 0,
+            "selective_readiness_band": "Well below selective standard at this stage",
+            "categories": {
+                "audience_purpose_form": {"score": 0, "strengths": [], "improvements": ["No response provided"]},
+                "ideas_content": {"score": 0, "strengths": [], "improvements": ["No ideas presented"]},
+                "structure_organisation": {"score": 0, "strengths": [], "improvements": ["No structure present"]},
+                "language_vocabulary": {"score": 0, "strengths": [], "improvements": ["No language used"]},
+                "grammar_spelling_punctuation": {"score": 0, "strengths": [], "improvements": ["No writing to assess"]}
+            },
+            "teacher_feedback": "No meaningful response was submitted. The student must attempt the task properly to receive a score."
+        }
+    
+        # ✅ Mark attempt completed (FIXED)
+        exam_state.answer_text = payload.answer_text
+        exam_state.completed_at = datetime.now(timezone.utc)
+    
+        # ✅ Save evaluation
+        exam_state.ai_evaluation_json = zero_evaluation
+        exam_state.ai_score = 0
+    
+        writing_response.essay_text = payload.answer_text
+        writing_response.topic = topic
+        writing_response.question_text = generated_exam.question_text
+        writing_response.writing_type = payload.writing_type
+        writing_response.word_count = word_count
+    
+        writing_response.writing_score = 0
+        writing_response.readiness_band = "Well below selective standard at this stage"
+        writing_response.ai_evaluation_json = zero_evaluation
+    
+        # ⚠️ OPTIONAL: If you want full pipeline consistency, DO NOT return here
+        db.commit()
+    
+        return {
+            "message": "Empty or insufficient response submitted",
+            "exam_id": exam_state.exam_id,
+            "writing_score": 0
+        }
     exam_state.answer_text = payload.answer_text
     exam_state.completed_at = datetime.now(timezone.utc)
     print("📝 Saving writing response...")
@@ -23966,6 +24031,24 @@ def submit_writing_exam(
     1. Writing type
     2. Writing prompt
     3. Student response
+
+    CRITICAL ZERO-SCORE RULE (STRICT):
+
+    - If the student response is empty, blank, or contains no meaningful content, you MUST assign:
+      - overall_score = 0
+      - All category scores = 0
+    
+    - If the response contains only:
+      - 1–2 words
+      - Random characters
+      - Repeated words
+      - Completely irrelevant or nonsensical content
+    
+      Then treat it as a non-attempt and assign a score between 0 and 3 MAX.
+    
+    - A response must contain meaningful, structured writing to score above 5.
+    
+    - DO NOT reward minimal or empty responses under any circumstances.
     
     WRITING TYPE:
     {payload.writing_type}
@@ -24380,8 +24463,6 @@ def submit_writing_exam(
         "exam_id": exam_state.exam_id,
         "writing_score": writing_score
     } 
-
-
 @app.get("/api/student/homework-writing-report")
 def get_homework_writing_report(
     student_id: str,
