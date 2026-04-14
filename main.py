@@ -5243,13 +5243,18 @@ def get_available_subjects(
     # ==================================================
     # 🧠 THINKING SKILLS
     # ==================================================
-    thinking_enabled = True
-
+    thinking_exam_enabled = True
+    thinking_homework_enabled = True
+    
     if not student.student_year:
-        thinking_enabled = False
+        thinking_exam_enabled = False
+        thinking_homework_enabled = False
     else:
         class_year = extract_class_year_numeric(student.student_year)
-
+    
+        # -----------------------------
+        # 1️⃣ NORMAL EXAM
+        # -----------------------------
         thinking_exam = (
             db.query(Exam)
             .filter(
@@ -5260,12 +5265,11 @@ def get_available_subjects(
             .order_by(Exam.id.desc())
             .first()
         )
-
+    
         if not thinking_exam:
-            thinking_enabled = False
+            thinking_exam_enabled = False
         else:
-            # 🔍 Check completed attempt
-            completed_attempt = (
+            completed_exam_attempt = (
                 db.query(StudentExamThinkingSkills)
                 .filter(
                     StudentExamThinkingSkills.student_id == student.id,
@@ -5275,9 +5279,40 @@ def get_available_subjects(
                 )
                 .first()
             )
-
-            if completed_attempt:
-                thinking_enabled = False
+    
+            if completed_exam_attempt:
+                thinking_exam_enabled = False
+    
+        # -----------------------------
+        # 2️⃣ HOMEWORK EXAM
+        # -----------------------------
+        homework_exam = (
+            db.query(HomeWorkExam)
+            .filter(
+                HomeWorkExam.subject == "thinking_skills",
+                HomeWorkExam.class_name == "selective",
+                HomeWorkExam.class_year == class_year
+            )
+            .order_by(HomeWorkExam.id.desc())
+            .first()
+        )
+    
+        if not homework_exam:
+            thinking_homework_enabled = False
+        else:
+            completed_homework_attempt = (
+                db.query(StudentHomeworkThinkingSkills)
+                .filter(
+                    StudentHomeworkThinkingSkills.student_id == student.id,
+                    StudentHomeworkThinkingSkills.homework_exam_id == homework_exam.id,
+                    StudentHomeworkThinkingSkills.class_year == class_year,
+                    StudentHomeworkThinkingSkills.completed_at.isnot(None)
+                )
+                .first()
+            )
+    
+            if completed_homework_attempt:
+                thinking_homework_enabled = False
     # ==================================================
     # 📖 READING
     # ==================================================
@@ -5339,7 +5374,10 @@ def get_available_subjects(
     # ==================================================
     response = {
         "mathematical_reasoning": math_enabled,
-        "thinking_skills": thinking_enabled,
+        "thinking_skills": {
+            "exam": thinking_exam_enabled,
+            "homework": thinking_homework_enabled
+        },
         "reading": reading_enabled,
         "writing": writing_enabled   # 👈 ADD THIS
     }
