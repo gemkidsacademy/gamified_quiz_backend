@@ -4842,6 +4842,28 @@ def normalize_questions_for_homework(raw_questions):
         normalized.append(fixed)
 
     return normalized
+
+     
+@app.delete("/api/admin/delete-writing-homework-questions")
+def delete_all_writing_questions(db: Session = Depends(get_db)):
+    try:
+        # 🔥 Delete ALL rows from writing_question_bank
+        deleted_count = db.query(WritingQuestionBank).delete()
+
+        db.commit()
+
+        return {
+            "message": "All writing questions deleted successfully",
+            "deleted_count": deleted_count
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete writing questions: {str(e)}"
+        )
+     
 @app.get("/api/exams/writing/history")
 def get_writing_history(student_id: str, db: Session = Depends(get_db)):
 
