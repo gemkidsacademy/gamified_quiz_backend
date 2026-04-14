@@ -35262,6 +35262,109 @@ def start_exam_oc_thinking_skills(
         "remaining_time": int(new_attempt.duration_minutes * 60)
     }
 
+@app.get("/api/student/oc-available-subjects")
+def get_oc_available_subjects(
+    student_id: str,
+    mode: str,
+    db: Session = Depends(get_db)
+):
+    print("\n📡 OC AVAILABLE-SUBJECTS REQUEST")
+    print("➡ student_id:", student_id)
+    print("➡ mode:", mode)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # ==================================================
+    # 🧠 OC THINKING SKILLS
+    # ==================================================
+    thinking_exam_enabled = True
+    thinking_homework_enabled = True
+
+    # -----------------------------
+    # 1️⃣ NORMAL EXAM
+    # -----------------------------
+    exam = (
+        db.query(Exam)
+        .filter(
+            func.lower(Exam.class_name) == "oc",
+            Exam.subject == "thinking_skills"
+        )
+        .order_by(Exam.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        thinking_exam_enabled = False
+    else:
+        attempt = (
+            db.query(StudentExamOCThinkingSkills)
+            .filter(
+                StudentExamOCThinkingSkills.student_id == student.id,
+                StudentExamOCThinkingSkills.exam_id == exam.id
+            )
+            .order_by(StudentExamOCThinkingSkills.started_at.desc())
+            .first()
+        )
+
+        if attempt and attempt.completed_at is not None:
+            thinking_exam_enabled = False
+
+    # -----------------------------
+    # 2️⃣ HOMEWORK
+    # -----------------------------
+    homework = (
+        db.query(HomeworkExamOCThinkingSkills)
+        .filter(
+            func.lower(HomeworkExamOCThinkingSkills.class_name) == "oc",
+            HomeworkExamOCThinkingSkills.subject == "thinking_skills"
+        )
+        .order_by(HomeworkExamOCThinkingSkills.created_at.desc())
+        .first()
+    )
+
+    if not homework:
+        thinking_homework_enabled = False
+    else:
+        attempt = (
+            db.query(StudentHomeworkOCThinkingSkills)
+            .filter(
+                StudentHomeworkOCThinkingSkills.student_id == student.id,
+                StudentHomeworkOCThinkingSkills.homework_exam_id == homework.id
+            )
+            .order_by(StudentHomeworkOCThinkingSkills.started_at.desc())
+            .first()
+        )
+
+        if attempt and attempt.completed_at is not None:
+            thinking_homework_enabled = False
+
+    # ==================================================
+    # 🎯 FINAL RESPONSE
+    # ==================================================
+    response = {
+        "oc_thinking_skills": {
+            "exam": thinking_exam_enabled,
+            "homework": thinking_homework_enabled
+        }
+    }
+
+    print("✅ OC Availability response:", response)
+
+    return response
+
 
 @app.get("/api/student/get-exam")
 def get_exam(session_id: int, db: Session = Depends(get_db)):
