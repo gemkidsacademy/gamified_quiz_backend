@@ -16172,10 +16172,6 @@ def generate_overall_selective_report(
     exam_date: date,
     db: Session = Depends(get_db)
 ):
-    """
-    Generate (once) or fetch Overall Selective Readiness Report
-    for a student on a given exam date.
-    """
 
     # --------------------------------------------------
     # 1️⃣ Guard: already exists?
@@ -16193,7 +16189,7 @@ def generate_overall_selective_report(
         return existing
 
     # --------------------------------------------------
-    # 2️⃣ Fetch per-exam admin reports for that date
+    # 2️⃣ Fetch admin reports
     # --------------------------------------------------
     reports = (
         db.query(AdminExamReport)
@@ -16203,21 +16199,12 @@ def generate_overall_selective_report(
         )
         .all()
     )
+
     if not reports:
-       raise HTTPException(
-           status_code=404,
-           detail={
-               "code": "NO_EXAMS_FOUND",
-               "message": "No exam reports exist for this student on the selected exam date.",
-               "student_id": student_id,
-               "exam_date": str(exam_date)
-           }
-       )
+        raise HTTPException(status_code=404, detail="No exams found")
 
-
-    
     # --------------------------------------------------
-    # 3️⃣ Normalize exam types (🔥 FIX)
+    # 3️⃣ Normalize exam types
     # --------------------------------------------------
     def normalize_exam_type(raw: str) -> str:
         raw = raw.lower().strip()
@@ -16239,53 +16226,72 @@ def generate_overall_selective_report(
     missing = required_subjects - reports_by_subject.keys()
 
     if missing:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "INCOMPLETE_EXAMS",
-                "message": "Overall readiness cannot be generated because not all required exams are completed.",
-                "missing_subjects": sorted(list(missing)),
-                "completed_subjects": sorted(list(reports_by_subject.keys())),
-                "student_id": student_id,
-                "exam_date": str(exam_date)
-            }
-        )
-
-
-    
-    # --------------------------------------------------
-    # 4️⃣ Compute normalized overall score (FIXED)
-    # --------------------------------------------------
-    MAX_SCORES = {
-        "reading": 100,
-        "mathematical_reasoning": 100,
-        "thinking_skills": 100,
-        "writing": 20,
-    }
-    
-    # Raw scores (keep for overrides + storage)
-    components = {
-        subject: reports_by_subject[subject].overall_score
-        for subject in MAX_SCORES
-    }
-    
-    # Normalize all components to percentage
-    normalized_components = {
-        subject: round(
-            (components[subject] / MAX_SCORES[subject]) * 100,
-            2
-        )
-        for subject in components
-    }
-    
-    # Equal-weight average of normalized scores
-    overall_percent = round(
-        sum(normalized_components.values()) / len(normalized_components),
-        2
-    )
+        raise HTTPException(status_code=409, detail="Incomplete exams")
 
     # --------------------------------------------------
-    # 5️⃣ Map to readiness band
+    # 4️⃣ Fetch RAW results (🔥 NEW)
+    # --------------------------------------------------
+    attempt_ids = [r.exam_attempt_id for r in reports]
+
+    results_by_attempt = {}
+
+    # Thinking
+    for r in db.query(StudentExamResultsThinkingSkills).filter(
+        StudentExamResultsThinkingSkills.exam_attempt_id.in_(attempt_ids)
+    ):
+        results_by_attempt[r.exam_attempt_id] = r
+
+    # Math
+    for r in db.query(StudentExamResultsMathematicalReasoning).filter(
+        StudentExamResultsMathematicalReasoning.exam_attempt_id.in_(attempt_ids)
+    ):
+        results_by_attempt[r.exam_attempt_id] = r
+
+    # Reading
+    for r in db.query(StudentExamResultsReading).filter(
+        StudentExamResultsReading.exam_attempt_id.in_(attempt_ids)
+    ):
+        results_by_attempt[r.exam_attempt_id] = r
+
+    # Writing (if exists)
+    for r in db.query(StudentExamResultsWriting).filter(
+        StudentExamResultsWriting.exam_attempt_id.in_(attempt_ids)
+    ):
+        results_by_attempt[r.exam_attempt_id] = r
+
+    # --------------------------------------------------
+    # 5️⃣ Build components (RAW + %)
+    # --------------------------------------------------
+    components = {}
+
+    for subject, report in reports_by_subject.items():
+
+        result = results_by_attempt.get(report.exam_attempt_id)
+
+        obtained = None
+        total = None
+
+        if result:
+            obtained = result.correct_answers
+            total = result.total_questions
+
+        components[subject] = {
+            "obtained": obtained,
+            "total": total,
+            "percent": report.overall_score
+        }
+
+    # --------------------------------------------------
+    # 6️⃣ Compute overall %
+    # --------------------------------------------------
+    normalized_values = [
+        c["percent"] for c in components.values() if c["percent"] is not None
+    ]
+
+    overall_percent = round(sum(normalized_values) / len(normalized_values), 2)
+
+    # --------------------------------------------------
+    # 7️⃣ Band logic (unchanged)
     # --------------------------------------------------
     if overall_percent >= 80:
         band = "Band 1 – Fully Selective Ready"
@@ -16297,70 +16303,17 @@ def generate_overall_selective_report(
         band = "Band 4 – Not Selective Ready Yet"
 
     # --------------------------------------------------
-    # 6️⃣ School recommendation matrix
-    # --------------------------------------------------
-    school_map = {
-        "Band 1 – Fully Selective Ready": [
-            "James Ruse",
-            "Baulkham Hills",
-            "North Sydney Boys/Girls",
-            "Sydney Grammar (Academic profile)"
-        ],
-        "Band 2 – Strong Selective Potential": [
-            "Hornsby Girls",
-            "Chatswood",
-            "Ryde",
-            "Sydney Technical",
-            "Parramatta",
-            "Penrith Selective"
-        ],
-        "Band 3 – Borderline Selective": [
-            "Local / partially selective schools",
-            "Lower competition selective schools"
-        ],
-        "Band 4 – Not Selective Ready Yet": [
-            "Focus on foundations",
-            "Reassess selective pathway",
-            "Consider enrichment before exam prep"
-        ]
-    }
-
-    school_recommendation = school_map[band]
-
-    # --------------------------------------------------
-    # 7️⃣ Override rules (CRITICAL SAFETY)
-    # --------------------------------------------------
-    override_flag = False
-    override_message = None
-
-    if components["writing"] < 60:
-        override_flag = True
-        override_message = (
-            "While the overall score is competitive, improvement in Writing "
-            "is required for higher-tier selective schools."
-        )
-
-    for subject, score in components.items():
-        if score < 55:
-            override_flag = True
-            override_message = (
-                f"While the overall score is competitive, improvement in "
-                f"{subject.replace('_', ' ').title()} is required for higher-tier selective schools."
-            )
-            break
-
-    # --------------------------------------------------
-    # 8️⃣ Store snapshot (IMMUTABLE)
+    # 8️⃣ Store snapshot (optional improvement)
     # --------------------------------------------------
     overall_report = AdminOverallSelectiveReport(
         student_id=student_id,
         exam_date=exam_date,
         overall_percent=overall_percent,
         readiness_band=band,
-        school_recommendation=school_recommendation,
-        override_flag=override_flag,
-        override_message=override_message,
-        components=components
+        school_recommendation=[],
+        override_flag=False,
+        override_message=None,
+        components=components   # 🔥 now rich data
     )
 
     db.add(overall_report)
@@ -16368,7 +16321,6 @@ def generate_overall_selective_report(
     db.refresh(overall_report)
 
     return overall_report
-
 
 @app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
