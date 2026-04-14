@@ -16176,17 +16176,17 @@ def generate_overall_selective_report(
     # --------------------------------------------------
     # 1️⃣ Guard: already exists?
     # --------------------------------------------------
-    existing = (
-        db.query(AdminOverallSelectiveReport)
-        .filter(
-            AdminOverallSelectiveReport.student_id == student_id,
-            AdminOverallSelectiveReport.exam_date == exam_date
-        )
-        .first()
-    )
+    #existing = (
+     #   db.query(AdminOverallSelectiveReport)
+      #  .filter(
+       #     AdminOverallSelectiveReport.student_id == student_id,
+        #    AdminOverallSelectiveReport.exam_date == exam_date
+        #)
+        #.first()
+    #)
 
-    if existing:
-        return existing
+    #if existing:
+     #   return existing
 
     # --------------------------------------------------
     # 2️⃣ Fetch admin reports
