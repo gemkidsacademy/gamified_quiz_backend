@@ -5278,13 +5278,41 @@ def get_available_subjects(
 
             if completed_attempt:
                 thinking_enabled = False
-
+    # ==================================================
+    # 📖 READING
+    # ==================================================
+    reading_enabled = True
+    
+    reading_exam = (
+        db.query(GeneratedExamReading)
+        .filter(GeneratedExamReading.class_name == "selective")
+        .order_by(GeneratedExamReading.id.desc())
+        .first()
+    )
+    
+    if not reading_exam:
+        reading_enabled = False
+    else:
+        reading_attempt = (
+            db.query(StudentExamReading)
+            .filter(
+                StudentExamReading.student_id == student.id,
+                StudentExamReading.exam_id == reading_exam.id
+            )
+            .order_by(StudentExamReading.started_at.desc())
+            .first()
+        )
+    
+        # 🚫 Completed → disable
+        if reading_attempt and reading_attempt.finished:
+            reading_enabled = False
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
     response = {
         "mathematical_reasoning": math_enabled,
-        "thinking_skills": thinking_enabled
+        "thinking_skills": thinking_enabled,
+        "reading": reading_enabled
     }
 
     print("✅ Availability response:", response)
