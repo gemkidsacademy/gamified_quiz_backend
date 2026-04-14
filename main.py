@@ -5307,12 +5307,41 @@ def get_available_subjects(
         if reading_attempt and reading_attempt.finished:
             reading_enabled = False
     # ==================================================
+    # ✍️ WRITING
+    # ==================================================
+    writing_enabled = True
+    
+    writing_exam = (
+        db.query(GeneratedExamWriting)
+        .filter(GeneratedExamWriting.is_current == True)
+        .order_by(GeneratedExamWriting.created_at.desc())
+        .first()
+    )
+    
+    if not writing_exam:
+        writing_enabled = False
+    else:
+        writing_attempt = (
+            db.query(StudentExamWriting)
+            .filter(
+                StudentExamWriting.student_id == student.id,
+                StudentExamWriting.exam_id == writing_exam.id
+            )
+            .order_by(StudentExamWriting.started_at.desc())
+            .first()
+        )
+    
+        # 🟥 Completed → disable
+        if writing_attempt and writing_attempt.completed_at is not None:
+            writing_enabled = False
+    # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
     response = {
         "mathematical_reasoning": math_enabled,
         "thinking_skills": thinking_enabled,
-        "reading": reading_enabled
+        "reading": reading_enabled,
+        "writing": writing_enabled   # 👈 ADD THIS
     }
 
     print("✅ Availability response:", response)
