@@ -16253,12 +16253,7 @@ def generate_overall_selective_report(
     ):
         results_by_attempt[r.exam_attempt_id] = r
 
-    # Writing (if exists)
-    for r in db.query(StudentExamResultsWriting).filter(
-        StudentExamResultsWriting.exam_attempt_id.in_(attempt_ids)
-    ):
-        results_by_attempt[r.exam_attempt_id] = r
-
+    
     # --------------------------------------------------
     # 5️⃣ Build components (RAW + %)
     # --------------------------------------------------
