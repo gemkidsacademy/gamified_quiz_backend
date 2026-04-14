@@ -5212,8 +5212,12 @@ def get_available_subjects(
     # ==================================================
     # 🧮 MATHEMATICAL REASONING
     # ==================================================
-    math_enabled = True
-
+    math_exam_enabled = True
+    math_homework_enabled = True
+    
+    # -----------------------------
+    # 1️⃣ NORMAL EXAM
+    # -----------------------------
     math_exam = (
         db.query(Exam)
         .filter(
@@ -5223,9 +5227,9 @@ def get_available_subjects(
         .order_by(Exam.created_at.desc())
         .first()
     )
-
+    
     if not math_exam:
-        math_enabled = False
+        math_exam_enabled = False
     else:
         math_attempt = (
             db.query(StudentExamMathematicalReasoning)
@@ -5236,10 +5240,41 @@ def get_available_subjects(
             .order_by(StudentExamMathematicalReasoning.started_at.desc())
             .first()
         )
-
+    
         if math_attempt and math_attempt.completed_at is not None:
-            math_enabled = False
-
+            math_exam_enabled = False
+    
+    
+    # -----------------------------
+    # 2️⃣ HOMEWORK
+    # -----------------------------
+    homework_exam = (
+        db.query(HomeworkExamMathematicalReasoning)
+        .filter(
+            func.lower(HomeworkExamMathematicalReasoning.class_name) ==
+            func.lower(student.class_name),
+            HomeworkExamMathematicalReasoning.class_year == student.student_year,
+            HomeworkExamMathematicalReasoning.subject == "mathematical_reasoning"
+        )
+        .order_by(HomeworkExamMathematicalReasoning.id.desc())
+        .first()
+    )
+    
+    if not homework_exam:
+        math_homework_enabled = False
+    else:
+        homework_attempt = (
+            db.query(StudentHomeworkMathematicalReasoning)
+            .filter(
+                StudentHomeworkMathematicalReasoning.student_id == student.id,
+                StudentHomeworkMathematicalReasoning.homework_id == homework_exam.id
+            )
+            .order_by(StudentHomeworkMathematicalReasoning.started_at.desc())
+            .first()
+        )
+    
+        if homework_attempt and homework_attempt.completed_at is not None:
+            math_homework_enabled = False
     # ==================================================
     # 🧠 THINKING SKILLS
     # ==================================================
@@ -5316,8 +5351,12 @@ def get_available_subjects(
     # ==================================================
     # 📖 READING
     # ==================================================
-    reading_enabled = True
+    reading_exam_enabled = True
+    reading_homework_enabled = True
     
+    # -----------------------------
+    # 1️⃣ NORMAL EXAM
+    # -----------------------------
     reading_exam = (
         db.query(GeneratedExamReading)
         .filter(GeneratedExamReading.class_name == "selective")
@@ -5326,7 +5365,7 @@ def get_available_subjects(
     )
     
     if not reading_exam:
-        reading_enabled = False
+        reading_exam_enabled = False
     else:
         reading_attempt = (
             db.query(StudentExamReading)
@@ -5338,14 +5377,50 @@ def get_available_subjects(
             .first()
         )
     
-        # 🚫 Completed → disable
         if reading_attempt and reading_attempt.finished:
-            reading_enabled = False
+            reading_exam_enabled = False
+    
+    
+    # -----------------------------
+    # 2️⃣ HOMEWORK
+    # -----------------------------
+    class_name = student.class_name.strip().lower()
+    class_year = student.student_year.strip().lower()
+    
+    homework_exam = (
+        db.query(GeneratedHomeworkReading)
+        .filter(
+            func.lower(GeneratedHomeworkReading.class_name) == class_name,
+            func.lower(GeneratedHomeworkReading.class_year) == class_year
+        )
+        .order_by(GeneratedHomeworkReading.id.desc())
+        .first()
+    )
+    
+    if not homework_exam:
+        reading_homework_enabled = False
+    else:
+        homework_attempt = (
+            db.query(StudentHomeworkReading)
+            .filter(
+                StudentHomeworkReading.student_id == student.id,
+                StudentHomeworkReading.exam_id == homework_exam.id
+            )
+            .order_by(StudentHomeworkReading.started_at.desc())
+            .first()
+        )
+    
+        if homework_attempt and homework_attempt.finished:
+            reading_homework_enabled = False
     # ==================================================
     # ✍️ WRITING
     # ==================================================
-    writing_enabled = True
+    writing_exam_enabled = True
+    writing_homework_enabled = True
     
+    # -----------------------------
+    # 1️⃣ NORMAL EXAM
+    # -----------------------------
     writing_exam = (
         db.query(GeneratedExamWriting)
         .filter(GeneratedExamWriting.is_current == True)
@@ -5354,7 +5429,7 @@ def get_available_subjects(
     )
     
     if not writing_exam:
-        writing_enabled = False
+        writing_exam_enabled = False
     else:
         writing_attempt = (
             db.query(StudentExamWriting)
@@ -5366,20 +5441,58 @@ def get_available_subjects(
             .first()
         )
     
-        # 🟥 Completed → disable
         if writing_attempt and writing_attempt.completed_at is not None:
-            writing_enabled = False
+            writing_exam_enabled = False
+    
+    
+    # -----------------------------
+    # 2️⃣ HOMEWORK
+    # -----------------------------
+    homework_exam = (
+        db.query(GeneratedHomeworkWriting)
+        .filter(
+            func.lower(GeneratedHomeworkWriting.class_name) == func.lower(student.class_name),
+            func.lower(GeneratedHomeworkWriting.class_year) == func.lower(student.student_year)
+        )
+        .order_by(GeneratedHomeworkWriting.created_at.desc())
+        .first()
+    )
+    
+    if not homework_exam:
+        writing_homework_enabled = False
+    else:
+        homework_attempt = (
+            db.query(StudentHomeworkWriting)
+            .filter(
+                StudentHomeworkWriting.student_id == student.id,
+                StudentHomeworkWriting.homework_id == homework_exam.id
+            )
+            .order_by(StudentHomeworkWriting.started_at.desc())
+            .first()
+        )
+    
+        if homework_attempt and homework_attempt.completed_at is not None:
+            writing_homework_enabled = False
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
     response = {
-        "mathematical_reasoning": math_enabled,
+        "mathematical_reasoning": {
+            "exam": math_exam_enabled,
+            "homework": math_homework_enabled
+        },
         "thinking_skills": {
             "exam": thinking_exam_enabled,
             "homework": thinking_homework_enabled
         },
-        "reading": reading_enabled,
-        "writing": writing_enabled   # 👈 ADD THIS
+        "reading": {
+            "exam": reading_exam_enabled,
+            "homework": reading_homework_enabled
+        },
+        "writing": {
+            "exam": writing_exam_enabled,
+            "homework": writing_homework_enabled
+        }   # 👈 ADD THIS
     }
 
     print("✅ Availability response:", response)
