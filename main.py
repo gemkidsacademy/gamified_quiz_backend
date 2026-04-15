@@ -7948,18 +7948,30 @@ def send_selective_report_email(
     return {
         "message": f"Email sent successfully to {to_email} ✅"
     }
- 
+
 def build_selective_report_html(report):
     components = report["components"]
 
     def percent(subject, value):
-        max_scores = {
-            "reading": 100,
-            "mathematical_reasoning": 100,
-            "thinking_skills": 100,
-            "writing": 20,
-        }
-        return round((value / max_scores[subject]) * 100)
+        max_score = max_scores[subject]
+    
+        # ✅ NEW: handle dict structure
+        if isinstance(value, dict):
+            # Prefer percent if available
+            if value.get("percent") is not None:
+                return round(value["percent"], 2)
+    
+            # fallback to obtained/total
+            obtained = value.get("obtained")
+            total = value.get("total")
+    
+            if obtained is not None and total:
+                return round((obtained / total) * 100, 2)
+    
+            return 0
+    
+        # ✅ OLD: fallback (backward compatibility)
+        return round((value / max_score) * 100, 2)
 
     def progress_bar(pct):
         return f"""
