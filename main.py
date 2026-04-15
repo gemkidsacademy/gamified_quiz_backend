@@ -39372,15 +39372,26 @@ async def upload_word(
             question_text = "\n\n".join(
                 b["content"] for b in resolved_blocks if b["type"] == "text"
             )
+            raw_class_year = question.get("class_year")
+
+            if isinstance(raw_class_year, str):
+                raw_class_year = raw_class_year.strip()
+            
+            class_year = int(raw_class_year) if str(raw_class_year).isdigit() else None
 
             new_question = Question(
                 class_name=question.get("class_name"),
+                class_year=class_year,   # ✅ clean + safe
+            
                 subject=question.get("subject"),
                 topic=question.get("topic"),
                 difficulty=question.get("difficulty"),
+            
                 question_type=question.get("question_type") or "multi_image_diagram_mcq",
+            
                 question_text=question_text,
                 question_blocks=filter_display_blocks(resolved_blocks),
+            
                 options=question["options"],
                 correct_answer=question["correct_answer"]
             )
