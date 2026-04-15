@@ -140,6 +140,65 @@ QuestionSchema = {
 
     "additionalProperties": False
 }
+QuestionSchemaWithClassYear = {
+    "type": "object",
+    "properties": {
+        "class_name": {"type": "string"},
+        "subject": {"type": "string"},
+        "topic": {"type": "string"},
+        "difficulty": {"type": "string"},
+
+        # Full textual content only (concatenated text blocks)
+        "question_text": {"type": "string"},
+
+        # Ordered visual structure (text + images)
+        "question_blocks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": ["text", "image"]
+                    },
+                    "content": {
+                        "type": "string"
+                    },
+                    "src": {
+                        "type": "string"
+                    }
+                },
+                "required": ["type"],
+                "additionalProperties": False
+            }
+        },
+
+        # Flat image list (legacy / convenience)
+        "images": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+
+        # MCQ options
+        "options": {
+            "type": "object",
+            "additionalProperties": {"type": "string"}
+        },
+
+        "correct_answer": {"type": "string"},
+        "partial": {"type": "boolean"}
+    },
+
+    # Required fields for a valid question
+    "required": [
+        "question_text",
+        "question_blocks",
+        "options",
+        "correct_answer"
+    ],
+
+    "additionalProperties": False
+}
 
 # -----------------------------
 # Google Cloud Storage Setup
@@ -3065,6 +3124,7 @@ class Question(Base):
 
     class_name = Column(String(50), nullable=False)
     subject = Column(String(50), nullable=False)
+    class_year = Column(Integer, nullable=False)
 
     # NEW — topic extracted from Word/GPT parser
     topic = Column(String(100), nullable=True)
@@ -3833,40 +3893,56 @@ def serialize_blocks_for_gpt_cloze(blocks: list[dict]) -> str:
 async def parse_with_gpt(payload: dict, retries: int = 2):
 
     SYSTEM_PROMPT = (
-        "You are a deterministic exam-question parser.\n\n"
-    
-        "INPUT CONTRACT:\n"
-        "- You will receive text representing EXACTLY ONE exam\n"
-        "- The exam contains AT MOST ONE question\n"
-        "- Metadata (class, subject, topic, difficulty) may appear before the question\n\n"
-    
-        "CONTENT RULES:\n"
-        "- Preserve wording exactly\n"
-        "- Do NOT invent missing fields\n"
-        "- Do NOT merge multiple questions\n\n"
-    
-        "EXTRACTION RULES:\n"
-        "- Extract the following fields if present:\n"
-        "  class_name\n"
-        "  subject\n"
-        "  topic\n"
-        "  difficulty\n"
-        "  options (A–D)\n"
-        "  correct_answer\n\n"
-    
-        "OMISSION RULES:\n"
-        "- Extract all fields that are explicitly present\n"
-        "- If options or correct_answer are not explicitly present, set them to null\n"
-        "- Partial extraction is allowed\n\n"
-    
-        "OUTPUT RULES:\n"
-        "- Return ONLY valid JSON\n"
-        "- No markdown, no commentary\n"
-        "- Always return a single question object\n\n"
-    
-        "OUTPUT FORMAT:\n"
-        '{ "question": { ... } }'
-    )
+       "You are a deterministic exam-question parser.\n\n"
+   
+       "INPUT CONTRACT:\n"
+       "- You will receive text representing EXACTLY ONE exam\n"
+       "- The exam contains AT MOST ONE question\n"
+       "- A METADATA section may appear before the question\n"
+       "- Metadata fields may include: CLASS, CLASS_YEAR, SUBJECT, TOPIC, DIFFICULTY\n\n"
+   
+       "CONTENT RULES:\n"
+       "- Preserve wording exactly as provided\n"
+       "- Do NOT rephrase or summarize\n"
+       "- Do NOT invent or infer missing fields\n"
+       "- Do NOT merge multiple questions\n\n"
+   
+       "EXTRACTION RULES:\n"
+       "- Extract the following fields ONLY if explicitly present:\n"
+       "  class_name (from CLASS)\n"
+       "  class_year (from CLASS_YEAR)\n"
+       "  subject (from SUBJECT)\n"
+       "  topic (from TOPIC)\n"
+       "  difficulty (from DIFFICULTY)\n"
+       "  options (A–D)\n"
+       "  correct_answer\n\n"
+   
+       "CLASS_YEAR RULES:\n"
+       "- CLASS_YEAR appears in metadata as: CLASS_YEAR: \"5\"\n"
+       "- Extract class_year as an integer (e.g. 5, not \"5\")\n"
+       "- Do NOT guess or infer class_year if it is missing\n\n"
+   
+       "OPTIONS RULES:\n"
+       "- Extract options only if clearly labeled (A, B, C, D)\n"
+       "- Preserve option text exactly\n\n"
+   
+       "ANSWER RULES:\n"
+       "- Extract correct_answer exactly as provided (e.g. \"A\", \"B\", \"C\", \"D\")\n"
+       "- Do NOT infer the answer if it is missing\n\n"
+   
+       "OMISSION RULES:\n"
+       "- Extract all fields that are explicitly present\n"
+       "- If a field is missing, return it as null\n"
+       "- Partial extraction is allowed\n\n"
+   
+       "OUTPUT RULES:\n"
+       "- Return ONLY valid JSON\n"
+       "- No markdown, no commentary, no extra text\n"
+       "- Always return a single question object\n\n"
+   
+       "OUTPUT FORMAT:\n"
+       '{ "question": { ... } }'
+   )
 
 
     serialized = serialize_blocks_for_gpt(payload["blocks"])
@@ -3889,7 +3965,7 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
                         "properties": {
                             "question": {
                                 "type": ["object", "null"],
-                                "properties": QuestionSchema["properties"]                                
+                                "properties": QuestionSchemaWithClassYear["properties"]                                
                             }
                         },
                         "required": ["question"]
@@ -42820,6 +42896,7 @@ def create_homework_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
 
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+     
 @app.post("/api/quizzes")
 def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
