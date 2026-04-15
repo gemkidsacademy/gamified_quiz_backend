@@ -7951,6 +7951,13 @@ def send_selective_report_email(
 
 def build_selective_report_html(report):
     components = report["components"]
+    max_scores = {
+        "reading": 100,
+        "mathematical_reasoning": 100,
+        "thinking_skills": 100,
+        "writing": 25,
+    }
+
 
     def percent(subject, value):
         max_score = max_scores[subject]
