@@ -241,6 +241,8 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class GenerateExamRequest(BaseModel):
+    class_year: int 
 class StudentWritingSnapshot(Base):
     __tablename__ = "student_writing_snapshot"
 
@@ -15948,11 +15950,14 @@ def generate_homework_exam(
  
 @app.post("/generate-new-mr")
 def generate_exam(
+    req: GenerateExamRequest,
     db: Session = Depends(get_db)
 ):
     # --------------------------------------------------
     # 1️⃣ Fetch latest Mathematical Reasoning quiz
     # --------------------------------------------------
+    class_year = req.class_year
+    print(f"🎯 Generating exam for class_year={class_year}")
     quiz = (
         db.query(QuizMathematicalReasoning)
         .filter(
@@ -16097,6 +16102,7 @@ def generate_exam(
         quiz_id=quiz.id,
         class_name=quiz.class_name,
         subject=quiz.subject,
+        class_year=class_year,   # ✅ THIS FIXES YOUR SYSTEM
         difficulty=quiz.difficulty,
         questions=questions,
     )
