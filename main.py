@@ -14364,6 +14364,7 @@ def get_question_bank_reading(
 @app.get("/api/admin/question-bank-mathematical-reasoning")
 def get_question_bank_mathematical_reasoning(
     class_name: str = Query(...),   # 👈 REQUIRED
+    class_year: int = Query(...),   # ✅ NEW REQUIRED
     db: Session = Depends(get_db)
 ):
     results = (
@@ -14375,6 +14376,8 @@ def get_question_bank_mathematical_reasoning(
         .filter(
             func.lower(func.trim(Question.subject)) == "mathematical reasoning",
             func.lower(func.trim(Question.class_name)) == class_name.lower(),
+            Question.class_year == class_year,   # ✅ NEW FILTER
+
             Question.topic.isnot(None),   # 👈 consistency
             Question.topic != ""          # 👈 consistency
         )
