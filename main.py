@@ -16165,6 +16165,96 @@ def get_selective_report_dates(
 
     return [r[0].isoformat() for r in rows]
 
+def generate_school_recommendations_and_override(components, overall_percent):
+    """
+    Uses band logic + subject safety rules
+    to generate:
+    - school_recommendation
+    - override_flag
+    - override_message
+    """
+
+    # --------------------------------------------------
+    # 1️⃣ Extract percentages from new structure
+    # --------------------------------------------------
+    subject_percents = {
+        subject: comp.get("percent", 0)
+        for subject, comp in components.items()
+    }
+
+    # --------------------------------------------------
+    # 2️⃣ Band logic (same as before)
+    # --------------------------------------------------
+    if overall_percent >= 80:
+        band = "Band 1 – Fully Selective Ready"
+    elif overall_percent >= 70:
+        band = "Band 2 – Strong Selective Potential"
+    elif overall_percent >= 60:
+        band = "Band 3 – Borderline Selective"
+    else:
+        band = "Band 4 – Not Selective Ready Yet"
+
+    # --------------------------------------------------
+    # 3️⃣ School mapping (same as old system)
+    # --------------------------------------------------
+    school_map = {
+        "Band 1 – Fully Selective Ready": [
+            "James Ruse",
+            "Baulkham Hills",
+            "North Sydney Boys/Girls",
+            "Sydney Grammar (Academic profile)"
+        ],
+        "Band 2 – Strong Selective Potential": [
+            "Hornsby Girls",
+            "Chatswood",
+            "Ryde",
+            "Sydney Technical",
+            "Parramatta",
+            "Penrith Selective"
+        ],
+        "Band 3 – Borderline Selective": [
+            "Local / partially selective schools",
+            "Lower competition selective schools"
+        ],
+        "Band 4 – Not Selective Ready Yet": [
+            "Focus on foundations",
+            "Reassess selective pathway",
+            "Consider enrichment before exam prep"
+        ]
+    }
+
+    school_recommendation = school_map[band]
+
+    # --------------------------------------------------
+    # 4️⃣ Override rules (UPDATED to use percent)
+    # --------------------------------------------------
+    override_flag = False
+    override_message = None
+
+    # Writing is critical
+    if subject_percents.get("writing", 0) < 60:
+        override_flag = True
+        override_message = (
+            "While the overall score is competitive, improvement in Writing "
+            "is required for higher-tier selective schools."
+        )
+
+    # Any weak subject
+    for subject, score in subject_percents.items():
+        if score < 55:
+            override_flag = True
+            override_message = (
+                f"While the overall score is competitive, improvement in "
+                f"{subject.replace('_', ' ').title()} is required for higher-tier selective schools."
+            )
+            break
+
+    return {
+        "band": band,
+        "school_recommendation": school_recommendation,
+        "override_flag": override_flag,
+        "override_message": override_message
+    }
  
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
@@ -16285,17 +16375,19 @@ def generate_overall_selective_report(
 
     overall_percent = round(sum(normalized_values) / len(normalized_values), 2)
 
+    
     # --------------------------------------------------
-    # 7️⃣ Band logic (unchanged)
+    # 7️⃣ Band + Recommendations + Overrides (NEW)
     # --------------------------------------------------
-    if overall_percent >= 80:
-        band = "Band 1 – Fully Selective Ready"
-    elif overall_percent >= 70:
-        band = "Band 2 – Strong Selective Potential"
-    elif overall_percent >= 60:
-        band = "Band 3 – Borderline Selective"
-    else:
-        band = "Band 4 – Not Selective Ready Yet"
+    result = generate_school_recommendations_and_override(
+        components,
+        overall_percent
+    )
+    
+    band = result["band"]
+    school_recommendations = result["school_recommendation"]
+    override_flag = result["override_flag"]
+    override_message = result["override_message"]
 
     # --------------------------------------------------
     # 8️⃣ Store snapshot (optional improvement)
@@ -16305,10 +16397,10 @@ def generate_overall_selective_report(
         exam_date=exam_date,
         overall_percent=overall_percent,
         readiness_band=band,
-        school_recommendation=[],
-        override_flag=False,
-        override_message=None,
-        components=components   # 🔥 now rich data
+        school_recommendation=school_recommendations,
+        override_flag=override_flag,
+        override_message=override_message,
+        components=components
     )
 
     db.add(overall_report)
