@@ -33016,7 +33016,16 @@ def create_reading_config(
 
 
 
+def extract_numeric_year_from_student(student_year_str: str) -> int:
+    """
+    Converts 'Year 6' → 6
+    Converts '6' → 6
+    """
+    if not student_year_str:
+        return None
 
+    return int(''.join(filter(str.isdigit, student_year_str)))
+ 
 
 @app.post("/api/student/start-exam")
 def start_exam(
@@ -33042,9 +33051,11 @@ def start_exam(
         print(f"❌ Student not found (raw={repr(req.student_id)})")
         raise HTTPException(status_code=404, detail="Student not found")
 
-
+    
     print(f"✅ Student resolved: id={student.id}")
+    student_year_number = extract_numeric_year_from_student(student.student_year)
 
+    print(f"🎯 Parsed student_year: {student.student_year} → {student_year_number}")
     
     # --------------------------------------------------
     # 🟢 CASE A — COMPLETED attempt exists → SHOW REPORT
@@ -33072,6 +33083,7 @@ def start_exam(
         db.query(Exam)
         .filter(
             func.lower(Exam.class_name) == func.lower(student.class_name),
+            Exam.class_year == student_year_number,   # ✅ FIXED
             Exam.subject == "mathematical_reasoning"
         )
         .order_by(Exam.created_at.desc())
