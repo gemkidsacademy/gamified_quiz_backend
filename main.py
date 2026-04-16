@@ -28335,18 +28335,22 @@ def generate_exam_oc_reading(
     # 2️⃣ PROCESS EACH TOPIC AS A SECTION
     # --------------------------------------------------
     for section_index, topic_spec in enumerate(topics, start=1):
-        print(f"Original topic name : '{topic_spec['name']}'")
+        print("\n================ NEW TOPIC =================")
+        print(f"Section Index   : {section_index}")
+        print(f"Raw Name        : '{topic_spec['name']}'")
         topic_name = topic_spec["name"].strip()
         required = int(topic_spec["num_questions"])
         topic_lower = topic_name.lower()
+        print(f"Normalized Name : '{topic_lower}'")
+        print(f"Required Qs     : {required}")
 
         section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
         print("\n🔎 QUERY FILTER:")
-        print(f"   class_name  : {class_name}")
-        print(f"   class_year  : {class_year}")
-        print(f"   subject     : {subject}")
-        print(f"   difficulty  : {difficulty}")
-        print(f"   topic       : {topic_lower}")
+        print(f"   class_name  : '{class_name.lower()}'")
+        print(f"   class_year  : '{class_year}'")
+        print(f"   subject     : '{subject.lower()}'")
+        print(f"   difficulty  : '{difficulty.lower()}'")
+        print(f"   topic       : '{topic_lower}'")
         bundles = (
             db.query(QuestionReading)
             .filter(
@@ -28360,12 +28364,13 @@ def generate_exam_oc_reading(
         )
 
         if not bundles:
+            print(f"❌ NO BUNDLES FOUND for topic '{topic_name}' (normalized: '{topic_lower}')")
             warnings.append(f"No bundles found for topic '{topic_name}'")
             continue
         print(f"\n📚 FOUND {len(bundles)} BUNDLES")
-
+        print("📊 Matching candidates:")
         for b in bundles:
-            print(f"   - DB Topic: '{b.topic}', Questions: {b.total_questions}")
+            print(f"   - DB Topic: '{b.topic}' | total_questions: {b.total_questions}")
         print(f"\n🎯 Looking for bundle with {required} questions")
         matched_bundle = next(
             (b for b in bundles if b.total_questions == required),
@@ -28381,7 +28386,8 @@ def generate_exam_oc_reading(
                 400,
                 f"Invalid exam config: '{topic_name}' requires {required} questions"
             )
-
+        else:
+            print(f"✅ MATCHED bundle with {matched_bundle.total_questions} questions") 
         bundle_json = matched_bundle.exam_bundle or {}
 
         question_type = bundle_json.get("question_type")
@@ -28460,7 +28466,10 @@ def generate_exam_oc_reading(
     db.refresh(saved)
 
     print("✅ OC Reading Exam generated. ID:", saved.id)
-
+    print("\n================ FINAL SUMMARY ================")
+    print(f"Sections created : {len(sections)}")
+    print(f"Warnings         : {warnings}")
+    print("================================================\n")
     return {
         "generated_exam_id": saved.id,
         "total_questions": total_questions,
