@@ -2786,7 +2786,8 @@ class QuizSetupFoundationalSchema(BaseModel):
 class ReadingExamRequest(BaseModel):
     class_name: str
     difficulty: str
-
+    class_year: str
+ 
 class AddStudentExamModuleRequest(BaseModel):
     id: str                 # Backend-suggested ID (e.g. "1" or UUID)
     student_id: str         # "Gem001"
@@ -28554,188 +28555,314 @@ def generate_exam_reading_homework(
         "exam_json": exam_json,
     }
  
-
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(
     payload: ReadingExamRequest,
     db: Session = Depends(get_db)
 ):
-    """
-    Generate a Reading Comprehension exam.
-    Produces a STRICT, frontend-safe exam_json with SECTIONED structure.
-    """
+    print("\n================ GENERATE READING EXAM =================")
 
-    print("\n================ GENERATE READING EXAM ================")
-    print("Incoming payload:", payload.dict())
+    try:
+        # --------------------------------------------------
+        # 🔍 0️⃣ INPUT DEBUG
+        # --------------------------------------------------
+        print("📥 RAW PAYLOAD:", payload.dict())
 
-    class_name = payload.class_name.strip()
-    difficulty = payload.difficulty.strip()
-    print("🧹 Resetting previous reading exam attempts")
-    
-    
-    print("🧼 All reading exam attempts cleared")
-    # --------------------------------------------------
-    # 1️⃣ LOAD CONFIG
-    # --------------------------------------------------
-    cfg = (
-        db.query(ReadingExamConfig)
-        .filter(
-            func.lower(ReadingExamConfig.class_name) == class_name.lower(),
-            func.lower(ReadingExamConfig.difficulty) == difficulty.lower(),
-        )
-        .first()
-    )
+        class_name = payload.class_name.strip()
+        difficulty = payload.difficulty.strip()
+        class_year = payload.class_year.strip()
 
-    if not cfg:
-        raise HTTPException(404, "No reading exam config found")
+        print("\n🔧 NORMALIZED INPUTS:")
+        print(f"   class_name  = '{class_name}'")
+        print(f"   difficulty  = '{difficulty}'")
+        print(f"   class_year  = '{class_year}'")
 
-    subject = cfg.subject
-    topics = cfg.topics
-    warnings = []
+        if not class_year:
+            print("❌ class_year missing")
+            raise HTTPException(400, "class_year is required")
 
-    sections = []
+        # --------------------------------------------------
+        # 🔍 1️⃣ LOAD CONFIG
+        # --------------------------------------------------
+        print("\n🔎 Fetching config...")
 
-    # --------------------------------------------------
-    # 2️⃣ PROCESS EACH TOPIC AS A SECTION
-    # --------------------------------------------------
-    for section_index, topic_spec in enumerate(topics, start=1):
-        topic_name = topic_spec["name"].strip()
-        required = int(topic_spec["num_questions"])
-        topic_lower = topic_name.lower()
-
-        section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
-
-        
-        matched_bundle = (
-            db.query(QuestionReading)
+        cfg_query = (
+            db.query(ReadingExamConfig)
             .filter(
-                func.lower(func.trim(QuestionReading.class_name)) == class_name.lower(),
-                func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
-                func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
-                func.lower(QuestionReading.topic) == topic_lower,
-                QuestionReading.total_questions == required,
+                func.lower(ReadingExamConfig.class_name) == class_name.lower(),
+                func.lower(ReadingExamConfig.difficulty) == difficulty.lower(),
+                func.lower(func.trim(ReadingExamConfig.class_year)) == class_year.lower()
             )
-            .order_by(QuestionReading.id.desc())   # 👈 ALWAYS pick latest
-            .first()
         )
 
-        if not matched_bundle:
-            raise HTTPException(
-                400,
-                f"Invalid exam config: '{topic_name}' requires {required} questions"
+        # 🔍 Count check BEFORE fetch
+        cfg_count = cfg_query.count()
+        print(f"📊 Matching configs found: {cfg_count}")
+
+        if cfg_count == 0:
+            print("⚠️ No config found — possible causes:")
+            print("   • class_year mismatch (e.g. 'Year 6' vs 6)")
+            print("   • difficulty mismatch")
+            print("   • config not created for this year")
+
+        cfg = cfg_query.first()
+
+        if not cfg:
+            raise HTTPException(404, "No reading exam config found")
+
+        print("✅ Config loaded:")
+        print(f"   id          = {cfg.id}")
+        print(f"   class_year  = {cfg.class_year}")
+        print(f"   difficulty  = {cfg.difficulty}")
+
+        subject = cfg.subject
+        topics = cfg.topics
+        warnings = []
+        sections = []
+
+        # --------------------------------------------------
+        # 🔍 2️⃣ PROCESS TOPICS
+        # --------------------------------------------------
+        print("\n================ PROCESSING TOPICS =================")
+
+        for section_index, topic_spec in enumerate(topics, start=1):
+            print(f"\n➡️ Section {section_index}")
+
+            topic_name = topic_spec["name"].strip()
+            required = int(topic_spec["num_questions"])
+            topic_lower = topic_name.lower()
+
+            print(f"   topic_name  = '{topic_name}'")
+            print(f"   required    = {required}")
+
+            section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
+
+            # 🔍 Query bundles
+            bundle_query = (
+                db.query(QuestionReading)
+                .filter(
+                    func.lower(func.trim(QuestionReading.class_name)) == class_name.lower(),
+                    func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
+                    func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
+                    func.lower(QuestionReading.topic) == topic_lower,
+                    QuestionReading.total_questions == required,
+                    func.lower(func.trim(QuestionReading.class_year)) == class_year.lower()
+                )
             )
 
-        bundle_json = matched_bundle.exam_bundle or {}
+            bundle_count = bundle_query.count()
+            print(f"   📊 Matching bundles: {bundle_count}")
 
-        for q in bundle_json.get("questions", []):
-            if q.get("difficulty", "").strip().lower() != difficulty.lower():
-                print("⚠️ Mixed difficulty detected inside bundle")
-        question_type = bundle_json.get("question_type")
-        reading_material = bundle_json.get("reading_material")
-        answer_options = bundle_json.get("answer_options")
+            if bundle_count == 0:
+                print("❌ No matching bundle found!")
+                print("👉 Likely causes:")
+                print("   • class_year mismatch")
+                print("   • wrong total_questions")
+                print("   • topic naming mismatch")
 
-        # 🔑 NEW: explicit rendering hints
-        if question_type in ("main_idea", "literary_analysis"):
-            passage_style = "literary"
-        else:
-            passage_style = "informational"
+            matched_bundle = (
+                bundle_query
+                .order_by(QuestionReading.id.desc())
+                .first()
+            )
 
+            if not matched_bundle:
+                raise HTTPException(
+                    400,
+                    f"Invalid exam config: '{topic_name}' requires {required} questions"
+                )
 
-        render_hint = (
-            "gapped_text"
-            if question_type == "gapped_text"
-            else "standard"
-        )
+            print(f"   ✅ Bundle selected ID: {matched_bundle.id}")
 
-        options_scope = "shared" if answer_options else "per_question"
+            bundle_json = matched_bundle.exam_bundle or {}
 
-        collected_questions = [
-            copy.deepcopy(q) for q in bundle_json.get("questions", [])
-        ]
+            question_type = bundle_json.get("question_type")
+            reading_material = bundle_json.get("reading_material")
+            answer_options = bundle_json.get("answer_options")
 
-        for idx, q in enumerate(collected_questions, start=1):
-            q["question_number"] = idx
-            q["question_id"] = f"{section_id}_Q{idx}"
+            print(f"   question_type = {question_type}")
+            print(f"   questions_in_bundle = {len(bundle_json.get('questions', []))}")
 
-        section = {
-            "section_id": section_id,
-            "section_index": section_index,
-            "question_type": question_type,
-            "topic": topic_name,
-            "reading_material": reading_material,
-            "passage_style": passage_style,
-            "render_hint": render_hint,
-            "options_scope": options_scope,
-            "questions": collected_questions,
+            # 🔍 Validate difficulty consistency
+            for q in bundle_json.get("questions", []):
+                if q.get("difficulty", "").strip().lower() != difficulty.lower():
+                    print("⚠️ Mixed difficulty detected inside bundle")
+
+            # Rendering hints
+            passage_style = (
+                "literary"
+                if question_type in ("main_idea", "literary_analysis")
+                else "informational"
+            )
+
+            render_hint = "gapped_text" if question_type == "gapped_text" else "standard"
+            options_scope = "shared" if answer_options else "per_question"
+
+            collected_questions = [
+                copy.deepcopy(q) for q in bundle_json.get("questions", [])
+            ]
+
+            for idx, q in enumerate(collected_questions, start=1):
+                q["question_number"] = idx
+                q["question_id"] = f"{section_id}_Q{idx}"
+
+            print(f"   ✅ Questions collected: {len(collected_questions)}")
+
+            section = {
+                "section_id": section_id,
+                "section_index": section_index,
+                "question_type": question_type,
+                "topic": topic_name,
+                "reading_material": reading_material,
+                "passage_style": passage_style,
+                "render_hint": render_hint,
+                "options_scope": options_scope,
+                "questions": collected_questions,
+            }
+
+            if answer_options:
+                section["answer_options"] = answer_options
+
+            sections.append(section)
+
+        # --------------------------------------------------
+        # 🔍 3️⃣ FINALIZE EXAM
+        # --------------------------------------------------
+        print("\n================ FINALIZING EXAM =================")
+
+        if not sections:
+            print("❌ No sections generated")
+            raise HTTPException(400, "No exam sections generated")
+
+        total_questions = sum(len(s["questions"]) for s in sections)
+        print(f"📊 Total sections: {len(sections)}")
+        print(f"📊 Total questions: {total_questions}")
+
+        exam_json = {
+            "class_name": class_name,
+            "class_year": class_year,
+            "subject": subject,
+            "difficulty": difficulty,
+            "duration_minutes": 40,
+            "total_questions": total_questions,
+            "sections": sections,
         }
 
-        if answer_options:
-            section["answer_options"] = answer_options
+        # --------------------------------------------------
+        # 💾 SAVE EXAM
+        # --------------------------------------------------
+        print("\n💾 Saving exam to DB...")
 
-        sections.append(section)
+        saved = GeneratedExamReading(
+            config_id=cfg.id,
+            class_name=class_name,
+            class_year=class_year,
+            subject=subject,
+            difficulty=difficulty,
+            total_questions=total_questions,
+            exam_json=exam_json,
+        )
 
-    # --------------------------------------------------
-    # 3️⃣ FINALIZE EXAM
-    # --------------------------------------------------
-    if not sections:
-        raise HTTPException(400, "No exam sections generated")
+        db.add(saved)
+        db.commit()
+        db.refresh(saved)
 
-    total_questions = sum(len(s["questions"]) for s in sections)
+        print(f"✅ Exam saved successfully. ID: {saved.id}")
+        print("================ END =================\n")
 
-    exam_json = {
-        "class_name": class_name,
-        "subject": subject,
-        "difficulty": difficulty,
-        "duration_minutes": 40,
-        "total_questions": total_questions,
-        "sections": sections,
-    }
+        return {
+            "generated_exam_id": saved.id,
+            "total_questions": total_questions,
+            "warnings": warnings,
+            "exam_json": exam_json,
+        }
 
-    saved = GeneratedExamReading(
-        config_id=cfg.id,
-        class_name=class_name,
-        subject=subject,
-        difficulty=difficulty,
-        total_questions=total_questions,
-        exam_json=exam_json,
-    )
+    except Exception as e:
+        print("\n💥 ERROR IN GENERATE EXAM")
+        print(f"❗ Exception: {str(e)}")
+        raise
 
-    db.add(saved)
-    db.commit()
-    db.refresh(saved)
 
-    print("✅ Exam generated. ID:", saved.id)
 
-    return {
-        "generated_exam_id": saved.id,
-        "total_questions": total_questions,
-        "warnings": warnings,
-        "exam_json": exam_json,
-    }
+
 
 
 @app.get("/api/quizzes-reading")
-def get_reading_quiz_dropdown(db: Session = Depends(get_db)):
-    """
-    Returns all configs for a specific class_name
-    (e.g. 'selective') for dropdown usage.
-    """
+def get_reading_quiz_dropdown(
+    class_year: str = Query(...),   # ✅ REQUIRED
+    db: Session = Depends(get_db)
+):
+    print("\n================ FETCH QUIZZES (READING) =================")
 
-    rows = (
-        db.query(ReadingExamConfig)
-        .filter(func.lower(ReadingExamConfig.class_name) == "selective")
-        .order_by(ReadingExamConfig.id.desc())
-        .all()
-    )
+    try:
+        # 🔍 Incoming request
+        print(f"📥 Received class_year: '{class_year}' (type={type(class_year)})")
 
-    return [
-        {
-            "class_name": row.class_name,
-            "difficulty": row.difficulty,
-            "label": f"{row.class_name} | {row.difficulty}"
-        }
-        for row in rows
-    ]
+        if not class_year:
+            print("❌ class_year missing")
+            raise HTTPException(status_code=400, detail="class_year is required")
+
+        class_name_clean = "selective"
+
+        # 🔍 Normalization expressions
+        class_norm = func.lower(func.trim(ReadingExamConfig.class_name))
+        class_year_norm = func.trim(ReadingExamConfig.class_year)
+
+        # 🔍 Pre-check count
+        count = (
+            db.query(func.count(ReadingExamConfig.id))
+            .filter(class_norm == class_name_clean)
+            .filter(class_year_norm == class_year)
+            .scalar()
+        )
+
+        print(f"📊 Matching rows BEFORE fetch: {count}")
+
+        if count == 0:
+            print("⚠️ No configs found — possible mismatch:")
+            print("   • class_year format mismatch (e.g. 'Year 5' vs 5)")
+            print("   • data not inserted for this year")
+
+        # 🚀 Main query
+        print("🚀 Executing query...")
+
+        rows = (
+            db.query(ReadingExamConfig)
+            .filter(class_norm == class_name_clean)
+            .filter(class_year_norm == class_year)   # ✅ FILTER ADDED
+            .order_by(ReadingExamConfig.id.desc())
+            .all()
+        )
+
+        print(f"📦 Rows fetched: {len(rows)}")
+
+        # 🔍 Log each row
+        for idx, row in enumerate(rows):
+            print(f"   Row {idx+1}:")
+            print(f"      class_name  = {row.class_name}")
+            print(f"      class_year  = {row.class_year}")
+            print(f"      difficulty  = {row.difficulty}")
+
+        print("================ FETCH COMPLETE =================\n")
+
+        return [
+            {
+                "class_name": row.class_name,
+                "class_year": row.class_year,  # ✅ include for clarity
+                "difficulty": row.difficulty,
+                "label": f"{row.class_name} | {row.class_year} | {row.difficulty}"
+            }
+            for row in rows
+        ]
+
+    except Exception as e:
+        print("💥 ERROR FETCHING QUIZZES")
+        print(f"❗ Exception: {str(e)}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching quizzes: {str(e)}"
+        )
 @app.get("/api/quizzes-reading-oc")
 def get_reading_quiz_dropdown(db: Session = Depends(get_db)):
     """
