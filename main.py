@@ -2917,6 +2917,7 @@ class ReadingExamConfig(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     class_name = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
     num_topics = Column(Integer, nullable=False)
@@ -2930,10 +2931,10 @@ class ReadingTopicItem(BaseModel):
 
 class ReadingExamConfigCreate(BaseModel):
     class_name: str
+    class_year: str   # ✅ ADD THIS
     subject: str
     difficulty: str
     topics: List[ReadingTopicItem]
-
 class ReadingHomeworkConfigCreate(ReadingExamConfigCreate):
     class_year: str
 
@@ -32984,15 +32985,16 @@ def create_reading_config(
     ]
 
     class_name_clean = payload.class_name.strip().lower()
+    class_year_clean = payload.class_year.strip().lower()
 
     print("\n--- Deleting dependent Reading generated exams ---")
     print(f"   class_name={class_name_clean}")
 
     
     db.query(ReadingExamConfig).filter(
-        func.lower(func.trim(ReadingExamConfig.class_name)) == class_name_clean
+        func.lower(func.trim(ReadingExamConfig.class_name)) == class_name_clean,
+        func.lower(func.trim(ReadingExamConfig.class_year)) == class_year_clean
     ).delete(synchronize_session=False)
-
     db.commit()
     print("🗑️ Previous reading configs deleted (scoped)")
 
@@ -33003,6 +33005,7 @@ def create_reading_config(
 
     new_config = ReadingExamConfig(
         class_name=payload.class_name,
+        class_year=payload.class_year,   # ✅ ADD THIS
         subject=payload.subject,
         difficulty=payload.difficulty,
         num_topics=num_topics,
