@@ -23309,7 +23309,7 @@ def start_exam_reading(
         "student_id": student.student_id
     })
     # 🔍 Extract student class_year
-    student_class_year = student.class_year.strip()
+    student_class_year = student.student_year.strip()
     
     print(f"🎯 Student class_year: '{student_class_year}'")
     
