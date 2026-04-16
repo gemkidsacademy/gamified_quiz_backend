@@ -2803,6 +2803,7 @@ class GeneratedExamReading(Base):
     id = Column(Integer, primary_key=True, index=True)
     config_id = Column(Integer, nullable=True)
     class_name = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
     total_questions = Column(Integer, nullable=False)
