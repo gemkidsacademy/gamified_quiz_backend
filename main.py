@@ -28355,7 +28355,7 @@ def generate_exam_oc_reading(
             db.query(QuestionReading)
             .filter(
                 func.lower(QuestionReading.class_name) == class_name.lower(),
-                QuestionReading.class_year == class_year,   # ✅ ADD THIS
+                func.replace(func.replace(QuestionReading.class_year, 'ö', ''), '“', '') == class_year,   # ✅ ADD THIS
                 func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
                 func.lower(QuestionReading.difficulty) == difficulty.lower(),
                 func.lower(QuestionReading.topic) == topic_lower,
