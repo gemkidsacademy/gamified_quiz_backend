@@ -9044,25 +9044,73 @@ def delete_all_questions_naplan_numeracy(db: Session = Depends(get_db)):
             "detail": f"Error deleting questions: {str(e)}"
         }
      
+
 @app.delete("/api/admin/delete-all-questions-selective-reading")
-def delete_all_reading_questions_selective(db: Session = Depends(get_db)):
+def delete_all_reading_questions_selective(
+    class_year: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    print("\n================ DELETE READING QUESTIONS (SELECTIVE) ================")
+
     try:
-        result = db.execute(
-            text("DELETE FROM questions_reading WHERE class_name = 'selective'")
-        )
+        # 🔍 Incoming request
+        print(f"📥 Received class_year: '{class_year}' (type={type(class_year)})")
+
+        # 🔍 Sanity check
+        if not class_year:
+            print("❌ class_year is missing or empty")
+            raise HTTPException(status_code=400, detail="class_year is required")
+
+        # 🔍 Preview count BEFORE delete
+        count_query = text("""
+            SELECT COUNT(*) 
+            FROM questions_reading
+            WHERE class_name = 'selective'
+            AND class_year = :class_year
+        """)
+
+        count_result = db.execute(count_query, {"class_year": class_year}).scalar()
+
+        print(f"📊 Rows matching BEFORE delete: {count_result}")
+
+        # 🔥 Perform delete
+        delete_query = text("""
+            DELETE FROM questions_reading
+            WHERE class_name = 'selective'
+            AND class_year = :class_year
+        """)
+
+        print("🚀 Executing DELETE query...")
+        result = db.execute(delete_query, {"class_year": class_year})
+
+        print(f"🧹 Rows deleted (raw result.rowcount): {result.rowcount}")
+
         db.commit()
+        print("✅ Transaction committed")
+
+        # 🔍 Verify AFTER delete
+        verify_result = db.execute(count_query, {"class_year": class_year}).scalar()
+        print(f"📊 Rows remaining AFTER delete: {verify_result}")
+
+        print("================ DELETE COMPLETE ================\n")
 
         return {
-            "message": "All Selective reading questions deleted successfully"
+            "message": f"All Selective reading questions deleted for {class_year}",
+            "rows_before": count_result,
+            "rows_deleted": result.rowcount,
+            "rows_after": verify_result
         }
 
     except Exception as e:
+        print("💥 ERROR OCCURRED — rolling back transaction")
+        print(f"❗ Exception: {str(e)}")
+
         db.rollback()
+
         raise HTTPException(
             status_code=500,
             detail=f"Error deleting Selective reading questions: {str(e)}"
         )
-
 @app.delete("/api/admin/delete-all-questions-oc-reading")
 def delete_all_reading_questions_selective(db: Session = Depends(get_db)):
     try:
@@ -14176,65 +14224,124 @@ def fetch_class_days(class_name: str, db: Session = Depends(get_db)):
         "days": days
     }
 
+from fastapi import Query, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
 @app.get("/api/reading/question-bank")
 def get_reading_question_bank_summary(
     subject: str = Query("reading_comprehension"),
     class_name: str = Query("selective"),
+    class_year: str = Query(...),   # ✅ NEW (required)
     db: Session = Depends(get_db),
 ):
-    """
-    Admin overview of reading question bank.
+    print("\n================ QUESTION BANK FETCH =================")
 
-    Each row represents a distinct exam-ready question set,
-    grouped by:
-    - difficulty
-    - topic
-    - total_questions (set size)
+    try:
+        # 🔍 Incoming request
+        print(f"📥 RAW INPUTS:")
+        print(f"   subject     = '{subject}' (type={type(subject)})")
+        print(f"   class_name  = '{class_name}' (type={type(class_name)})")
+        print(f"   class_year  = '{class_year}' (type={type(class_year)})")
 
-    This allows admins to clearly see, for example,
-    Comparative Analysis sets of size 8 vs 10.
-    """
+        if not class_year:
+            print("❌ class_year missing")
+            raise HTTPException(status_code=400, detail="class_year is required")
 
-    subject_norm = func.lower(
-        func.replace(func.trim(QuestionReading.subject), " ", "_")
-    )
-    class_norm = func.lower(func.trim(QuestionReading.class_name))
-    difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
+        # 🔍 Normalization preview
+        subject_clean = subject.lower()
+        class_name_clean = class_name.lower()
 
-    rows = (
-        db.query(
-            difficulty_norm.label("difficulty"),
-            QuestionReading.topic,
-            QuestionReading.total_questions.label("set_size"),
-            func.count(QuestionReading.id).label("sets_available"),
+        print("\n🔧 NORMALIZED INPUTS:")
+        print(f"   subject_clean    = '{subject_clean}'")
+        print(f"   class_name_clean = '{class_name_clean}'")
+
+        # 🔍 DB normalization expressions
+        subject_norm = func.lower(
+            func.replace(func.trim(QuestionReading.subject), " ", "_")
         )
-        .filter(subject_norm == subject.lower())
-        .filter(class_norm == class_name.lower())
-        .filter(QuestionReading.difficulty.isnot(None))
-        .group_by(
-            difficulty_norm,
-            QuestionReading.topic,
-            QuestionReading.total_questions,
-        )
-        .order_by(
-            difficulty_norm,
-            QuestionReading.topic,
-            QuestionReading.total_questions,
-        )
-        .all()
-    )
+        class_norm = func.lower(func.trim(QuestionReading.class_name))
+        difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
+        class_year_norm = func.trim(QuestionReading.class_year)
 
-    return {
-        "rows": [
-            {
-                "difficulty": r.difficulty.capitalize(),
-                "topic": r.topic,
-                "set_size": r.set_size,
-                "sets_available": r.sets_available,
-            }
-            for r in rows
-        ]
-    }
+        # 🔍 Pre-check: how many rows match BEFORE grouping
+        count_query = (
+            db.query(func.count(QuestionReading.id))
+            .filter(subject_norm == subject_clean)
+            .filter(class_norm == class_name_clean)
+            .filter(class_year_norm == class_year)
+        )
+
+        total_matching = count_query.scalar()
+        print(f"\n📊 TOTAL matching rows BEFORE grouping: {total_matching}")
+
+        if total_matching == 0:
+            print("⚠️ No rows matched — likely a filter mismatch")
+            print("👉 Check class_year format in DB (e.g., 'Year 6' vs '6')")
+
+        # 🔍 Main grouped query
+        print("\n🚀 Executing grouped query...")
+
+        rows = (
+            db.query(
+                difficulty_norm.label("difficulty"),
+                QuestionReading.topic,
+                QuestionReading.total_questions.label("set_size"),
+                func.count(QuestionReading.id).label("sets_available"),
+            )
+            .filter(subject_norm == subject_clean)
+            .filter(class_norm == class_name_clean)
+            .filter(class_year_norm == class_year)   # ✅ NEW FILTER
+            .filter(QuestionReading.difficulty.isnot(None))
+            .group_by(
+                difficulty_norm,
+                QuestionReading.topic,
+                QuestionReading.total_questions,
+            )
+            .order_by(
+                difficulty_norm,
+                QuestionReading.topic,
+                QuestionReading.total_questions,
+            )
+            .all()
+        )
+
+        print(f"📦 Grouped rows returned: {len(rows)}")
+
+        # 🔍 Log each row (important for debugging grouping issues)
+        for idx, r in enumerate(rows):
+            print(f"   Row {idx+1}:")
+            print(f"      difficulty     = {r.difficulty}")
+            print(f"      topic          = {r.topic}")
+            print(f"      set_size       = {r.set_size}")
+            print(f"      sets_available = {r.sets_available}")
+
+        print("================ FETCH COMPLETE =================\n")
+
+        return {
+            "rows": [
+                {
+                    "difficulty": r.difficulty.capitalize(),
+                    "topic": r.topic,
+                    "set_size": r.set_size,
+                    "sets_available": r.sets_available,
+                }
+                for r in rows
+            ]
+        }
+
+    except Exception as e:
+        print("💥 ERROR DURING QUESTION BANK FETCH")
+        print(f"❗ Exception: {str(e)}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching question bank: {str(e)}"
+        )
+
+
+
+
 @app.get("/api/reading/question-bank-oc")
 def get_reading_question_bank_summary_oc(
     subject: str = Query("reading_comprehension"),
@@ -14431,32 +14538,97 @@ def get_writing_topics(
 
     return topic_list
 
+
 @app.get("/api/reading/topics")
 def get_reading_topics(
     difficulty: str = Query(...),
+    class_year: str = Query(...),   # ✅ NEW
     db: Session = Depends(get_db),
 ):
-    print("📥 Fetching Reading topics")
-    print(f"   difficulty={difficulty}")
-    print("   class_name=selective")
+    print("\n================ FETCH READING TOPICS =================")
 
-    topics = (
-        db.query(func.distinct(QuestionReading.topic))
-        .filter(
-            func.lower(func.trim(QuestionReading.subject)).like("reading%"),
-            func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
-            func.lower(func.trim(QuestionReading.class_name)) == "selective",
+    try:
+        # 🔍 Incoming request
+        print("📥 RAW INPUTS:")
+        print(f"   difficulty  = '{difficulty}' (type={type(difficulty)})")
+        print(f"   class_year  = '{class_year}' (type={type(class_year)})")
+        print("   class_name  = 'selective' (hardcoded)")
+
+        if not difficulty:
+            print("❌ Missing difficulty")
+            raise HTTPException(status_code=400, detail="difficulty is required")
+
+        if not class_year:
+            print("❌ Missing class_year")
+            raise HTTPException(status_code=400, detail="class_year is required")
+
+        # 🔧 Normalize inputs
+        difficulty_clean = difficulty.lower()
+        class_name_clean = "selective"
+
+        print("\n🔧 NORMALIZED INPUTS:")
+        print(f"   difficulty_clean = '{difficulty_clean}'")
+        print(f"   class_name_clean = '{class_name_clean}'")
+
+        # 🔍 DB normalization expressions
+        subject_norm = func.lower(func.trim(QuestionReading.subject))
+        difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
+        class_norm = func.lower(func.trim(QuestionReading.class_name))
+        class_year_norm = func.trim(QuestionReading.class_year)
+
+        # 🔍 Pre-check count
+        count_query = (
+            db.query(func.count(QuestionReading.id))
+            .filter(subject_norm.like("reading%"))
+            .filter(difficulty_norm == difficulty_clean)
+            .filter(class_norm == class_name_clean)
+            .filter(class_year_norm == class_year)
         )
-        .order_by(QuestionReading.topic)
-        .all()
-    )
 
-    topic_list = [{"name": t[0]} for t in topics]
+        total_matching = count_query.scalar()
 
-    print(f"✅ Reading topics found: {len(topic_list)}")
+        print(f"\n📊 Matching rows BEFORE distinct/grouping: {total_matching}")
 
-    return topic_list
+        if total_matching == 0:
+            print("⚠️ No rows found — possible causes:")
+            print("   • class_year mismatch (e.g., 'Year 6' vs 6)")
+            print("   • difficulty mismatch")
+            print("   • subject formatting issue")
 
+        # 🚀 Main query
+        print("\n🚀 Executing DISTINCT topic query...")
+
+        topics = (
+            db.query(func.distinct(QuestionReading.topic))
+            .filter(subject_norm.like("reading%"))
+            .filter(difficulty_norm == difficulty_clean)
+            .filter(class_norm == class_name_clean)
+            .filter(class_year_norm == class_year)   # ✅ NEW FILTER
+            .order_by(QuestionReading.topic)
+            .all()
+        )
+
+        topic_list = [{"name": t[0]} for t in topics]
+
+        print(f"📦 Topics fetched: {len(topic_list)}")
+
+        # 🔍 Print each topic (helps catch duplicates / weird values)
+        for idx, t in enumerate(topic_list):
+            print(f"   Topic {idx+1}: {t['name']}")
+
+        print("================ FETCH COMPLETE =================\n")
+
+        return topic_list
+
+    except Exception as e:
+        print("💥 ERROR DURING FETCH READING TOPICS")
+        print(f"❗ Exception: {str(e)}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching reading topics: {str(e)}"
+        )
+     
 @app.get("/api/reading/topics-oc")
 def get_reading_topics(
     difficulty: str = Query(...),
