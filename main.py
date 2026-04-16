@@ -2938,6 +2938,7 @@ class ReadingExamConfigCreate(BaseModel):
     subject: str
     difficulty: str
     topics: List[ReadingTopicItem]
+ 
 class ReadingHomeworkConfigCreate(ReadingExamConfigCreate):
     class_year: str
 
@@ -28296,6 +28297,7 @@ def generate_exam_oc_reading(
 
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
+    class_year = payload.class_year.strip() 
 
     
     
@@ -28308,6 +28310,7 @@ def generate_exam_oc_reading(
         .filter(
             func.lower(ReadingExamConfig.class_name) == class_name.lower(),
             func.lower(ReadingExamConfig.difficulty) == difficulty.lower(),
+            ReadingExamConfig.class_year == class_year   # ✅ ADD THIS
         )
         .first()
     )
@@ -28335,6 +28338,7 @@ def generate_exam_oc_reading(
             db.query(QuestionReading)
             .filter(
                 func.lower(QuestionReading.class_name) == class_name.lower(),
+                QuestionReading.class_year == class_year,   # ✅ ADD THIS
                 func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
                 func.lower(QuestionReading.difficulty) == difficulty.lower(),
                 func.lower(QuestionReading.topic) == topic_lower,
@@ -28413,6 +28417,7 @@ def generate_exam_oc_reading(
     exam_json = {
         "class_name": class_name,
         "subject": subject,
+        "class_year": class_year,
         "difficulty": difficulty,
         "duration_minutes": 40,
         "total_questions": total_questions,
@@ -28422,6 +28427,7 @@ def generate_exam_oc_reading(
     saved = GeneratedExamReading(
         config_id=cfg.id,
         class_name=class_name,
+        class_year=class_year, 
         subject=subject,
         difficulty=difficulty,
         total_questions=total_questions,
