@@ -28297,8 +28297,12 @@ def generate_exam_oc_reading(
 
     class_name = payload.class_name.strip()
     difficulty = payload.difficulty.strip()
-    class_year = payload.class_year.strip() 
-
+    class_year_raw = payload.class_year.strip()
+    # handle both "4" and "Year 4"
+    if class_year_raw.lower().startswith("year"):
+        class_year = int(class_year_raw.split()[-1])
+    else:
+        class_year = int(class_year_raw)
     
     
 
