@@ -32005,13 +32005,14 @@ def parse_exam_block(block_text: str):
         key = k.strip().lower()
         metadata[key] = v.strip().strip('"')
 
-    required_meta = ["class", "subject", "topic", "difficulty", "total_questions"]
+    required_meta = ["class", "class_year", "subject", "topic", "difficulty", "total_questions"]
     for k in required_meta:
         if k not in metadata:
             raise ValueError(f"Missing METADATA field: {k}")
 
     metadata_parsed = {
         "class_name": metadata["class"],
+        "class_year": metadata["class_year"],   # ✅ ADD THIS
         "subject": metadata["subject"],
         "topic": metadata["topic"],
         "difficulty": metadata["difficulty"],
