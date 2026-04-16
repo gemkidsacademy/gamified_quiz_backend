@@ -3003,11 +3003,12 @@ class QuizCreate(BaseModel):
  
 class QuizCreateOC_TS(BaseModel):
     class_name: str
+    class_year: str   # ✅ ADD THIS
     subject: str    
     difficulty: str
     num_topics: int
     topics: List[TopicInput]
-
+ 
 class QuizCreate_OC_MR(BaseModel):
     class_name: str
     subject: str
@@ -43018,7 +43019,8 @@ def create_quiz_oc_thinking_skills(
             db.query(Quiz)
             .filter(
                 func.lower(Quiz.subject) == "thinking_skills",
-                func.lower(Quiz.class_name) == "oc"
+                func.lower(Quiz.class_name) == "oc",
+                Quiz.class_year == quiz.class_year   # ✅ ADD THIS
             )
             .delete(synchronize_session=False)
         )
@@ -43031,8 +43033,9 @@ def create_quiz_oc_thinking_skills(
         print("\n--- Creating OC Quiz ---")
 
         new_quiz = Quiz(
-            class_name="oc",  # enforce consistency
-            subject="thinking_skills",  # enforce consistency
+            class_name="oc",
+            class_year=quiz.class_year,   # ✅ ADD THIS
+            subject="thinking_skills",
             difficulty=quiz.difficulty,
             num_topics=quiz.num_topics,
             topics=[t.dict() for t in quiz.topics]
