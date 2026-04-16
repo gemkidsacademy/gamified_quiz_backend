@@ -32174,8 +32174,16 @@ def parse_exam_block(block_text: str):
         if ":" not in line:
             continue
         k, v = line.split(":", 1)
-        key = k.strip().lower()
-        metadata[key] = v.strip().strip('"')
+
+        key = k.strip().lower().replace(" ", "_")   # also fixing future bug
+        
+        value = v.strip().replace('“', '"').replace('”', '"')
+        
+        # remove surrounding quotes safely
+        if value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+        
+        metadata[key] = value.strip()
 
     required_meta = ["class", "class_year", "subject", "topic", "difficulty", "total_questions"]
     for k in required_meta:
