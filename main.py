@@ -29336,18 +29336,20 @@ def extract_all_metadata(block_text: str) -> dict[str, str]:
 
     metadata = {}
 
-    # This pattern:
-    # - Finds KEY:
-    # - Captures VALUE
-    # - Stops when the NEXT KEY starts (even with no whitespace)
     pattern = re.compile(
-        r"([A-Za-z_ ]+)\s*[:：]\s*\"?(.*?)\"?(?=[A-Za-z_ ]+\s*[:：]|$)",
+        r"([A-Za-z_ ]+)\s*[:：]\s*(.*?)(?=[A-Za-z_ ]+\s*[:：]|$)",
         re.IGNORECASE | re.DOTALL
     )
 
     for match in pattern.finditer(block_text):
         raw_key = match.group(1)
-        value = match.group(2).strip()
+
+        value = match.group(2).strip().replace('“', '"').replace('”', '"')
+
+        if value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+
+        value = value.strip()
 
         key = raw_key.strip().upper().replace(" ", "_")
 
@@ -29362,7 +29364,6 @@ def extract_all_metadata(block_text: str) -> dict[str, str]:
         metadata[key] = value
 
     return metadata
-
 
 def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     import json
