@@ -2861,6 +2861,7 @@ class QuestionReading(Base):
     # FILTERABLE / SEARCH FIELDS
     # --------------------------------------------------
     class_name = Column(String, index=True, nullable=False)
+    class_year = Column(String, index=True, nullable=False)
     subject = Column(String, index=True, nullable=False)
     difficulty = Column(String, index=True, nullable=False)
     topic = Column(String, index=True, nullable=False)
@@ -29214,12 +29215,14 @@ def parse_gapped_block(block_text: str, db: Session) -> list[int]:
     meta = extract_all_metadata(block_text)
     
     class_name = meta.get("CLASS")
+    class_year = meta.get("CLASS_YEAR")
     subject = meta.get("SUBJECT")
     topic = meta.get("TOPIC")
     difficulty = meta.get("DIFFICULTY")
 
     missing = []
     if not class_name: missing.append("CLASS")
+    if not class_year: missing.append("CLASS_YEAR") 
     if not subject: missing.append("SUBJECT")
     if not topic: missing.append("TOPIC")
     if not difficulty: missing.append("DIFFICULTY")
@@ -29366,6 +29369,7 @@ OUTPUT:
     # --------------------------------------------------
     obj = QuestionReading(
         class_name=class_name.lower(),
+        class_year=class_year,   # ✅ ADD THIS
         subject=subject,
         difficulty=difficulty.lower(),
         topic=topic,
@@ -29396,6 +29400,7 @@ You MUST extract ONE COMPLETE LITERARY reading exam.
 
 REQUIRED KEYS:
 - class_name
+- class_year   ← ✅ ADD THIS
 - subject
 - topic
 - difficulty
@@ -29435,6 +29440,14 @@ RETURN VALID JSON ONLY.
     reading_material = parsed["reading_material"]
     questions = parsed["questions"]
 
+
+    if "class_year" not in parsed:
+        raise ValueError("Missing class_year in parsed output")
+    
+    if len(questions) != int(parsed["total_questions"]):
+        raise ValueError("Literary question count mismatch")
+
+ 
     if len(questions) != int(parsed["total_questions"]):
         raise ValueError("Literary question count mismatch")
 
@@ -29457,6 +29470,7 @@ RETURN VALID JSON ONLY.
 
     obj = QuestionReading(
         class_name=parsed["class_name"].lower(),
+        class_year=parsed["class_year"],   # ✅ ADD THIS
         subject=parsed["subject"],
         difficulty=parsed["difficulty"].lower(),
         topic=parsed["topic"],
@@ -29520,7 +29534,7 @@ RULES:
     if "class_name" in meta and "class" not in meta:
         meta["class"] = meta["class_name"]
 
-    required = ["class", "subject", "difficulty", "topic"]
+    required = ["class", "class_year", "subject", "difficulty", "topic"]
     for r in required:
         if r not in meta:
             raise ValueError(f"Missing METADATA field: {r}")
@@ -29547,6 +29561,7 @@ RULES:
 
     obj = QuestionReading(
         class_name=meta["class"].lower(),
+        class_year=meta["class_year"],   # ✅ ADD THIS
         subject=meta["subject"],
         difficulty=meta["difficulty"].lower(),
         topic=meta["topic"],
@@ -29597,6 +29612,7 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
         return match.group(1).strip() if match else None
 
     class_name = extract_meta("CLASS_NAME") or extract_meta("CLASS")
+    class_year = extract_meta("CLASS_YEAR")
     subject = extract_meta("SUBJECT")
     topic = extract_meta("TOPIC")
     difficulty = extract_meta("DIFFICULTY")
@@ -29795,6 +29811,7 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     # --------------------------------------------------
     obj = QuestionReading(
         class_name=class_name.lower(),
+        class_year=class_year,   # ✅ ADD THIS
         subject=subject,
         difficulty=difficulty.lower(),
         topic=topic,
