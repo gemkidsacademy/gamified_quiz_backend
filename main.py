@@ -28324,6 +28324,9 @@ def generate_exam_oc_reading(
 
     subject = cfg.subject
     topics = cfg.topics
+    print("\n📦 CONFIG TOPICS:")
+    for t in topics:
+        print(f"   - Raw Name: '{t.get('name')}', Questions: {t.get('num_questions')}")
     warnings = []
 
     sections = []
@@ -28332,12 +28335,18 @@ def generate_exam_oc_reading(
     # 2️⃣ PROCESS EACH TOPIC AS A SECTION
     # --------------------------------------------------
     for section_index, topic_spec in enumerate(topics, start=1):
+        print(f"Original topic name : '{topic_spec['name']}'")
         topic_name = topic_spec["name"].strip()
         required = int(topic_spec["num_questions"])
         topic_lower = topic_name.lower()
 
         section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
-
+        print("\n🔎 QUERY FILTER:")
+        print(f"   class_name  : {class_name}")
+        print(f"   class_year  : {class_year}")
+        print(f"   subject     : {subject}")
+        print(f"   difficulty  : {difficulty}")
+        print(f"   topic       : {topic_lower}")
         bundles = (
             db.query(QuestionReading)
             .filter(
@@ -28353,13 +28362,21 @@ def generate_exam_oc_reading(
         if not bundles:
             warnings.append(f"No bundles found for topic '{topic_name}'")
             continue
+        print(f"\n📚 FOUND {len(bundles)} BUNDLES")
 
+        for b in bundles:
+            print(f"   - DB Topic: '{b.topic}', Questions: {b.total_questions}")
+        print(f"\n🎯 Looking for bundle with {required} questions")
         matched_bundle = next(
             (b for b in bundles if b.total_questions == required),
             None
         )
 
         if not matched_bundle:
+            print("❌ NO MATCHING BUNDLE FOUND")
+            for b in bundles:
+                print(f"   Candidate: topic='{b.topic}', total_questions={b.total_questions}")
+        
             raise HTTPException(
                 400,
                 f"Invalid exam config: '{topic_name}' requires {required} questions"
