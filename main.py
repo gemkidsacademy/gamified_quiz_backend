@@ -23308,12 +23308,43 @@ def start_exam_reading(
         "student_pk": student.id,
         "student_id": student.student_id
     })
-    exam = (
+    # 🔍 Extract student class_year
+    student_class_year = student.class_year.strip()
+    
+    print(f"🎯 Student class_year: '{student_class_year}'")
+    
+    # 🔍 Find matching exam
+    exam_query = (
         db.query(GeneratedExamReading)
-        .filter(GeneratedExamReading.class_name == "selective")
+        .filter(
+            func.lower(func.trim(GeneratedExamReading.class_name)) == "selective",
+            func.lower(func.trim(GeneratedExamReading.class_year)) == student_class_year.lower()
+        )
+    )
+    
+    # 🔍 Debug count
+    exam_count = exam_query.count()
+    print(f"📊 Matching exams for class_year={student_class_year}: {exam_count}")
+    
+    if exam_count == 0:
+        print("❌ No exam found for this class_year")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No reading exam found for {student_class_year}"
+        )
+    
+    # ✅ Pick latest for that class_year
+    exam = (
+        exam_query
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
+    
+    print("✅ Selected exam:", {
+        "exam_id": exam.id,
+        "class_year": exam.class_year,
+        "difficulty": exam.difficulty
+    })
     
     if not exam:
         print("❌ No reading exam exists in DB")
