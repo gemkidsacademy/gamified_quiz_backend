@@ -25009,41 +25009,43 @@ def generate_exam_writing(
 ):
     try:
         # ----------------------------------
-        # Normalize inputs
+        # Inputs
         # ----------------------------------
-        class_name = payload.class_name.strip().lower()
-        difficulty = payload.difficulty.strip().lower()
+        class_name = "selective"   # ✅ HARD CODED
         class_year = payload.class_year.strip()
+
         # ----------------------------------
-        # Read setup configuration
+        # Fetch setup using class + year
         # ----------------------------------
         setup = (
             db.query(QuizSetupWriting)
             .filter(
                 func.trim(func.lower(QuizSetupWriting.class_name)) == class_name,
-                func.trim(func.lower(QuizSetupWriting.difficulty)) == difficulty,
                 func.trim(QuizSetupWriting.class_year) == class_year
             )
+            .order_by(QuizSetupWriting.id.desc())   # ✅ latest config
             .first()
         )
 
         if not setup:
             raise HTTPException(
                 status_code=404,
-                detail=f"No writing exam setup found for class '{class_name}' and difficulty '{difficulty}'."
+                detail=f"No setup found for class 'Selective' and year '{class_year}'."
             )
 
+        # Extract from setup
+        difficulty = setup.difficulty.strip().lower()
         topic = setup.topic.strip().lower()
 
         # ----------------------------------
-        # Reset writing exam system
+        # Reset system (consider scoping later)
         # ----------------------------------
         db.query(StudentExamResponseWriting).delete(synchronize_session=False)
         db.query(StudentExamWriting).delete(synchronize_session=False)
         db.query(GeneratedExamWriting).delete(synchronize_session=False)
 
         # ----------------------------------
-        # Fetch ONE random writing question
+        # Fetch question
         # ----------------------------------
         question = (
             db.query(WritingQuestionBank)
@@ -25060,53 +25062,42 @@ def generate_exam_writing(
         if not question:
             raise HTTPException(
                 status_code=404,
-                detail=f"No writing question found for class '{class_name}', topic '{topic}', and difficulty '{difficulty}'."
+                detail=f"No question found for Selective, year '{class_year}', topic '{topic}', difficulty '{difficulty}'."
             )
 
         # ----------------------------------
-        # Compose FULL exam text (UI-ready)
+        # Build exam text
         # ----------------------------------
-        exam_text_parts = []
+        parts = []
 
         if question.title:
-            exam_text_parts.append(f"TITLE:\n{question.title}\n")
+            parts.append(f"TITLE:\n{question.title}\n")
 
-        exam_text_parts.append(
-            f"TASK:\n{question.question_text}\n"
-        )
+        parts.append(f"TASK:\n{question.question_text}\n")
 
         if question.statement:
-            exam_text_parts.append(
-                f"STATEMENT:\n{question.statement}\n"
-            )
+            parts.append(f"STATEMENT:\n{question.statement}\n")
 
-        exam_text_parts.append(
-            f"INSTRUCTIONS:\n{question.question_prompt}\n"
-        )
+        parts.append(f"INSTRUCTIONS:\n{question.question_prompt}\n")
 
         if question.opening_sentence:
-            exam_text_parts.append(
-                f"OPENING SENTENCE:\n{question.opening_sentence}\n"
-            )
+            parts.append(f"OPENING SENTENCE:\n{question.opening_sentence}\n")
 
         if question.guidelines:
-            formatted_guidelines = "\n".join(
+            formatted = "\n".join(
                 f"- {line.strip()}"
                 for line in question.guidelines.splitlines()
                 if line.strip()
             )
+            parts.append(f"GUIDELINES:\n{formatted}\n")
 
-            exam_text_parts.append(
-                f"GUIDELINES:\n{formatted_guidelines}\n"
-            )
-
-        full_exam_text = "\n".join(exam_text_parts).strip()
+        full_exam_text = "\n".join(parts).strip()
 
         # ----------------------------------
-        # Persist generated exam
+        # Save exam
         # ----------------------------------
         exam = GeneratedExamWriting(
-            class_name=class_name.capitalize(),
+            class_name="Selective",   # keep nice format
             class_year=class_year,
             subject="writing",
             topic=question.topic,
@@ -25120,7 +25111,7 @@ def generate_exam_writing(
         db.refresh(exam)
 
         # ----------------------------------
-        # Return UI-friendly payload
+        # Response
         # ----------------------------------
         return {
             "exam_id": exam.id,
