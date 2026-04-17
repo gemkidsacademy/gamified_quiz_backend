@@ -25078,11 +25078,18 @@ def generate_exam_writing(
         # ----------------------------------
         # Fetch setup
         # ----------------------------------
+        
+        class_year_clean = class_year.lower().replace(" ", "")
+
         setup = (
             db.query(QuizSetupWriting)
             .filter(
                 func.lower(func.trim(QuizSetupWriting.class_name)) == class_name,
-                func.lower(func.trim(QuizSetupWriting.class_year)) == class_year.lower()
+                func.replace(
+                    func.lower(func.trim(QuizSetupWriting.class_year)),
+                    " ",
+                    ""
+                ) == class_year_clean
             )
             .order_by(QuizSetupWriting.id.desc())
             .first()
