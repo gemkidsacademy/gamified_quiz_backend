@@ -14542,10 +14542,12 @@ def get_question_bank_mathematical_reasoning(
 @app.get("/api/writing/topics")
 def get_writing_topics(
     difficulty: str = Query(...),
+    class_year: str = Query(...),   # ✅ ADD
+    class_name: str = Query(...),   # ✅ ADD (optional but good)
     db: Session = Depends(get_db),
 ):
     print("📥 Fetching Writing topics")
-    print(f"   difficulty={difficulty}")
+    print(f"   difficulty={difficulty}, class_year={class_year}, class_name={class_name}")
 
     DB_SUBJECT = "Writing"
 
@@ -14554,6 +14556,8 @@ def get_writing_topics(
         .filter(
             func.lower(func.trim(WritingQuestionBank.subject)) == DB_SUBJECT.lower(),
             func.lower(func.trim(WritingQuestionBank.difficulty)) == difficulty.lower(),
+            func.lower(func.trim(WritingQuestionBank.class_year)) == class_year.lower(),   # ✅ ADD
+            func.lower(func.trim(WritingQuestionBank.class_name)) == class_name.lower(),   # ✅ ADD
         )
         .order_by(WritingQuestionBank.topic)
         .all()
@@ -14564,7 +14568,6 @@ def get_writing_topics(
     print(f"✅ Writing topics found: {len(topic_list)}")
 
     return topic_list
-
 
 @app.get("/api/reading/topics")
 def get_reading_topics(
