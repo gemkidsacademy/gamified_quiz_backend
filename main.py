@@ -11279,7 +11279,7 @@ def review_oc_reading_exam(
             # ✅ OC-safe options handling
             options_scope = section.get("options_scope", "per_question")
 
-            if options_scope == "shared":
+            if options_scope == "shared" and topic != "Comparative Analysis":
                 answer_options = section.get("answer_options", {})
             else:
                 answer_options = (
