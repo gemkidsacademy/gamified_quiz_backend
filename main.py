@@ -2731,6 +2731,7 @@ class QuizSetupWriting(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     class_name = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)
     subject = Column(String, nullable=False)
 
     topic = Column(String, nullable=False)
