@@ -7642,10 +7642,11 @@ def get_exam_dates_reading(student_id: str, db: Session = Depends(get_db)):
     return [
         {
             "exam_id": exam.exam_id,
+            "session_id": exam.id,   # 🔥 THIS LINE IS MISSING
             "date": exam.completed_at or exam.created_at
         }
         for exam in exams
-    ] 
+    ]
 @app.get("/api/student/exam-dates/naplan-numeracy")
 def get_naplan_numeracy_exam_dates(
     student_id: str,
