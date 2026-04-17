@@ -2675,6 +2675,7 @@ class WritingQuestionBank(Base):
 
 class WritingQuizSchema(BaseModel):
     class_name: str
+    class_year: str
     subject: str
     topic: str
     difficulty: str
