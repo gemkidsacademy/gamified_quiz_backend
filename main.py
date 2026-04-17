@@ -2503,10 +2503,9 @@ class StudentExamReadingOC(Base):
     report_json = Column(JSON, nullable=True)
  
 class WritingGenerateSchema(BaseModel):
-    class_name: str
+    
     class_year: str
-    difficulty: str
- 
+    
 class StudentExamWriting(Base):
     __tablename__ = "student_exam_writing"
 
