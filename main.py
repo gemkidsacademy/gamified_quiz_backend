@@ -25047,47 +25047,80 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
  
 
 
+import traceback
+
 @app.post("/api/exams/generate-writing")
 def generate_exam_writing(
     payload: WritingGenerateSchema,
     db: Session = Depends(get_db)
 ):
     try:
+        print("\n================= GENERATE WRITING EXAM =================")
+
         # ----------------------------------
         # Inputs
         # ----------------------------------
-        class_name = "selective"   # ✅ HARD CODED
+        class_name = "selective"
         class_year = payload.class_year.strip()
 
+        print(f"📥 INPUTS:")
+        print(f"   class_name (fixed) = '{class_name}'")
+        print(f"   class_year (raw)   = '{payload.class_year}'")
+        print(f"   class_year (clean) = '{class_year}'")
+
         # ----------------------------------
-        # Fetch setup using class + year
+        # Debug: show ALL setups
+        # ----------------------------------
+        all_setups = db.query(QuizSetupWriting).all()
+        print(f"\n📊 TOTAL setups in DB: {len(all_setups)}")
+        for s in all_setups:
+            print(f"   → class='{s.class_name}', year='{s.class_year}', difficulty='{s.difficulty}', topic='{s.topic}'")
+
+        # ----------------------------------
+        # Fetch setup
         # ----------------------------------
         setup = (
             db.query(QuizSetupWriting)
             .filter(
-                func.trim(func.lower(QuizSetupWriting.class_name)) == class_name,
-                func.trim(QuizSetupWriting.class_year) == class_year
+                func.lower(func.trim(QuizSetupWriting.class_name)) == class_name,
+                func.lower(func.trim(QuizSetupWriting.class_year)) == class_year.lower()
             )
-            .order_by(QuizSetupWriting.id.desc())   # ✅ latest config
+            .order_by(QuizSetupWriting.id.desc())
             .first()
         )
 
+        print(f"\n🔍 MATCHED SETUP: {setup}")
+
         if not setup:
+            print("❌ No setup matched")
             raise HTTPException(
                 status_code=404,
                 detail=f"No setup found for class 'Selective' and year '{class_year}'."
             )
 
-        # Extract from setup
+        # ----------------------------------
+        # Extract config
+        # ----------------------------------
         difficulty = setup.difficulty.strip().lower()
         topic = setup.topic.strip().lower()
 
+        print(f"\n✅ USING SETUP:")
+        print(f"   difficulty = '{difficulty}'")
+        print(f"   topic      = '{topic}'")
+
         # ----------------------------------
-        # Reset system (consider scoping later)
+        # Reset system
         # ----------------------------------
+        print("\n🧹 Clearing previous exams...")
         db.query(StudentExamResponseWriting).delete(synchronize_session=False)
         db.query(StudentExamWriting).delete(synchronize_session=False)
         db.query(GeneratedExamWriting).delete(synchronize_session=False)
+
+        # ----------------------------------
+        # Debug: question pool
+        # ----------------------------------
+        all_questions = db.query(WritingQuestionBank).count()
+        print(f"\n📊 TOTAL questions in bank: {all_questions}")
 
         # ----------------------------------
         # Fetch question
@@ -25095,16 +25128,19 @@ def generate_exam_writing(
         question = (
             db.query(WritingQuestionBank)
             .filter(
-                func.trim(func.lower(WritingQuestionBank.class_name)) == class_name,
-                func.trim(func.lower(WritingQuestionBank.difficulty)) == difficulty,
-                func.trim(func.lower(WritingQuestionBank.topic)) == topic,
-                func.trim(WritingQuestionBank.class_year) == class_year
+                func.lower(func.trim(WritingQuestionBank.class_name)) == class_name,
+                func.lower(func.trim(WritingQuestionBank.difficulty)) == difficulty,
+                func.lower(func.trim(WritingQuestionBank.topic)) == topic,
+                func.lower(func.trim(WritingQuestionBank.class_year)) == class_year.lower()
             )
             .order_by(func.random())
             .first()
         )
 
+        print(f"\n🔍 MATCHED QUESTION: {question}")
+
         if not question:
+            print("❌ No question matched filters")
             raise HTTPException(
                 status_code=404,
                 detail=f"No question found for Selective, year '{class_year}', topic '{topic}', difficulty '{difficulty}'."
@@ -25113,6 +25149,8 @@ def generate_exam_writing(
         # ----------------------------------
         # Build exam text
         # ----------------------------------
+        print("\n📝 Building exam text...")
+
         parts = []
 
         if question.title:
@@ -25138,11 +25176,15 @@ def generate_exam_writing(
 
         full_exam_text = "\n".join(parts).strip()
 
+        print("✅ Exam text built successfully")
+
         # ----------------------------------
         # Save exam
         # ----------------------------------
+        print("\n💾 Saving exam...")
+
         exam = GeneratedExamWriting(
-            class_name="Selective",   # keep nice format
+            class_name="Selective",
             class_year=class_year,
             subject="writing",
             topic=question.topic,
@@ -25155,9 +25197,13 @@ def generate_exam_writing(
         db.commit()
         db.refresh(exam)
 
+        print(f"✅ Exam saved with ID: {exam.id}")
+
         # ----------------------------------
         # Response
         # ----------------------------------
+        print("========================================================\n")
+
         return {
             "exam_id": exam.id,
             "class_name": exam.class_name,
@@ -25170,7 +25216,9 @@ def generate_exam_writing(
 
     except Exception as e:
         db.rollback()
-        raise e
+        print("\n🔥 FULL ERROR TRACE:")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
      
 def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
     """
