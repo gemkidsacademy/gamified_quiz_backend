@@ -2645,6 +2645,7 @@ class WritingQuestionBank(Base):
     # FILTER / METADATA FIELDS
     # -----------------------------
     class_name = Column(String, nullable=False)
+    class_year = Column(String, nullable=False
     subject = Column(String, nullable=False)
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
