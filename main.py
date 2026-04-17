@@ -11280,11 +11280,12 @@ def review_oc_reading_exam(
             # ✅ Robust options handling (FIXED)
 
             options_scope = section.get("options_scope", "per_question")
-            
-            # collect ALL possible question-level options
+
+            # collect ALL possible question-level options (preserve empty dict if present)
             question_level_options = (
                 q.get("answer_options")
-                or q.get("options")
+                if q.get("answer_options") is not None
+                else q.get("options")
                 or q.get("choices")
                 or q.get("answers")
             )
@@ -11302,8 +11303,7 @@ def review_oc_reading_exam(
                         or {}
                     )
                 else:
-                    answer_options = question_level_options or {}
-    # --------------------------------------------------
+                    answer_options = question_level_options or {}    # --------------------------------------------------
     # 6️⃣ Final payload
     # --------------------------------------------------
     response_payload = {
