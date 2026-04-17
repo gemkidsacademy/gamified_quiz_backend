@@ -28806,7 +28806,7 @@ def generate_exam_reading(
 
         class_name = payload.class_name.strip()
         difficulty = payload.difficulty.strip()
-        class_year = payload.class_year.strip()
+        class_year = payload.class_year.lower().replace("year", "").strip()
 
         print("\n🔧 NORMALIZED INPUTS:")
         print(f"   class_name  = '{class_name}'")
@@ -28827,7 +28827,7 @@ def generate_exam_reading(
             .filter(
                 func.lower(ReadingExamConfig.class_name) == class_name.lower(),
                 func.lower(ReadingExamConfig.difficulty) == difficulty.lower(),
-                func.lower(func.trim(ReadingExamConfig.class_year)) == class_year.lower()
+                func.replace(func.lower(func.trim(ReadingExamConfig.class_year)), "year", "") == class_year
             )
         )
 
@@ -28880,9 +28880,9 @@ def generate_exam_reading(
                     func.lower(func.trim(QuestionReading.class_name)) == class_name.lower(),
                     func.lower(func.replace(QuestionReading.subject, " ", "_")) == subject.lower(),
                     func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
-                    func.lower(QuestionReading.topic) == topic_lower,
+                    func.replace(func.lower(QuestionReading.topic), " ", "_") == topic_lower.replace(" ", "_"),
                     QuestionReading.total_questions == required,
-                    func.lower(func.trim(QuestionReading.class_year)) == class_year.lower()
+                    func.replace(func.lower(func.trim(QuestionReading.class_year)), "year", "") == class_year
                 )
             )
 
