@@ -2504,6 +2504,7 @@ class StudentExamReadingOC(Base):
  
 class WritingGenerateSchema(BaseModel):
     class_name: str
+    class_year: str
     difficulty: str
  
 class StudentExamWriting(Base):
@@ -2604,6 +2605,7 @@ class GeneratedExamWriting(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     class_name = Column(String, nullable=False)
+    class_year = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
@@ -25011,7 +25013,7 @@ def generate_exam_writing(
         # ----------------------------------
         class_name = payload.class_name.strip().lower()
         difficulty = payload.difficulty.strip().lower()
-
+        class_year = payload.class_year.strip()
         # ----------------------------------
         # Read setup configuration
         # ----------------------------------
@@ -25019,7 +25021,8 @@ def generate_exam_writing(
             db.query(QuizSetupWriting)
             .filter(
                 func.trim(func.lower(QuizSetupWriting.class_name)) == class_name,
-                func.trim(func.lower(QuizSetupWriting.difficulty)) == difficulty
+                func.trim(func.lower(QuizSetupWriting.difficulty)) == difficulty,
+                func.trim(QuizSetupWriting.class_year) == class_year
             )
             .first()
         )
@@ -25047,7 +25050,8 @@ def generate_exam_writing(
             .filter(
                 func.trim(func.lower(WritingQuestionBank.class_name)) == class_name,
                 func.trim(func.lower(WritingQuestionBank.difficulty)) == difficulty,
-                func.trim(func.lower(WritingQuestionBank.topic)) == topic
+                func.trim(func.lower(WritingQuestionBank.topic)) == topic,
+                func.trim(WritingQuestionBank.class_year) == class_year
             )
             .order_by(func.random())
             .first()
@@ -25103,6 +25107,7 @@ def generate_exam_writing(
         # ----------------------------------
         exam = GeneratedExamWriting(
             class_name=class_name.capitalize(),
+            class_year=class_year,
             subject="writing",
             topic=question.topic,
             difficulty=difficulty.capitalize(),
@@ -25120,6 +25125,7 @@ def generate_exam_writing(
         return {
             "exam_id": exam.id,
             "class_name": exam.class_name,
+            "class_year": exam.class_year,
             "difficulty": exam.difficulty,
             "topic": exam.topic,
             "duration_minutes": exam.duration_minutes,
