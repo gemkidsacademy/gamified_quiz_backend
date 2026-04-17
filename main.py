@@ -14279,39 +14279,40 @@ def get_reading_question_bank_summary(
             raise HTTPException(status_code=400, detail="class_year is required")
 
         # 🔍 Normalization preview
+        # 🔍 Normalization preview
         subject_clean = subject.lower()
         class_name_clean = class_name.lower()
-
+        
+        # ✅ NEW: Normalize class_year input
+        class_year_clean = class_year.strip().lower().replace("year", "").strip()
+        
+        print(f"   class_year_clean = '{class_year_clean}'")
+        
         print("\n🔧 NORMALIZED INPUTS:")
         print(f"   subject_clean    = '{subject_clean}'")
         print(f"   class_name_clean = '{class_name_clean}'")
-
+        
         # 🔍 DB normalization expressions
         subject_norm = func.lower(
             func.replace(func.trim(QuestionReading.subject), " ", "_")
         )
         class_norm = func.lower(func.trim(QuestionReading.class_name))
         difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
-        class_year_norm = func.trim(QuestionReading.class_year)
-
-        # 🔍 Pre-check: how many rows match BEFORE grouping
+        
+        # ✅ NEW: Normalize DB side too
+        class_year_norm = func.trim(
+            func.replace(func.lower(QuestionReading.class_year), "year", "")
+        )
+        
+        # 🔍 Pre-check
         count_query = (
             db.query(func.count(QuestionReading.id))
             .filter(subject_norm == subject_clean)
             .filter(class_norm == class_name_clean)
-            .filter(class_year_norm == class_year)
+            .filter(class_year_norm == class_year_clean)   # ✅ FIXED
         )
-
-        total_matching = count_query.scalar()
-        print(f"\n📊 TOTAL matching rows BEFORE grouping: {total_matching}")
-
-        if total_matching == 0:
-            print("⚠️ No rows matched — likely a filter mismatch")
-            print("👉 Check class_year format in DB (e.g., 'Year 6' vs '6')")
-
-        # 🔍 Main grouped query
-        print("\n🚀 Executing grouped query...")
-
+        
+        # 🚀 Main query
         rows = (
             db.query(
                 difficulty_norm.label("difficulty"),
@@ -14321,7 +14322,7 @@ def get_reading_question_bank_summary(
             )
             .filter(subject_norm == subject_clean)
             .filter(class_norm == class_name_clean)
-            .filter(class_year_norm == class_year)   # ✅ NEW FILTER
+            .filter(class_year_norm == class_year_clean)   # ✅ FIXED
             .filter(QuestionReading.difficulty.isnot(None))
             .group_by(
                 difficulty_norm,
@@ -14335,7 +14336,6 @@ def get_reading_question_bank_summary(
             )
             .all()
         )
-
         print(f"📦 Grouped rows returned: {len(rows)}")
 
         # 🔍 Log each row (important for debugging grouping issues)
