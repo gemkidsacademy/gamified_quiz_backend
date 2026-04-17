@@ -14575,7 +14575,7 @@ def get_writing_topics(
 @app.get("/api/reading/topics")
 def get_reading_topics(
     difficulty: str = Query(...),
-    class_year: str = Query(...),   # ✅ NEW
+    class_year: str = Query(...),
     db: Session = Depends(get_db),
 ):
     print("\n================ FETCH READING TOPICS =================")
@@ -14596,50 +14596,91 @@ def get_reading_topics(
             raise HTTPException(status_code=400, detail="class_year is required")
 
         # 🔧 Normalize inputs
-        # 🔧 Normalize inputs
         difficulty_clean = difficulty.lower()
         class_name_clean = "selective"
-        
-        # ✅ NEW: Normalize class_year input
         class_year_clean = class_year.strip().lower().replace("year", "").strip()
-        
+
         print("\n🔧 NORMALIZED INPUTS:")
         print(f"   difficulty_clean = '{difficulty_clean}'")
         print(f"   class_name_clean = '{class_name_clean}'")
-        print(f"   class_year_clean = '{class_year_clean}'")   # ✅ NEW LOG
-        
+        print(f"   class_year_clean = '{class_year_clean}'")
+
         # 🔍 DB normalization expressions
         subject_norm = func.lower(func.trim(QuestionReading.subject))
         difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
         class_norm = func.lower(func.trim(QuestionReading.class_name))
         class_year_norm = func.trim(QuestionReading.class_year)
-        
-        # 🔍 Pre-check count
-        count_query = (
-            db.query(func.count(QuestionReading.id))
-            .filter(subject_norm.like("reading%"))
-            .filter(difficulty_norm == difficulty_clean)
-            .filter(class_norm == class_name_clean)
-            .filter(class_year_norm == class_year_clean)   # ✅ FIXED
-        )
-        
+
+        # 🔎 STEP 1 — TOTAL ROWS IN TABLE
+        total_rows = db.query(func.count(QuestionReading.id)).scalar()
+        print(f"\n📊 TOTAL rows in QuestionReading table: {total_rows}")
+
+        # 🔎 STEP 2 — SAMPLE RAW DATA (VERY IMPORTANT)
+        sample_rows = db.query(
+            QuestionReading.class_year,
+            QuestionReading.difficulty,
+            QuestionReading.subject,
+            QuestionReading.class_name,
+            QuestionReading.topic
+        ).limit(5).all()
+
+        print("\n🧪 SAMPLE DB ROWS (first 5):")
+        for r in sample_rows:
+            print(f"   class_year='{r[0]}' | difficulty='{r[1]}' | subject='{r[2]}' | class='{r[3]}' | topic='{r[4]}'")
+
+        # 🔎 STEP 3 — TEST EACH FILTER ONE BY ONE
+
+        # Only subject
+        subject_count = db.query(func.count(QuestionReading.id)) \
+            .filter(subject_norm.like("reading%")).scalar()
+        print(f"\n🔎 After subject filter: {subject_count}")
+
+        # Subject + difficulty
+        difficulty_count = db.query(func.count(QuestionReading.id)) \
+            .filter(subject_norm.like("reading%")) \
+            .filter(difficulty_norm == difficulty_clean).scalar()
+        print(f"🔎 After difficulty filter: {difficulty_count}")
+
+        # + class_name
+        class_count = db.query(func.count(QuestionReading.id)) \
+            .filter(subject_norm.like("reading%")) \
+            .filter(difficulty_norm == difficulty_clean) \
+            .filter(class_norm == class_name_clean).scalar()
+        print(f"🔎 After class_name filter: {class_count}")
+
+        # + class_year
+        final_count = db.query(func.count(QuestionReading.id)) \
+            .filter(subject_norm.like("reading%")) \
+            .filter(difficulty_norm == difficulty_clean) \
+            .filter(class_norm == class_name_clean) \
+            .filter(class_year_norm == class_year_clean).scalar()
+        print(f"🔎 After class_year filter (FINAL): {final_count}")
+
         # 🚀 Main query
+        print("\n🚀 Executing DISTINCT topic query...")
+
         topics = (
             db.query(func.distinct(QuestionReading.topic))
             .filter(subject_norm.like("reading%"))
             .filter(difficulty_norm == difficulty_clean)
             .filter(class_norm == class_name_clean)
-            .filter(class_year_norm == class_year_clean)   # ✅ FIXED
+            .filter(class_year_norm == class_year_clean)
             .order_by(QuestionReading.topic)
             .all()
         )
+
         topic_list = [{"name": t[0]} for t in topics]
 
-        print(f"📦 Topics fetched: {len(topic_list)}")
+        print(f"\n📦 Topics fetched: {len(topic_list)}")
 
-        # 🔍 Print each topic (helps catch duplicates / weird values)
         for idx, t in enumerate(topic_list):
             print(f"   Topic {idx+1}: {t['name']}")
+
+        # 🔎 EXTRA: check distinct class_year values in DB
+        distinct_years = db.query(func.distinct(QuestionReading.class_year)).all()
+        print("\n🧪 DISTINCT class_year values in DB:")
+        for y in distinct_years:
+            print(f"   '{y[0]}'")
 
         print("================ FETCH COMPLETE =================\n")
 
@@ -14652,8 +14693,7 @@ def get_reading_topics(
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching reading topics: {str(e)}"
-        )
-     
+        )     
 @app.get("/api/reading/topics-oc")
 def get_reading_topics(
     difficulty: str = Query(...),
