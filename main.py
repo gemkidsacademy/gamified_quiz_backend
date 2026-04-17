@@ -25114,7 +25114,10 @@ def generate_exam_writing(
         print("\n🧹 Clearing previous exams...")
         db.query(StudentExamResponseWriting).delete(synchronize_session=False)
         db.query(StudentExamWriting).delete(synchronize_session=False)
-        db.query(GeneratedExamWriting).delete(synchronize_session=False)
+        db.query(GeneratedExamWriting).filter(
+           GeneratedExamWriting.class_name == "Selective",
+           GeneratedExamWriting.class_year == class_year
+       ).delete(synchronize_session=False)
 
         # ----------------------------------
         # Debug: question pool
