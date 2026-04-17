@@ -626,9 +626,9 @@ class GeneratedHomeworkReading(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
  
 class WritingGenerateSchemaHomeWork(BaseModel):
-    class_name: str
+    
     class_year: str   # ✅ REQUIRED
-    difficulty: str
+    
 class QuizSetupWritingHomework(Base):
     __tablename__ = "quiz_setup_writing_homework"
 
