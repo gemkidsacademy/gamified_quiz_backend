@@ -23416,7 +23416,7 @@ def start_exam_reading(
         "student_id": student.student_id
     })
     # 🔍 Extract student class_year
-    student_class_year = student.student_year.strip()
+    student_class_year = student.student_year.lower().replace("year", "").strip()
     
     print(f"🎯 Student class_year: '{student_class_year}'")
     
@@ -23425,7 +23425,9 @@ def start_exam_reading(
         db.query(GeneratedExamReading)
         .filter(
             func.lower(func.trim(GeneratedExamReading.class_name)) == "selective",
-            func.lower(func.trim(GeneratedExamReading.class_year)) == student_class_year.lower()
+            func.trim(
+                func.replace(func.lower(GeneratedExamReading.class_year), "year", "")
+            ) == student_class_year
         )
     )
     
