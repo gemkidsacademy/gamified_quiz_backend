@@ -28827,7 +28827,9 @@ def generate_exam_reading(
             .filter(
                 func.lower(ReadingExamConfig.class_name) == class_name.lower(),
                 func.lower(ReadingExamConfig.difficulty) == difficulty.lower(),
-                func.replace(func.lower(func.trim(ReadingExamConfig.class_year)), "year", "") == class_year
+                func.trim(
+                    func.replace(func.lower(ReadingExamConfig.class_year), "year", "")
+                ) == class_year
             )
         )
 
@@ -28882,7 +28884,9 @@ def generate_exam_reading(
                     func.lower(func.trim(QuestionReading.difficulty)) == difficulty.lower(),
                     func.replace(func.lower(QuestionReading.topic), " ", "_") == topic_lower.replace(" ", "_"),
                     QuestionReading.total_questions == required,
-                    func.replace(func.lower(func.trim(QuestionReading.class_year)), "year", "") == class_year
+                    func.trim(
+                        func.replace(func.lower(QuestionReading.class_year), "year", "")
+                    ) == class_year
                 )
             )
 
