@@ -11277,30 +11277,32 @@ def review_oc_reading_exam(
             r = report_map.get(qid)
 
             # ✅ OC-safe options handling
+            # ✅ Robust options handling (FIXED)
+
             options_scope = section.get("options_scope", "per_question")
-
-            if options_scope == "shared" and topic != "Comparative Analysis":
-                answer_options = section.get("answer_options", {})
+            
+            # collect ALL possible question-level options
+            question_level_options = (
+                q.get("answer_options")
+                or q.get("options")
+                or q.get("choices")
+                or q.get("answers")
+            )
+            
+            # 🔥 FORCE correct behavior for comparative analysis
+            if section.get("question_type") == "comparative_analysis":
+                answer_options = question_level_options or {}
+            
+            # fallback for other types
             else:
-                answer_options = (
-                    q.get("answer_options")
-                    or q.get("options")
-                    or {}
-                )
-
-            review_questions.append({
-                "question_id": qid,
-                "question_number": q.get("question_number"),
-                "question_text": q.get("question_text"),
-                "answer_options": answer_options or {},
-                "student_answer": r.selected_answer if r else None,
-                "correct_answer": r.correct_answer if r else None,
-                "is_correct": r.is_correct if r else False,
-                "topic": topic,
-                "passage_style": passage_style,
-                "reading_material": reading_material
-            })
-
+                if options_scope == "shared" and not question_level_options:
+                    answer_options = (
+                        section.get("answer_options")
+                        or section.get("options")
+                        or {}
+                    )
+                else:
+                    answer_options = question_level_options or {}
     # --------------------------------------------------
     # 6️⃣ Final payload
     # --------------------------------------------------
