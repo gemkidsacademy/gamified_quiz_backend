@@ -25147,6 +25147,7 @@ Schema (ALL fields required):
 
 {{
   "class_name": string,
+  "class_year": string,   # ✅ ADDED
   "subject": "Writing",
   "topic": string,
   "difficulty": string,
@@ -25199,6 +25200,7 @@ Input text:
 
     REQUIRED_STRING_FIELDS = [
         "class_name",
+        "class_year",   # ✅ ADDED
         "subject",
         "topic",
         "difficulty",
@@ -25212,23 +25214,28 @@ Input text:
     for item in parsed:
         if not isinstance(item, dict):
             continue
-
+    
         # Ensure all required fields exist and are strings
         for field in REQUIRED_STRING_FIELDS:
             value = item.get(field)
             if not isinstance(value, str):
                 value = ""
             item[field] = value.replace("\r\n", "\n").replace("\r", "\n").strip()
-
+    
         # Optional title
         title = item.get("title")
         item["title"] = title.strip() if isinstance(title, str) else ""
-
+    
         # Subject sanity check (soft)
         if item["subject"] and item["subject"] != "Writing":
             raise ValueError("Invalid subject. Expected 'Writing'.")
-
-        # Normalize guidelines text (strip bullets safely)
+    
+        # ✅ ADD IT HERE
+        # Class year sanity check (soft)
+        if item["class_year"] and not item["class_year"].lower().startswith("year"):
+            raise ValueError("Invalid class_year format. Expected 'Year X'.")
+    
+        # Normalize guidelines text
         if item["guidelines"]:
             lines = []
             for line in item["guidelines"].splitlines():
@@ -25236,9 +25243,8 @@ Input text:
                 if line:
                     lines.append(line)
             item["guidelines"] = "\n".join(lines)
-
+    
         normalized.append(item)
-
     if not normalized:
         raise ValueError("No valid writing questions detected")
 
