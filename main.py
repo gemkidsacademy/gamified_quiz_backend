@@ -25345,12 +25345,14 @@ def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db))
 
     print("🗑️ Previous writing quiz setups deleted")
     print("\n--- Creating new Writing quiz setup ---")
+
     quiz = QuizSetupWriting(
         class_name=payload.class_name,
+        class_year=payload.class_year,   # ✅ ADDED
         subject=payload.subject,
         topic=payload.topic,
         difficulty=payload.difficulty
-    ) 
+    )
 
     db.add(quiz)
     db.commit()
@@ -25358,10 +25360,10 @@ def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db))
 
     return {
         "message": "Writing quiz setup saved",
-        "quiz_id": quiz.id
+        "quiz_id": quiz.id,
+        "class_year": quiz.class_year   # ✅ optional but useful for debugging
     }
-
-
+ 
 # ------------------------------------------------------------
 # 🔧 Helper: Build sections with questions (FOUNDATIONAL)
 # ------------------------------------------------------------
