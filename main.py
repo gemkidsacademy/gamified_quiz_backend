@@ -11169,8 +11169,8 @@ def review_oc_reading_exam(
 ):
     print("\n================ REVIEW OC READING EXAM ================")
     print("🆔 session_id:", session_id)
-
     # --------------------------------------------------
+
     # 1️⃣ Load finished session (OC)
     # --------------------------------------------------
     session = (
@@ -11273,15 +11273,20 @@ def review_oc_reading_exam(
         print(f"🧱 Section {section_idx + 1}: {topic} | questions: {len(questions)}")
 
         for q in questions:
+            if not isinstance(q, dict):
+                print("❌ Skipping invalid question:", q)
+                continue
+        
             qid = q.get("question_id")
+            if not qid:
+                print("❌ Missing question_id, skipping:", q)
+                continue
+        
             r = report_map.get(qid)
-
-            # ✅ OC-safe options handling
-            # ✅ Robust options handling (FIXED)
-
+        
             options_scope = section.get("options_scope", "per_question")
-
-            # collect ALL possible question-level options (preserve empty dict if present)
+        
+            # collect ALL possible question-level options
             question_level_options = (
                 q.get("answer_options")
                 if q.get("answer_options") is not None
@@ -11289,12 +11294,11 @@ def review_oc_reading_exam(
                 or q.get("choices")
                 or q.get("answers")
             )
-            
+        
             # 🔥 FORCE correct behavior for comparative analysis
             if section.get("question_type") == "comparative_analysis":
                 answer_options = question_level_options or {}
-            
-            # fallback for other types
+        
             else:
                 if options_scope == "shared" and not question_level_options:
                     answer_options = (
@@ -11303,7 +11307,22 @@ def review_oc_reading_exam(
                         or {}
                     )
                 else:
-                    answer_options = question_level_options or {}    # --------------------------------------------------
+                    answer_options = question_level_options or {}
+        
+            # ✅ YOU WERE MISSING THIS BLOCK
+            review_questions.append({
+                "question_id": qid,
+                "question_number": q.get("question_number"),
+                "question_text": q.get("question_text"),
+                "answer_options": answer_options,
+                "student_answer": r.selected_answer if r else None,
+                "correct_answer": r.correct_answer if r else None,
+                "is_correct": r.is_correct if r else False,
+                "topic": topic,
+                "passage_style": passage_style,
+                "reading_material": reading_material
+            })  
+    # --------------------------------------------------
     # 6️⃣ Final payload
     # --------------------------------------------------
     response_payload = {
