@@ -14791,7 +14791,51 @@ def get_topics(
     print(f"📦 Topics: {topic_list}\n")
 
     return topic_list
- 
+
+@app.get("/api/topic/oc/math")
+def get_topics_oc_math(
+    class_name: str = Query(None),
+    subject: str = Query(None),
+    difficulty: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    try:
+        # ----------------------------------
+        # Force correct values (ignore frontend)
+        # ----------------------------------
+        class_name_fixed = "oc"
+        subject_fixed = "mathematical reasoning"   # ⚠️ IMPORTANT
+
+        print("\n📥 Fetching OC MR topics")
+        print(f"   Incoming (ignored): class={class_name}, subject={subject}, difficulty={difficulty}")
+
+        # ----------------------------------
+        # Final query
+        # ----------------------------------
+        topics = (
+            db.query(func.distinct(Question.topic))
+            .filter(
+                func.lower(func.trim(Question.class_name)) == class_name_fixed,
+                func.lower(func.trim(Question.subject)) == subject_fixed,
+
+                Question.topic.isnot(None),
+                Question.topic != "",
+            )
+            .order_by(Question.topic)
+            .all()
+        )
+
+        topic_list = [{"name": t[0]} for t in topics]
+
+        print(f"\n✅ Topics found: {len(topic_list)}")
+        print(f"📦 Topics: {topic_list}\n")
+
+        return topic_list
+
+    except Exception as e:
+        print("❌ Error fetching OC MR topics:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch topics")
+     
 def normalize_topic_key(raw: str) -> str:
     """
     Converts:
