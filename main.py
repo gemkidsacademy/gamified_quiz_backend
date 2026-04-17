@@ -14596,51 +14596,43 @@ def get_reading_topics(
             raise HTTPException(status_code=400, detail="class_year is required")
 
         # 🔧 Normalize inputs
+        # 🔧 Normalize inputs
         difficulty_clean = difficulty.lower()
         class_name_clean = "selective"
-
+        
+        # ✅ NEW: Normalize class_year input
+        class_year_clean = class_year.strip().lower().replace("year", "").strip()
+        
         print("\n🔧 NORMALIZED INPUTS:")
         print(f"   difficulty_clean = '{difficulty_clean}'")
         print(f"   class_name_clean = '{class_name_clean}'")
-
+        print(f"   class_year_clean = '{class_year_clean}'")   # ✅ NEW LOG
+        
         # 🔍 DB normalization expressions
         subject_norm = func.lower(func.trim(QuestionReading.subject))
         difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
         class_norm = func.lower(func.trim(QuestionReading.class_name))
         class_year_norm = func.trim(QuestionReading.class_year)
-
+        
         # 🔍 Pre-check count
         count_query = (
             db.query(func.count(QuestionReading.id))
             .filter(subject_norm.like("reading%"))
             .filter(difficulty_norm == difficulty_clean)
             .filter(class_norm == class_name_clean)
-            .filter(class_year_norm == class_year)
+            .filter(class_year_norm == class_year_clean)   # ✅ FIXED
         )
-
-        total_matching = count_query.scalar()
-
-        print(f"\n📊 Matching rows BEFORE distinct/grouping: {total_matching}")
-
-        if total_matching == 0:
-            print("⚠️ No rows found — possible causes:")
-            print("   • class_year mismatch (e.g., 'Year 6' vs 6)")
-            print("   • difficulty mismatch")
-            print("   • subject formatting issue")
-
+        
         # 🚀 Main query
-        print("\n🚀 Executing DISTINCT topic query...")
-
         topics = (
             db.query(func.distinct(QuestionReading.topic))
             .filter(subject_norm.like("reading%"))
             .filter(difficulty_norm == difficulty_clean)
             .filter(class_norm == class_name_clean)
-            .filter(class_year_norm == class_year)   # ✅ NEW FILTER
+            .filter(class_year_norm == class_year_clean)   # ✅ FIXED
             .order_by(QuestionReading.topic)
             .all()
         )
-
         topic_list = [{"name": t[0]} for t in topics]
 
         print(f"📦 Topics fetched: {len(topic_list)}")
