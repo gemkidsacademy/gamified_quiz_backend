@@ -25280,6 +25280,7 @@ async def upload_word_writing(
     for parsed in parsed_list:
         obj = WritingQuestionBank(
             class_name=parsed["class_name"],
+            class_year=parsed.get("class_year"),
             subject=parsed["subject"],
             topic=parsed["topic"],
             difficulty=parsed["difficulty"],
