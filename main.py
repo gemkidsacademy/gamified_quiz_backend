@@ -15130,44 +15130,28 @@ def get_question_bank_oc_thinking_skills(
     return response
  
 
+
 @app.get("/api/admin/question-bank-oc-mathematical-reasoning")
 def get_question_bank_oc_mathematical_reasoning(
     class_year: str = Query(...),
     db: Session = Depends(get_db)
 ):
     print("\n================ QUESTION BANK OC MR =================")
+    print(f"📥 Raw incoming class_year = '{class_year}'")
 
     # --------------------------------------------------
-    # 1️⃣ Incoming Request
+    # 1️⃣ Parse "Year 4" → 4
     # --------------------------------------------------
-    print(f"📥 Incoming class_year = '{class_year}'")
+    try:
+        parsed_year = int(class_year.strip().split()[-1])
+    except Exception as e:
+        print(f"❌ Failed to parse class_year: {e}")
+        return {"error": "Invalid class_year format"}
+
+    print(f"✅ Parsed class_year = {parsed_year}")
 
     # --------------------------------------------------
-    # 2️⃣ DB Sanity Check
-    # --------------------------------------------------
-    total_questions = db.query(Question).count()
-    print(f"📊 Total questions in DB = {total_questions}")
-
-    distinct_years = db.query(Question.class_year).distinct().all()
-    print(f"📚 Distinct class_years in DB = {distinct_years}")
-
-    # --------------------------------------------------
-    # 3️⃣ Count BEFORE applying class_year filter
-    # --------------------------------------------------
-    base_count = (
-        db.query(Question)
-        .filter(
-            func.lower(Question.class_name) == "oc",
-            func.lower(Question.subject) == "mathematical reasoning",
-            Question.topic.isnot(None)
-        )
-        .count()
-    )
-
-    print(f"📊 Count BEFORE class_year filter = {base_count}")
-
-    # --------------------------------------------------
-    # 4️⃣ Count AFTER applying class_year filter
+    # 2️⃣ Count AFTER filter
     # --------------------------------------------------
     filtered_count = (
         db.query(Question)
@@ -15175,7 +15159,7 @@ def get_question_bank_oc_mathematical_reasoning(
             func.lower(Question.class_name) == "oc",
             func.lower(Question.subject) == "mathematical reasoning",
             Question.topic.isnot(None),
-            func.lower(Question.class_year) == class_year.lower()
+            Question.class_year == parsed_year  # ✅ INTEGER MATCH
         )
         .count()
     )
@@ -15183,7 +15167,7 @@ def get_question_bank_oc_mathematical_reasoning(
     print(f"📊 Count AFTER class_year filter = {filtered_count}")
 
     # --------------------------------------------------
-    # 5️⃣ Fetch grouped results
+    # 3️⃣ Fetch grouped results
     # --------------------------------------------------
     results = (
         db.query(
@@ -15195,7 +15179,7 @@ def get_question_bank_oc_mathematical_reasoning(
             func.lower(Question.class_name) == "oc",
             func.lower(Question.subject) == "mathematical reasoning",
             Question.topic.isnot(None),
-            func.lower(Question.class_year) == class_year.lower()
+            Question.class_year == parsed_year  # ✅ FIXED
         )
         .group_by(
             Question.difficulty,
@@ -15208,19 +15192,13 @@ def get_question_bank_oc_mathematical_reasoning(
         .all()
     )
 
-    print(f"📦 Grouped result rows = {len(results)}")
+    print(f"📦 Grouped rows = {len(results)}")
 
-    # --------------------------------------------------
-    # 6️⃣ Print sample results
-    # --------------------------------------------------
-    for i, r in enumerate(results[:10]):  # limit to avoid spam
-        print(f"➡️ Row {i+1}: {r.difficulty} | {r.topic} | {r.total_questions}")
+    for r in results[:10]:
+        print(f"➡️ {r.difficulty} | {r.topic} | {r.total_questions}")
 
     print("=====================================================\n")
 
-    # --------------------------------------------------
-    # 7️⃣ Response
-    # --------------------------------------------------
     return [
         {
             "difficulty": r.difficulty,
@@ -15229,7 +15207,7 @@ def get_question_bank_oc_mathematical_reasoning(
         }
         for r in results
     ]
-    
+ 
 def get_attempt_filter(ResponseModel, exam_attempt_id):
     if hasattr(ResponseModel, "exam_attempt_id"):
         return ResponseModel.exam_attempt_id == exam_attempt_id
