@@ -18094,6 +18094,7 @@ def generate_oc_mathematical_reasoning_exam(
     new_exam = Exam(
         quiz_id=quiz.id,
         class_name="OC",
+        class_year=class_year,
         subject="mathematical_reasoning",
         difficulty=quiz.difficulty,
         questions=questions
