@@ -14377,7 +14377,7 @@ def get_reading_question_bank_summary(
 def get_reading_question_bank_summary_oc(
     subject: str = Query("reading_comprehension"),
     class_name: str = Query("oc"),
-    class_year: int = Query(...),   # ✅ receive class year
+    class_year: str = Query(...),   # ✅ receive class year
     db: Session = Depends(get_db),
 ):
     """
@@ -14389,6 +14389,8 @@ def get_reading_question_bank_summary_oc(
     print(f"📥 Incoming subject: '{subject}'")
     print(f"📥 Incoming class_name: '{class_name}'")
     print(f"📥 Incoming class_year: {class_year}")
+    class_year_clean = class_year.strip()
+    print(f"🧹 Cleaned class_year: '{class_year_clean}'")
 
     subject_clean = subject.strip().lower()
     class_clean = class_name.strip().lower()
@@ -14438,7 +14440,7 @@ def get_reading_question_bank_summary_oc(
             )
             .filter(subject_norm == subject_clean)
             .filter(class_norm == class_clean)
-            .filter(QuestionReading.class_year == class_year)   # ✅ filter here
+            .filter(func.trim(QuestionReading.class_year) == class_year_clean)   # ✅ filter here
             .filter(QuestionReading.difficulty.isnot(None))
             .group_by(
                 difficulty_norm,
