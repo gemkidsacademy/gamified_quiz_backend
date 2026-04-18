@@ -14377,15 +14377,18 @@ def get_reading_question_bank_summary(
 def get_reading_question_bank_summary_oc(
     subject: str = Query("reading_comprehension"),
     class_name: str = Query("oc"),
+    class_year: int = Query(...),   # ✅ receive class year
     db: Session = Depends(get_db),
 ):
     """
     Debug-enabled OC Reading question bank summary
+    Filters by class_year
     """
 
     print("\n================ OC QUESTION BANK SUMMARY START ================")
     print(f"📥 Incoming subject: '{subject}'")
     print(f"📥 Incoming class_name: '{class_name}'")
+    print(f"📥 Incoming class_year: {class_year}")
 
     subject_clean = subject.strip().lower()
     class_clean = class_name.strip().lower()
@@ -14410,6 +14413,11 @@ def get_reading_question_bank_summary_oc(
         ).count()
         print(f"📊 Rows matching class_name='{class_clean}': {class_rows}")
 
+        year_rows = db.query(QuestionReading).filter(
+            QuestionReading.class_year == class_year
+        ).count()
+        print(f"📊 Rows matching class_year='{class_year}': {year_rows}")
+
         # ---------------------------------------
         # NORMALIZATION
         # ---------------------------------------
@@ -14419,7 +14427,7 @@ def get_reading_question_bank_summary_oc(
         class_norm = func.lower(func.trim(QuestionReading.class_name))
         difficulty_norm = func.lower(func.trim(QuestionReading.difficulty))
 
-        print("🔍 Executing grouped query...")
+        print("🔍 Executing grouped query with class_year filter...")
 
         rows = (
             db.query(
@@ -14430,6 +14438,7 @@ def get_reading_question_bank_summary_oc(
             )
             .filter(subject_norm == subject_clean)
             .filter(class_norm == class_clean)
+            .filter(QuestionReading.class_year == class_year)   # ✅ filter here
             .filter(QuestionReading.difficulty.isnot(None))
             .group_by(
                 difficulty_norm,
@@ -14467,8 +14476,7 @@ def get_reading_question_bank_summary_oc(
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching OC reading question bank: {str(e)}"
-        )
-     
+        )     
  
 @app.get("/api/admin/question-bank-reading")
 def get_question_bank_reading(
