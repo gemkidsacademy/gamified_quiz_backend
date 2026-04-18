@@ -43642,12 +43642,14 @@ def create_quiz_oc_mathematical_reasoning(
     db: Session = Depends(get_db)
 ):
     """
-    Create OC Mathematical Reasoning quiz with scoped cleanup.
+    Create OC Mathematical Reasoning quiz with scoped cleanup (by class_year).
     """
 
     print("\n========== OC MR QUIZ CREATION START ==========")
 
-    # Debug payload
+    # --------------------------------------------------
+    # 0️⃣ Debug payload
+    # --------------------------------------------------
     try:
         quiz_dict = quiz.dict()
         print("📦 Payload:", quiz_dict)
@@ -43659,35 +43661,67 @@ def create_quiz_oc_mathematical_reasoning(
     print("➡️ class_name:", quiz.class_name)
     print("➡️ subject:", quiz.subject)
     print("➡️ difficulty:", quiz.difficulty)
+    print("➡️ class_year (raw):", quiz.class_year)
     print("➡️ num_topics:", quiz.num_topics)
     print("➡️ topics count:", len(quiz.topics))
 
-    # ✅ Validate topics
+    # --------------------------------------------------
+    # 1️⃣ Validate + normalize class_year
+    # --------------------------------------------------
+    try:
+        if not quiz.class_year:
+            raise ValueError("class_year is required")
+
+        raw_class_year = quiz.class_year
+
+        if isinstance(raw_class_year, str):
+            class_year = int(raw_class_year.strip().split()[-1])  # "Year 4" → 4
+        else:
+            class_year = int(raw_class_year)
+
+        print(f"✅ Parsed class_year: {class_year}")
+
+    except Exception as e:
+        print(f"❌ Failed to parse class_year: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid class_year: {quiz.class_year}")
+
+    # --------------------------------------------------
+    # 2️⃣ Validate topics
+    # --------------------------------------------------
     if not isinstance(quiz.topics, list):
         raise HTTPException(status_code=400, detail="topics must be a list")
 
+    # --------------------------------------------------
+    # 3️⃣ Scoped delete (ONLY same year)
+    # --------------------------------------------------
     try:
+        print("\n--- Deleting existing quizzes for SAME year ---")
+        print(f"🔍 Target class_year: {class_year}")
 
-        # ✅ 2️⃣ Delete ONLY OC MR quizzes
         deleted_quizzes = (
             db.query(Quiz)
             .filter(
-                func.lower(Quiz.subject) == "mathematical_reasoning",
-                func.lower(Quiz.class_name) == "oc"
+                func.lower(func.trim(Quiz.subject)) == "mathematical_reasoning",
+                func.lower(func.trim(Quiz.class_name)) == "oc",
+                Quiz.class_year == class_year   # ✅ KEY FIX
             )
             .delete(synchronize_session=False)
         )
 
-        print(f"🗑️ Deleted OC MR quizzes: {deleted_quizzes}")
+        print(f"🗑️ Deleted quizzes (same year): {deleted_quizzes}")
 
         db.commit()
         print("✅ Cleanup commit complete")
 
+        # --------------------------------------------------
+        # 4️⃣ Create new quiz
+        # --------------------------------------------------
         print("\n--- Creating OC Mathematical Reasoning Quiz ---")
 
         new_quiz = Quiz(
-            class_name="oc",  # ✅ enforce
-            subject="mathematical_reasoning",  # ✅ enforce
+            class_name="oc",
+            subject="mathematical_reasoning",
+            class_year=class_year,   # ✅ IMPORTANT
             difficulty=quiz.difficulty,
             num_topics=quiz.num_topics,
             topics=[t.dict() for t in quiz.topics]
@@ -43698,11 +43732,14 @@ def create_quiz_oc_mathematical_reasoning(
         db.refresh(new_quiz)
 
         print("✅ OC MR Quiz created with ID:", new_quiz.id)
+        print(f"📘 Saved class_year: {new_quiz.class_year}")
+
         print("========== OC MR QUIZ CREATION COMPLETE ==========\n")
 
         return {
             "message": "OC Mathematical Reasoning quiz created successfully",
-            "quiz_id": new_quiz.id
+            "quiz_id": new_quiz.id,
+            "class_year": new_quiz.class_year  # helpful for debugging
         }
 
     except Exception as e:
