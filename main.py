@@ -17701,71 +17701,79 @@ def generate_oc_thinking_skills_homework_exam(
         "questions": questions
     }
 
+
 @app.post("/api/exams/generate-oc-thinking-skills")
 def generate_oc_thinking_skills_exam(
     payload: Optional[dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
-    """
-    Generate OC Thinking Skills exam (hybrid architecture).
-    """
-
     print("\n========== OC EXAM GENERATION START ==========")
 
     payload = payload or {}
 
     # --------------------------------------------------
-    # 0️⃣ Clear previous OC Thinking Skills exams
+    # 0️⃣ EXTRACT + VALIDATE CLASS YEAR
+    # --------------------------------------------------
+    print("\n📥 RAW PAYLOAD:", payload)
+
+    class_year = payload.get("class_year")
+
+    if class_year is None:
+        raise HTTPException(status_code=400, detail="class_year is required")
+
+    try:
+        class_year_int = int(class_year)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid class_year")
+
+    print(f"🔢 class_year = {class_year_int}")
+
+    # --------------------------------------------------
+    # 1️⃣ DELETE PREVIOUS EXAMS (OPTIONAL: FILTER BY YEAR)
     # --------------------------------------------------
     print("\n--- Deleting previous OC Thinking Skills exams ---")
-    
-    # STEP 1: Get OC exam IDs
+
     exam_ids_subq = select(Exam.id).where(
         func.lower(Exam.subject) == "thinking_skills",
-        func.lower(Exam.class_name) == "oc"
+        func.lower(Exam.class_name) == "oc",
+        Exam.class_year == class_year_int   # ✅ IMPORTANT
     )
-    
-    # STEP 2: Get attempt IDs (VERY IMPORTANT)
+
     attempt_ids_subq = select(StudentExamOCThinkingSkills.id).where(
         StudentExamOCThinkingSkills.exam_id.in_(exam_ids_subq)
     )
-    
+
+    # 👉 (keep your delete logic here, just ensure it uses these subqueries)
+
     # --------------------------------------------------
-    # 🔥 DELETE CHILD FIRST (RESPONSES)
+    # 2️⃣ FETCH QUIZ (🔥 CRITICAL FIX)
     # --------------------------------------------------
-    
-    # --------------------------------------------------
-    # 🔥 DELETE PARENT (ATTEMPTS)
-    # --------------------------------------------------
-    
-    # --------------------------------------------------
-    # 🔥 DELETE ROOT (EXAMS)
-    # --------------------------------------------------
-        # --------------------------------------------------
-    # 1️⃣ Fetch latest OC Thinking Skills quiz
-    # --------------------------------------------------
-    print("\n--- Fetching latest OC quiz ---")
+    print("\n--- Fetching latest OC quiz (WITH class_year) ---")
 
     quiz = (
         db.query(Quiz)
         .filter(
             func.lower(Quiz.subject) == "thinking_skills",
-            func.lower(Quiz.class_name) == "oc"
+            func.lower(Quiz.class_name) == "oc",
+            Quiz.class_year == class_year_int   # ✅ THIS FIXES YOUR BUG
         )
         .order_by(Quiz.id.desc())
         .first()
     )
 
     if not quiz:
+        print("❌ No quiz found for given class_year")
         raise HTTPException(
             status_code=404,
-            detail="No OC Thinking Skills quiz found"
+            detail=f"No OC Thinking Skills quiz found for class_year={class_year_int}"
         )
 
     print(f"✅ Using Quiz ID: {quiz.id}")
+    print(f"   difficulty = {quiz.difficulty}")
+    print(f"   class_year = {quiz.class_year}")
 
     # --------------------------------------------------
-    # 2️⃣ Generate exam questions
+    # 3️⃣ GENERATE QUESTIONS
     # --------------------------------------------------
     print("\n--- Generating questions ---")
 
@@ -17786,7 +17794,7 @@ def generate_oc_thinking_skills_exam(
     print(f"✅ Generated {len(questions)} questions")
 
     # --------------------------------------------------
-    # 3️⃣ Save exam (shared table)
+    # 4️⃣ SAVE EXAM (🔥 INCLUDE class_year)
     # --------------------------------------------------
     print("\n--- Saving OC exam ---")
 
@@ -17795,6 +17803,7 @@ def generate_oc_thinking_skills_exam(
         class_name="OC",
         subject="thinking_skills",
         difficulty=quiz.difficulty,
+        class_year=class_year_int,   # ✅ CRITICAL
         questions=questions
     )
 
@@ -17803,9 +17812,10 @@ def generate_oc_thinking_skills_exam(
     db.refresh(new_exam)
 
     print(f"✅ Exam saved with ID: {new_exam.id}")
+    print(f"   class_year stored = {new_exam.class_year}")
 
     # --------------------------------------------------
-    # 4️⃣ Response
+    # 5️⃣ RESPONSE
     # --------------------------------------------------
     print("========== OC EXAM GENERATION COMPLETE ==========\n")
 
@@ -17814,12 +17824,12 @@ def generate_oc_thinking_skills_exam(
         "exam_id": new_exam.id,
         "quiz_id": quiz.id,
         "class_name": "oc",
+        "class_year": class_year_int,   # ✅ include in response
         "subject": "thinking_skills",
         "difficulty": quiz.difficulty,
         "total_questions": len(questions),
         "questions": questions
     }
-
 
 @app.post("/api/exams/generate-oc-mathematical-reasoning-homework")
 def generate_oc_mathematical_reasoning_homework(
