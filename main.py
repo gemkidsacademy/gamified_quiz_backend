@@ -34318,37 +34318,53 @@ def start_exam_oc_mathematical_reasoning(
     print(f"✅ Student resolved: id={student.id}")
 
     # --------------------------------------------------
-    # 2️⃣ Load quiz (OC + MR)
+    # 2️⃣ Extract + normalize student year
     # --------------------------------------------------
-    #quiz = (
-     #   db.query(Quiz)
-      #  .filter(
-       #     func.lower(Quiz.class_name) == "oc",
-        #    func.lower(Quiz.subject) == "mathematical_reasoning"
-        #)
-        #.order_by(Quiz.id.desc())
-        #.first()
-    #)
-
-    #if not quiz:
-     #   raise HTTPException(status_code=404, detail="Quiz not found")
-
+    print("\n🎓 Extracting student year")
+    
+    raw_student_year = student.student_year
+    print(f"➡ Raw student.student_year = {raw_student_year}")
+    
+    try:
+        if isinstance(raw_student_year, str):
+            class_year = int(raw_student_year.strip().split()[-1])  # "Year 4" → 4
+        else:
+            class_year = int(raw_student_year)
+    
+        print(f"✅ Parsed class_year = {class_year}")
+    
+    except Exception as e:
+        print(f"❌ Failed to parse student_year: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid student_year: {raw_student_year}"
+        )
+    
     # --------------------------------------------------
-    # 3️⃣ Load exam
+    # 3️⃣ Load exam (FILTER BY YEAR)
     # --------------------------------------------------
+    print("\n📘 Fetching exam based on class_year")
+    
     exam = (
         db.query(Exam)
         .filter(
-            func.lower(Exam.class_name) == "oc",
-            func.lower(Exam.subject) == "mathematical_reasoning"
+            func.lower(func.trim(Exam.class_name)) == "oc",
+            func.lower(func.trim(Exam.subject)) == "mathematical_reasoning",
+            Exam.class_year == class_year   # ✅ CRITICAL FIX
         )
         .order_by(Exam.created_at.desc())
         .first()
     )
-
+    
     if not exam:
-        raise HTTPException(status_code=404, detail="Exam not generated")
-
+        print("❌ No exam found for this class_year")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No exam found for class_year={class_year}"
+        )
+    
+    print(f"✅ Using exam ID: {exam.id}")
+    print(f"📘 Exam.class_year = {exam.class_year}")
     # --------------------------------------------------
     # 🔧 NORMALIZER
     # --------------------------------------------------
