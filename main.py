@@ -23858,8 +23858,12 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
         "homework_id": homework.id
     }
  
+
 @app.post("/api/student/start-writing-exam")
 def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
+
+    print("\n================ START WRITING EXAM =================")
+    print(f"👉 Incoming student_id: {repr(student_id)}")
 
     # --------------------------------------------------
     # 0️⃣ Fetch student
@@ -23871,32 +23875,72 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     )
     
     if not student:
+        print("❌ Student not found")
         raise HTTPException(status_code=404, detail="Student not found")
 
-    # ✅ Extract student year
-    student_year = student.student_year
+    student_year_raw = student.student_year
+    student_year_normalized = student_year_raw.strip().lower() if student_year_raw else None
+
+    print(f"🎯 Student DB ID: {student.id}")
+    print(f"🎯 student_year RAW: {repr(student_year_raw)}")
+    print(f"🎯 student_year NORMALIZED: {repr(student_year_normalized)}")
+
+    if not student_year_normalized:
+        print("❌ student_year is missing or invalid")
+        raise HTTPException(400, "Student year is missing")
 
     # --------------------------------------------------
-    # 1️⃣ Get current writing exam FOR THIS YEAR
+    # 🔍 STEP 1: Fetch ALL active exams
     # --------------------------------------------------
-    exam = (
+    all_exams = (
         db.query(GeneratedExamWriting)
-        .filter(
-            GeneratedExamWriting.is_current == True,
-            func.lower(GeneratedExamWriting.class_year) == student_year.lower()
-        )
+        .filter(GeneratedExamWriting.is_current.is_(True))
         .order_by(GeneratedExamWriting.created_at.desc())
-        .first()
+        .all()
     )
 
-    if not exam:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No active writing exam for {student_year}"
-        )
+    print(f"\n📦 Total active exams found: {len(all_exams)}")
+
+    for e in all_exams:
+        raw = e.class_year
+        normalized = raw.strip().lower() if raw else None
+        print(f"📘 Exam ID={e.id} | RAW={repr(raw)} | NORMALIZED={repr(normalized)}")
 
     # --------------------------------------------------
-    # 2️⃣ Fetch latest attempt for THIS exam (year-safe via exam_id)
+    # 🔍 STEP 2: Manual strict matching
+    # --------------------------------------------------
+    matched_exam = None
+
+    for e in all_exams:
+        exam_year_normalized = e.class_year.strip().lower() if e.class_year else None
+
+        print(
+            f"🔎 Comparing student='{student_year_normalized}' "
+            f"WITH exam='{exam_year_normalized}' (Exam ID={e.id})"
+        )
+
+        if exam_year_normalized == student_year_normalized:
+            print(f"✅ MATCH FOUND → Exam ID={e.id}")
+            matched_exam = e
+            break
+
+    if not matched_exam:
+        print("\n❌ NO MATCHING EXAM FOUND")
+        print(f"Student year: {student_year_normalized}")
+        print("Available exams:", [repr(e.class_year) for e in all_exams])
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"No active writing exam for {student.student_year}"
+        )
+
+    exam = matched_exam
+
+    print(f"\n🎉 FINAL SELECTED EXAM ID: {exam.id}")
+    print(f"🎉 FINAL SELECTED EXAM YEAR: {repr(exam.class_year)}")
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch latest attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamWriting)
@@ -23908,21 +23952,22 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
         .first()
     )
 
+    print(f"\n🧪 Attempt found: {bool(attempt)}")
+
     # --------------------------------------------------
-    # 🟥 CASE A — Exam already completed
+    # 🟥 CASE A — Completed
     # --------------------------------------------------
     if attempt and attempt.completed_at:
-        return {
-            "completed": True,
-            "class_year": student_year   # ✅ optional clarity
-        }
+        print("🟥 CASE A → Already completed")
+        return {"completed": True, "class_year": student.student_year}
 
     # --------------------------------------------------
-    # 🟡 CASE B — Resume active attempt
+    # 🟡 CASE B — Resume
     # --------------------------------------------------
     if attempt and attempt.completed_at is None:
-        started_at = attempt.started_at
+        print("🟡 CASE B → Resuming attempt")
 
+        started_at = attempt.started_at
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
 
@@ -23930,24 +23975,25 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
         elapsed = int((now - started_at).total_seconds())
         remaining = max(0, attempt.duration_minutes * 60 - elapsed)
 
+        print(f"⏱️ elapsed={elapsed}s | remaining={remaining}s")
+
         if remaining == 0:
+            print("⏹️ Time over → marking completed")
             attempt.completed_at = now
             db.commit()
-
-            return {
-                "completed": True,
-                "class_year": student_year
-            }
+            return {"completed": True, "class_year": student.student_year}
 
         return {
             "completed": False,
             "remaining_time": remaining,
-            "class_year": student_year   # ✅ useful for frontend/debug
+            "class_year": student.student_year
         }
 
     # --------------------------------------------------
-    # 🔵 CASE C — Start new writing attempt
+    # 🔵 CASE C — New attempt
     # --------------------------------------------------
+    print("🔵 CASE C → Starting new attempt")
+
     new_attempt = StudentExamWriting(
         student_id=student.id,
         exam_id=exam.id,
@@ -23962,7 +24008,7 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     return {
         "completed": False,
         "remaining_time": new_attempt.duration_minutes * 60,
-        "class_year": student_year   # ✅ consistency
+        "class_year": student.student_year
     }
  
 
