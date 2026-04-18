@@ -15229,7 +15229,7 @@ def get_question_bank_oc_mathematical_reasoning(
         }
         for r in results
     ]
-    ]
+    
 def get_attempt_filter(ResponseModel, exam_attempt_id):
     if hasattr(ResponseModel, "exam_attempt_id"):
         return ResponseModel.exam_attempt_id == exam_attempt_id
