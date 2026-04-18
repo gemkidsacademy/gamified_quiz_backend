@@ -15001,10 +15001,67 @@ def get_question_bank_thinking_skills(
     ]
  
 
+
 @app.get("/api/admin/question-bank-oc-thinking-skills")
 def get_question_bank_oc_thinking_skills(
+    class_name: str = Query("oc"),
+    class_year: str = Query(...),   # 🔥 REQUIRED
+    subject: str = Query("thinking skills"),
     db: Session = Depends(get_db)
 ):
+    print("\n" + "=" * 70)
+    print("🚀 [QUESTION BANK FETCH STARTED]")
+
+    # --------------------------------------------------
+    # 1️⃣ RAW INPUTS
+    # --------------------------------------------------
+    print("📥 RAW INPUTS:")
+    print(f"   class_name (raw)  = '{class_name}' | type = {type(class_name)}")
+    print(f"   class_year (raw)  = '{class_year}' | type = {type(class_year)}")
+    print(f"   subject (raw)     = '{subject}' | type = {type(subject)}")
+
+    # --------------------------------------------------
+    # 2️⃣ NORMALIZATION
+    # --------------------------------------------------
+    normalized_class_name = class_name.strip().lower()
+    normalized_subject = subject.strip().lower()
+
+    print("\n🔧 NORMALIZED INPUTS:")
+    print(f"   class_name (normalized) = '{normalized_class_name}'")
+    print(f"   subject (normalized)    = '{normalized_subject}'")
+    print(f"   class_year (used as-is) = '{class_year}'")
+
+    # --------------------------------------------------
+    # 3️⃣ SANITY CHECK (OPTIONAL BUT VERY USEFUL)
+    # --------------------------------------------------
+    total_rows_all_years = (
+        db.query(func.count(Question.id))
+        .filter(
+            func.lower(Question.class_name) == normalized_class_name,
+            func.lower(Question.subject) == normalized_subject
+        )
+        .scalar()
+    )
+
+    total_rows_this_year = (
+        db.query(func.count(Question.id))
+        .filter(
+            func.lower(Question.class_name) == normalized_class_name,
+            func.lower(Question.subject) == normalized_subject,
+            Question.class_year == class_year
+        )
+        .scalar()
+    )
+
+    print("\n📊 DATABASE SANITY CHECK:")
+    print(f"   total rows (ALL years) = {total_rows_all_years}")
+    print(f"   total rows (THIS year) = {total_rows_this_year}")
+
+    # --------------------------------------------------
+    # 4️⃣ MAIN QUERY
+    # --------------------------------------------------
+    print("\n🧠 EXECUTING MAIN QUERY...")
+
     results = (
         db.query(
             Question.difficulty,
@@ -15012,8 +15069,9 @@ def get_question_bank_oc_thinking_skills(
             func.count(Question.id).label("total_questions")
         )
         .filter(
-            func.lower(Question.class_name) == "oc",
-            func.lower(Question.subject) == "thinking skills",
+            func.lower(Question.class_name) == normalized_class_name,
+            func.lower(Question.subject) == normalized_subject,
+            Question.class_year == class_year,   # ✅ CRITICAL FILTER
             Question.topic.isnot(None)
         )
         .group_by(
@@ -15027,7 +15085,29 @@ def get_question_bank_oc_thinking_skills(
         .all()
     )
 
-    return [
+    print(f"📦 Query returned {len(results)} grouped rows")
+
+    # --------------------------------------------------
+    # 5️⃣ RESULT INSPECTION
+    # --------------------------------------------------
+    for i, r in enumerate(results[:5]):  # preview first 5
+        print(f"   🔹 Row {i+1}:")
+        print(f"      difficulty      = {r.difficulty}")
+        print(f"      topic           = {r.topic}")
+        print(f"      total_questions = {r.total_questions}")
+
+    if len(results) == 0:
+        print("⚠️ WARNING: No results found for given filters!")
+        print("   Possible causes:")
+        print("   - No data for this class_year")
+        print("   - class_year mismatch (string vs int)")
+        print("   - subject/class_name mismatch")
+        print("   - old data missing class_year")
+
+    # --------------------------------------------------
+    # 6️⃣ RESPONSE BUILD
+    # --------------------------------------------------
+    response = [
         {
             "difficulty": r.difficulty,
             "topic": r.topic,
@@ -15035,6 +15115,12 @@ def get_question_bank_oc_thinking_skills(
         }
         for r in results
     ]
+
+    print("\n✅ RESPONSE READY")
+    print("=" * 70 + "\n")
+
+    return response
+ 
 @app.get("/api/admin/question-bank-oc-mathematical-reasoning")
 def get_question_bank_oc_mathematical_reasoning(
     db: Session = Depends(get_db)
