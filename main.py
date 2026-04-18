@@ -23336,79 +23336,127 @@ def start_exam_oc_reading(
         print("❌ Invalid student_id")
         raise HTTPException(status_code=400, detail="Invalid student_id")
 
-    print("✅ Using student_id:", student_id)
-    # 2️⃣ Latest exam (same table)
+    # --------------------------------------------------
+    # 0️⃣ Resolve student + class year
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(func.lower(Student.student_id) == student_id.lower())
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    raw_year = str(student.student_year).strip()
+
+    # Handles:
+    # "Year 4" -> 4
+    # "4" -> 4
+    class_year = raw_year.split()[-1]
+
+    print("✅ Using:", {
+        "student_id": student_id,
+        "student_year_raw": raw_year,
+        "class_year": class_year
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Get latest OC exam for SAME class_year
+    # --------------------------------------------------
+    print("🔍 Searching OC exam with:", {
+        "class_name": "oc",
+        "class_year": class_year
+    })
+
     exam = (
         db.query(GeneratedExamReading)
-        .filter(GeneratedExamReading.class_name == "oc")
+        .filter(
+            func.lower(GeneratedExamReading.class_name) == "oc",
+            GeneratedExamReading.class_year == class_year
+        )
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
 
     if not exam:
-        print("❌ No OC exam found")
-        raise HTTPException(status_code=404, detail="OC reading exam not found")
+        print("❌ No OC reading exam found for class year:", class_year)
+        raise HTTPException(
+            status_code=404,
+            detail=f"OC reading exam not found for Year {class_year}"
+        )
 
-    # 1️⃣ Fetch latest attempt (OC)
+    print("✅ Matched exam:", {
+        "exam_id": exam.id,
+        "class_year": exam.class_year
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Existing attempt for THIS student + THIS exam
+    # --------------------------------------------------
     attempt = (
         db.query(StudentExamReadingOC)
         .filter(
-            StudentExamReadingOC.student_id == student_id,
-            StudentExamReadingOC.exam_id == exam.id   # ✅ ADD THIS
+            func.lower(StudentExamReadingOC.student_id) == student_id.lower(),
+            StudentExamReadingOC.exam_id == exam.id
         )
         .order_by(StudentExamReadingOC.started_at.desc())
         .first()
     )
 
     if attempt:
-        print("🧪 Found existing OC attempt:", {
+        print("🧪 Found existing attempt:", {
             "attempt_id": attempt.id,
             "exam_id": attempt.exam_id,
-            "started_at": attempt.started_at,
-            "finished": attempt.finished
+            "finished": attempt.finished,
+            "started_at": attempt.started_at
         })
     else:
-        print("🆕 No previous OC attempt found")
+        print("🆕 No previous attempt found")
 
-    # 🚫 Already finished → return report trigger
+    # --------------------------------------------------
+    # 🚫 Already finished
+    # --------------------------------------------------
     if attempt and attempt.finished:
         payload = {
             "completed": True,
             "attempt_id": attempt.id
         }
 
-        print("🚫 Attempt already finished → returning:", payload)
+        print("🚫 Already finished →", payload)
         print("================================================\n")
         return payload
 
-    
-
     duration_minutes = exam.exam_json.get("duration_minutes", 30)
 
-    print("📘 Active OC exam:", {
+    print("📘 Active exam:", {
         "exam_id": exam.id,
         "duration_minutes": duration_minutes
     })
 
-    # 🔁 Resume attempt
+    # --------------------------------------------------
+    # 🔁 Resume unfinished attempt
+    # --------------------------------------------------
     if attempt and not attempt.finished:
         now = datetime.now(timezone.utc)
         started_at = attempt.started_at
+
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
 
         elapsed = int((now - started_at).total_seconds())
         remaining = max(0, duration_minutes * 60 - elapsed)
 
-        print("⏱ Resume OC attempt:", {
+        print("⏱ Resume attempt:", {
             "attempt_id": attempt.id,
             "elapsed": elapsed,
             "remaining": remaining
         })
 
-        # ⌛ Time expired → auto submit
+        # ⌛ Time expired
         if remaining == 0:
-            print("⌛ Time expired — auto-submitting OC exam")
+            print("⌛ Time expired → auto submit")
 
             auto_submit_oc_reading_exam(
                 session=attempt,
@@ -23420,7 +23468,7 @@ def start_exam_oc_reading(
                 "attempt_id": attempt.id
             }
 
-            print("🟢 Auto-submit complete → returning:", payload)
+            print("🟢 Auto submitted:", payload)
             print("================================================\n")
             return payload
 
@@ -23431,14 +23479,17 @@ def start_exam_oc_reading(
             "remaining_time": remaining
         }
 
-        print("🔁 Resuming OC attempt → returning:", payload)
+        print("🔁 Resuming attempt:", payload)
         print("================================================\n")
         return payload
 
+    # --------------------------------------------------
     # 🆕 Create new attempt
+    # --------------------------------------------------
     new_attempt = StudentExamReadingOC(
         student_id=student_id,
         exam_id=exam.id,
+        class_year=class_year,
         started_at=datetime.now(timezone.utc),
         finished=False
     )
@@ -23450,20 +23501,21 @@ def start_exam_oc_reading(
     payload = {
         "completed": False,
         "attempt_id": new_attempt.id,
-        "exam_id": exam.id,
+        "exam_id": new_attempt.exam_id,
         "remaining_time": duration_minutes * 60
     }
 
-    print("🆕 New OC attempt created:", {
+    print("🆕 New attempt created:", {
         "attempt_id": new_attempt.id,
-        "exam_id": exam.id
+        "exam_id": new_attempt.exam_id,
+        "class_year": class_year
     })
 
     print("📤 Returning payload:", payload)
     print("================================================\n")
 
     return payload
-
+ 
 @app.post("/api/student/start-homework-reading")
 def start_homework_reading(
     req: StartExamRequest = Body(...),
