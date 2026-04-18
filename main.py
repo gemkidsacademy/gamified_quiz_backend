@@ -36011,9 +36011,27 @@ def start_exam_oc_thinking_skills(
     # --------------------------------------------------
     # 🔥 RESOLVE STUDENT CLASS YEAR
     # --------------------------------------------------
-    class_year = student.student_year
+    raw_student_year = student.student_year
+    print(f"🎓 Raw student.student_year = {raw_student_year} | type = {type(raw_student_year)}")
     
-    print(f"🎓 Student class_year = {class_year}")
+    try:
+        # Handle both integer and legacy string like "Year 4"
+        if isinstance(raw_student_year, str):
+            cleaned = raw_student_year.strip()
+            
+            if cleaned.isdigit():
+                class_year = int(cleaned)
+            else:
+                # fallback for "Year 4"
+                class_year = int(cleaned.split()[-1])
+        else:
+            class_year = int(raw_student_year)
+    
+        print(f"🔢 Final class_year = {class_year}")
+    
+    except Exception as e:
+        print("❌ Failed to normalize student_year:", raw_student_year, "| Error:", repr(e))
+        raise HTTPException(status_code=400, detail="Invalid student_year format")
     
     # --------------------------------------------------
     # 🔥 FETCH LATEST EXAM FOR THIS CLASS YEAR ONLY
