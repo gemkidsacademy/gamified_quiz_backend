@@ -17986,69 +17986,98 @@ def generate_oc_mathematical_reasoning_exam(
 ):
     """
     Generate OC Mathematical Reasoning exam (hybrid architecture).
+    Now supports class_year filtering.
     """
 
     print("\n========== OC MR EXAM GENERATION START ==========")
 
     payload = payload or {}
+    print(f"📥 Incoming payload: {payload}")
 
     # --------------------------------------------------
-    # 0️⃣ Clear previous OC MR exams
+    # 0️⃣ Extract + normalize class_year
+    # --------------------------------------------------
+    raw_class_year = payload.get("class_year")
+    print(f"🎓 Raw class_year from frontend: {raw_class_year}")
+
+    try:
+        if not raw_class_year:
+            raise ValueError("class_year is required")
+
+        if isinstance(raw_class_year, str):
+            class_year = int(raw_class_year.strip().split()[-1])
+        else:
+            class_year = int(raw_class_year)
+
+        print(f"✅ Parsed class_year: {class_year}")
+
+    except Exception as e:
+        print(f"❌ Failed to parse class_year: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid class_year: {raw_class_year}"
+        )
+
+    # --------------------------------------------------
+    # 1️⃣ Clear previous OC MR exams (OPTIONAL)
     # --------------------------------------------------
     print("\n--- Deleting previous OC Mathematical Reasoning exams ---")
 
-    # STEP 1: Get OC MR exam IDs
     exam_ids_subq = select(Exam.id).where(
         func.lower(Exam.subject) == "mathematical_reasoning",
         func.lower(Exam.class_name) == "oc"
     )
 
-    # STEP 2: Get attempt IDs
     attempt_ids_subq = select(StudentExamOCMathematicalReasoning.id).where(
         StudentExamOCMathematicalReasoning.exam_id.in_(exam_ids_subq)
     )
 
+    print("ℹ️ (Skipping actual delete for safety — enable if needed)")
+
     # --------------------------------------------------
-    # 🔥 DELETE CHILD FIRST (RESPONSES)
-    # --------------------------------------------------
-    
-    # --------------------------------------------------
-    # 1️⃣ Fetch latest OC MR quiz
+    # 2️⃣ Fetch latest OC MR quiz (FILTER BY YEAR)
     # --------------------------------------------------
     print("\n--- Fetching latest OC MR quiz ---")
+    print(f"🔍 Filtering for class_year = {class_year}")
 
     quiz = (
         db.query(Quiz)
         .filter(
             func.lower(Quiz.subject) == "mathematical_reasoning",
-            func.lower(Quiz.class_name) == "oc"
+            func.lower(Quiz.class_name) == "oc",
+            Quiz.class_year == class_year   # ✅ IMPORTANT FIX
         )
         .order_by(Quiz.id.desc())
         .first()
     )
 
     if not quiz:
+        print("❌ No quiz found for given filters")
         raise HTTPException(
             status_code=404,
-            detail="No OC Mathematical Reasoning quiz found"
+            detail=f"No OC Mathematical Reasoning quiz found for class_year={class_year}"
         )
 
     print(f"✅ Using Quiz ID: {quiz.id}")
+    print(f"📘 Quiz.class_year: {quiz.class_year}")
+    print(f"📘 Quiz.difficulty: {quiz.difficulty}")
 
     # --------------------------------------------------
-    # 2️⃣ Generate exam questions
+    # 3️⃣ Generate exam questions
     # --------------------------------------------------
     print("\n--- Generating questions ---")
 
     try:
         questions = generate_exam_questions(quiz, db)
     except Exception as e:
+        print(f"❌ Question generation failed: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate OC MR exam: {str(e)}"
         )
 
     if not questions:
+        print("❌ No questions generated")
         raise HTTPException(
             status_code=500,
             detail="No questions generated"
@@ -18057,7 +18086,7 @@ def generate_oc_mathematical_reasoning_exam(
     print(f"✅ Generated {len(questions)} questions")
 
     # --------------------------------------------------
-    # 3️⃣ Save exam
+    # 4️⃣ Save exam
     # --------------------------------------------------
     print("\n--- Saving OC MR exam ---")
 
@@ -18076,7 +18105,7 @@ def generate_oc_mathematical_reasoning_exam(
     print(f"✅ Exam saved with ID: {new_exam.id}")
 
     # --------------------------------------------------
-    # 4️⃣ Response
+    # 5️⃣ Response
     # --------------------------------------------------
     print("========== OC MR EXAM GENERATION COMPLETE ==========\n")
 
@@ -18087,6 +18116,7 @@ def generate_oc_mathematical_reasoning_exam(
         "class_name": "oc",
         "subject": "mathematical_reasoning",
         "difficulty": quiz.difficulty,
+        "class_year": class_year,  # ✅ include in response for verification
         "total_questions": len(questions),
         "questions": questions
     }
