@@ -3017,10 +3017,11 @@ class QuizCreateOC_TS(BaseModel):
 class QuizCreate_OC_MR(BaseModel):
     class_name: str
     subject: str
+    class_year: Union[int, str]  # ✅ supports both "Year 4" and 4
     difficulty: str
     num_topics: int
     topics: List[TopicInput]
-
+ 
 class Quiz(Base):
     __tablename__ = "quizzes"
 
