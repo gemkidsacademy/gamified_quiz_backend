@@ -15024,13 +15024,21 @@ def get_question_bank_oc_thinking_skills(
     # 2️⃣ NORMALIZATION
     # --------------------------------------------------
     normalized_class_name = class_name.strip().lower()
-    normalized_subject = subject.strip().lower()
+    normalized_subject = subject.replace("_", " ").strip().lower()
 
     print("\n🔧 NORMALIZED INPUTS:")
     print(f"   class_name (normalized) = '{normalized_class_name}'")
     print(f"   subject (normalized)    = '{normalized_subject}'")
     print(f"   class_year (used as-is) = '{class_year}'")
-
+    # --------------------------------------------------
+    # 2.5️⃣ TYPE NORMALIZATION
+    # --------------------------------------------------
+    try:
+        class_year_int = int(class_year)
+        print(f"\n🔢 class_year converted to int = {class_year_int}")
+    except Exception as e:
+        print("❌ ERROR converting class_year to int:", e)
+        return []
     # --------------------------------------------------
     # 3️⃣ SANITY CHECK (OPTIONAL BUT VERY USEFUL)
     # --------------------------------------------------
@@ -15048,7 +15056,7 @@ def get_question_bank_oc_thinking_skills(
         .filter(
             func.lower(Question.class_name) == normalized_class_name,
             func.lower(Question.subject) == normalized_subject,
-            Question.class_year == class_year
+            Question.class_year == class_year_int
         )
         .scalar()
     )
@@ -15071,7 +15079,7 @@ def get_question_bank_oc_thinking_skills(
         .filter(
             func.lower(Question.class_name) == normalized_class_name,
             func.lower(Question.subject) == normalized_subject,
-            Question.class_year == class_year,   # ✅ CRITICAL FILTER
+            Question.class_year == class_year_int,   # ✅ CRITICAL FILTER
             Question.topic.isnot(None)
         )
         .group_by(
