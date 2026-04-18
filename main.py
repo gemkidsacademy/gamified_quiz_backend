@@ -25026,6 +25026,8 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
+    class_year = student.student_year  # ✅ derive here (single source of truth)
+
     # --------------------------------------------------
     # 1️⃣ Fetch ACTIVE writing attempt ONLY
     # --------------------------------------------------
@@ -25040,26 +25042,32 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
     )
 
     if not attempt:
-        # 🔑 This is intentional.
-        # Frontend will call start-writing-exam.
         raise HTTPException(
             status_code=404,
             detail="No active writing exam"
         )
 
     # --------------------------------------------------
-    # 2️⃣ Load exam definition
+    # 2️⃣ Load exam definition (WITH class_year validation)
     # --------------------------------------------------
     exam = (
         db.query(GeneratedExamWriting)
-        .filter(GeneratedExamWriting.id == attempt.exam_id)
+        .filter(
+            GeneratedExamWriting.id == attempt.exam_id,
+            GeneratedExamWriting.class_year == class_year   # ✅ CRITICAL FIX
+        )
         .first()
     )
 
+    # 🚨 Important: handle mismatch (old bug case)
     if not exam:
+        # Optionally: invalidate bad attempt
+        attempt.completed_at = datetime.now(timezone.utc)
+        db.commit()
+
         raise HTTPException(
-            status_code=404,
-            detail="Writing exam not found"
+            status_code=403,
+            detail="Exam does not match student's class year"
         )
 
     # --------------------------------------------------
@@ -25091,12 +25099,11 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
         "exam": {
             "exam_id": exam.id,
             "difficulty": exam.difficulty,
-            "writing_type": exam.topic,   # ⭐ added
+            "writing_type": exam.topic,
             "question_text": exam.question_text,
             "duration_minutes": attempt.duration_minutes
         }
     }
-
  
 
 
