@@ -36008,21 +36008,40 @@ def start_exam_oc_thinking_skills(
         raise HTTPException(status_code=404, detail="Student not found")
 
     print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
+    # --------------------------------------------------
+    # 🔥 RESOLVE STUDENT CLASS YEAR
+    # --------------------------------------------------
+    class_year = student.class_year
+    
+    print(f"🎓 Student class_year = {class_year}")
+    
+    # --------------------------------------------------
+    # 🔥 FETCH LATEST EXAM FOR THIS CLASS YEAR ONLY
+    # --------------------------------------------------
     exam = (
         db.query(Exam)
         .filter(
             func.lower(Exam.class_name) == "oc",
-            Exam.subject == "thinking_skills"
+            func.lower(Exam.subject) == "thinking_skills",
+            Exam.class_year == class_year   # ✅ CRITICAL FIX
         )
         .order_by(Exam.created_at.desc())
         .first()
     )
-
+    
     if not exam:
+        print(f"❌ No exam found for class_year={class_year}")
         raise HTTPException(
             status_code=404,
-            detail="OC Thinking Skills exam not found"
+            detail=f"OC Thinking Skills exam not found for class_year={class_year}"
         )
+    
+    print(
+        "✅ Exam selected | "
+        f"exam_id={exam.id} | "
+        f"class_year={exam.class_year} | "
+        f"created_at={exam.created_at}"
+    )
 
 
     # --------------------------------------------------
@@ -36136,23 +36155,8 @@ def start_exam_oc_thinking_skills(
     # --------------------------------------------------
     print("🆕 No existing OC attempt → creating FIRST attempt")
 
-    exam = (
-        db.query(Exam)
-        .filter(
-            func.lower(Exam.class_name) == "oc",
-            Exam.subject == "thinking_skills"
-        )
-        .order_by(Exam.created_at.desc())
-        .first()
-    )
-
-    if not exam:
-        print("❌ OC Exam not found")
-        raise HTTPException(
-            status_code=404,
-            detail="OC Thinking Skills exam not found"
-        )
-
+        
+    
     normalized_questions = normalize_thinking_skills_questions(
         exam.questions or [],
         db
