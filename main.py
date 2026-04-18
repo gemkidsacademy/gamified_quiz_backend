@@ -23861,6 +23861,9 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
 @app.post("/api/student/start-writing-exam")
 def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
+    # --------------------------------------------------
+    # 0️⃣ Fetch student
+    # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(func.lower(Student.student_id) == student_id.lower())
@@ -23870,22 +23873,30 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
 
+    # ✅ Extract student year
+    student_year = student.student_year
 
     # --------------------------------------------------
-    # 1️⃣ Get current writing exam
+    # 1️⃣ Get current writing exam FOR THIS YEAR
     # --------------------------------------------------
     exam = (
         db.query(GeneratedExamWriting)
-        .filter(GeneratedExamWriting.is_current == True)
+        .filter(
+            GeneratedExamWriting.is_current == True,
+            func.lower(GeneratedExamWriting.class_year) == student_year.lower()
+        )
         .order_by(GeneratedExamWriting.created_at.desc())
         .first()
     )
 
     if not exam:
-        raise HTTPException(404, "No active writing exam")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No active writing exam for {student_year}"
+        )
 
     # --------------------------------------------------
-    # 2️⃣ Fetch latest attempt for THIS exam
+    # 2️⃣ Fetch latest attempt for THIS exam (year-safe via exam_id)
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamWriting)
@@ -23901,13 +23912,17 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     # 🟥 CASE A — Exam already completed
     # --------------------------------------------------
     if attempt and attempt.completed_at:
-        return {"completed": True}
+        return {
+            "completed": True,
+            "class_year": student_year   # ✅ optional clarity
+        }
 
     # --------------------------------------------------
     # 🟡 CASE B — Resume active attempt
     # --------------------------------------------------
     if attempt and attempt.completed_at is None:
         started_at = attempt.started_at
+
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
 
@@ -23918,11 +23933,16 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
         if remaining == 0:
             attempt.completed_at = now
             db.commit()
-            return {"completed": True}
+
+            return {
+                "completed": True,
+                "class_year": student_year
+            }
 
         return {
             "completed": False,
-            "remaining_time": remaining
+            "remaining_time": remaining,
+            "class_year": student_year   # ✅ useful for frontend/debug
         }
 
     # --------------------------------------------------
@@ -23941,10 +23961,10 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
     return {
         "completed": False,
-        "remaining_time": new_attempt.duration_minutes * 60
+        "remaining_time": new_attempt.duration_minutes * 60,
+        "class_year": student_year   # ✅ consistency
     }
-
-
+ 
 
 @app.get("/api/get-quizzes-writing")
 def get_quizzes_writing(db: Session = Depends(get_db)):
