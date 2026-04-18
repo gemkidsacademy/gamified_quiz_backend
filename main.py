@@ -15129,10 +15129,62 @@ def get_question_bank_oc_thinking_skills(
 
     return response
  
+
 @app.get("/api/admin/question-bank-oc-mathematical-reasoning")
 def get_question_bank_oc_mathematical_reasoning(
+    class_year: str = Query(...),
     db: Session = Depends(get_db)
 ):
+    print("\n================ QUESTION BANK OC MR =================")
+
+    # --------------------------------------------------
+    # 1️⃣ Incoming Request
+    # --------------------------------------------------
+    print(f"📥 Incoming class_year = '{class_year}'")
+
+    # --------------------------------------------------
+    # 2️⃣ DB Sanity Check
+    # --------------------------------------------------
+    total_questions = db.query(Question).count()
+    print(f"📊 Total questions in DB = {total_questions}")
+
+    distinct_years = db.query(Question.class_year).distinct().all()
+    print(f"📚 Distinct class_years in DB = {distinct_years}")
+
+    # --------------------------------------------------
+    # 3️⃣ Count BEFORE applying class_year filter
+    # --------------------------------------------------
+    base_count = (
+        db.query(Question)
+        .filter(
+            func.lower(Question.class_name) == "oc",
+            func.lower(Question.subject) == "mathematical reasoning",
+            Question.topic.isnot(None)
+        )
+        .count()
+    )
+
+    print(f"📊 Count BEFORE class_year filter = {base_count}")
+
+    # --------------------------------------------------
+    # 4️⃣ Count AFTER applying class_year filter
+    # --------------------------------------------------
+    filtered_count = (
+        db.query(Question)
+        .filter(
+            func.lower(Question.class_name) == "oc",
+            func.lower(Question.subject) == "mathematical reasoning",
+            Question.topic.isnot(None),
+            func.lower(Question.class_year) == class_year.lower()
+        )
+        .count()
+    )
+
+    print(f"📊 Count AFTER class_year filter = {filtered_count}")
+
+    # --------------------------------------------------
+    # 5️⃣ Fetch grouped results
+    # --------------------------------------------------
     results = (
         db.query(
             Question.difficulty,
@@ -15142,7 +15194,8 @@ def get_question_bank_oc_mathematical_reasoning(
         .filter(
             func.lower(Question.class_name) == "oc",
             func.lower(Question.subject) == "mathematical reasoning",
-            Question.topic.isnot(None)
+            Question.topic.isnot(None),
+            func.lower(Question.class_year) == class_year.lower()
         )
         .group_by(
             Question.difficulty,
@@ -15155,6 +15208,19 @@ def get_question_bank_oc_mathematical_reasoning(
         .all()
     )
 
+    print(f"📦 Grouped result rows = {len(results)}")
+
+    # --------------------------------------------------
+    # 6️⃣ Print sample results
+    # --------------------------------------------------
+    for i, r in enumerate(results[:10]):  # limit to avoid spam
+        print(f"➡️ Row {i+1}: {r.difficulty} | {r.topic} | {r.total_questions}")
+
+    print("=====================================================\n")
+
+    # --------------------------------------------------
+    # 7️⃣ Response
+    # --------------------------------------------------
     return [
         {
             "difficulty": r.difficulty,
@@ -15162,7 +15228,8 @@ def get_question_bank_oc_mathematical_reasoning(
             "total_questions": r.total_questions
         }
         for r in results
-    ] 
+    ]
+    ]
 def get_attempt_filter(ResponseModel, exam_attempt_id):
     if hasattr(ResponseModel, "exam_attempt_id"):
         return ResponseModel.exam_attempt_id == exam_attempt_id
