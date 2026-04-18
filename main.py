@@ -36011,7 +36011,7 @@ def start_exam_oc_thinking_skills(
     # --------------------------------------------------
     # 🔥 RESOLVE STUDENT CLASS YEAR
     # --------------------------------------------------
-    class_year = student.class_year
+    class_year = student.student_year
     
     print(f"🎓 Student class_year = {class_year}")
     
