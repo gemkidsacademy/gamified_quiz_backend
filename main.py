@@ -18353,92 +18353,225 @@ def generate_oc_mathematical_reasoning_exam(
     db: Session = Depends(get_db)
 ):
     """
-    Generate OC Mathematical Reasoning exam (hybrid architecture).
-    Now supports class_year filtering.
+    Generate OC Mathematical Reasoning exam.
+    Includes detailed debug logging.
     """
 
-    print("\n========== OC MR EXAM GENERATION START ==========")
+    print("\n======================================================")
+    print("🚀 START: /api/exams/generate-oc-mathematical-reasoning")
+    print("======================================================")
 
     payload = payload or {}
-    print(f"📥 Incoming payload: {payload}")
+
+    QUIZ_SUBJECT = "mathematical_reasoning"
+    QUIZ_CLASS = "oc"
+
+    EXAM_SUBJECT = "mathematical_reasoning"
+    EXAM_CLASS = "OC"
 
     # --------------------------------------------------
-    # 0️⃣ Extract + normalize class_year
+    # 0️⃣ INPUT DEBUG
     # --------------------------------------------------
+    print("\n📥 RAW PAYLOAD:")
+    print(payload)
+
+    print("\n📌 CONSTANTS")
+    print("QUIZ_SUBJECT :", QUIZ_SUBJECT)
+    print("QUIZ_CLASS   :", QUIZ_CLASS)
+    print("EXAM_SUBJECT :", EXAM_SUBJECT)
+    print("EXAM_CLASS   :", EXAM_CLASS)
+
     raw_class_year = payload.get("class_year")
-    print(f"🎓 Raw class_year from frontend: {raw_class_year}")
+
+    print("\n🎓 RAW class_year:", raw_class_year)
+    print("🎓 TYPE:", type(raw_class_year))
 
     try:
-        if not raw_class_year:
-            raise ValueError("class_year is required")
+        if raw_class_year is None:
+            raise ValueError("class_year missing")
 
         if isinstance(raw_class_year, str):
             class_year = int(raw_class_year.strip().split()[-1])
         else:
             class_year = int(raw_class_year)
 
-        print(f"✅ Parsed class_year: {class_year}")
-
     except Exception as e:
-        print(f"❌ Failed to parse class_year: {e}")
+        print("❌ Failed to parse class_year:", str(e))
         raise HTTPException(
             status_code=400,
             detail=f"Invalid class_year: {raw_class_year}"
         )
 
+    print("✅ Parsed class_year:", class_year)
+
     # --------------------------------------------------
-    # 1️⃣ Clear previous OC MR exams (OPTIONAL)
+    # 1️⃣ DELETE DEBUG
     # --------------------------------------------------
-    print("\n--- Deleting previous OC Mathematical Reasoning exams ---")
+    print("\n======================================================")
+    print("🧹 PREVIOUS EXAM FILTER CHECK")
+    print("======================================================")
 
     exam_ids_subq = select(Exam.id).where(
-        func.lower(Exam.subject) == "mathematical_reasoning",
-        func.lower(Exam.class_name) == "oc"
+        Exam.subject == EXAM_SUBJECT,
+        Exam.class_name == EXAM_CLASS,
+        Exam.class_year == class_year
     )
 
     attempt_ids_subq = select(StudentExamOCMathematicalReasoning.id).where(
         StudentExamOCMathematicalReasoning.exam_id.in_(exam_ids_subq)
     )
 
-    print("ℹ️ (Skipping actual delete for safety — enable if needed)")
+    print("ℹ️ Delete logic prepared (currently skipped for safety)")
+    print("subject    =", EXAM_SUBJECT)
+    print("class_name =", EXAM_CLASS)
+    print("class_year =", class_year)
 
     # --------------------------------------------------
-    # 2️⃣ Fetch latest OC MR quiz (FILTER BY YEAR)
+    # 2️⃣ SHOW AVAILABLE QUIZZES
     # --------------------------------------------------
-    print("\n--- Fetching latest OC MR quiz ---")
-    print(f"🔍 Filtering for class_year = {class_year}")
+    print("\n======================================================")
+    print("📚 ALL QUIZZES IN DB (LATEST FIRST)")
+    print("======================================================")
+
+    all_quizzes = (
+        db.query(Quiz)
+        .order_by(Quiz.id.desc())
+        .all()
+    )
+
+    print("Total quizzes found:", len(all_quizzes))
+
+    for row in all_quizzes[:25]:
+        print(
+            f"ID={row.id} | "
+            f"class_name='{row.class_name}' | "
+            f"subject='{row.subject}' | "
+            f"class_year={row.class_year} | "
+            f"difficulty='{row.difficulty}'"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ FILTER DEBUG
+    # --------------------------------------------------
+    print("\n======================================================")
+    print("🔍 FILTER DEBUG")
+    print("======================================================")
+
+    count_subject = (
+        db.query(Quiz)
+        .filter(Quiz.subject == QUIZ_SUBJECT)
+        .count()
+    )
+    print(f"Matches subject='{QUIZ_SUBJECT}' :", count_subject)
+
+    count_class = (
+        db.query(Quiz)
+        .filter(Quiz.class_name == QUIZ_CLASS)
+        .count()
+    )
+    print(f"Matches class_name='{QUIZ_CLASS}' :", count_class)
+
+    count_year = (
+        db.query(Quiz)
+        .filter(Quiz.class_year == class_year)
+        .count()
+    )
+    print(f"Matches class_year={class_year} :", count_year)
+
+    count_subject_class = (
+        db.query(Quiz)
+        .filter(
+            Quiz.subject == QUIZ_SUBJECT,
+            Quiz.class_name == QUIZ_CLASS
+        )
+        .count()
+    )
+    print("Matches subject + class :", count_subject_class)
+
+    count_subject_year = (
+        db.query(Quiz)
+        .filter(
+            Quiz.subject == QUIZ_SUBJECT,
+            Quiz.class_year == class_year
+        )
+        .count()
+    )
+    print("Matches subject + year :", count_subject_year)
+
+    count_class_year = (
+        db.query(Quiz)
+        .filter(
+            Quiz.class_name == QUIZ_CLASS,
+            Quiz.class_year == class_year
+        )
+        .count()
+    )
+    print("Matches class + year :", count_class_year)
+
+    # --------------------------------------------------
+    # 4️⃣ FINAL QUIZ LOOKUP
+    # --------------------------------------------------
+    print("\n======================================================")
+    print("🎯 FINAL QUIZ LOOKUP")
+    print("======================================================")
+
+    print("Looking for:")
+    print("subject    =", QUIZ_SUBJECT)
+    print("class_name =", QUIZ_CLASS)
+    print("class_year =", class_year)
 
     quiz = (
         db.query(Quiz)
         .filter(
-            func.lower(Quiz.subject) == "mathematical_reasoning",
-            func.lower(Quiz.class_name) == "oc",
-            Quiz.class_year == class_year   # ✅ IMPORTANT FIX
+            Quiz.subject == QUIZ_SUBJECT,
+            Quiz.class_name == QUIZ_CLASS,
+            Quiz.class_year == class_year
         )
         .order_by(Quiz.id.desc())
         .first()
     )
 
     if not quiz:
-        print("❌ No quiz found for given filters")
+        print("\n❌ NO QUIZ FOUND")
+
+        print("\n🔎 DISTINCT SUBJECT VALUES:")
+        subjects = db.query(Quiz.subject).distinct().all()
+        for item in subjects:
+            print("-", item[0])
+
+        print("\n🔎 DISTINCT CLASS VALUES:")
+        classes = db.query(Quiz.class_name).distinct().all()
+        for item in classes:
+            print("-", item[0])
+
+        print("\n🔎 DISTINCT CLASS YEAR VALUES:")
+        years = db.query(Quiz.class_year).distinct().all()
+        for item in years:
+            print("-", item[0])
+
         raise HTTPException(
             status_code=404,
             detail=f"No OC Mathematical Reasoning quiz found for class_year={class_year}"
         )
 
-    print(f"✅ Using Quiz ID: {quiz.id}")
-    print(f"📘 Quiz.class_year: {quiz.class_year}")
-    print(f"📘 Quiz.difficulty: {quiz.difficulty}")
+    print("\n✅ QUIZ FOUND")
+    print("quiz.id         :", quiz.id)
+    print("quiz.subject    :", quiz.subject)
+    print("quiz.class_name :", quiz.class_name)
+    print("quiz.class_year :", quiz.class_year)
+    print("quiz.difficulty :", quiz.difficulty)
 
     # --------------------------------------------------
-    # 3️⃣ Generate exam questions
+    # 5️⃣ GENERATE QUESTIONS
     # --------------------------------------------------
-    print("\n--- Generating questions ---")
+    print("\n======================================================")
+    print("🧠 GENERATING QUESTIONS")
+    print("======================================================")
 
     try:
         questions = generate_exam_questions(quiz, db)
     except Exception as e:
-        print(f"❌ Question generation failed: {e}")
+        print("❌ Question generation failed:", str(e))
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate OC MR exam: {str(e)}"
@@ -18451,18 +18584,20 @@ def generate_oc_mathematical_reasoning_exam(
             detail="No questions generated"
         )
 
-    print(f"✅ Generated {len(questions)} questions")
+    print("✅ Questions generated:", len(questions))
 
     # --------------------------------------------------
-    # 4️⃣ Save exam
+    # 6️⃣ SAVE EXAM
     # --------------------------------------------------
-    print("\n--- Saving OC MR exam ---")
+    print("\n======================================================")
+    print("💾 SAVING EXAM")
+    print("======================================================")
 
     new_exam = Exam(
         quiz_id=quiz.id,
-        class_name="OC",
+        class_name=EXAM_CLASS,
         class_year=class_year,
-        subject="mathematical_reasoning",
+        subject=EXAM_SUBJECT,
         difficulty=quiz.difficulty,
         questions=questions
     )
@@ -18471,12 +18606,17 @@ def generate_oc_mathematical_reasoning_exam(
     db.commit()
     db.refresh(new_exam)
 
-    print(f"✅ Exam saved with ID: {new_exam.id}")
+    print("✅ Exam saved successfully")
+    print("exam.id     :", new_exam.id)
+    print("quiz_id     :", new_exam.quiz_id)
+    print("class_year  :", new_exam.class_year)
 
     # --------------------------------------------------
-    # 5️⃣ Response
+    # 7️⃣ RESPONSE
     # --------------------------------------------------
-    print("========== OC MR EXAM GENERATION COMPLETE ==========\n")
+    print("\n======================================================")
+    print("🏁 END: OC MR EXAM GENERATION COMPLETE")
+    print("======================================================\n")
 
     return {
         "message": "OC Mathematical Reasoning exam generated successfully",
@@ -18485,13 +18625,10 @@ def generate_oc_mathematical_reasoning_exam(
         "class_name": "oc",
         "subject": "mathematical_reasoning",
         "difficulty": quiz.difficulty,
-        "class_year": class_year,  # ✅ include in response for verification
+        "class_year": class_year,
         "total_questions": len(questions),
         "questions": questions
     }
- 
-
-
 @app.post("/api/exams/generate-thinking-skills-homework")
 def generate_thinking_skills_homework_exam(
     payload: Optional[Dict] = Body(default=None),
