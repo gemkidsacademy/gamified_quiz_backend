@@ -4432,8 +4432,7 @@ def generate_exam_questions_selective_ts(quiz, db):
     print(f"Class Year    : {quiz.class_year}")
     print(f"Topics Config : {quiz.topics}")
     print("===============================================================\n")
-    class_year=quiz.class_year
-    class_year = class_year.strip().lower().replace("year", "").strip() 
+    
     all_questions = []
     q_id = 1
 
