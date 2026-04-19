@@ -15280,44 +15280,201 @@ def get_topics_oc_math(
     class_name: str = Query(None),
     subject: str = Query(None),
     difficulty: str = Query(None),
+    class_year: str = Query(None),
     db: Session = Depends(get_db),
 ):
     try:
-        # ----------------------------------
-        # Force correct values (ignore frontend)
-        # ----------------------------------
+        print("\n======================================================")
+        print("🚀 START: /api/topic/oc/math")
+        print("======================================================")
+
+        # --------------------------------------------------
+        # RAW INPUT DEBUG
+        # --------------------------------------------------
+        print("\n📥 RAW QUERY PARAMS")
+        print(f"class_name : {class_name}")
+        print(f"subject    : {subject}")
+        print(f"difficulty : {difficulty}")
+        print(f"class_year : {class_year}")
+        print(f"class_year type : {type(class_year)}")
+
+        # --------------------------------------------------
+        # FORCE SYSTEM VALUES
+        # --------------------------------------------------
         class_name_fixed = "oc"
-        subject_fixed = "mathematical reasoning"   # ⚠️ IMPORTANT
+        subject_fixed = "mathematical_reasoning"
 
-        print("\n📥 Fetching OC MR topics")
-        print(f"   Incoming (ignored): class={class_name}, subject={subject}, difficulty={difficulty}")
+        print("\n📌 FIXED VALUES USED BY BACKEND")
+        print(f"class_name_fixed : {class_name_fixed}")
+        print(f"subject_fixed    : {subject_fixed}")
 
-        # ----------------------------------
-        # Final query
-        # ----------------------------------
-        topics = (
-            db.query(func.distinct(Question.topic))
+        # --------------------------------------------------
+        # VALIDATE + PARSE CLASS YEAR
+        # --------------------------------------------------
+        if not class_year:
+            print("❌ class_year missing")
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
+            )
+
+        try:
+            if isinstance(class_year, str):
+                class_year_int = int(class_year.strip().split()[-1])
+            else:
+                class_year_int = int(class_year)
+
+            print(f"✅ Parsed class_year_int: {class_year_int}")
+
+        except Exception as e:
+            print("❌ Failed to parse class_year")
+            print("Reason:", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid class_year: {class_year}"
+            )
+
+        # --------------------------------------------------
+        # SHOW COUNTS BEFORE FULL FILTER
+        # --------------------------------------------------
+        print("\n======================================================")
+        print("📊 PRE-FILTER COUNTS")
+        print("======================================================")
+
+        count_subject = (
+            db.query(Question)
+            .filter(
+                func.lower(func.trim(Question.subject)) == subject_fixed
+            )
+            .count()
+        )
+        print(f"Rows matching subject='{subject_fixed}': {count_subject}")
+
+        count_class = (
+            db.query(Question)
+            .filter(
+                func.lower(func.trim(Question.class_name)) == class_name_fixed
+            )
+            .count()
+        )
+        print(f"Rows matching class_name='{class_name_fixed}': {count_class}")
+
+        count_year = (
+            db.query(Question)
+            .filter(
+                Question.class_year == class_year_int
+            )
+            .count()
+        )
+        print(f"Rows matching class_year={class_year_int}: {count_year}")
+
+        count_combo = (
+            db.query(Question)
             .filter(
                 func.lower(func.trim(Question.class_name)) == class_name_fixed,
                 func.lower(func.trim(Question.subject)) == subject_fixed,
-
-                Question.topic.isnot(None),
-                Question.topic != "",
+                Question.class_year == class_year_int
             )
-            .order_by(Question.topic)
-            .all()
+            .count()
+        )
+        print(f"Rows matching class+subject+year: {count_combo}")
+
+        # --------------------------------------------------
+        # BUILD QUERY
+        # --------------------------------------------------
+        print("\n======================================================")
+        print("🔍 BUILDING FINAL QUERY")
+        print("======================================================")
+
+        query = db.query(func.distinct(Question.topic)).filter(
+            func.lower(func.trim(Question.class_name)) == class_name_fixed,
+            func.lower(func.trim(Question.subject)) == subject_fixed,
+            Question.class_year == class_year_int,
+            Question.topic.isnot(None),
+            Question.topic != "",
         )
 
-        topic_list = [{"name": t[0]} for t in topics]
+        print("✅ Base filters added:")
+        print(f"   class_name = {class_name_fixed}")
+        print(f"   subject    = {subject_fixed}")
+        print(f"   class_year = {class_year_int}")
 
-        print(f"\n✅ Topics found: {len(topic_list)}")
-        print(f"📦 Topics: {topic_list}\n")
+        # --------------------------------------------------
+        # OPTIONAL DIFFICULTY
+        # --------------------------------------------------
+        if difficulty:
+            difficulty_clean = difficulty.strip().lower()
+
+            query = query.filter(
+                func.lower(func.trim(Question.difficulty)) ==
+                difficulty_clean
+            )
+
+            print("✅ Difficulty filter applied:")
+            print(f"   difficulty = {difficulty_clean}")
+        else:
+            print("ℹ️ No difficulty filter applied")
+
+        # --------------------------------------------------
+        # EXECUTE QUERY
+        # --------------------------------------------------
+        print("\n======================================================")
+        print("📦 EXECUTING QUERY")
+        print("======================================================")
+
+        topics = query.order_by(Question.topic).all()
+
+        topic_list = [{"name": row[0]} for row in topics]
+
+        # --------------------------------------------------
+        # RESULTS DEBUG
+        # --------------------------------------------------
+        print(f"✅ Topics found: {len(topic_list)}")
+
+        for idx, topic in enumerate(topic_list, start=1):
+            print(f"{idx}. {topic['name']}")
+
+        if not topic_list:
+            print("⚠️ No topics returned")
+            print("Possible reasons:")
+            print("1. No questions for selected class year")
+            print("2. Subject mismatch in DB")
+            print("3. Difficulty mismatch")
+            print("4. Topics are null/blank")
+
+            distinct_subjects = db.query(Question.subject).distinct().all()
+            distinct_classes = db.query(Question.class_name).distinct().all()
+            distinct_years = db.query(Question.class_year).distinct().all()
+
+            print("\n🔎 DISTINCT SUBJECTS IN QUESTIONS:")
+            for row in distinct_subjects:
+                print("-", row[0])
+
+            print("\n🔎 DISTINCT CLASSES IN QUESTIONS:")
+            for row in distinct_classes:
+                print("-", row[0])
+
+            print("\n🔎 DISTINCT YEARS IN QUESTIONS:")
+            for row in distinct_years:
+                print("-", row[0])
+
+        print("\n======================================================")
+        print("🏁 END: /api/topic/oc/math")
+        print("======================================================\n")
 
         return topic_list
 
+    except HTTPException:
+        raise
+
     except Exception as e:
-        print("❌ Error fetching OC MR topics:", str(e))
-        raise HTTPException(status_code=500, detail="Failed to fetch topics")
+        print("❌ UNHANDLED ERROR in /api/topic/oc/math")
+        print("Reason:", str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch topics"
+        )
      
 def normalize_topic_key(raw: str) -> str:
     """
@@ -18509,7 +18666,7 @@ def generate_oc_mathematical_reasoning_homework(
     print("\n--- Generating homework questions ---")
 
     try:
-        questions = generate_exam_questions(homework_quiz, db)
+        questions = generate_exam_questions_oc_mr(homework_quiz, db)
     except Exception as e:
         raise HTTPException(
             status_code=500,
