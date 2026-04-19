@@ -4223,6 +4223,8 @@ def generate_exam_questions(quiz, db):
     
     all_questions = []
     q_id = 1
+    SUBJECT_DB = "Thinking Skills"
+    CLASS_DB = "OC"
 
     for topic in quiz.topics:
         print("\n===================== PROCESSING TOPIC =====================")
@@ -4243,8 +4245,8 @@ def generate_exam_questions(quiz, db):
         available_db = (
             db.query(Question)
             .filter(
-                Question.class_name == quiz.class_name,
-                Question.subject == quiz.subject,
+                Question.class_name == CLASS_DB,
+                Question.subject == SUBJECT_DB,
                 Question.class_year == quiz.class_year,
                 func.lower(Question.topic) == topic_name.lower()
             )
@@ -4268,8 +4270,8 @@ def generate_exam_questions(quiz, db):
         raw_questions = (
             db.query(Question)
             .filter(
-                Question.class_name == quiz.class_name,
-                Question.subject == quiz.subject,
+                Question.class_name == CLASS_DB,
+                Question.subject == SUBJECT_DB,
                 Question.class_year == quiz.class_year,
                 func.lower(Question.topic) == topic_name.lower()
             )
@@ -17996,6 +17998,10 @@ def generate_oc_thinking_skills_exam(
     # 0️⃣ EXTRACT + VALIDATE CLASS YEAR
     # --------------------------------------------------
     print("\n📥 RAW PAYLOAD:", payload)
+    SUBJECT_DB = "Thinking Skills"
+    CLASS_DB = "OC"
+    SUBJECT_EXAM = "thinking_skills"
+    CLASS_EXAM = "OC"
 
     class_year = payload.get("class_year")
 
@@ -18015,8 +18021,8 @@ def generate_oc_thinking_skills_exam(
     print("\n--- Deleting previous OC Thinking Skills exams ---")
 
     exam_ids_subq = select(Exam.id).where(
-        func.lower(Exam.subject) == "thinking_skills",
-        func.lower(Exam.class_name) == "oc",
+        Exam.subject == SUBJECT_EXAM,
+        Exam.class_name == CLASS_EXAM,
         Exam.class_year == class_year_int   # ✅ IMPORTANT
     )
 
@@ -18034,9 +18040,9 @@ def generate_oc_thinking_skills_exam(
     quiz = (
         db.query(Quiz)
         .filter(
-            func.lower(Quiz.subject) == "thinking_skills",
-            func.lower(Quiz.class_name) == "oc",
-            Quiz.class_year == class_year_int   # ✅ THIS FIXES YOUR BUG
+            Quiz.subject == SUBJECT_DB,
+            Quiz.class_name == CLASS_DB,
+            Quiz.class_year == class_year_int
         )
         .order_by(Quiz.id.desc())
         .first()
@@ -18081,8 +18087,8 @@ def generate_oc_thinking_skills_exam(
 
     new_exam = Exam(
         quiz_id=quiz.id,
-        class_name="OC",
-        subject="thinking_skills",
+        class_name=CLASS_EXAM,
+        subject=SUBJECT_EXAM,
         difficulty=quiz.difficulty,
         class_year=class_year_int,   # ✅ CRITICAL
         questions=questions
