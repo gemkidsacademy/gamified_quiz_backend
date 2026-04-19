@@ -4216,6 +4216,7 @@ def generate_exam_questions(quiz, db):
     print(f"Class         : {quiz.class_name}")
     print(f"Subject       : {quiz.subject}")
     print(f"Difficulty    : {quiz.difficulty}")
+    print(f"Class Year    : {quiz.class_year}")
     print(f"Topics Config : {quiz.topics}")
     print("===============================================================\n")
 
@@ -4235,15 +4236,21 @@ def generate_exam_questions(quiz, db):
         print("============================================================")
 
         # --------------------------------------------------
-        # 1️⃣ DB PRE-FLIGHT CHECK
+        # 1️⃣ STRICT DB PRE-FLIGHT CHECK
+        # Prevent OC / wrong class leakage
         # --------------------------------------------------
         available_db = (
             db.query(Question)
-              .filter(func.lower(Question.topic) == topic_name.lower())
-              .count()
+            .filter(
+                Question.class_name == quiz.class_name,
+                Question.subject == quiz.subject,
+                Question.class_year == quiz.class_year,
+                func.lower(Question.topic) == topic_name.lower()
+            )
+            .count()
         )
 
-        print(f"[DB CHECK] Available questions: {available_db}")
+        print(f"[DB CHECK] Available filtered questions: {available_db}")
 
         if available_db < db_count:
             raise HTTPException(
@@ -4255,88 +4262,92 @@ def generate_exam_questions(quiz, db):
             )
 
         # --------------------------------------------------
-        # 2️⃣ FETCH DB QUESTIONS
+        # 2️⃣ FETCH FILTERED DB QUESTIONS
         # --------------------------------------------------
         raw_questions = (
             db.query(Question)
-              .filter(func.lower(Question.topic) == topic_name.lower())
-              .order_by(func.random())
-              .all()
+            .filter(
+                Question.class_name == quiz.class_name,
+                Question.subject == quiz.subject,
+                Question.class_year == quiz.class_year,
+                func.lower(Question.topic) == topic_name.lower()
+            )
+            .order_by(func.random())
+            .all()
         )
-        
-        # 🔥 Deduplicate by content
-        
-        def normalize_blocks(blocks):
+
+        def normalize_blocks_exam(blocks):
             parts = []
-        
-            for b in blocks:
-                if b.get("type") == "text":
-                    text = b.get("content", "").lower()
-        
-                    # 🔥 normalize ALL whitespace
+
+            for block in blocks or []:
+                if block.get("type") == "text":
+                    text = block.get("content", "").lower()
                     text = re.sub(r"\s+", " ", text).strip()
-        
                     parts.append(text)
-        
-                elif b.get("type") == "image":
-                    parts.append(b.get("src", "").strip())
-        
+
+                elif block.get("type") == "image":
+                    parts.append(block.get("src", "").strip())
+
             return " ".join(parts)
-        unique = {}
+
+        unique_questions = {}
         db_questions = []
-        
-        for q in raw_questions:
-            key = normalize_blocks(q.question_blocks)
-        
-            if key in unique:
+
+        for question_row in raw_questions:
+            key = normalize_blocks_exam(question_row.question_blocks)
+
+            if key in unique_questions:
                 print("\n🚨 DUPLICATE DETECTED")
-                print("Duplicate Q_ID:", q.id)
-                print("Existing Q_ID:", unique[key].id)
+                print("Duplicate Q_ID:", question_row.id)
+                print("Existing Q_ID :", unique_questions[key].id)
             else:
-                unique[key] = q
-                db_questions.append(q)
-        
+                unique_questions[key] = question_row
+                db_questions.append(question_row)
+
         db_questions = db_questions[:db_count]
-        for q in db_questions:
-            # ---- Normalize blocks (FIX) ----
-            blocks = q.question_blocks or []
-            
-            # Ensure at least text exists
-            if not blocks and q.question_text:
+
+        for question_row in db_questions:
+            blocks = question_row.question_blocks or []
+
+            if not blocks and question_row.question_text:
                 blocks = [
-                    {"type": "text", "content": q.question_text}
+                    {
+                        "type": "text",
+                        "content": question_row.question_text
+                    }
                 ]
-            
-            # 🔑 Inject missing image blocks
+
             existing_image_srcs = {
-                b.get("src") for b in blocks if b.get("type") == "image"
+                block.get("src")
+                for block in blocks
+                if block.get("type") == "image"
             }
-            
-            for img in q.images or []:
-                if img not in existing_image_srcs:
+
+            for image_src in question_row.images or []:
+                if image_src not in existing_image_srcs:
                     blocks.append({
                         "type": "image",
-                        "src": img
+                        "src": image_src
                     })
-            
+
             all_questions.append({
                 "q_id": q_id,
                 "topic": topic_name,
                 "blocks": blocks,
-                "options": q.options,
-                "correct": q.correct_answer
+                "options": question_row.options,
+                "correct": question_row.correct_answer
             })
 
             q_id += 1
 
-
         # --------------------------------------------------
-        # 3️⃣ AI QUESTION GENERATION (STRICT)
+        # 3️⃣ AI QUESTION GENERATION
         # --------------------------------------------------
         if ai_count > 0:
             print(f"\n[AI GEN] Requesting {ai_count} questions for '{topic_name}'")
 
             location = db.query(FranchiseLocation).first()
+
             if not location:
                 raise HTTPException(500, "No franchise location found")
 
@@ -4345,6 +4356,7 @@ def generate_exam_questions(quiz, db):
                 f"Create exactly {ai_count} MCQs.\n\n"
                 f"Class: {quiz.class_name}\n"
                 f"Subject: {quiz.subject}\n"
+                f"Class Year: {quiz.class_year}\n"
                 f"Topic: {topic_name}\n"
                 f"Country: {location.country}\n"
                 f"State: {location.state}\n\n"
@@ -4353,21 +4365,22 @@ def generate_exam_questions(quiz, db):
                 "Do NOT wrap in ```.\n"
                 "JSON format:\n"
                 "[{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct\":\"A\"}]"
-
             )
 
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[{"role": "system", "content": system_prompt}],
+                messages=[
+                    {"role": "system", "content": system_prompt}
+                ],
                 temperature=0.4
             )
 
             raw_output = response.choices[0].message.content.strip()
-            # --- DEBUG: inspect AI output ---
+
             print("\n[AI RAW OUTPUT]")
             print(raw_output)
             print("[END AI RAW OUTPUT]\n")
-         
+
             try:
                 generated = json.loads(raw_output)
             except json.JSONDecodeError:
@@ -4375,7 +4388,6 @@ def generate_exam_questions(quiz, db):
                     status_code=500,
                     detail="AI returned invalid JSON"
                 )
-
 
             print(f"[AI CHECK] Generated {len(generated)} questions")
 
@@ -4392,15 +4404,16 @@ def generate_exam_questions(quiz, db):
                 all_questions.append({
                     "q_id": q_id,
                     "topic": topic_name,
-            
-                    # ✅ normalize AI questions to blocks
                     "blocks": [
-                        {"type": "text", "content": item["question"]}
+                        {
+                            "type": "text",
+                            "content": item["question"]
+                        }
                     ],
-            
                     "options": item["options"],
                     "correct": item["correct"]
                 })
+
                 q_id += 1
 
     print("\n==================== FINAL EXAM SUMMARY ====================")
@@ -4408,7 +4421,6 @@ def generate_exam_questions(quiz, db):
     print("===========================================================\n")
 
     return all_questions
-
 
 
 
