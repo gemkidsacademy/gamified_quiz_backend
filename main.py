@@ -4436,8 +4436,9 @@ def generate_exam_questions_oc_mr(quiz, db):
     
     all_questions = []
     q_id = 1
-    SUBJECT_DB = quiz.subject
-    CLASS_DB = quiz.class_name
+    CLASS_DB = quiz.class_name.strip().lower()
+
+    SUBJECT_DB = "mathematical reasoning"
 
     for topic in quiz.topics:
         print("\n===================== PROCESSING TOPIC =====================")
@@ -4458,10 +4459,10 @@ def generate_exam_questions_oc_mr(quiz, db):
         available_db = (
             db.query(Question)
             .filter(
-                Question.class_name == CLASS_DB,
-                Question.subject == SUBJECT_DB,
+                func.lower(func.trim(Question.class_name)) == CLASS_DB,
+                func.lower(func.trim(Question.subject)) == SUBJECT_DB,
                 Question.class_year == quiz.class_year,
-                func.lower(Question.topic) == topic_name.lower()
+                func.lower(func.trim(Question.topic)) == topic_name.lower()
             )
             .count()
         )
@@ -4483,10 +4484,10 @@ def generate_exam_questions_oc_mr(quiz, db):
         raw_questions = (
             db.query(Question)
             .filter(
-                Question.class_name == CLASS_DB,
-                Question.subject == SUBJECT_DB,
+                func.lower(func.trim(Question.class_name)) == CLASS_DB,
+                func.lower(func.trim(Question.subject)) == SUBJECT_DB,
                 Question.class_year == quiz.class_year,
-                func.lower(Question.topic) == topic_name.lower()
+                func.lower(func.trim(Question.topic)) == topic_name.lower()
             )
             .order_by(func.random())
             .all()
