@@ -4480,15 +4480,15 @@ def generate_exam_questions_selective_ts(quiz, db):
         raw_questions = (
             db.query(Question)
             .filter(
-                Question.class_name == quiz.class_name,
-                Question.subject == quiz.subject,
+                func.lower(Question.class_name) == quiz.class_name.lower(),
+                Question.subject == "Thinking Skills",
                 Question.class_year == quiz.class_year,
                 func.lower(Question.topic) == topic_name.lower()
             )
             .order_by(func.random())
             .all()
         )
-
+        print("Fetched rows:", len(raw_questions))
         def normalize_blocks_exam(blocks):
             parts = []
 
