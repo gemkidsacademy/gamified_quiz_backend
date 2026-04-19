@@ -4424,6 +4424,219 @@ def generate_exam_questions(quiz, db):
     print("===========================================================\n")
 
     return all_questions
+def generate_exam_questions_oc_mr(quiz, db):
+    print("\n===================== GENERATE EXAM START =====================\n")
+    print(f"Quiz ID       : {quiz.id}")
+    print(f"Class         : {quiz.class_name}")
+    print(f"Subject       : {quiz.subject}")
+    print(f"Difficulty    : {quiz.difficulty}")
+    print(f"Class Year    : {quiz.class_year}")
+    print(f"Topics Config : {quiz.topics}")
+    print("===============================================================\n")
+    
+    all_questions = []
+    q_id = 1
+    SUBJECT_DB = quiz.subject
+    CLASS_DB = quiz.class_name
+
+    for topic in quiz.topics:
+        print("\n===================== PROCESSING TOPIC =====================")
+
+        topic_name = topic.get("name")
+        ai_count = int(topic.get("ai", 0))
+        db_count = int(topic.get("db", 0))
+
+        print(f"Topic         : {topic_name}")
+        print(f"Expected DB   : {db_count}")
+        print(f"Expected AI   : {ai_count}")
+        print("============================================================")
+
+        # --------------------------------------------------
+        # 1️⃣ STRICT DB PRE-FLIGHT CHECK
+        # Prevent OC / wrong class leakage
+        # --------------------------------------------------
+        available_db = (
+            db.query(Question)
+            .filter(
+                Question.class_name == CLASS_DB,
+                Question.subject == SUBJECT_DB,
+                Question.class_year == quiz.class_year,
+                func.lower(Question.topic) == topic_name.lower()
+            )
+            .count()
+        )
+
+        print(f"[DB CHECK] Available filtered questions: {available_db}")
+
+        if available_db < db_count:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Not enough DB questions for topic '{topic_name}'. "
+                    f"Required: {db_count}, Available: {available_db}"
+                )
+            )
+
+        # --------------------------------------------------
+        # 2️⃣ FETCH FILTERED DB QUESTIONS
+        # --------------------------------------------------
+        raw_questions = (
+            db.query(Question)
+            .filter(
+                Question.class_name == CLASS_DB,
+                Question.subject == SUBJECT_DB,
+                Question.class_year == quiz.class_year,
+                func.lower(Question.topic) == topic_name.lower()
+            )
+            .order_by(func.random())
+            .all()
+        )
+
+        def normalize_blocks_exam(blocks):
+            parts = []
+
+            for block in blocks or []:
+                if block.get("type") == "text":
+                    text = block.get("content", "").lower()
+                    text = re.sub(r"\s+", " ", text).strip()
+                    parts.append(text)
+
+                elif block.get("type") == "image":
+                    parts.append(block.get("src", "").strip())
+
+            return " ".join(parts)
+
+        unique_questions = {}
+        db_questions = []
+
+        for question_row in raw_questions:
+            key = normalize_blocks_exam(question_row.question_blocks)
+
+            if key in unique_questions:
+                print("\n🚨 DUPLICATE DETECTED")
+                print("Duplicate Q_ID:", question_row.id)
+                print("Existing Q_ID :", unique_questions[key].id)
+            else:
+                unique_questions[key] = question_row
+                db_questions.append(question_row)
+
+        db_questions = db_questions[:db_count]
+
+        for question_row in db_questions:
+            blocks = question_row.question_blocks or []
+
+            if not blocks and question_row.question_text:
+                blocks = [
+                    {
+                        "type": "text",
+                        "content": question_row.question_text
+                    }
+                ]
+
+            existing_image_srcs = {
+                block.get("src")
+                for block in blocks
+                if block.get("type") == "image"
+            }
+
+            for image_src in question_row.images or []:
+                if image_src not in existing_image_srcs:
+                    blocks.append({
+                        "type": "image",
+                        "src": image_src
+                    })
+
+            all_questions.append({
+                "q_id": q_id,
+                "topic": topic_name,
+                "blocks": blocks,
+                "options": question_row.options,
+                "correct": question_row.correct_answer
+            })
+
+            q_id += 1
+
+        # --------------------------------------------------
+        # 3️⃣ AI QUESTION GENERATION
+        # --------------------------------------------------
+        if ai_count > 0:
+            print(f"\n[AI GEN] Requesting {ai_count} questions for '{topic_name}'")
+
+            location = db.query(FranchiseLocation).first()
+
+            if not location:
+                raise HTTPException(500, "No franchise location found")
+
+            system_prompt = (
+                "You are an expert exam generator.\n"
+                f"Create exactly {ai_count} MCQs.\n\n"
+                f"Class: {quiz.class_name}\n"
+                f"Subject: {quiz.subject}\n"
+                f"Class Year: {quiz.class_year}\n"
+                f"Topic: {topic_name}\n"
+                f"Country: {location.country}\n"
+                f"State: {location.state}\n\n"
+                "Return ONLY a valid JSON array.\n"
+                "Do NOT include explanations, markdown, or extra text.\n"
+                "Do NOT wrap in ```.\n"
+                "JSON format:\n"
+                "[{\"question\":\"...\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct\":\"A\"}]"
+            )
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt}
+                ],
+                temperature=0.4
+            )
+
+            raw_output = response.choices[0].message.content.strip()
+
+            print("\n[AI RAW OUTPUT]")
+            print(raw_output)
+            print("[END AI RAW OUTPUT]\n")
+
+            try:
+                generated = json.loads(raw_output)
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=500,
+                    detail="AI returned invalid JSON"
+                )
+
+            print(f"[AI CHECK] Generated {len(generated)} questions")
+
+            if len(generated) != ai_count:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"AI generation failed for topic '{topic_name}'. "
+                        f"Expected {ai_count}, got {len(generated)}."
+                    )
+                )
+
+            for item in generated:
+                all_questions.append({
+                    "q_id": q_id,
+                    "topic": topic_name,
+                    "blocks": [
+                        {
+                            "type": "text",
+                            "content": item["question"]
+                        }
+                    ],
+                    "options": item["options"],
+                    "correct": item["correct"]
+                })
+
+                q_id += 1
+
+    print("\n==================== FINAL EXAM SUMMARY ====================")
+    print(f"TOTAL QUESTIONS GENERATED: {len(all_questions)}")
+    print("===========================================================\n")
+
+    return all_questions
  
 
 def generate_exam_questions_selective_ts(quiz, db):
@@ -18569,7 +18782,7 @@ def generate_oc_mathematical_reasoning_exam(
     print("======================================================")
 
     try:
-        questions = generate_exam_questions(quiz, db)
+        questions = generate_exam_questions_oc_mr(quiz, db)
     except Exception as e:
         print("❌ Question generation failed:", str(e))
         raise HTTPException(
