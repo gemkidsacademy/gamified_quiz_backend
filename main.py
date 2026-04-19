@@ -26451,44 +26451,82 @@ def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
     """
 
     WRITING_NORMALIZE_PROMPT = f"""
-You are a document normalizer for an exam authoring system.
-
-Convert the input text into STRICT, VALID JSON that matches the schema below.
-
-Rules:
-- Preserve all instructional meaning
-- Do NOT invent content
-- If a field is not explicitly present, return an empty string
-- Always include ALL fields in the output
-- Return JSON only (no markdown, no comments)
-
-Schema (ALL fields required):
-
-{{
-  "class_name": string,
-  "class_year": string,   # ✅ ADDED
-  "subject": "Writing",
-  "topic": string,
-  "difficulty": string,
-  "title": string,
-
-  "question_text": string,
-  "question_prompt": string,
-
-  "statement": string,
-  "opening_sentence": string,
-  "guidelines": string
-}}
-
-Guidelines formatting rules:
-- guidelines = plain text
-- newline-separated
-- no bullets or numbering
-- empty string allowed
-
-Input text:
-{text}
-"""
+    You are a document normalizer for an exam authoring system.
+    
+    Convert the input text into STRICT, VALID JSON.
+    
+    Rules:
+    - Preserve meaning exactly
+    - Do NOT invent content
+    - If missing, return empty string
+    - Return JSON only
+    
+    FIELD DEFINITIONS:
+    
+    class_name:
+    Exam stream name like Selective, OC, Scholarship.
+    
+    class_year:
+    Year level exactly as written (example: Year 6)
+    
+    subject:
+    Always "Writing"
+    
+    topic:
+    Writing genre/category.
+    
+    difficulty:
+    Easy / Medium / Hard if present.
+    
+    title:
+    Main heading of the writing task.
+    Example: A Shift in Perspective
+    
+    question_text:
+    Administrative text only.
+    Examples:
+    Time Allowed: 30 Minutes
+    Word Limit: 500 words
+    
+    Do NOT place the actual writing task here.
+    
+    question_prompt:
+    The actual writing instruction telling the student what to write.
+    Usually starts with:
+    Write...
+    Discuss...
+    Describe...
+    Explain...
+    Compose...
+    
+    statement:
+    Only fill when a stimulus statement is given.
+    
+    opening_sentence:
+    Only fill when a story starter/opening sentence is given.
+    
+    guidelines:
+    Checklist or bullet instructions.
+    Plain newline separated text.
+    
+    Schema:
+    {{
+      "class_name": "",
+      "class_year": "",
+      "subject": "Writing",
+      "topic": "",
+      "difficulty": "",
+      "title": "",
+      "question_text": "",
+      "question_prompt": "",
+      "statement": "",
+      "opening_sentence": "",
+      "guidelines": ""
+    }}
+    
+    Input text:
+    {text}
+    """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
