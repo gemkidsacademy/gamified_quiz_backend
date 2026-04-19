@@ -15302,7 +15302,7 @@ def get_topics_oc_math(
         # FORCE SYSTEM VALUES
         # --------------------------------------------------
         class_name_fixed = "oc"
-        subject_fixed = "mathematical_reasoning"
+        subject_fixed = "mathematical reasoning"
 
         print("\n📌 FIXED VALUES USED BY BACKEND")
         print(f"class_name_fixed : {class_name_fixed}")
