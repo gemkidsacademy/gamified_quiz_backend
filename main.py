@@ -9073,7 +9073,7 @@ def delete_all_reading_questions_selective(
     db: Session = Depends(get_db)
 ):
     print("\n================ DELETE READING QUESTIONS (SELECTIVE) ================")
-
+    class_year = class_year.strip().lower().replace("year", "").strip()
     try:
         # 🔍 Incoming request
         print(f"📥 Received class_year: '{class_year}' (type={type(class_year)})")
