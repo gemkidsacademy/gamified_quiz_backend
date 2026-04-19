@@ -2481,6 +2481,7 @@ class StudentExamReadingOC(Base):
     student_id = Column(Text, nullable=False)
 
     exam_id = Column(Integer, nullable=False)
+    class_year = Column(Integer)
 
     started_at = Column(
         DateTime(timezone=True),
@@ -18404,7 +18405,7 @@ def generate_thinking_skills_homework_exam(
     # 2️⃣ Generate Questions (same logic)
     # ==================================================
     try:
-        generated_questions = generate_exam_questions(quiz, db)
+        generated_questions = generate_exam_questions_selective_ts(quiz, db)
     except Exception as generation_error:
         raise HTTPException(
             status_code=500,
