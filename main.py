@@ -17996,8 +17996,9 @@ def generate_oc_thinking_skills_exam(
 
     payload = payload or {}
 
-    SUBJECT_DB = "Thinking Skills"
-    CLASS_DB = "OC"
+    SUBJECT_DB = "thinking_skills"
+    CLASS_DB = "oc"
+    
     SUBJECT_EXAM = "thinking_skills"
     CLASS_EXAM = "OC"
 
