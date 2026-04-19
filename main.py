@@ -17990,52 +17990,145 @@ def generate_oc_thinking_skills_exam(
     payload: Optional[dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
-    print("\n========== OC EXAM GENERATION START ==========")
+    print("\n======================================================")
+    print("🚀 START: /api/exams/generate-oc-thinking-skills")
+    print("======================================================")
 
     payload = payload or {}
 
-    # --------------------------------------------------
-    # 0️⃣ EXTRACT + VALIDATE CLASS YEAR
-    # --------------------------------------------------
-    print("\n📥 RAW PAYLOAD:", payload)
     SUBJECT_DB = "Thinking Skills"
     CLASS_DB = "OC"
     SUBJECT_EXAM = "thinking_skills"
     CLASS_EXAM = "OC"
 
+    # --------------------------------------------------
+    # 0️⃣ INPUT DEBUG
+    # --------------------------------------------------
+    print("\n📥 RAW PAYLOAD:")
+    print(payload)
+
+    print("\n📌 CONSTANTS")
+    print("SUBJECT_DB   :", SUBJECT_DB)
+    print("CLASS_DB     :", CLASS_DB)
+    print("SUBJECT_EXAM :", SUBJECT_EXAM)
+    print("CLASS_EXAM   :", CLASS_EXAM)
+
     class_year = payload.get("class_year")
 
+    print("\n🎓 RAW class_year FROM PAYLOAD:", class_year)
+    print("🎓 TYPE:", type(class_year))
+
     if class_year is None:
-        raise HTTPException(status_code=400, detail="class_year is required")
+        print("❌ ERROR: class_year missing in payload")
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
 
     try:
         class_year_int = int(class_year)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid class_year")
+    except Exception as e:
+        print("❌ ERROR converting class_year to int:", str(e))
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid class_year"
+        )
 
-    print(f"🔢 class_year = {class_year_int}")
+    print("✅ Parsed class_year_int:", class_year_int)
 
     # --------------------------------------------------
-    # 1️⃣ DELETE PREVIOUS EXAMS (OPTIONAL: FILTER BY YEAR)
+    # 1️⃣ SHOW AVAILABLE QUIZZES BEFORE FILTERING
     # --------------------------------------------------
-    print("\n--- Deleting previous OC Thinking Skills exams ---")
+    print("\n======================================================")
+    print("📚 ALL QUIZZES IN DB (LATEST FIRST)")
+    print("======================================================")
 
-    exam_ids_subq = select(Exam.id).where(
-        Exam.subject == SUBJECT_EXAM,
-        Exam.class_name == CLASS_EXAM,
-        Exam.class_year == class_year_int   # ✅ IMPORTANT
+    all_quizzes = (
+        db.query(Quiz)
+        .order_by(Quiz.id.desc())
+        .all()
     )
 
-    attempt_ids_subq = select(StudentExamOCThinkingSkills.id).where(
-        StudentExamOCThinkingSkills.exam_id.in_(exam_ids_subq)
+    print("Total quizzes found:", len(all_quizzes))
+
+    for row in all_quizzes[:20]:
+        print(
+            f"ID={row.id} | "
+            f"class_name='{row.class_name}' | "
+            f"subject='{row.subject}' | "
+            f"class_year={row.class_year} | "
+            f"difficulty='{row.difficulty}'"
+        )
+
+    # --------------------------------------------------
+    # 2️⃣ DEBUG EACH FILTER SEPARATELY
+    # --------------------------------------------------
+    print("\n======================================================")
+    print("🔍 FILTER DEBUG")
+    print("======================================================")
+
+    count_subject = (
+        db.query(Quiz)
+        .filter(Quiz.subject == SUBJECT_DB)
+        .count()
     )
+    print(f"Matches subject='{SUBJECT_DB}' :", count_subject)
 
-    # 👉 (keep your delete logic here, just ensure it uses these subqueries)
+    count_class = (
+        db.query(Quiz)
+        .filter(Quiz.class_name == CLASS_DB)
+        .count()
+    )
+    print(f"Matches class_name='{CLASS_DB}' :", count_class)
+
+    count_year = (
+        db.query(Quiz)
+        .filter(Quiz.class_year == class_year_int)
+        .count()
+    )
+    print(f"Matches class_year={class_year_int} :", count_year)
+
+    count_subject_class = (
+        db.query(Quiz)
+        .filter(
+            Quiz.subject == SUBJECT_DB,
+            Quiz.class_name == CLASS_DB
+        )
+        .count()
+    )
+    print("Matches subject + class :", count_subject_class)
+
+    count_subject_year = (
+        db.query(Quiz)
+        .filter(
+            Quiz.subject == SUBJECT_DB,
+            Quiz.class_year == class_year_int
+        )
+        .count()
+    )
+    print("Matches subject + year :", count_subject_year)
+
+    count_class_year = (
+        db.query(Quiz)
+        .filter(
+            Quiz.class_name == CLASS_DB,
+            Quiz.class_year == class_year_int
+        )
+        .count()
+    )
+    print("Matches class + year :", count_class_year)
 
     # --------------------------------------------------
-    # 2️⃣ FETCH QUIZ (🔥 CRITICAL FIX)
+    # 3️⃣ FINAL QUIZ LOOKUP
     # --------------------------------------------------
-    print("\n--- Fetching latest OC quiz (WITH class_year) ---")
+    print("\n======================================================")
+    print("🎯 FINAL QUIZ LOOKUP")
+    print("======================================================")
+
+    print("Looking for:")
+    print("subject    =", SUBJECT_DB)
+    print("class_name =", CLASS_DB)
+    print("class_year =", class_year_int)
 
     quiz = (
         db.query(Quiz)
@@ -18049,48 +18142,79 @@ def generate_oc_thinking_skills_exam(
     )
 
     if not quiz:
-        print("❌ No quiz found for given class_year")
+        print("\n❌ NO QUIZ FOUND")
+        print("Possible causes:")
+        print("1. Subject text mismatch")
+        print("2. class_name mismatch")
+        print("3. class_year mismatch")
+        print("4. Data stored with spaces/casing differences")
+        print("5. No quiz uploaded for this year")
+
+        print("\n🔎 DISTINCT SUBJECT VALUES:")
+        subjects = db.query(Quiz.subject).distinct().all()
+        for item in subjects:
+            print("-", item[0])
+
+        print("\n🔎 DISTINCT CLASS VALUES:")
+        classes = db.query(Quiz.class_name).distinct().all()
+        for item in classes:
+            print("-", item[0])
+
+        print("\n🔎 DISTINCT CLASS YEAR VALUES:")
+        years = db.query(Quiz.class_year).distinct().all()
+        for item in years:
+            print("-", item[0])
+
         raise HTTPException(
             status_code=404,
             detail=f"No OC Thinking Skills quiz found for class_year={class_year_int}"
         )
 
-    print(f"✅ Using Quiz ID: {quiz.id}")
-    print(f"   difficulty = {quiz.difficulty}")
-    print(f"   class_year = {quiz.class_year}")
+    print("\n✅ QUIZ FOUND")
+    print("quiz.id         :", quiz.id)
+    print("quiz.subject    :", quiz.subject)
+    print("quiz.class_name :", quiz.class_name)
+    print("quiz.class_year :", quiz.class_year)
+    print("quiz.difficulty :", quiz.difficulty)
 
     # --------------------------------------------------
-    # 3️⃣ GENERATE QUESTIONS
+    # 4️⃣ GENERATE QUESTIONS
     # --------------------------------------------------
-    print("\n--- Generating questions ---")
+    print("\n======================================================")
+    print("🧠 GENERATING QUESTIONS")
+    print("======================================================")
 
     try:
         questions = generate_exam_questions(quiz, db)
     except Exception as e:
+        print("❌ QUESTION GENERATION FAILED:", str(e))
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate OC exam: {str(e)}"
         )
 
+    print("Questions generated:", len(questions))
+
     if not questions:
+        print("❌ Zero questions returned")
         raise HTTPException(
             status_code=500,
             detail="No questions generated"
         )
 
-    print(f"✅ Generated {len(questions)} questions")
-
     # --------------------------------------------------
-    # 4️⃣ SAVE EXAM (🔥 INCLUDE class_year)
+    # 5️⃣ SAVE EXAM
     # --------------------------------------------------
-    print("\n--- Saving OC exam ---")
+    print("\n======================================================")
+    print("💾 SAVING EXAM")
+    print("======================================================")
 
     new_exam = Exam(
         quiz_id=quiz.id,
         class_name=CLASS_EXAM,
         subject=SUBJECT_EXAM,
         difficulty=quiz.difficulty,
-        class_year=class_year_int,   # ✅ CRITICAL
+        class_year=class_year_int,
         questions=questions
     )
 
@@ -18098,20 +18222,21 @@ def generate_oc_thinking_skills_exam(
     db.commit()
     db.refresh(new_exam)
 
-    print(f"✅ Exam saved with ID: {new_exam.id}")
-    print(f"   class_year stored = {new_exam.class_year}")
+    print("✅ Exam saved successfully")
+    print("exam.id     :", new_exam.id)
+    print("quiz_id     :", new_exam.quiz_id)
+    print("class_year  :", new_exam.class_year)
 
-    # --------------------------------------------------
-    # 5️⃣ RESPONSE
-    # --------------------------------------------------
-    print("========== OC EXAM GENERATION COMPLETE ==========\n")
+    print("\n======================================================")
+    print("🏁 END: EXAM GENERATION COMPLETE")
+    print("======================================================\n")
 
     return {
         "message": "OC Thinking Skills exam generated successfully",
         "exam_id": new_exam.id,
         "quiz_id": quiz.id,
         "class_name": "oc",
-        "class_year": class_year_int,   # ✅ include in response
+        "class_year": class_year_int,
         "subject": "thinking_skills",
         "difficulty": quiz.difficulty,
         "total_questions": len(questions),
