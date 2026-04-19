@@ -4455,7 +4455,7 @@ def generate_exam_questions_selective_ts(quiz, db):
         available_db = (
             db.query(Question)
             .filter(
-                Question.class_name == quiz.class_name,
+                func.lower(Question.class_name) == quiz.class_name.lower(),
                 Question.subject == "Thinking Skills",
                 Question.class_year == quiz.class_year,
                 func.lower(Question.topic) == topic_name.lower()
