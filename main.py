@@ -8436,11 +8436,14 @@ import shutil
 
 @app.post("/api/admin/send-selective-report-email")
 def send_selective_report_email(
-    student_id: str = Form(...),
-    exam_date: str = Form(...),
-    file: UploadFile = File(...),
+    student_id: Optional[str] = Form(None),
+    exam_date: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
+    print("student_id:", student_id)
+    print("exam_date:", exam_date)
+    print("file:", file)
     # ----------------------------------------
     # 1️⃣ Fetch student email
     # ----------------------------------------
