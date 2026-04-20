@@ -17472,7 +17472,149 @@ def generate_school_recommendations_and_override(components, overall_percent):
         "override_flag": override_flag,
         "override_message": override_message
     }
- 
+def sync_selective_profile_report_record(
+    db,
+    student,
+    exam_date,
+    components,
+    overall_percent,
+    readiness_band
+):
+    """
+    Creates or updates selective_profile_reports row
+    and calculates ranks.
+    """
+
+    # --------------------------------------------
+    # Helpers
+    # --------------------------------------------
+    def helper_extract_component_percent(component_key):
+        item = components.get(component_key, {})
+
+        if isinstance(item, dict):
+            return float(item.get("percent", 0) or 0)
+
+        return float(item or 0)
+
+    # --------------------------------------------
+    # Subject percentages
+    # --------------------------------------------
+    reading_percent = helper_extract_component_percent("reading")
+    maths_percent = helper_extract_component_percent("mathematical_reasoning")
+    thinking_percent = helper_extract_component_percent("thinking_skills")
+
+    # Writing stored as raw mark out of 25 in your system
+    writing_raw = helper_extract_component_percent("writing")
+    writing_percent = round((writing_raw / 25) * 100, 2)
+
+    # --------------------------------------------
+    # Weighted profile score
+    # Reading 30
+    # Maths 30
+    # Thinking 25
+    # Writing 15
+    # --------------------------------------------
+    profile_score = round(
+        (reading_percent * 0.30) +
+        (maths_percent * 0.30) +
+        (thinking_percent * 0.25) +
+        (writing_percent * 0.15),
+        2
+    )
+
+    student_gender = student.gender or "Unknown"
+    student_year = student.student_year
+
+    # --------------------------------------------
+    # Upsert row
+    # --------------------------------------------
+    existing = (
+        db.query(SelectiveProfileReport)
+        .filter(
+            SelectiveProfileReport.student_id == student.student_id,
+            SelectiveProfileReport.exam_date == exam_date
+        )
+        .first()
+    )
+
+    if existing:
+        row = existing
+    else:
+        row = SelectiveProfileReport(
+            student_id=student.student_id,
+            exam_date=exam_date
+        )
+        db.add(row)
+
+    row.student_year = student_year
+    row.gender = student_gender
+
+    row.reading_percent = reading_percent
+    row.maths_percent = maths_percent
+    row.thinking_percent = thinking_percent
+    row.writing_percent = writing_percent
+
+    row.profile_score = profile_score
+    row.readiness_band = readiness_band
+
+    db.commit()
+
+    # --------------------------------------------
+    # Ranking pool = same year only
+    # --------------------------------------------
+    cohort = (
+        db.query(SelectiveProfileReport)
+        .filter(
+            SelectiveProfileReport.student_year == student_year
+        )
+        .order_by(
+            SelectiveProfileReport.profile_score.desc(),
+            SelectiveProfileReport.created_at.asc()
+        )
+        .all()
+    )
+
+    total_students = len(cohort)
+
+    overall_rank = 0
+    for index, item in enumerate(cohort, start=1):
+        if item.student_id == student.student_id and item.exam_date == exam_date:
+            overall_rank = index
+            break
+
+    # --------------------------------------------
+    # Gender rank inside same year
+    # --------------------------------------------
+    gender_cohort = [
+        item for item in cohort
+        if (item.gender or "Unknown") == student_gender
+    ]
+
+    total_gender_students = len(gender_cohort)
+
+    gender_rank = 0
+    for index, item in enumerate(gender_cohort, start=1):
+        if item.student_id == student.student_id and item.exam_date == exam_date:
+            gender_rank = index
+            break
+
+    # --------------------------------------------
+    # Save ranks
+    # --------------------------------------------
+    row.overall_rank = overall_rank
+    row.gender_rank = gender_rank
+    row.total_students = total_students
+    row.total_gender_students = total_gender_students
+
+    db.commit()
+
+    return {
+        "profile_score": profile_score,
+        "overall_rank": overall_rank,
+        "gender_rank": gender_rank,
+        "total_students": total_students,
+        "total_gender_students": total_gender_students
+    } 
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
@@ -17632,20 +17774,44 @@ def generate_overall_selective_report(
     db.refresh(overall_report)
 
     print(overall_report.__dict__)
+    # --------------------------------------------------
+    # 9️⃣ Sync premium analytics table
+    # --------------------------------------------------
+    profile_metrics = sync_selective_profile_report_record(
+        db=db,
+        student=student,
+        exam_date=exam_date,
+        components=components,
+        overall_percent=overall_percent,
+        readiness_band=band
+    )
+    
+    # --------------------------------------------------
+    # 🔟 Return enriched response
+    # --------------------------------------------------
     return {
         "id": overall_report.id,
         "student_id": overall_report.student_id,
         "student_name": student.name,
         "year_level": f"Year {student.student_year}",
         "exam_date": overall_report.exam_date,
+    
         "overall_percent": overall_report.overall_percent,
         "readiness_band": overall_report.readiness_band,
+    
         "school_recommendation": overall_report.school_recommendation,
         "override_flag": overall_report.override_flag,
         "override_message": overall_report.override_message,
-        "components": overall_report.components
+    
+        "components": overall_report.components,
+    
+        # New premium metrics
+        "profile_score": profile_metrics["profile_score"],
+        "overall_rank": profile_metrics["overall_rank"],
+        "gender_rank": profile_metrics["gender_rank"],
+        "total_students": profile_metrics["total_students"],
+        "total_gender_students": profile_metrics["total_gender_students"]
     }
-
 @app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
 student_id: str,
