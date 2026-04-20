@@ -17615,6 +17615,75 @@ def sync_selective_profile_report_record(
         "total_students": total_students,
         "total_gender_students": total_gender_students
     } 
+def percentile_to_band(rank: int, total: int) -> str:
+    if not rank or not total or total <= 0:
+        return "lower_50"
+
+    pct = (rank / total) * 100
+
+    if pct <= 10:
+        return "top_10"
+    elif pct <= 25:
+        return "top_25"
+    elif pct <= 50:
+        return "top_50"
+    return "lower_50"
+
+
+def compute_subject_benchmark_bands(
+    db,
+    student_year,
+    gender,
+    reading_percent,
+    maths_percent,
+    thinking_percent,
+    writing_percent
+):
+    base_query = db.query(SelectiveProfileReport).filter(
+        SelectiveProfileReport.student_year == student_year
+    )
+
+    gender_query = base_query.filter(
+        SelectiveProfileReport.gender == gender
+    )
+
+    def get_ranks(column, score):
+        # overall rank
+        overall_better = base_query.filter(column > score).count()
+        overall_total = base_query.count()
+
+        overall_rank = overall_better + 1
+
+        # gender rank
+        gender_better = gender_query.filter(column > score).count()
+        gender_total = gender_query.count()
+
+        gender_rank = gender_better + 1
+
+        return {
+            "overall": percentile_to_band(overall_rank, overall_total),
+            "gender": percentile_to_band(gender_rank, gender_total)
+        }
+
+    return {
+        "reading": get_ranks(
+            SelectiveProfileReport.reading_percent,
+            reading_percent
+        ),
+        "maths": get_ranks(
+            SelectiveProfileReport.maths_percent,
+            maths_percent
+        ),
+        "thinking": get_ranks(
+            SelectiveProfileReport.thinking_percent,
+            thinking_percent
+        ),
+        "writing": get_ranks(
+            SelectiveProfileReport.writing_percent,
+            writing_percent
+        ),
+    }
+
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
@@ -17785,6 +17854,15 @@ def generate_overall_selective_report(
         overall_percent=overall_percent,
         readiness_band=band
     )
+    benchmark_bands = compute_subject_benchmark_bands(
+        db=db,
+        student_year=f"Year {student.student_year}",
+        gender=student.gender,
+        reading_percent=components["reading"]["percent"],
+        maths_percent=components["mathematical_reasoning"]["percent"],
+        thinking_percent=components["thinking_skills"]["percent"],
+        writing_percent=components["writing"]["percent"]
+    )
     
     # --------------------------------------------------
     # 🔟 Return enriched response
@@ -17805,12 +17883,15 @@ def generate_overall_selective_report(
     
         "components": overall_report.components,
     
-        # New premium metrics
+        # Premium metrics
         "profile_score": profile_metrics["profile_score"],
         "overall_rank": profile_metrics["overall_rank"],
         "gender_rank": profile_metrics["gender_rank"],
         "total_students": profile_metrics["total_students"],
-        "total_gender_students": profile_metrics["total_gender_students"]
+        "total_gender_students": profile_metrics["total_gender_students"],
+    
+        # New benchmark bands
+        "benchmark_bands": benchmark_bands
     }
 @app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
