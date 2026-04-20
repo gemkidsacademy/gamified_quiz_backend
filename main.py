@@ -17557,6 +17557,7 @@ def generate_overall_selective_report(
     db.commit()
     db.refresh(overall_report)
 
+    print(overall_report.__dict__)
     return overall_report
 
 @app.get("/api/admin/students/{student_id}/selective-reports")
