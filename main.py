@@ -8481,160 +8481,174 @@ def send_selective_report_email(
     }
 
 def build_selective_report_html(report):
+    student_name = report.get("student_name", report["student_id"])
+    student_id = report["student_id"]
+    year_level = report.get("year_level", "Year 5")
+    exam_date = report["exam_date"]
+
     components = report["components"]
-    max_scores = {
-        "reading": 100,
-        "mathematical_reasoning": 100,
-        "thinking_skills": 100,
-        "writing": 25,
-    }
 
+    def pct(subject):
+        item = components.get(subject, {})
+        return round(item.get("percent", 0), 2)
 
-    def percent(subject, value):
-        max_score = max_scores[subject]
-    
-        # ✅ NEW: handle dict structure
-        if isinstance(value, dict):
-            # Prefer percent if available
-            if value.get("percent") is not None:
-                return round(value["percent"], 2)
-    
-            # fallback to obtained/total
-            obtained = value.get("obtained")
-            total = value.get("total")
-    
-            if obtained is not None and total:
-                return round((obtained / total) * 100, 2)
-    
-            return 0
-    
-        # ✅ OLD: fallback (backward compatibility)
-        return round((value / max_score) * 100, 2)
+    def score(subject):
+        item = components.get(subject, {})
 
-    def progress_bar(pct):
+        if subject == "writing":
+            return f'{item.get("percent",0)} / 25'
+
+        obtained = item.get("obtained", 0)
+        total = item.get("total", 0)
+
+        return f"{obtained} / {total}"
+
+    def level(value):
+        if value >= 85:
+            return "Excellent"
+        elif value >= 75:
+            return "Very Strong"
+        elif value >= 65:
+            return "Strong"
+        elif value >= 50:
+            return "Sound"
+        return "Needs Improvement"
+
+    def section(title, key):
         return f"""
-        <div style="background:#e5e7eb;border-radius:8px;height:10px;">
-            <div style="
-                width:{pct}%;
-                background:#2563eb;
-                height:10px;
-                border-radius:8px;">
-            </div>
-        </div>
-        """
-
-    subject_labels = {
-        "reading": "Reading",
-        "mathematical_reasoning": "Mathematical Reasoning",
-        "thinking_skills": "Thinking Skills",
-        "writing": "Writing",
-    }
-
-    subject_cards = ""
-
-    for key, value in components.items():
-        pct = percent(key, value)
-
-        subject_cards += f"""
-        <div class="card">
-            <h3>{subject_labels[key]}</h3>
-            {progress_bar(pct)}
-            <p>{value} / { '20' if key=='writing' else '100' } ({pct}%)</p>
+        <div class='section'>
+            <h2>{title}</h2>
+            <p><strong>Score:</strong> {score(key)}</p>
+            <p><strong>Accuracy:</strong> {pct(key)}%</p>
+            <p><strong>Performance Level:</strong> {level(pct(key))}</p>
         </div>
         """
 
     schools_html = "".join(
-        [f"<li>{school}</li>" for school in report["school_recommendation"]]
+        f"<li>{s}</li>" for s in report["school_recommendation"]
     )
 
-    override_html = ""
-    if report["override_flag"]:
-        override_html = f"""
-        <div class="override">
-            ⚠ {report["override_message"]}
+    warning = ""
+    if report.get("override_flag"):
+        warning = f"""
+        <div class='warning'>
+            ⚠ {report.get("override_message","")}
         </div>
         """
 
-    html = f"""
+    return f"""
     <html>
     <head>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                padding: 30px;
-                color: #111827;
-            }}
-            h1 {{
-                text-align: center;
-                margin-bottom: 20px;
-            }}
-            .summary {{
-                text-align: center;
-                margin-bottom: 30px;
-            }}
-            .score {{
-                font-size: 42px;
-                font-weight: bold;
-                color: #2563eb;
-            }}
-            .band {{
-                font-size: 18px;
-                margin-top: 5px;
-            }}
-            .grid {{
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 20px;
-                margin-top: 20px;
-            }}
-            .card {{
-                border: 1px solid #e5e7eb;
-                padding: 15px;
-                border-radius: 10px;
-            }}
-            .schools {{
-                margin-top: 30px;
-            }}
-            .override {{
-                margin-top: 20px;
-                padding: 12px;
-                background: #fef3c7;
-                border: 1px solid #f59e0b;
-                border-radius: 8px;
-            }}
-        </style>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            padding: 35px;
+            color: #111827;
+            line-height: 1.45;
+        }}
+
+        .header {{
+            text-align:center;
+            margin-bottom:25px;
+        }}
+
+        .brand {{
+            font-size:30px;
+            font-weight:bold;
+            color:#1d4ed8;
+        }}
+
+        .title {{
+            font-size:18px;
+            font-weight:bold;
+            margin-top:8px;
+        }}
+
+        .info {{
+            border:1px solid #dbeafe;
+            padding:18px;
+            border-radius:10px;
+            margin-bottom:20px;
+            background:#f8fbff;
+        }}
+
+        .section {{
+            border:1px solid #e5e7eb;
+            padding:18px;
+            border-radius:10px;
+            margin-bottom:16px;
+        }}
+
+        h2 {{
+            color:#1d4ed8;
+            margin-bottom:10px;
+            font-size:18px;
+        }}
+
+        .summary {{
+            background:#eff6ff;
+            padding:18px;
+            border-radius:10px;
+            margin-top:20px;
+        }}
+
+        .warning {{
+            margin-top:15px;
+            background:#fff7ed;
+            border-left:4px solid #f97316;
+            padding:12px;
+        }}
+
+        ul {{
+            padding-left:22px;
+        }}
+
+        .footer {{
+            margin-top:30px;
+            font-size:12px;
+            color:#6b7280;
+        }}
+    </style>
     </head>
 
     <body>
 
-        <h1>Selective Readiness Report</h1>
+        <div class="header">
+            <div class="brand">GEM KIDS ACADEMY</div>
+            <div class="title">SELECTIVE DIAGNOSTIC PERFORMANCE REPORT</div>
+        </div>
+
+        <div class="info">
+            <p><strong>Student Name:</strong> {student_name}</p>
+            <p><strong>Student ID:</strong> {student_id}</p>
+            <p><strong>Year Level:</strong> {year_level}</p>
+            <p><strong>Test Date:</strong> {exam_date}</p>
+        </div>
+
+        {section("Reading", "reading")}
+        {section("Mathematical Reasoning", "mathematical_reasoning")}
+        {section("Thinking Skills", "thinking_skills")}
+        {section("Writing", "writing")}
 
         <div class="summary">
-            <div class="score">{report["overall_percent"]}%</div>
-            <div class="band">{report["readiness_band"]}</div>
-            <p>Student ID: {report["student_id"]}</p>
-            <p>Exam Date: {report["exam_date"]}</p>
+            <p><strong>Overall Score:</strong> {report["overall_percent"]}%</p>
+            <p><strong>Selective Readiness:</strong> {report["readiness_band"]}</p>
         </div>
 
-        <div class="grid">
-            {subject_cards}
+        {warning}
+
+        <div class="section">
+            <h2>Recommended Schools</h2>
+            <ul>{schools_html}</ul>
         </div>
 
-        <div class="schools">
-            <h3>Recommended Schools</h3>
-            <ul>
-                {schools_html}
-            </ul>
+        <div class="footer">
+            This report provides indicative guidance based on internal assessment standards.
         </div>
-
-        {override_html}
 
     </body>
     </html>
-    """
-
-    return html
- 
+    """ 
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
