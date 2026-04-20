@@ -1383,6 +1383,40 @@ class AdminOverallSelectiveReport(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class SelectiveProfileReport(Base):
+    __tablename__ = "selective_profile_reports"
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(String, index=True)
+    exam_date = Column(Date, index=True)
+
+    student_year = Column(String, index=True)
+    gender = Column(String, nullable=True)
+
+    reading_percent = Column(Float)
+    maths_percent = Column(Float)
+    thinking_percent = Column(Float)
+    writing_percent = Column(Float)
+
+    profile_score = Column(Float)      # out of 100
+    overall_rank = Column(Integer)
+    gender_rank = Column(Integer)
+
+    total_students = Column(Integer)
+    total_gender_students = Column(Integer)
+
+    readiness_band = Column(String)
+    summary_insight = Column(Text)
+
+    competitive_schools = Column(JSON)
+    next_tier_schools = Column(JSON)
+
+    prep_timeline = Column(String)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+ 
 class AdminExamRawScore(Base):
     __tablename__ = "admin_exam_raw_scores"
 
@@ -2952,6 +2986,7 @@ class Student(Base):
 
     id = Column(String, primary_key=True, index=True)   # internal PK
     student_id = Column(String, unique=True, nullable=False)  # e.g. External "Gem002"
+    gender = Column(String, nullable=True)
 
     password = Column(String, nullable=False)
     name = Column(String, nullable=False)
