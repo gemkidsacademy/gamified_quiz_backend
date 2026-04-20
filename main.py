@@ -8489,19 +8489,31 @@ def build_selective_report_html(report):
     components = report["components"]
 
     def pct(subject):
-        item = components.get(subject, {})
-        return round(item.get("percent", 0), 2)
+        item = components.get(subject, 0)
+    
+        if isinstance(item, dict):
+            return round(item.get("percent", 0), 2)
+    
+        return round(float(item), 2)
 
     def score(subject):
-        item = components.get(subject, {})
-
+        item = components.get(subject, 0)
+    
+        # New dict structure
+        if isinstance(item, dict):
+            if subject == "writing":
+                raw = item.get("percent", 0)
+                return f"{raw} / 25"
+    
+            obtained = item.get("obtained", 0)
+            total = item.get("total", 0)
+            return f"{obtained} / {total}"
+    
+        # Old float structure
         if subject == "writing":
-            return f'{item.get("percent",0)} / 25'
-
-        obtained = item.get("obtained", 0)
-        total = item.get("total", 0)
-
-        return f"{obtained} / {total}"
+            return f"{item} / 25"
+    
+        return f"{round(item,2)}%"
 
     def level(value):
         if value >= 85:
