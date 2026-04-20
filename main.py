@@ -17686,7 +17686,7 @@ def compute_subject_benchmark_bands(
 
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
-    student_id: str,
+    student_id: int,
     exam_date: date,
     db: Session = Depends(get_db)
 ):
