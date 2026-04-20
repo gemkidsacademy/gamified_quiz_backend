@@ -17793,7 +17793,7 @@ def generate_overall_selective_report(
         "id": overall_report.id,
         "student_id": overall_report.student_id,
         "student_name": student.name,
-        "year_level": f"Year {student.student_year}",
+        "year_level": student.student_year,
         "exam_date": overall_report.exam_date,
     
         "overall_percent": overall_report.overall_percent,
