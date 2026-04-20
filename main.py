@@ -17426,8 +17426,15 @@ def generate_overall_selective_report(
     #)
 
     #if existing:
-     #   return existing
-
+    #   return existing
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+    
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
     # --------------------------------------------------
     # 2️⃣ Fetch admin reports
     # --------------------------------------------------
@@ -17558,7 +17565,19 @@ def generate_overall_selective_report(
     db.refresh(overall_report)
 
     print(overall_report.__dict__)
-    return overall_report
+    return {
+        "id": overall_report.id,
+        "student_id": overall_report.student_id,
+        "student_name": student.name,
+        "year_level": f"Year {student.student_year}",
+        "exam_date": overall_report.exam_date,
+        "overall_percent": overall_report.overall_percent,
+        "readiness_band": overall_report.readiness_band,
+        "school_recommendation": overall_report.school_recommendation,
+        "override_flag": overall_report.override_flag,
+        "override_message": overall_report.override_message,
+        "components": overall_report.components
+    }
 
 @app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
