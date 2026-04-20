@@ -8427,59 +8427,62 @@ def send_report_email_with_pdf(to_email: str, pdf_path: str):
     except Exception as e:
         print(f"[ERROR] Failed to send report email: {e}")
         raise 
+# Replace your current email endpoint with this version
+
+from fastapi import UploadFile, File, Form, Depends, HTTPException
+import tempfile
+import shutil
+
+
 @app.post("/api/admin/send-selective-report-email")
 def send_selective_report_email(
-    req: SendSelectiveReportEmailRequest,
+    student_id: str = Form(...),
+    exam_date: str = Form(...),
+    file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
     # ----------------------------------------
-    # 1️⃣ Generate report
-    # ----------------------------------------
-    report_dict = generate_overall_selective_report_internal(
-        req.student_id,
-        req.exam_date,
-        db
-    )
-
-    # ----------------------------------------
-    # 2️⃣ Build HTML + PDF
-    # ----------------------------------------
-    html = build_selective_report_html(report_dict)
-    pdf_path = generate_pdf_from_html(html)
-
-    # ----------------------------------------
-    # 3️⃣ Fetch student email
+    # 1️⃣ Fetch student email
     # ----------------------------------------
     student = (
         db.query(Student)
-        .filter(Student.student_id == req.student_id)
+        .filter(Student.student_id == student_id)
         .first()
     )
 
     if not student:
         raise HTTPException(
             status_code=404,
-            detail=f"Student with ID {req.student_id} not found"
+            detail=f"Student with ID {student_id} not found"
         )
 
     to_email = student.parent_email
 
     # ----------------------------------------
-    # 4️⃣ Send email
+    # 2️⃣ Save uploaded PDF temporarily
+    # ----------------------------------------
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".pdf"
+    ) as temp_file:
+
+        shutil.copyfileobj(file.file, temp_file)
+        pdf_path = temp_file.name
+
+    # ----------------------------------------
+    # 3️⃣ Send email with attached PDF
     # ----------------------------------------
     send_report_email_with_pdf(
         to_email=to_email,
         pdf_path=pdf_path
     )
-    
 
     # ----------------------------------------
-    # 5️⃣ Response
+    # 4️⃣ Response
     # ----------------------------------------
     return {
         "message": f"Email sent successfully to {to_email} ✅"
     }
-
 def build_selective_report_html(report):
     student_name = report.get("student_name", report["student_id"])
     student_id = report["student_id"]
