@@ -7703,13 +7703,15 @@ def delete_homework_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                     )
 
                 db.query(StudentHomeworkResponseOCThinkingSkills).filter(
-                    StudentHomeworkResponseOCThinkingSkills.exam_attempt_id == latest_attempt.id
+                    StudentHomeworkResponseOCThinkingSkills.homework_attempt_id == latest_attempt.id
                 ).delete()
 
                 db.delete(latest_attempt)
                 db.commit()
 
-                return {"message": "OC Homework Thinking Skills attempt deleted successfully"}
+                return {
+                    "message": "OC Homework Thinking Skills attempt deleted successfully"
+                }
 
             # MATHEMATICAL REASONING
             elif exam_type == "mathematical_reasoning":
