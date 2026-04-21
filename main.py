@@ -33624,20 +33624,46 @@ def resolve_image_options(image_options, db):
     resolved = {}
 
     for key, img in image_options.items():
-        normalized_img = normalize_filename(img)
+
+        # -------------------------------------------------
+        # Empty / null safety
+        # -------------------------------------------------
+        if not img:
+            resolved[key] = img
+            continue
+
+        img_str = str(img).strip()
+
+        # -------------------------------------------------
+        # ✅ Already a final URL → use directly
+        # -------------------------------------------------
+        if img_str.startswith("http://") or img_str.startswith("https://"):
+            resolved[key] = img_str
+            continue
+
+        # -------------------------------------------------
+        # Resolve filename from UploadedImage table
+        # -------------------------------------------------
+        normalized_img = normalize_filename(img_str)
 
         record = (
             db.query(UploadedImage)
             .filter(
                 func.lower(
-                    func.replace(UploadedImage.original_name, " ", "")
+                    func.replace(
+                        func.trim(UploadedImage.original_name),
+                        " ",
+                        ""
+                    )
                 ) == normalized_img
             )
             .first()
         )
 
         if not record:
-            raise ValueError(f"IMAGE_OPTION_NOT_UPLOADED: {img}")
+            raise ValueError(
+                f"IMAGE_OPTION_NOT_UPLOADED: {img_str}"
+            )
 
         resolved[key] = record.gcs_url
 
