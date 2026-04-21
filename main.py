@@ -41897,15 +41897,18 @@ async def upload_word(
 
                 if re.search(r"\.(png|jpg|jpeg|webp)$", normalized, re.I):
 
-                    lookup_name = normalized.lower()
+                    lookup_name = normalized.lower().replace(" ", "")
 
                     print(f"[OPTION {key}] DB LOOKUP NAME: {lookup_name}")
 
                     image_record = (
                         db.query(UploadedImage)
                         .filter(
-                            func.lower(func.trim(UploadedImage.original_name))
-                            == lookup_name
+                            func.replace(
+                                func.lower(func.trim(UploadedImage.original_name)),
+                                " ",
+                                ""
+                            ) == lookup_name
                         )
                         .first()
                     )
