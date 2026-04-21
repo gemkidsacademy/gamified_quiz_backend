@@ -41880,119 +41880,126 @@ async def upload_word(
         # Save question
         # -----------------------------
         try:
-            question_text = "\n\n".join(
-                b["content"] for b in resolved_blocks if b["type"] == "text"
-            )
-            raw_class_year = question.get("class_year")
-
-            if isinstance(raw_class_year, str):
-                raw_class_year = raw_class_year.strip()
             
-            class_year = int(raw_class_year) if str(raw_class_year).isdigit() else None
-            # =====================================================
-            # ADD THESE DEBUG PRINTS BEFORE new_question = Question(...)
-            # =====================================================
+            question_text = "\n\n".join(
+                b["content"] for b in resolved_blocks
+                if b["type"] == "text"
+            )
 
-            print("\n================ OPTION DEBUG START ================")
-            print(f"[DEBUG] Exam Index: {exam_idx}")
+            raw_class_name = (
+                question.get("class_name") or ""
+            ).strip().lower()
 
-            print("[DEBUG] Raw GPT options:")
-            print(question.get("options"))
+            raw_subject = (
+                question.get("subject") or ""
+            ).strip().lower().replace("_", " ")
 
-            for key, raw_value in question.get("options", {}).items():
+            use_new_flow = (
+                raw_class_name == "OC"
+                and raw_subject == "Thinking Skills"
+            )
 
-                print("\n--------------------------------------------------")
-                print(f"[OPTION {key}] RAW VALUE: {repr(raw_value)}")
+            print(
+                f"[PIPELINE] exam={exam_idx} "
+                f"class={raw_class_name} "
+                f"subject={raw_subject} "
+                f"new_flow={use_new_flow}"
+            )
 
-                cleaned = str(raw_value)
+            # -----------------------------------
+            # class_year only for OC TS
+            # -----------------------------------
+            class_year = None
 
-                # simulate frontend issue visibility
-                print(f"[OPTION {key}] TYPE: {type(raw_value)}")
-                has_newline = "\n" in cleaned
-                print(f"[OPTION {key}] CONTAINS NEWLINE: {has_newline}")
-                print(f"[OPTION {key}] STARTS WITH HTTP: {cleaned.startswith('http')}")
-                print(
-                    f"[OPTION {key}] LOOKS LIKE IMAGE FILE: "
-                    f"{bool(re.search(r'(png|jpg|jpeg|webp)$', cleaned.strip(), re.I))}"
+            if use_new_flow:
+                raw_class_year = question.get("class_year")
+
+                if isinstance(raw_class_year, str):
+                    raw_class_year = raw_class_year.strip()
+
+                class_year = (
+                    int(raw_class_year)
+                    if str(raw_class_year).isdigit()
+                    else None
                 )
 
-                normalized = re.sub(r"^[A-D]\.\s*", "", cleaned.strip(), flags=re.I)
-                normalized = re.sub(r"\s+", " ", normalized).strip()
+            # -----------------------------------
+            # options
+            # -----------------------------------
+            if use_new_flow:
 
-                print(f"[OPTION {key}] NORMALIZED: {repr(normalized)}")
+                resolved_options = {}
 
-                if re.search(r"\.(png|jpg|jpeg|webp)$", normalized, re.I):
+                for key, raw_value in question.get("options", {}).items():
 
-                    lookup_name = normalized.lower().replace(" ", "")
+                    cleaned = str(raw_value)
 
-                    print(f"[OPTION {key}] DB LOOKUP NAME: {lookup_name}")
-
-                    image_record = (
-                        db.query(UploadedImage)
-                        .filter(
-                            func.replace(
-                                func.lower(func.trim(UploadedImage.original_name)),
-                                " ",
-                                ""
-                            ) == lookup_name
-                        )
-                        .first()
+                    normalized = re.sub(
+                        r"^[A-D]\.\s*",
+                        "",
+                        cleaned.strip(),
+                        flags=re.I
                     )
 
-                    if image_record:
-                        print("[OPTION {0}] DB MATCH FOUND".format(key))
-                        print(f"[OPTION {key}] original_name: {image_record.original_name}")
-                        print(f"[OPTION {key}] gcs_url: {image_record.gcs_url}")
-                    else:
-                        print("[OPTION {0}] DB MATCH NOT FOUND".format(key))
+                    normalized = re.sub(
+                        r"\s+",
+                        " ",
+                        normalized
+                    ).strip()
 
-                else:
-                    print(f"[OPTION {key}] TEXT OPTION (not image)")
+                    if re.search(
+                        r"\.(png|jpg|jpeg|webp)$",
+                        normalized,
+                        re.I
+                    ):
 
-            print("================ OPTION DEBUG END ==================\n")
-            resolved_options = {}
-
-            for key, raw_value in question.get("options", {}).items():
-                cleaned = str(raw_value)
-
-                normalized = re.sub(r"^[A-D]\.\s*", "", cleaned.strip(), flags=re.I)
-                normalized = re.sub(r"\s+", " ", normalized).strip()
-
-                if re.search(r"\.(png|jpg|jpeg|webp)$", normalized, re.I):
-
-                    lookup_name = normalized.lower().replace(" ", "")
-
-                    image_record = (
-                        db.query(UploadedImage)
-                        .filter(
-                            func.replace(
-                                func.lower(func.trim(UploadedImage.original_name)),
-                                " ",
-                                ""
-                            ) == lookup_name
+                        lookup_name = (
+                            normalized.lower()
+                            .replace(" ", "")
                         )
-                        .first()
-                    )
 
-                    if image_record:
-                        resolved_options[key] = image_record.gcs_url
+                        image_record = (
+                            db.query(UploadedImage)
+                            .filter(
+                                func.replace(
+                                    func.lower(
+                                        func.trim(
+                                            UploadedImage.original_name
+                                        )
+                                    ),
+                                    " ",
+                                    ""
+                                ) == lookup_name
+                            )
+                            .first()
+                        )
+
+                        if image_record:
+                            resolved_options[key] = image_record.gcs_url
+                        else:
+                            resolved_options[key] = normalized
+
                     else:
                         resolved_options[key] = normalized
-                else:
-                    resolved_options[key] = normalized
+
+            else:
+                resolved_options = question["options"]
+
+            # -----------------------------------
+            # Save row
+            # -----------------------------------
             new_question = Question(
                 class_name=question.get("class_name"),
-                class_year=class_year,   # ✅ clean + safe
-            
+                class_year=class_year,
                 subject=question.get("subject"),
                 topic=question.get("topic"),
                 difficulty=question.get("difficulty"),
-            
-                question_type=question.get("question_type") or "multi_image_diagram_mcq",
-            
+                question_type=question.get("question_type")
+                    or "multi_image_diagram_mcq",
                 question_text=question_text,
-                question_blocks=filter_display_blocks(resolved_blocks),
-            
+                question_blocks=filter_display_blocks(
+                    resolved_blocks
+                ),
                 options=resolved_options,
                 correct_answer=question["correct_answer"]
             )
