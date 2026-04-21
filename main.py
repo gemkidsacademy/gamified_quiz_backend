@@ -3555,7 +3555,13 @@ app.add_middleware(
         "https://leaderboard.gemkidsacademy.com.au",
         "https://gamifiedquiz.gemkidsacademy.com.au",
         "https://exam.gemkidsacademy.com.au",
-        "https://exam-module-pink.vercel.app"  # added origin
+        "https://exam-module-pink.vercel.app",
+
+        # Local frontend development
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
