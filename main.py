@@ -41924,6 +41924,36 @@ async def upload_word(
                     print(f"[OPTION {key}] TEXT OPTION (not image)")
 
             print("================ OPTION DEBUG END ==================\n")
+            resolved_options = {}
+
+            for key, raw_value in question.get("options", {}).items():
+                cleaned = str(raw_value)
+
+                normalized = re.sub(r"^[A-D]\.\s*", "", cleaned.strip(), flags=re.I)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+
+                if re.search(r"\.(png|jpg|jpeg|webp)$", normalized, re.I):
+
+                    lookup_name = normalized.lower().replace(" ", "")
+
+                    image_record = (
+                        db.query(UploadedImage)
+                        .filter(
+                            func.replace(
+                                func.lower(func.trim(UploadedImage.original_name)),
+                                " ",
+                                ""
+                            ) == lookup_name
+                        )
+                        .first()
+                    )
+
+                    if image_record:
+                        resolved_options[key] = image_record.gcs_url
+                    else:
+                        resolved_options[key] = normalized
+                else:
+                    resolved_options[key] = normalized
             new_question = Question(
                 class_name=question.get("class_name"),
                 class_year=class_year,   # ✅ clean + safe
@@ -41937,7 +41967,7 @@ async def upload_word(
                 question_text=question_text,
                 question_blocks=filter_display_blocks(resolved_blocks),
             
-                options=question["options"],
+                options=resolved_options,
                 correct_answer=question["correct_answer"]
             )
 
