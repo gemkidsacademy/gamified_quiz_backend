@@ -41882,7 +41882,8 @@ async def upload_word(
 
                 # simulate frontend issue visibility
                 print(f"[OPTION {key}] TYPE: {type(raw_value)}")
-                print(f"[OPTION {key}] CONTAINS NEWLINE: {'\\n' in cleaned}")
+                has_newline = "\n" in cleaned
+                print(f"[OPTION {key}] CONTAINS NEWLINE: {has_newline}")
                 print(f"[OPTION {key}] STARTS WITH HTTP: {cleaned.startswith('http')}")
                 print(
                     f"[OPTION {key}] LOOKS LIKE IMAGE FILE: "
