@@ -41620,10 +41620,10 @@ async def upload_word(
         content = await file.read()
         doc = docx.Document(BytesIO(content))
         ordered_blocks = parse_docx_to_ordered_blocks(doc)
-        print("TOTAL BLOCKS:", len(ordered_blocks))
-        print("FIRST 15 BLOCKS:")
-        for b in ordered_blocks[:15]:
-            print(b)
+        #print("TOTAL BLOCKS:", len(ordered_blocks))
+        #print("FIRST 15 BLOCKS:")
+        #for b in ordered_blocks[:15]:
+          #print(b)
     except Exception as e:
         raise HTTPException(status_code=400, detail="Failed to read file")
 
@@ -41631,7 +41631,7 @@ async def upload_word(
     # EXAM = SOURCE OF TRUTH
     # -------------------------------------------------
     exam_blocks = chunk_by_exam(ordered_blocks)
-    print("EXAMS FOUND:", len(exam_blocks))
+    #print("EXAMS FOUND:", len(exam_blocks))
     saved = 0
     skipped = 0
 
@@ -41863,7 +41863,63 @@ async def upload_word(
                 raw_class_year = raw_class_year.strip()
             
             class_year = int(raw_class_year) if str(raw_class_year).isdigit() else None
+            # =====================================================
+            # ADD THESE DEBUG PRINTS BEFORE new_question = Question(...)
+            # =====================================================
 
+            print("\n================ OPTION DEBUG START ================")
+            print(f"[DEBUG] Exam Index: {exam_idx}")
+
+            print("[DEBUG] Raw GPT options:")
+            print(question.get("options"))
+
+            for key, raw_value in question.get("options", {}).items():
+
+                print("\n--------------------------------------------------")
+                print(f"[OPTION {key}] RAW VALUE: {repr(raw_value)}")
+
+                cleaned = str(raw_value)
+
+                # simulate frontend issue visibility
+                print(f"[OPTION {key}] TYPE: {type(raw_value)}")
+                print(f"[OPTION {key}] CONTAINS NEWLINE: {'\\n' in cleaned}")
+                print(f"[OPTION {key}] STARTS WITH HTTP: {cleaned.startswith('http')}")
+                print(
+                    f"[OPTION {key}] LOOKS LIKE IMAGE FILE: "
+                    f"{bool(re.search(r'(png|jpg|jpeg|webp)$', cleaned.strip(), re.I))}"
+                )
+
+                normalized = re.sub(r"^[A-D]\.\s*", "", cleaned.strip(), flags=re.I)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+
+                print(f"[OPTION {key}] NORMALIZED: {repr(normalized)}")
+
+                if re.search(r"\.(png|jpg|jpeg|webp)$", normalized, re.I):
+
+                    lookup_name = normalized.lower()
+
+                    print(f"[OPTION {key}] DB LOOKUP NAME: {lookup_name}")
+
+                    image_record = (
+                        db.query(UploadedImage)
+                        .filter(
+                            func.lower(func.trim(UploadedImage.original_name))
+                            == lookup_name
+                        )
+                        .first()
+                    )
+
+                    if image_record:
+                        print("[OPTION {0}] DB MATCH FOUND".format(key))
+                        print(f"[OPTION {key}] original_name: {image_record.original_name}")
+                        print(f"[OPTION {key}] gcs_url: {image_record.gcs_url}")
+                    else:
+                        print("[OPTION {0}] DB MATCH NOT FOUND".format(key))
+
+                else:
+                    print(f"[OPTION {key}] TEXT OPTION (not image)")
+
+            print("================ OPTION DEBUG END ==================\n")
             new_question = Question(
                 class_name=question.get("class_name"),
                 class_year=class_year,   # ✅ clean + safe
@@ -44132,6 +44188,7 @@ def resolve_option_images(options: dict, db: Session, request_id: str):
 
         print(f"[{request_id}] ✅ Option {key} resolved → {record.gcs_url}")
      
+
 def resolve_images(blocks: list[dict], db: Session, request_id: str):
     for block in blocks:
         if block.get("type") != "image":
