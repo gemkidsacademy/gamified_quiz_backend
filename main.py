@@ -41909,7 +41909,7 @@ async def upload_word(
             # -----------------------------------
             # class_year only for OC TS
             # -----------------------------------
-            class_year = None
+            class_year = question.get("class_year")
 
             if use_new_flow:
                 raw_class_year = question.get("class_year")
