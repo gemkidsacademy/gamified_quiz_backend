@@ -18112,6 +18112,7 @@ def get_exam_dates(
 def get_admin_students(db: Session = Depends(get_db)):
     students = (
         db.query(Student.student_id, Student.name)
+        .filter(Student.class_name == "Selective")
         .order_by(Student.student_id)
         .all()
     )
