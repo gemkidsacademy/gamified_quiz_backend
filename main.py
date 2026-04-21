@@ -41895,8 +41895,8 @@ async def upload_word(
             ).strip().lower().replace("_", " ")
 
             use_new_flow = (
-                raw_class_name == "OC"
-                and raw_subject == "Thinking Skills"
+                raw_class_name == "oc"
+                and raw_subject == "thinking skills"
             )
 
             print(
