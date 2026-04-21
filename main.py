@@ -7529,6 +7529,258 @@ def get_attempts(student_id: str, db: Session = Depends(get_db)):
         for a in attempts
     ]
 
+
+@app.delete("/api/delete-homework-exam-attempt")
+def delete_homework_exam_attempt(payload: dict, db: Session = Depends(get_db)):
+
+    print("\n========== DELETE HOMEWORK EXAM ATTEMPT START ==========")
+    print("RAW PAYLOAD:", payload)
+
+    student_external_id = payload.get("student_id")
+    exam_type = payload.get("exam_type")
+    class_name_raw = payload.get("class_name")
+
+    class_name = (class_name_raw or "").strip().lower()
+
+    if not student_external_id or not exam_type or not class_name:
+        raise HTTPException(status_code=400, detail="Missing data")
+
+    # --------------------------------
+    # Fetch student
+    # --------------------------------
+    student = db.query(Student).filter(
+        Student.student_id == student_external_id
+    ).first()
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    student_db_id = str(student.id)
+
+    try:
+        # ==========================================
+        # SELECTIVE HOMEWORK
+        # ==========================================
+        if class_name == "selective":
+
+            # THINKING SKILLS
+            if exam_type == "thinking_skills":
+
+                latest_attempt = db.query(StudentHomeworkThinkingSkills).filter(
+                    StudentHomeworkThinkingSkills.student_id == student_db_id
+                ).order_by(
+                    desc(StudentHomeworkThinkingSkills.started_at),
+                    desc(StudentHomeworkThinkingSkills.id)
+                ).first()
+
+                if not latest_attempt:
+                    raise HTTPException(status_code=404, detail="No homework attempt found")
+
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This submitted homework cannot be reset."
+                    )
+
+                db.query(StudentHomeworkResponseThinkingSkills).filter(
+                    StudentHomeworkResponseThinkingSkills.exam_attempt_id == latest_attempt.id
+                ).delete()
+
+                db.delete(latest_attempt)
+                db.commit()
+
+                return {"message": "Homework Thinking Skills attempt deleted successfully"}
+
+            # MATHEMATICAL REASONING
+            elif exam_type == "mathematical_reasoning":
+
+                latest_attempt = db.query(StudentHomeworkMathematicalReasoning).filter(
+                    StudentHomeworkMathematicalReasoning.student_id == int(student.id)
+                ).order_by(
+                    desc(StudentHomeworkMathematicalReasoning.started_at),
+                    desc(StudentHomeworkMathematicalReasoning.id)
+                ).first()
+
+                if not latest_attempt:
+                    raise HTTPException(status_code=404, detail="No homework attempt found")
+
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This submitted homework cannot be reset."
+                    )
+
+                db.query(StudentHomeworkResponseMathematicalReasoning).filter(
+                    StudentHomeworkResponseMathematicalReasoning.exam_attempt_id == latest_attempt.id
+                ).delete()
+
+                db.delete(latest_attempt)
+                db.commit()
+
+                return {"message": "Homework Mathematical Reasoning attempt deleted successfully"}
+
+            # READING
+            elif exam_type == "reading":
+
+                latest_attempt = db.query(StudentHomeworkReading).filter(
+                    StudentHomeworkReading.student_id == student_db_id
+                ).order_by(
+                    desc(StudentHomeworkReading.started_at),
+                    desc(StudentHomeworkReading.id)
+                ).first()
+
+                if not latest_attempt:
+                    raise HTTPException(status_code=404, detail="No homework attempt found")
+
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This submitted homework cannot be reset."
+                    )
+
+                db.query(StudentHomeworkReportReading).filter(
+                    StudentHomeworkReportReading.session_id == latest_attempt.id
+                ).delete()
+
+                db.delete(latest_attempt)
+                db.commit()
+
+                return {"message": "Homework Reading attempt deleted successfully"}
+
+            # WRITING
+            elif exam_type == "writing":
+
+                latest_attempt = db.query(StudentHomeworkWriting).filter(
+                    StudentHomeworkWriting.student_id == student_db_id
+                ).order_by(
+                    desc(StudentHomeworkWriting.started_at),
+                    desc(StudentHomeworkWriting.id)
+                ).first()
+
+                if not latest_attempt:
+                    raise HTTPException(status_code=404, detail="No homework attempt found")
+
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This submitted homework cannot be reset."
+                    )
+
+                db.query(StudentHomeworkResponseWriting).filter(
+                    StudentHomeworkResponseWriting.exam_attempt_id == latest_attempt.id
+                ).delete()
+
+                db.delete(latest_attempt)
+                db.commit()
+
+                return {"message": "Homework Writing attempt deleted successfully"}
+
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported exam type for Selective")
+
+        # ==========================================
+        # OC HOMEWORK
+        # ==========================================
+        elif class_name == "oc":
+
+            # THINKING SKILLS
+            if exam_type == "thinking_skills":
+
+                latest_attempt = db.query(StudentHomeworkOCThinkingSkills).filter(
+                    StudentHomeworkOCThinkingSkills.student_id == student_db_id
+                ).order_by(
+                    desc(StudentHomeworkOCThinkingSkills.started_at),
+                    desc(StudentHomeworkOCThinkingSkills.id)
+                ).first()
+
+                if not latest_attempt:
+                    raise HTTPException(status_code=404, detail="No homework attempt found")
+
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This submitted homework cannot be reset."
+                    )
+
+                db.query(StudentHomeworkResponseOCThinkingSkills).filter(
+                    StudentHomeworkResponseOCThinkingSkills.exam_attempt_id == latest_attempt.id
+                ).delete()
+
+                db.delete(latest_attempt)
+                db.commit()
+
+                return {"message": "OC Homework Thinking Skills attempt deleted successfully"}
+
+            # MATHEMATICAL REASONING
+            elif exam_type == "mathematical_reasoning":
+
+                latest_attempt = db.query(StudentHomeworkOCMathematicalReasoning).filter(
+                    StudentHomeworkOCMathematicalReasoning.student_id == student_db_id
+                ).order_by(
+                    desc(StudentHomeworkOCMathematicalReasoning.started_at),
+                    desc(StudentHomeworkOCMathematicalReasoning.id)
+                ).first()
+
+                if not latest_attempt:
+                    raise HTTPException(status_code=404, detail="No homework attempt found")
+
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This submitted homework cannot be reset."
+                    )
+
+                db.query(StudentHomeworkResponseOCMathematicalReasoning).filter(
+                    StudentHomeworkResponseOCMathematicalReasoning.exam_attempt_id == latest_attempt.id
+                ).delete()
+
+                db.delete(latest_attempt)
+                db.commit()
+
+                return {"message": "OC Homework Mathematical Reasoning attempt deleted successfully"}
+
+            # READING
+            elif exam_type == "reading":
+
+                latest_attempt = db.query(StudentHomeworkReadingOC).filter(
+                    StudentHomeworkReadingOC.student_id == student_external_id
+                ).order_by(
+                    desc(StudentHomeworkReadingOC.started_at),
+                    desc(StudentHomeworkReadingOC.id)
+                ).first()
+
+                if not latest_attempt:
+                    raise HTTPException(status_code=404, detail="No homework attempt found")
+
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This submitted homework cannot be reset."
+                    )
+
+                db.query(StudentHomeworkReportOCReading).filter(
+                    StudentHomeworkReportOCReading.session_id == latest_attempt.id
+                ).delete()
+
+                db.delete(latest_attempt)
+                db.commit()
+
+                return {"message": "OC Homework Reading attempt deleted successfully"}
+
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported exam type for OC")
+
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported class type")
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("🔥 HOMEWORK DELETE ERROR:", str(e))
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/api/delete-exam-attempt")
 def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
 
@@ -7783,11 +8035,6 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                             status_code=404,
                             detail="No numeracy attempt found for today"
                         )
-                    if latest_attempt.completed_at is not None:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="This exam has already been submitted and cannot be reset."
-                        )
             
                     # ✅ DELETE RESPONSES
                     deleted_count = db.query(StudentExamResponseNaplanNumeracy).filter(
@@ -7835,11 +8082,7 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                             status_code=404,
                             detail="No language conventions attempt found for today"
                         )
-                    if latest_attempt.completed_at is not None:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="This exam has already been submitted and cannot be reset."
-                        )
+                
                     # ✅ DELETE RESPONSES
                     deleted_count = db.query(StudentExamResponseNaplanLanguageConventions).filter(
                         StudentExamResponseNaplanLanguageConventions.exam_attempt_id == latest_attempt.id
@@ -7884,11 +8127,6 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                         raise HTTPException(
                             status_code=404,
                             detail="No naplan reading attempt found for today"
-                        )
-                    if latest_attempt.completed_at is not None:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="This exam has already been submitted and cannot be reset."
                         )
                 
                     # ✅ DELETE RESPONSES
@@ -7953,11 +8191,6 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                             status_code=404,
                             detail="No OC thinking skills attempt found for today"
                         )
-                    if latest_attempt.completed_at is not None:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="This exam has already been submitted and cannot be reset."
-                        )
             
                     # ✅ DELETE RESPONSES
                     deleted_count = db.query(StudentExamResponseOCThinkingSkills).filter(
@@ -8008,11 +8241,6 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                         raise HTTPException(
                             status_code=404,
                             detail="No OC mathematical reasoning attempt found for today"
-                        )
-                    if latest_attempt.completed_at is not None:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="This exam has already been submitted and cannot be reset."
                         )
                 
                     # ✅ DELETE RESPONSES
@@ -8066,11 +8294,6 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                         raise HTTPException(
                             status_code=404,
                             detail="No OC reading attempt found for today"
-                        )
-                    if latest_attempt.completed_at is not None:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="This exam has already been submitted and cannot be reset."
                         )
                 
                     # ✅ DELETE REPORT ROWS (using session_id)
