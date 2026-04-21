@@ -7586,15 +7586,21 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 print("➡️ EXAM: THINKING SKILLS")
 
                 latest_attempt = db.query(StudentExamThinkingSkills).filter(
-                    StudentExamThinkingSkills.student_id == student_db_id,
-                    func.date(StudentExamThinkingSkills.started_at) == today_utc
-                ).order_by(desc(StudentExamThinkingSkills.id)).first()
-
+                    StudentExamThinkingSkills.student_id == student_db_id
+                ).order_by(
+                    desc(StudentExamThinkingSkills.started_at),
+                    desc(StudentExamThinkingSkills.id)
+                ).first()
                 print("latest_attempt:", latest_attempt)
 
                 if not latest_attempt:
                     print("❌ No attempt found")
                     raise HTTPException(status_code=404, detail="No attempt found for today")
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This exam has already been submitted and cannot be reset."
+                    )
 
                 deleted_count = db.query(StudentExamResponseThinkingSkills).filter(
                     StudentExamResponseThinkingSkills.exam_attempt_id == latest_attempt.id
@@ -7617,15 +7623,21 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 print("➡️ EXAM: MATHEMATICAL REASONING")
 
                 latest_attempt = db.query(StudentExamMathematicalReasoning).filter(
-                    StudentExamMathematicalReasoning.student_id == student_db_id,
-                    func.date(StudentExamMathematicalReasoning.started_at) == today_utc
-                ).order_by(desc(StudentExamMathematicalReasoning.id)).first()
-
+                    StudentExamMathematicalReasoning.student_id == student_db_id
+                ).order_by(
+                    desc(StudentExamMathematicalReasoning.started_at),
+                    desc(StudentExamMathematicalReasoning.id)
+                ).first()
                 print("latest_attempt:", latest_attempt)
 
                 if not latest_attempt:
                     print("❌ No attempt found")
                     raise HTTPException(status_code=404, detail="No attempt found for today")
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This exam has already been submitted and cannot be reset."
+                    )
 
                 deleted_count = db.query(StudentExamResponseMathematicalReasoning).filter(
                     StudentExamResponseMathematicalReasoning.exam_attempt_id == latest_attempt.id
@@ -7654,16 +7666,21 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
             
                 # ✅ STUDENT ID FIX
                 latest_attempt = db.query(StudentExamReading).filter(
-                    StudentExamReading.student_id == str(student_db_id),
-                    StudentExamReading.started_at >= start_of_day,
-                    StudentExamReading.started_at < end_of_day
-                ).order_by(desc(StudentExamReading.id)).first()
-            
+                    StudentExamReading.student_id == str(student_db_id)
+                ).order_by(
+                    desc(StudentExamReading.started_at),
+                    desc(StudentExamReading.id)
+                ).first()            
                 print("latest_attempt:", latest_attempt)
             
                 if not latest_attempt:
                     print("❌ No reading attempt found")
                     raise HTTPException(status_code=404, detail="No reading attempt found for today")
+                if latest_attempt.completed_at is not None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="This exam has already been submitted and cannot be reset."
+                    )
             
                 # ✅ DELETE REPORTS
                 deleted_count = db.query(StudentExamReportReading).filter(
@@ -7694,11 +7711,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
             
                 # ✅ FETCH LATEST ATTEMPT
                 latest_attempt = db.query(StudentExamWriting).filter(
-                    StudentExamWriting.student_id == student_db_id,
-                    StudentExamWriting.started_at >= start_of_day,
-                    StudentExamWriting.started_at < end_of_day
-                ).order_by(desc(StudentExamWriting.id)).first()
-            
+                    StudentExamWriting.student_id == student_db_id
+                ).order_by(
+                    desc(StudentExamWriting.started_at),
+                    desc(StudentExamWriting.id)
+                ).first()
                 print("latest_attempt:", latest_attempt)
             
                 if not latest_attempt:
@@ -7707,6 +7724,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                         status_code=404,
                         detail="No writing attempt found for today"
                     )
+                if latest_attempt.completed_at is not None:
+                     raise HTTPException(
+                         status_code=400,
+                         detail="This exam has already been submitted and cannot be reset."
+                     )
             
                 # ✅ DELETE RESPONSES
                 deleted_count = db.query(StudentExamResponseWriting).filter(
@@ -7747,10 +7769,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
             
                     # ✅ FETCH LATEST ATTEMPT
                     latest_attempt = db.query(StudentExamNaplanNumeracy).filter(
-                        StudentExamNaplanNumeracy.student_id == str(student_db_id),  # 🔥 IMPORTANT
-                        StudentExamNaplanNumeracy.started_at >= start_of_day,
-                        StudentExamNaplanNumeracy.started_at < end_of_day
-                    ).order_by(desc(StudentExamNaplanNumeracy.id)).first()
+                        StudentExamNaplanNumeracy.student_id == str(student_db_id)  # 🔥 IMPORTANT
+                    ).order_by(
+                        desc(StudentExamNaplanNumeracy.started_at),
+                        desc(StudentExamNaplanNumeracy.id)
+                    ).first()
             
                     print("latest_attempt:", latest_attempt)
             
@@ -7793,10 +7816,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 
                     # ✅ FETCH LATEST ATTEMPT
                     latest_attempt = db.query(StudentExamNaplanLanguageConventions).filter(
-                        StudentExamNaplanLanguageConventions.student_id == str(student_db_id),  # 🔥 IMPORTANT
-                        StudentExamNaplanLanguageConventions.started_at >= start_of_day,
-                        StudentExamNaplanLanguageConventions.started_at < end_of_day
-                    ).order_by(desc(StudentExamNaplanLanguageConventions.id)).first()
+                        StudentExamNaplanLanguageConventions.student_id == str(student_db_id)  # 🔥 IMPORTANT
+                    ).order_by(
+                        desc(StudentExamNaplanLanguageConventions.started_at),
+                        desc(StudentExamNaplanLanguageConventions.id)
+                    ).first()
                 
                     print("latest_attempt:", latest_attempt)
                 
@@ -7839,11 +7863,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 
                     # ✅ FETCH LATEST ATTEMPT
                     latest_attempt = db.query(StudentExamNaplanReading).filter(
-                        StudentExamNaplanReading.student_id == str(student_db_id),  # 🔥 IMPORTANT (based on your DB pattern)
-                        StudentExamNaplanReading.started_at >= start_of_day,
-                        StudentExamNaplanReading.started_at < end_of_day
-                    ).order_by(desc(StudentExamNaplanReading.id)).first()
-                
+                        StudentExamNaplanReading.student_id == str(student_db_id)  # 🔥 IMPORTANT (based on your DB pattern)
+                    ).order_by(
+                        desc(StudentExamNaplanReading.started_at),
+                        desc(StudentExamNaplanReading.id)
+                    ).first()                
                     print("latest_attempt:", latest_attempt)
                 
                     if not latest_attempt:
@@ -7901,10 +7925,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
             
                     # ✅ FETCH LATEST ATTEMPT
                     latest_attempt = db.query(StudentExamOCThinkingSkills).filter(
-                        StudentExamOCThinkingSkills.student_id == student_id_for_query,
-                        StudentExamOCThinkingSkills.started_at >= start_of_day,
-                        StudentExamOCThinkingSkills.started_at < end_of_day
-                    ).order_by(desc(StudentExamOCThinkingSkills.id)).first()
+                        StudentExamOCThinkingSkills.student_id == student_id_for_query
+                    ).order_by(
+                        desc(StudentExamOCThinkingSkills.started_at),
+                        desc(StudentExamOCThinkingSkills.id)
+                    ).first()
             
                     print("latest_attempt:", latest_attempt)
             
@@ -7952,11 +7977,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 
                     # ✅ FETCH LATEST ATTEMPT
                     latest_attempt = db.query(StudentExamOCMathematicalReasoning).filter(
-                        StudentExamOCMathematicalReasoning.student_id == student_id_for_query,
-                        StudentExamOCMathematicalReasoning.started_at >= start_of_day,
-                        StudentExamOCMathematicalReasoning.started_at < end_of_day
-                    ).order_by(desc(StudentExamOCMathematicalReasoning.id)).first()
-                
+                        StudentExamOCMathematicalReasoning.student_id == student_id_for_query
+                    ).order_by(
+                        desc(StudentExamOCMathematicalReasoning.started_at),
+                        desc(StudentExamOCMathematicalReasoning.id)
+                    ).first()                
                     print("latest_attempt:", latest_attempt)
                 
                     if not latest_attempt:
@@ -8004,10 +8029,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                 
                     # ✅ FETCH LATEST ATTEMPT
                     latest_attempt = db.query(StudentExamReadingOC).filter(
-                        StudentExamReadingOC.student_id == student_id_for_query,
-                        StudentExamReadingOC.started_at >= start_of_day,
-                        StudentExamReadingOC.started_at < end_of_day
-                    ).order_by(desc(StudentExamReadingOC.started_at), desc(StudentExamReadingOC.id)).first()
+                        StudentExamReadingOC.student_id == student_id_for_query
+                    ).order_by(
+                        desc(StudentExamReadingOC.started_at),
+                        desc(StudentExamReadingOC.id)
+                    ).first()
                 
                     print("latest_attempt:", latest_attempt)
                 
