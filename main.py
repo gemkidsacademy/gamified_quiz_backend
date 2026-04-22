@@ -8207,6 +8207,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                             status_code=404,
                             detail="No OC thinking skills attempt found for today"
                         )
+                    if latest_attempt.completed_at is not None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="This exam has already been submitted and cannot be reset."
+                        )
             
                     # ✅ DELETE RESPONSES
                     deleted_count = db.query(StudentExamResponseOCThinkingSkills).filter(
@@ -8257,6 +8262,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                         raise HTTPException(
                             status_code=404,
                             detail="No OC mathematical reasoning attempt found for today"
+                        )
+                    if latest_attempt.completed_at is not None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="This exam has already been submitted and cannot be reset."
                         )
                 
                     # ✅ DELETE RESPONSES
@@ -8310,6 +8320,11 @@ def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                         raise HTTPException(
                             status_code=404,
                             detail="No OC reading attempt found for today"
+                        )
+                    if latest_attempt.completed_at is not None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="This exam has already been submitted and cannot be reset."
                         )
                 
                     # ✅ DELETE REPORT ROWS (using session_id)
