@@ -6107,17 +6107,16 @@ def generate_writing_homework(
     try:
         print("\n=========== GENERATE WRITING HOMEWORK ===========")
 
+        
         # ----------------------------------
         # 1️⃣ Normalize inputs
         # ----------------------------------
-        class_name = payload.class_name.strip()
+        class_name = "selective"
         class_year = payload.class_year.strip().lower()
-        difficulty = payload.difficulty.strip().lower()
 
         print("📥 Payload:", {
             "class_name": class_name,
-            "class_year": class_year,
-            "difficulty": difficulty
+            "class_year": class_year
         })
 
         # ----------------------------------
@@ -6138,10 +6137,11 @@ def generate_writing_homework(
             )
 
         topic = setup.topic.strip().lower()
+        difficulty = setup.difficulty.strip().lower()
 
         print("✅ Setup found:", {
             "topic": topic,
-            "difficulty": setup.difficulty
+            "difficulty": difficulty
         })
 
         # ----------------------------------
