@@ -2,8 +2,16 @@
 from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body, Request    
 from passlib.context import CryptContext     
 import uvicorn       
+import os
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
+from dotenv import load_dotenv
+load_dotenv()
+
+gtk_bin = os.getenv("GTK_BIN_PATH")
+
+if gtk_bin and os.name == "nt":
+    os.environ["PATH"] = gtk_bin + ";" + os.environ["PATH"]
 from weasyprint import HTML  
 import docx   
 from datetime import date    
@@ -21,7 +29,7 @@ from docx.oxml.ns import qn
 import copy
 
 import pandas as pd
-import os
+
 import random 
 import time
 from sendgrid.helpers.mail import Mail
@@ -18156,6 +18164,71 @@ def generate_overall_selective_report(
     )
 
     print("✅ Thinking Skills diagnostics ready")
+    maths_attempt = (
+        db.query(StudentExamMathematicalReasoning)
+        .filter(
+            StudentExamMathematicalReasoning.id ==
+            reports_by_subject["mathematical_reasoning"].exam_attempt_id
+        )
+        .first()
+    )
+    if not maths_attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="Mathematical Reasoning attempt not found"
+        )
+    maths_report = build_mathematical_reasoning_topic_report(
+        student_id=student_id,
+        exam_id=maths_attempt.exam_id,
+        db=db
+    )
+
+    print("✅ Mathematical Reasoning diagnostics ready")
+    reading_attempt = (
+        db.query(StudentExamReading)
+        .filter(
+            StudentExamReading.id ==
+            reports_by_subject["reading"].exam_attempt_id
+        )
+        .first()
+    )
+
+    if not reading_attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="Reading attempt not found"
+        )
+
+    reading_report = build_reading_topic_report(
+        student_id=student_id,
+        exam_id=reading_attempt.exam_id,
+        db=db
+    )
+
+    print("✅ Reading diagnostics ready")
+    print("📘 reports_by_subject keys:",
+      list(reports_by_subject.keys()))
+
+    print("📘 writing object:",
+        reports_by_subject.get("writing"))
+
+    writing_obj = reports_by_subject.get("writing")
+
+    if not writing_obj:
+        raise HTTPException(
+            status_code=404,
+            detail="Writing report missing"
+        )
+
+    print("📘 writing exam_attempt_id:",
+        writing_obj.exam_attempt_id)
+    writing_report = build_writing_topic_report_by_attempt(
+        attempt_id=reports_by_subject["writing"].exam_attempt_id,
+        db=db
+    )
+
+    print("✅ Writing diagnostics ready")
+
     # --------------------------------------------------
     # 🔟 Return enriched response
     # --------------------------------------------------
@@ -18186,7 +18259,10 @@ def generate_overall_selective_report(
         "benchmark_bands": benchmark_bands,
 
         "section_diagnostics": {
-            "thinking_skills": thinking_report
+            "reading": reading_report,
+            "thinking_skills": thinking_report,
+            "mathematical_reasoning": maths_report,
+            "writing": writing_report
         }
     }
 @app.get("/api/admin/students/{student_id}/selective-reports")
@@ -20909,8 +20985,13 @@ def build_reading_topic_report(
         accuracy = (
             row.get("accuracy_percent")
             or row.get("percent")
-            or 0
         )
+
+        if accuracy is None:
+            accuracy = (
+                (correct / total_questions) * 100
+                if total_questions else 0
+            )
 
         accuracy = round(float(accuracy), 2)
 
@@ -20966,6 +21047,20 @@ def build_reading_topic_report(
     # 8️⃣ Overall summary
     # --------------------------------------------------
     overall = report.get("overall", report)
+
+    if isinstance(overall, dict):
+        if overall.get("accuracy_percent") is None:
+            score = overall.get("score", 0)
+            total = overall.get("total_questions", 30)
+
+            # If score already looks like a percent, use directly
+            if score > total:
+                overall["accuracy_percent"] = round(float(score), 2)
+            else:
+                overall["accuracy_percent"] = (
+                    round((score / total) * 100, 2)
+                    if total else 0
+                )
 
     print("📈 Overall summary keys:",
           list(overall.keys()) if isinstance(overall, dict) else "non-dict")
@@ -27449,206 +27544,81 @@ def get_homework_writing_report(
         "advisory": "This report is advisory only and does not guarantee placement."
     }
 
-def build_writing_topic_report(
-    student_id: str,
+def build_writing_topic_report_by_attempt(
+    attempt_id: int,
     db: Session
 ):
     print("\n===== BUILD WRITING TOPIC REPORT =====")
-    print("📥 Incoming Request:", {
-        "student_id": student_id
+    print("📥 Incoming:", {
+        "attempt_id": attempt_id
     })
 
-    # --------------------------------------------------
-    # 1️⃣ Resolve student (external → internal)
-    # --------------------------------------------------
-    student = (
-        db.query(Student)
+    snapshot = (
+        db.query(StudentWritingSnapshot)
         .filter(
-            func.lower(Student.student_id) ==
-            func.lower(student_id)
+            StudentWritingSnapshot.exam_attempt_id ==
+            attempt_id
         )
         .first()
     )
 
-    if not student:
-        print("❌ Student not found")
+    if not snapshot:
         raise HTTPException(
             status_code=404,
-            detail="Student not found"
+            detail="Writing snapshot not found"
         )
 
-    print("✅ Student resolved:", {
-        "internal_id": student.id,
-        "student_id": student.student_id,
-        "name": student.name
-    })
+    evaluation = snapshot.ai_evaluation_json or {}
+    categories = evaluation.get("categories", {})
 
-    # --------------------------------------------------
-    # 2️⃣ Load latest admin report
-    # --------------------------------------------------
-    admin_report = (
-        db.query(AdminExamReport)
-        .filter(
-            AdminExamReport.student_id == student.student_id,
-            AdminExamReport.exam_type == "writing"
-        )
-        .order_by(
-            AdminExamReport.created_at.desc()
-        )
-        .first()
-    )
+    label_map = {
+        "audience_purpose_form":
+            "Audience, Purpose & Form",
 
-    if not admin_report:
-        print("❌ Writing admin report not found")
-        raise HTTPException(
-            status_code=404,
-            detail="Writing result not found"
-        )
+        "ideas_content":
+            "Ideas & Content",
 
-    print("✅ Admin report resolved:", {
-        "report_id": admin_report.id,
-        "exam_attempt_id": admin_report.exam_attempt_id,
-        "overall_score": admin_report.overall_score,
-        "readiness_band": admin_report.readiness_band
-    })
+        "structure_organisation":
+            "Structure & Organisation",
 
-    # --------------------------------------------------
-    # 3️⃣ Load writing attempt
-    # --------------------------------------------------
-    exam_state = (
-        db.query(StudentExamWriting)
-        .filter(
-            StudentExamWriting.id ==
-            admin_report.exam_attempt_id
-        )
-        .first()
-    )
+        "language_vocabulary":
+            "Language & Vocabulary",
 
-    if not exam_state:
-        print("❌ Writing attempt not found")
-        raise HTTPException(
-            status_code=404,
-            detail="Writing attempt not found"
-        )
-
-    if not exam_state.ai_evaluation_json:
-        print("❌ AI evaluation missing")
-        raise HTTPException(
-            status_code=500,
-            detail="AI evaluation missing for writing exam"
-        )
-
-    print("✅ Writing attempt resolved:", {
-        "attempt_id": exam_state.id,
-        "score": exam_state.ai_score,
-        "has_answer_text": bool(exam_state.answer_text),
-        "has_ai_json": True
-    })
-
-    # --------------------------------------------------
-    # 4️⃣ Load AI evaluation
-    # --------------------------------------------------
-    evaluation = exam_state.ai_evaluation_json
-
-    print("📦 AI evaluation keys:",
-          list(evaluation.keys()))
-
-    # --------------------------------------------------
-    # 5️⃣ Build rubric topic breakdown
-    # --------------------------------------------------
-    possible_rubrics = [
-        "ideas",
-        "structure",
-        "language",
-        "grammar",
-        "spelling",
-        "punctuation",
-        "vocabulary",
-        "cohesion",
-        "paragraphing"
-    ]
+        "grammar_spelling_punctuation":
+            "Grammar, Spelling & Punctuation"
+    }
 
     topic_breakdown = []
 
-    for rubric in possible_rubrics:
-        if rubric in evaluation:
-            item = evaluation.get(rubric)
+    for key, label in label_map.items():
 
-            if isinstance(item, dict):
-                score = item.get("score", 0)
-                max_score = item.get("max_score", 5)
-                comment = item.get(
-                    "feedback",
-                    item.get(
-                        "comment",
-                        "Review and continue improving this area."
-                    )
-                )
-            else:
-                score = item or 0
-                max_score = 5
-                comment = "Review and continue improving this area."
-
-            accuracy = round(
-                (score / max_score) * 100, 2
-            ) if max_score else 0
-
-            if accuracy >= 80:
-                feedback = (
-                    "Excellent understanding. "
-                    "Continue maintaining this level."
-                )
-            elif accuracy >= 50:
-                feedback = (
-                    "Good progress, but needs more practice "
-                    "to improve consistency."
-                )
-            else:
-                feedback = (
-                    "Requires immediate attention. "
-                    "Focus on fundamentals and additional practice."
-                )
-
-            topic_row = {
-                "topic": rubric.title(),
-                "total_questions": max_score,
-                "correct": score,
-                "incorrect": max_score - score,
-                "not_attempted": 0,
-                "accuracy_percent": accuracy,
-                "feedback": comment or feedback
-            }
-
-            topic_breakdown.append(topic_row)
-
-            print("📘 Rubric Row:", topic_row)
-
-    # --------------------------------------------------
-    # 6️⃣ Fallback if rubric keys absent
-    # --------------------------------------------------
-    if not topic_breakdown:
-        print("⚠️ No rubric keys found, using generic breakdown")
-
-        score = admin_report.overall_score or 0
-        max_score = 25
+        item = categories.get(key, {})
+        score = item.get("score", 0)
+        max_score = 5
 
         accuracy = round(
             (score / max_score) * 100, 2
         )
 
+        if accuracy >= 80:
+            feedback = "Excellent"
+        elif accuracy >= 50:
+            feedback = "Moderate"
+        else:
+            feedback = "Needs Attention"
+
         topic_breakdown.append({
-            "topic": "Overall Writing Performance",
+            "topic": label,
             "total_questions": max_score,
             "correct": score,
             "incorrect": max_score - score,
             "not_attempted": 0,
             "accuracy_percent": accuracy,
-            "feedback": "Detailed rubric unavailable."
+            "feedback": feedback,
+            "strengths": item.get("strengths", []),
+            "improvements": item.get("improvements", [])
         })
 
-    # --------------------------------------------------
-    # 7️⃣ Sort strengths / improvements
-    # --------------------------------------------------
     sorted_topics = sorted(
         topic_breakdown,
         key=lambda x: x["accuracy_percent"],
@@ -27658,52 +27628,42 @@ def build_writing_topic_report(
     top_strengths = sorted_topics[:2]
     improvement_areas = sorted_topics[-2:]
 
-    print("🏆 Top strengths:",
-          [x["topic"] for x in top_strengths])
-
-    print("⚠️ Improvement areas:",
-          [x["topic"] for x in improvement_areas])
-
-    # --------------------------------------------------
-    # 8️⃣ Overall summary
-    # --------------------------------------------------
-    overall_score = admin_report.overall_score or 0
+    score = evaluation.get(
+        "overall_score",
+        snapshot.writing_score or 0
+    )
 
     overall = {
         "total_questions": 25,
         "attempted": 25,
-        "correct": overall_score,
-        "incorrect": 25 - overall_score,
-        "not_attempted": 0,
+        "correct": score,
+        "incorrect": 25 - score,
         "accuracy_percent": round(
-            (overall_score / 25) * 100, 2
+            (score / 25) * 100, 2
         ),
         "score_percent": round(
-            (overall_score / 25) * 100, 2
+            (score / 25) * 100, 2
         ),
-        "readiness_band": admin_report.readiness_band
+        "readiness_band":
+            evaluation.get(
+                "selective_readiness_band",
+                snapshot.readiness_band
+            ),
+        "teacher_feedback":
+            evaluation.get(
+                "teacher_feedback",
+                ""
+            )
     }
 
-    print("📊 Overall summary:", overall)
-
-    # --------------------------------------------------
-    # 9️⃣ Final payload
-    # --------------------------------------------------
-    final_payload = {
-        "exam_attempt_id": exam_state.id,
+    return {
+        "exam_attempt_id": attempt_id,
         "overall": overall,
         "topic_breakdown": topic_breakdown,
         "top_strengths": top_strengths,
         "improvement_areas": improvement_areas,
         "evaluation": evaluation
     }
-
-    print("✅ Final payload ready")
-    print("📦 topic_breakdown rows:",
-          len(topic_breakdown))
-    print("===============================================\n")
-
-    return final_payload
 
 @app.get("/api/exams/writing/result")
 def get_writing_result(
