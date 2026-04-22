@@ -18149,7 +18149,13 @@ def generate_overall_selective_report(
         thinking_percent=components["thinking_skills"]["percent"],
         writing_percent=components["writing"]["percent"]
     )
-    
+    thinking_report = build_thinking_skills_topic_report(
+        student_id=student_id,
+        exam_attempt_id=reports_by_subject["thinking_skills"].exam_attempt_id,
+        db=db
+    )
+
+    print("✅ Thinking Skills diagnostics ready")
     # --------------------------------------------------
     # 🔟 Return enriched response
     # --------------------------------------------------
@@ -18177,7 +18183,11 @@ def generate_overall_selective_report(
         "total_gender_students": profile_metrics["total_gender_students"],
     
         # New benchmark bands
-        "benchmark_bands": benchmark_bands
+        "benchmark_bands": benchmark_bands,
+
+        "section_diagnostics": {
+            "thinking_skills": thinking_report
+        }
     }
 @app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
@@ -20753,6 +20763,230 @@ def get_homework_report_by_exam_id(
     )
  
 
+
+def build_reading_topic_report(
+    student_id: str,
+    exam_id: int,
+    db: Session
+):
+    print("\n=========== BUILD READING TOPIC REPORT ===========")
+    print("📥 Incoming:", {
+        "student_id": student_id,
+        "exam_id": exam_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student resolved:", {
+        "internal_id": student.id,
+        "student_id": student.student_id,
+        "name": student.name
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Resolve latest finished reading attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamReading)
+        .filter(
+            StudentExamReading.student_id == student.id,
+            StudentExamReading.exam_id == exam_id,
+            StudentExamReading.finished == True
+        )
+        .order_by(
+            StudentExamReading.started_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No finished reading attempt found")
+        raise HTTPException(
+            status_code=404,
+            detail="Reading report not found"
+        )
+
+    print("✅ Attempt resolved:", {
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "started_at": str(attempt.started_at),
+        "has_report_json": bool(attempt.report_json)
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Ensure report_json exists
+    # --------------------------------------------------
+    report = attempt.report_json
+
+    if not report:
+        print("❌ report_json missing")
+        raise HTTPException(
+            status_code=404,
+            detail="Reading report_json missing"
+        )
+
+    print("✅ report_json loaded")
+    print("📦 report_json keys:", list(report.keys()))
+
+    # --------------------------------------------------
+    # 4️⃣ Try common topic arrays inside report_json
+    # --------------------------------------------------
+    possible_keys = [
+        "topic_accuracy",
+        "topic_breakdown",
+        "topic_wise_performance",
+        "topics",
+        "skills_breakdown",
+        "question_type_breakdown"
+    ]
+
+    raw_topics = None
+    matched_key = None
+
+    for key in possible_keys:
+        if isinstance(report.get(key), list):
+            raw_topics = report.get(key)
+            matched_key = key
+            break
+
+    if raw_topics is not None:
+        print("✅ Topic array found:", matched_key)
+        print("📊 Topic rows detected:", len(raw_topics))
+    else:
+        print("⚠️ No topic list found in report_json")
+
+    # --------------------------------------------------
+    # 5️⃣ Fallback summary only
+    # --------------------------------------------------
+    if raw_topics is None:
+        print("↩️ Returning summary-only payload")
+        print("===============================================\n")
+
+        return {
+            "exam_id": exam_id,
+            "exam_attempt_id": attempt.id,
+            "overall": report,
+            "topic_breakdown": [],
+            "top_strengths": [],
+            "improvement_areas": []
+        }
+
+    # --------------------------------------------------
+    # 6️⃣ Normalize rows
+    # --------------------------------------------------
+    topic_breakdown = []
+
+    for idx, row in enumerate(raw_topics, start=1):
+        topic = row.get("topic", "Unknown")
+
+        total_questions = (
+            row.get("total_questions")
+            or row.get("total")
+            or 0
+        )
+
+        correct = row.get("correct", 0)
+        incorrect = row.get("incorrect", 0)
+        not_attempted = row.get("not_attempted", 0)
+
+        accuracy = (
+            row.get("accuracy_percent")
+            or row.get("percent")
+            or 0
+        )
+
+        accuracy = round(float(accuracy), 2)
+
+        if accuracy >= 80:
+            feedback = (
+                "Excellent understanding. "
+                "Continue maintaining this level."
+            )
+        elif accuracy >= 50:
+            feedback = (
+                "Good progress, but needs more practice "
+                "to improve consistency."
+            )
+        else:
+            feedback = (
+                "Requires immediate attention. "
+                "Focus on fundamentals and additional practice."
+            )
+
+        normalized = {
+            "topic": topic,
+            "total_questions": total_questions,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy_percent": accuracy,
+            "feedback": feedback
+        }
+
+        topic_breakdown.append(normalized)
+
+        print(f"📘 Topic {idx}:", normalized)
+
+    # --------------------------------------------------
+    # 7️⃣ Sort best/worst
+    # --------------------------------------------------
+    sorted_topics = sorted(
+        topic_breakdown,
+        key=lambda x: x["accuracy_percent"],
+        reverse=True
+    )
+
+    top_strengths = sorted_topics[:2]
+    improvement_areas = sorted_topics[-2:]
+
+    print("🏆 Top strengths:",
+          [x["topic"] for x in top_strengths])
+
+    print("⚠️ Improvement areas:",
+          [x["topic"] for x in improvement_areas])
+
+    # --------------------------------------------------
+    # 8️⃣ Overall summary
+    # --------------------------------------------------
+    overall = report.get("overall", report)
+
+    print("📈 Overall summary keys:",
+          list(overall.keys()) if isinstance(overall, dict) else "non-dict")
+
+    # --------------------------------------------------
+    # 9️⃣ Final payload
+    # --------------------------------------------------
+    final_payload = {
+        "exam_id": exam_id,
+        "exam_attempt_id": attempt.id,
+        "overall": overall,
+        "topic_breakdown": topic_breakdown,
+        "top_strengths": top_strengths,
+        "improvement_areas": improvement_areas
+    }
+
+    print("✅ Final payload ready")
+    print("📦 topic_breakdown rows:", len(topic_breakdown))
+    print("===============================================\n")
+
+    return final_payload
 @app.get("/api/student/exam-report/reading")
 def get_exam_report_by_exam_id(
     student_id: str = Query(...),
@@ -21694,7 +21928,265 @@ def get_homework_thinking_skills_report(
         "topic_accuracy": topic_accuracy,
         "improvement_areas": improvement_areas
     }
- 
+
+
+def build_thinking_skills_topic_report(
+    student_id: str,
+    exam_attempt_id: Optional[int],
+    db: Session
+):
+    print("\n===== BUILD THINKING SKILLS TOPIC REPORT =====")
+    print("📥 Incoming Request:", {
+        "student_id": student_id,
+        "exam_attempt_id": exam_attempt_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student using external student_id
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student resolved:", {
+        "internal_id": student.id,
+        "student_id": student.student_id,
+        "name": student.name
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Resolve exam attempt
+    # --------------------------------------------------
+    if exam_attempt_id:
+        print("🔍 Looking for specific attempt id:", exam_attempt_id)
+
+        attempt = (
+            db.query(StudentExamThinkingSkills)
+            .filter(
+                StudentExamThinkingSkills.id == exam_attempt_id,
+                StudentExamThinkingSkills.student_id == student.id
+            )
+            .first()
+        )
+    else:
+        print("🔍 Looking for latest completed attempt")
+
+        attempt = (
+            db.query(StudentExamThinkingSkills)
+            .filter(
+                StudentExamThinkingSkills.student_id == student.id,
+                StudentExamThinkingSkills.completed_at.isnot(None)
+            )
+            .order_by(
+                StudentExamThinkingSkills.completed_at.desc()
+            )
+            .first()
+        )
+
+    if not attempt:
+        print("❌ No completed Thinking Skills attempt found")
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Thinking Skills exam found"
+        )
+
+    print("✅ Attempt resolved:", {
+        "attempt_id": attempt.id,
+        "student_id": attempt.student_id,
+        "exam_id": attempt.exam_id,
+        "completed_at": str(attempt.completed_at)
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseThinkingSkills)
+        .filter(
+            StudentExamResponseThinkingSkills.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        print("❌ No responses found")
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for Thinking Skills exam"
+        )
+
+    print("✅ Responses loaded:", len(responses))
+
+    # --------------------------------------------------
+    # 4️⃣ Overall summary
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.is_correct is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+
+    incorrect = sum(
+        1 for r in responses
+        if r.is_correct is False
+    )
+
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
+
+    score_percent = (
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent
+    }
+
+    print("📊 Overall summary:", overall)
+
+    # --------------------------------------------------
+    # 5️⃣ Group by topic
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic or "Unknown"
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total_questions": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        row = topic_map[topic]
+
+        row["total_questions"] += 1
+
+        if r.is_correct is None:
+            row["not_attempted"] += 1
+        else:
+            row["attempted"] += 1
+
+            if r.is_correct:
+                row["correct"] += 1
+            else:
+                row["incorrect"] += 1
+
+    print("📚 Topics discovered:", len(topic_map))
+    print("🧾 Topic names:", list(topic_map.keys()))
+
+    # --------------------------------------------------
+    # 6️⃣ Topic accuracy + feedback
+    # --------------------------------------------------
+    topic_breakdown = []
+
+    for index, item in enumerate(topic_map.values(), start=1):
+        attempted_topic = item["attempted"]
+
+        accuracy = (
+            round(
+                (item["correct"] / attempted_topic) * 100,
+                2
+            )
+            if attempted_topic else 0
+        )
+
+        if accuracy >= 80:
+            feedback = (
+                "Excellent understanding. "
+                "Continue maintaining this level."
+            )
+        elif accuracy >= 50:
+            feedback = (
+                "Good progress, but needs more practice "
+                "to improve consistency."
+            )
+        else:
+            feedback = (
+                "Requires immediate attention. "
+                "Focus on fundamentals and additional practice."
+            )
+
+        topic_row = {
+            "topic": item["topic"],
+            "total_questions": item["total_questions"],
+            "correct": item["correct"],
+            "incorrect": item["incorrect"],
+            "not_attempted": item["not_attempted"],
+            "accuracy_percent": accuracy,
+            "feedback": feedback
+        }
+
+        topic_breakdown.append(topic_row)
+
+        print(f"📘 Topic {index}:", topic_row)
+
+    # --------------------------------------------------
+    # 7️⃣ Sort best/worst topics
+    # --------------------------------------------------
+    sorted_topics = sorted(
+        topic_breakdown,
+        key=lambda x: x["accuracy_percent"],
+        reverse=True
+    )
+
+    top_strengths = sorted_topics[:2]
+    improvement_areas = sorted_topics[-2:]
+
+    print("🏆 Top strengths:",
+          [x["topic"] for x in top_strengths])
+
+    print("⚠️ Improvement areas:",
+          [x["topic"] for x in improvement_areas])
+
+    # --------------------------------------------------
+    # 8️⃣ Final payload
+    # --------------------------------------------------
+    final_payload = {
+        "exam_attempt_id": attempt.id,
+        "overall": overall,
+        "topic_breakdown": topic_breakdown,
+        "top_strengths": top_strengths,
+        "improvement_areas": improvement_areas
+    }
+
+    print("✅ Final payload ready")
+    print("📦 topic_breakdown rows:", len(topic_breakdown))
+    print("===============================================\n")
+
+    return final_payload
+
+
 @app.get("/api/student/exam-report/thinking-skills")
 def get_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
@@ -22802,6 +23294,250 @@ def get_homework_mathematical_reasoning_report(
         "exam_attempt_id": attempt.id
     }
 
+
+def build_mathematical_reasoning_topic_report(
+    student_id: str,
+    exam_id: int,
+    db: Session
+):
+    print("\n===== BUILD MATHEMATICAL REASONING TOPIC REPORT =====")
+    print("📥 Incoming Request:", {
+        "student_id": student_id,
+        "exam_id": exam_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student using external student_id
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student resolved:", {
+        "internal_id": student.id,
+        "student_id": student.student_id,
+        "name": student.name
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Resolve completed exam attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamMathematicalReasoning)
+        .filter(
+            StudentExamMathematicalReasoning.student_id == student.id,
+            StudentExamMathematicalReasoning.exam_id == exam_id,
+            StudentExamMathematicalReasoning.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamMathematicalReasoning.completed_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No completed Mathematical Reasoning attempt found")
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Mathematical Reasoning exam found"
+        )
+
+    print("✅ Attempt resolved:", {
+        "attempt_id": attempt.id,
+        "student_id": attempt.student_id,
+        "exam_id": attempt.exam_id,
+        "completed_at": str(attempt.completed_at)
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseMathematicalReasoning)
+        .filter(
+            StudentExamResponseMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        print("❌ No responses found")
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for Mathematical Reasoning exam"
+        )
+
+    print("✅ Responses loaded:", len(responses))
+
+    # --------------------------------------------------
+    # 4️⃣ Overall summary
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.is_correct is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+
+    incorrect = sum(
+        1 for r in responses
+        if r.is_correct is False
+    )
+
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
+
+    score_percent = (
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent
+    }
+
+    print("📊 Overall summary:", overall)
+
+    # --------------------------------------------------
+    # 5️⃣ Group by topic
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic or "Unknown"
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total_questions": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        row = topic_map[topic]
+
+        row["total_questions"] += 1
+
+        if r.is_correct is None:
+            row["not_attempted"] += 1
+        else:
+            row["attempted"] += 1
+
+            if r.is_correct:
+                row["correct"] += 1
+            else:
+                row["incorrect"] += 1
+
+    print("📚 Topics discovered:", len(topic_map))
+    print("🧾 Topic names:", list(topic_map.keys()))
+
+    # --------------------------------------------------
+    # 6️⃣ Topic accuracy + feedback
+    # --------------------------------------------------
+    topic_breakdown = []
+
+    for index, item in enumerate(topic_map.values(), start=1):
+        attempted_topic = item["attempted"]
+
+        accuracy = (
+            round(
+                (item["correct"] / attempted_topic) * 100,
+                2
+            )
+            if attempted_topic else 0
+        )
+
+        if accuracy >= 80:
+            feedback = (
+                "Excellent understanding. "
+                "Continue maintaining this level."
+            )
+        elif accuracy >= 50:
+            feedback = (
+                "Good progress, but needs more practice "
+                "to improve consistency."
+            )
+        else:
+            feedback = (
+                "Requires immediate attention. "
+                "Focus on fundamentals and additional practice."
+            )
+
+        topic_row = {
+            "topic": item["topic"],
+            "total_questions": item["total_questions"],
+            "correct": item["correct"],
+            "incorrect": item["incorrect"],
+            "not_attempted": item["not_attempted"],
+            "accuracy_percent": accuracy,
+            "feedback": feedback
+        }
+
+        topic_breakdown.append(topic_row)
+
+        print(f"📘 Topic {index}:", topic_row)
+
+    # --------------------------------------------------
+    # 7️⃣ Sort best/worst topics
+    # --------------------------------------------------
+    sorted_topics = sorted(
+        topic_breakdown,
+        key=lambda x: x["accuracy_percent"],
+        reverse=True
+    )
+
+    top_strengths = sorted_topics[:2]
+    improvement_areas = sorted_topics[-2:]
+
+    print("🏆 Top strengths:",
+          [x["topic"] for x in top_strengths])
+
+    print("⚠️ Improvement areas:",
+          [x["topic"] for x in improvement_areas])
+
+    # --------------------------------------------------
+    # 8️⃣ Final payload
+    # --------------------------------------------------
+    final_payload = {
+        "exam_id": exam_id,
+        "exam_attempt_id": attempt.id,
+        "overall": overall,
+        "topic_breakdown": topic_breakdown,
+        "top_strengths": top_strengths,
+        "improvement_areas": improvement_areas
+    }
+
+    print("✅ Final payload ready")
+    print("📦 topic_breakdown rows:", len(topic_breakdown))
+    print("===============================================\n")
+
+    return final_payload
 @app.get("/api/student/exam-report/mathematical-reasoning")
 def get_mathematical_reasoning_report(
     student_id: str = Query(...),
@@ -26713,6 +27449,261 @@ def get_homework_writing_report(
         "advisory": "This report is advisory only and does not guarantee placement."
     }
 
+def build_writing_topic_report(
+    student_id: str,
+    db: Session
+):
+    print("\n===== BUILD WRITING TOPIC REPORT =====")
+    print("📥 Incoming Request:", {
+        "student_id": student_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student (external → internal)
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id)
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student resolved:", {
+        "internal_id": student.id,
+        "student_id": student.student_id,
+        "name": student.name
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Load latest admin report
+    # --------------------------------------------------
+    admin_report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student.student_id,
+            AdminExamReport.exam_type == "writing"
+        )
+        .order_by(
+            AdminExamReport.created_at.desc()
+        )
+        .first()
+    )
+
+    if not admin_report:
+        print("❌ Writing admin report not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Writing result not found"
+        )
+
+    print("✅ Admin report resolved:", {
+        "report_id": admin_report.id,
+        "exam_attempt_id": admin_report.exam_attempt_id,
+        "overall_score": admin_report.overall_score,
+        "readiness_band": admin_report.readiness_band
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Load writing attempt
+    # --------------------------------------------------
+    exam_state = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.id ==
+            admin_report.exam_attempt_id
+        )
+        .first()
+    )
+
+    if not exam_state:
+        print("❌ Writing attempt not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Writing attempt not found"
+        )
+
+    if not exam_state.ai_evaluation_json:
+        print("❌ AI evaluation missing")
+        raise HTTPException(
+            status_code=500,
+            detail="AI evaluation missing for writing exam"
+        )
+
+    print("✅ Writing attempt resolved:", {
+        "attempt_id": exam_state.id,
+        "score": exam_state.ai_score,
+        "has_answer_text": bool(exam_state.answer_text),
+        "has_ai_json": True
+    })
+
+    # --------------------------------------------------
+    # 4️⃣ Load AI evaluation
+    # --------------------------------------------------
+    evaluation = exam_state.ai_evaluation_json
+
+    print("📦 AI evaluation keys:",
+          list(evaluation.keys()))
+
+    # --------------------------------------------------
+    # 5️⃣ Build rubric topic breakdown
+    # --------------------------------------------------
+    possible_rubrics = [
+        "ideas",
+        "structure",
+        "language",
+        "grammar",
+        "spelling",
+        "punctuation",
+        "vocabulary",
+        "cohesion",
+        "paragraphing"
+    ]
+
+    topic_breakdown = []
+
+    for rubric in possible_rubrics:
+        if rubric in evaluation:
+            item = evaluation.get(rubric)
+
+            if isinstance(item, dict):
+                score = item.get("score", 0)
+                max_score = item.get("max_score", 5)
+                comment = item.get(
+                    "feedback",
+                    item.get(
+                        "comment",
+                        "Review and continue improving this area."
+                    )
+                )
+            else:
+                score = item or 0
+                max_score = 5
+                comment = "Review and continue improving this area."
+
+            accuracy = round(
+                (score / max_score) * 100, 2
+            ) if max_score else 0
+
+            if accuracy >= 80:
+                feedback = (
+                    "Excellent understanding. "
+                    "Continue maintaining this level."
+                )
+            elif accuracy >= 50:
+                feedback = (
+                    "Good progress, but needs more practice "
+                    "to improve consistency."
+                )
+            else:
+                feedback = (
+                    "Requires immediate attention. "
+                    "Focus on fundamentals and additional practice."
+                )
+
+            topic_row = {
+                "topic": rubric.title(),
+                "total_questions": max_score,
+                "correct": score,
+                "incorrect": max_score - score,
+                "not_attempted": 0,
+                "accuracy_percent": accuracy,
+                "feedback": comment or feedback
+            }
+
+            topic_breakdown.append(topic_row)
+
+            print("📘 Rubric Row:", topic_row)
+
+    # --------------------------------------------------
+    # 6️⃣ Fallback if rubric keys absent
+    # --------------------------------------------------
+    if not topic_breakdown:
+        print("⚠️ No rubric keys found, using generic breakdown")
+
+        score = admin_report.overall_score or 0
+        max_score = 25
+
+        accuracy = round(
+            (score / max_score) * 100, 2
+        )
+
+        topic_breakdown.append({
+            "topic": "Overall Writing Performance",
+            "total_questions": max_score,
+            "correct": score,
+            "incorrect": max_score - score,
+            "not_attempted": 0,
+            "accuracy_percent": accuracy,
+            "feedback": "Detailed rubric unavailable."
+        })
+
+    # --------------------------------------------------
+    # 7️⃣ Sort strengths / improvements
+    # --------------------------------------------------
+    sorted_topics = sorted(
+        topic_breakdown,
+        key=lambda x: x["accuracy_percent"],
+        reverse=True
+    )
+
+    top_strengths = sorted_topics[:2]
+    improvement_areas = sorted_topics[-2:]
+
+    print("🏆 Top strengths:",
+          [x["topic"] for x in top_strengths])
+
+    print("⚠️ Improvement areas:",
+          [x["topic"] for x in improvement_areas])
+
+    # --------------------------------------------------
+    # 8️⃣ Overall summary
+    # --------------------------------------------------
+    overall_score = admin_report.overall_score or 0
+
+    overall = {
+        "total_questions": 25,
+        "attempted": 25,
+        "correct": overall_score,
+        "incorrect": 25 - overall_score,
+        "not_attempted": 0,
+        "accuracy_percent": round(
+            (overall_score / 25) * 100, 2
+        ),
+        "score_percent": round(
+            (overall_score / 25) * 100, 2
+        ),
+        "readiness_band": admin_report.readiness_band
+    }
+
+    print("📊 Overall summary:", overall)
+
+    # --------------------------------------------------
+    # 9️⃣ Final payload
+    # --------------------------------------------------
+    final_payload = {
+        "exam_attempt_id": exam_state.id,
+        "overall": overall,
+        "topic_breakdown": topic_breakdown,
+        "top_strengths": top_strengths,
+        "improvement_areas": improvement_areas,
+        "evaluation": evaluation
+    }
+
+    print("✅ Final payload ready")
+    print("📦 topic_breakdown rows:",
+          len(topic_breakdown))
+    print("===============================================\n")
+
+    return final_payload
 
 @app.get("/api/exams/writing/result")
 def get_writing_result(
