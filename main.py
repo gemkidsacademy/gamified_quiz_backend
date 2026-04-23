@@ -360,7 +360,7 @@ class StudentHomeworkReadingOC(Base):
  
 class ReadingHomeworkExamRequest(BaseModel):
     class_name: str
-    difficulty: str
+    
     class_year: str   # ✅ REQUIRED
 class GeneratedHomeworkExamReading(Base):
     __tablename__ = "generated_homework_exam_reading"
@@ -2832,7 +2832,7 @@ class QuizSetupFoundationalSchema(BaseModel):
  
 class ReadingExamRequest(BaseModel):
     class_name: str
-    difficulty: str
+    
     class_year: str
  
 class AddStudentExamModuleRequest(BaseModel):
@@ -2917,6 +2917,8 @@ class QuestionReading(Base):
 
     # Explicit for admin sanity & validation
     total_questions = Column(Integer, nullable=False)
+    is_used = Column(Boolean, nullable=False, default=False, server_default="false")
+
 
     # --------------------------------------------------
     # OPTIONAL EXAM LINK (ADMIN-CREATED EXAMS)
@@ -3201,6 +3203,7 @@ class Question(Base):
     # Structured MCQ options
     # e.g. {"A": "...", "B": "...", "C": "...", "D": "..."}
     options = Column(JSON, nullable=True)
+    is_used = Column(Boolean, nullable=False, default=False, server_default="false")
 
     correct_answer = Column(String(5), nullable=False)
 
@@ -4260,7 +4263,12 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
 
 
 # ai_engine.py (for example)
-def generate_exam_questions(quiz, db):
+def generate_exam_questions(
+    quiz,
+    db,
+    only_unused=False
+):
+
     print("\n===================== GENERATE EXAM START =====================\n")
     print(f"Quiz ID       : {quiz.id}")
     print(f"Class         : {quiz.class_name}")
@@ -4291,7 +4299,7 @@ def generate_exam_questions(quiz, db):
         # 1️⃣ STRICT DB PRE-FLIGHT CHECK
         # Prevent OC / wrong class leakage
         # --------------------------------------------------
-        available_db = (
+        availability_query = (
             db.query(Question)
             .filter(
                 Question.class_name == CLASS_DB,
@@ -4299,8 +4307,14 @@ def generate_exam_questions(quiz, db):
                 Question.class_year == quiz.class_year,
                 func.lower(Question.topic) == topic_name.lower()
             )
-            .count()
         )
+
+        if only_unused:
+            availability_query = availability_query.filter(
+                Question.is_used == False
+            )
+
+        available_db = availability_query.count()
 
         print(f"[DB CHECK] Available filtered questions: {available_db}")
 
@@ -4316,7 +4330,7 @@ def generate_exam_questions(quiz, db):
         # --------------------------------------------------
         # 2️⃣ FETCH FILTERED DB QUESTIONS
         # --------------------------------------------------
-        raw_questions = (
+        raw_query = (
             db.query(Question)
             .filter(
                 Question.class_name == CLASS_DB,
@@ -4324,6 +4338,15 @@ def generate_exam_questions(quiz, db):
                 Question.class_year == quiz.class_year,
                 func.lower(Question.topic) == topic_name.lower()
             )
+        )
+
+        if only_unused:
+            raw_query = raw_query.filter(
+                Question.is_used == False
+            )
+
+        raw_questions = (
+            raw_query
             .order_by(func.random())
             .all()
         )
@@ -4381,8 +4404,9 @@ def generate_exam_questions(quiz, db):
                         "type": "image",
                         "src": image_src
                     })
-
+            
             all_questions.append({
+                "id": question_row.id,
                 "q_id": q_id,
                 "topic": topic_name,
                 "blocks": blocks,
@@ -4473,7 +4497,12 @@ def generate_exam_questions(quiz, db):
     print("===========================================================\n")
 
     return all_questions
-def generate_exam_questions_oc_mr(quiz, db):
+def generate_exam_questions_oc_mr(
+    quiz,
+    db,
+    only_unused=False
+):
+
     print("\n===================== GENERATE EXAM START =====================\n")
     print(f"Quiz ID       : {quiz.id}")
     print(f"Class         : {quiz.class_name}")
@@ -4505,7 +4534,7 @@ def generate_exam_questions_oc_mr(quiz, db):
         # 1️⃣ STRICT DB PRE-FLIGHT CHECK
         # Prevent OC / wrong class leakage
         # --------------------------------------------------
-        available_db = (
+        availability_query = (
             db.query(Question)
             .filter(
                 func.lower(func.trim(Question.class_name)) == CLASS_DB,
@@ -4513,8 +4542,14 @@ def generate_exam_questions_oc_mr(quiz, db):
                 Question.class_year == quiz.class_year,
                 func.lower(func.trim(Question.topic)) == topic_name.lower()
             )
-            .count()
         )
+
+        if only_unused:
+            availability_query = availability_query.filter(
+                Question.is_used == False
+            )
+
+        available_db = availability_query.count()
 
         print(f"[DB CHECK] Available filtered questions: {available_db}")
 
@@ -4530,7 +4565,7 @@ def generate_exam_questions_oc_mr(quiz, db):
         # --------------------------------------------------
         # 2️⃣ FETCH FILTERED DB QUESTIONS
         # --------------------------------------------------
-        raw_questions = (
+        raw_query = (
             db.query(Question)
             .filter(
                 func.lower(func.trim(Question.class_name)) == CLASS_DB,
@@ -4538,6 +4573,15 @@ def generate_exam_questions_oc_mr(quiz, db):
                 Question.class_year == quiz.class_year,
                 func.lower(func.trim(Question.topic)) == topic_name.lower()
             )
+        )
+
+        if only_unused:
+            raw_query = raw_query.filter(
+                Question.is_used == False
+            )
+
+        raw_questions = (
+            raw_query
             .order_by(func.random())
             .all()
         )
@@ -4597,6 +4641,7 @@ def generate_exam_questions_oc_mr(quiz, db):
                     })
 
             all_questions.append({
+                "id": question_row.id,
                 "q_id": q_id,
                 "topic": topic_name,
                 "blocks": blocks,
@@ -4689,7 +4734,12 @@ def generate_exam_questions_oc_mr(quiz, db):
     return all_questions
  
 
-def generate_exam_questions_selective_ts(quiz, db):
+def generate_exam_questions_selective_ts(
+    quiz,
+    db,
+    only_unused=False
+):
+
     print("\n===================== GENERATE EXAM START =====================\n")
     print(f"Quiz ID       : {quiz.id}")
     print(f"Class         : {quiz.class_name}")
@@ -4718,7 +4768,9 @@ def generate_exam_questions_selective_ts(quiz, db):
         # 1️⃣ STRICT DB PRE-FLIGHT CHECK
         # Prevent OC / wrong class leakage
         # --------------------------------------------------
-        available_db = (
+        # WITH THIS NEW VERSION
+
+        availability_query = (
             db.query(Question)
             .filter(
                 func.lower(Question.class_name) == quiz.class_name.lower(),
@@ -4726,8 +4778,15 @@ def generate_exam_questions_selective_ts(quiz, db):
                 Question.class_year == quiz.class_year,
                 func.lower(Question.topic) == topic_name.lower()
             )
-            .count()
         )
+
+        if only_unused:
+            availability_query = availability_query.filter(
+                Question.is_used == False
+            )
+
+        available_db = availability_query.count()
+
 
         print(f"[DB CHECK] Available filtered questions: {available_db}")
 
@@ -4743,7 +4802,9 @@ def generate_exam_questions_selective_ts(quiz, db):
         # --------------------------------------------------
         # 2️⃣ FETCH FILTERED DB QUESTIONS
         # --------------------------------------------------
-        raw_questions = (
+        # WITH THIS NEW VERSION
+
+        raw_query = (
             db.query(Question)
             .filter(
                 func.lower(Question.class_name) == quiz.class_name.lower(),
@@ -4751,6 +4812,15 @@ def generate_exam_questions_selective_ts(quiz, db):
                 Question.class_year == quiz.class_year,
                 func.lower(Question.topic) == topic_name.lower()
             )
+        )
+
+        if only_unused:
+            raw_query = raw_query.filter(
+                Question.is_used == False
+            )
+
+        raw_questions = (
+            raw_query
             .order_by(func.random())
             .all()
         )
@@ -4809,7 +4879,10 @@ def generate_exam_questions_selective_ts(quiz, db):
                         "src": image_src
                     })
 
+            # WITH THIS NEW VERSION
+
             all_questions.append({
+                "id": question_row.id,
                 "q_id": q_id,
                 "topic": topic_name,
                 "blocks": blocks,
@@ -17394,9 +17467,10 @@ def generate_exam(
         available = (
             db.query(Question)
               .filter(
-                  func.lower(Question.topic) == topic_name.lower(),
-                  func.lower(Question.difficulty) == difficulty.lower()
-              )
+                    func.lower(Question.topic) == topic_name.lower(),
+                    func.lower(Question.difficulty) == difficulty.lower(),
+                    Question.is_used == False
+                )
               .count()
         )
 
@@ -17426,9 +17500,10 @@ def generate_exam(
         db_questions = (
             db.query(Question)
               .filter(
-                  func.lower(Question.topic) == topic_name.lower(),
-                  func.lower(Question.difficulty) == difficulty.lower()
-              )
+                    func.lower(Question.topic) == topic_name.lower(),
+                    func.lower(Question.difficulty) == difficulty.lower(),
+                    Question.is_used == False
+                )
               .order_by(func.random())
               .limit(db_count)
               .all()
@@ -17450,6 +17525,7 @@ def generate_exam(
                 )
 
             questions.append({
+                "id": q.id,
                 "q_id": q_id,
                 "topic": topic_name,
                 "question_blocks": sanitized_blocks,
@@ -17503,8 +17579,35 @@ def generate_exam(
             )
         )
     # --------------------------------------------------
-    # 6️⃣ Save exam
+    # 5️⃣ MARK USED DB QUESTIONS
     # --------------------------------------------------
+    used_question_ids = []
+
+    for question in questions:
+        question_id = question.get("id")
+
+        if question_id:
+            used_question_ids.append(question_id)
+
+    print("Used Question IDs:", used_question_ids)
+
+    if used_question_ids:
+        updated_rows = (
+            db.query(Question)
+            .filter(Question.id.in_(used_question_ids))
+            .update(
+                {Question.is_used: True},
+                synchronize_session=False
+            )
+        )
+
+        print("Questions marked used:", updated_rows)
+    else:
+        print("No DB question IDs found to mark used")
+
+    # --------------------------------------------------
+    # 6️⃣ Save exam
+    #  --------------------------------------------------
     new_exam = Exam(
         quiz_id=quiz.id,
         class_name=quiz.class_name,
@@ -19279,7 +19382,11 @@ def generate_oc_thinking_skills_exam(
     print("======================================================")
 
     try:
-        questions = generate_exam_questions(quiz, db)
+        questions = generate_exam_questions(
+            quiz,
+            db,
+            only_unused=True
+        )
     except Exception as e:
         print("❌ QUESTION GENERATION FAILED:", str(e))
         raise HTTPException(
@@ -19295,9 +19402,42 @@ def generate_oc_thinking_skills_exam(
             status_code=500,
             detail="No questions generated"
         )
+    # --------------------------------------------------
+    # 5️⃣ MARK USED QUESTIONS
+    # --------------------------------------------------
+    print("\n======================================================")
+    print("🏷️ MARKING USED QUESTIONS")
+    print("======================================================")
+
+    used_question_ids = []
+
+    for question in questions:
+        question_id = question.get("id")
+
+        if question_id:
+            used_question_ids.append(question_id)
+
+    print("Used Question IDs:", used_question_ids)
+
+    if used_question_ids:
+        updated_rows = (
+            db.query(Question)
+            .filter(
+                Question.id.in_(used_question_ids),
+                Question.is_used == False
+            )
+            .update(
+                {Question.is_used: True},
+                synchronize_session=False
+            )
+        )
+
+        print("Questions marked used:", updated_rows)
+    else:
+        print("⚠️ No question IDs found inside generated questions")
 
     # --------------------------------------------------
-    # 5️⃣ SAVE EXAM
+    # 6️⃣ SAVE EXAM
     # --------------------------------------------------
     print("\n======================================================")
     print("💾 SAVING EXAM")
@@ -19662,7 +19802,11 @@ def generate_oc_mathematical_reasoning_exam(
     print("======================================================")
 
     try:
-        questions = generate_exam_questions_oc_mr(quiz, db)
+        questions = generate_exam_questions_oc_mr(
+            quiz,
+            db,
+            only_unused=True
+        )
     except Exception as e:
         print("❌ Question generation failed:", str(e))
         raise HTTPException(
@@ -19680,7 +19824,41 @@ def generate_oc_mathematical_reasoning_exam(
     print("✅ Questions generated:", len(questions))
 
     # --------------------------------------------------
-    # 6️⃣ SAVE EXAM
+    # 6️⃣ MARK USED QUESTIONS
+    # --------------------------------------------------
+    print("\n======================================================")
+    print("🏷️ MARKING USED QUESTIONS")
+    print("======================================================")
+
+    used_question_ids = []
+
+    for question in questions:
+        question_id = question.get("id")
+
+        if question_id:
+            used_question_ids.append(question_id)
+
+    print("Used Question IDs:", used_question_ids)
+
+    if used_question_ids:
+        updated_rows = (
+            db.query(Question)
+            .filter(
+                Question.id.in_(used_question_ids),
+                Question.is_used == False
+            )
+            .update(
+                {Question.is_used: True},
+                synchronize_session=False
+            )
+        )
+
+        print("Questions marked used:", updated_rows)
+    else:
+        print("⚠️ No DB question IDs found inside generated questions")
+
+    # --------------------------------------------------
+    # 7️⃣ SAVE EXAM
     # --------------------------------------------------
     print("\n======================================================")
     print("💾 SAVING EXAM")
@@ -19698,6 +19876,7 @@ def generate_oc_mathematical_reasoning_exam(
     db.add(new_exam)
     db.commit()
     db.refresh(new_exam)
+    
 
     print("✅ Exam saved successfully")
     print("exam.id     :", new_exam.id)
@@ -19869,7 +20048,11 @@ def generate_thinking_skills_exam(
     # 3️⃣ Generate Questions
     # ==================================================
     try:
-        generated_questions = generate_exam_questions_selective_ts(quiz, db)
+        generated_questions = generate_exam_questions_selective_ts(
+            quiz,
+            db,
+            only_unused=True
+        )
     except Exception as generation_error:
         raise HTTPException(
             status_code=500,
@@ -19881,9 +20064,27 @@ def generate_thinking_skills_exam(
             status_code=500,
             detail="No questions generated for Thinking Skills exam"
         )
+    # ==================================================
+    # 4️⃣ Mark Used Questions
+    # ==================================================
+    used_question_ids = []
+
+    for question in generated_questions:
+        question_id = question.get("id")
+        if question_id:
+            used_question_ids.append(question_id)
+
+    if used_question_ids:
+        db.query(Question).filter(
+            Question.id.in_(used_question_ids),
+            Question.is_used == False
+        ).update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
 
     # ==================================================
-    # 4️⃣ Save Exam
+    # 5️⃣ Save Exam
     # ==================================================
     new_exam = Exam(
         quiz_id=quiz.id,
@@ -19899,7 +20100,7 @@ def generate_thinking_skills_exam(
     db.refresh(new_exam)
 
     # ==================================================
-    # 5️⃣ Response
+    # 6️⃣ Response
     # ==================================================
     return {
         "message": "Thinking Skills exam generated successfully",
@@ -31269,9 +31470,10 @@ def generate_exam_oc_reading(
 
     print("\n================ GENERATE OC READING EXAM ================")
     print("Incoming payload:", payload.dict())
+    used_bundle_ids = []
 
     class_name = payload.class_name.strip()
-    difficulty = payload.difficulty.strip()
+    
     class_year_raw = payload.class_year.strip()
 
     # normalize "Year 4" → "4"
@@ -31288,15 +31490,15 @@ def generate_exam_oc_reading(
         db.query(ReadingExamConfig)
         .filter(
             func.lower(ReadingExamConfig.class_name) == class_name.lower(),
-            func.lower(ReadingExamConfig.difficulty) == difficulty.lower(),
-            ReadingExamConfig.class_year == class_year   # ✅ ADD THIS
+            ReadingExamConfig.class_year == class_year
         )
+        .order_by(ReadingExamConfig.id.desc())
         .first()
     )
 
     if not cfg:
         raise HTTPException(404, "No OC reading exam config found")
-
+    difficulty = cfg.difficulty.strip()
     subject = cfg.subject
     topics = cfg.topics
     print("\n📦 CONFIG TOPICS:")
@@ -31326,14 +31528,21 @@ def generate_exam_oc_reading(
         print(f"   subject     : '{subject.lower()}'")
         print(f"   difficulty  : '{difficulty.lower()}'")
         print(f"   topic       : '{topic_lower}'")
+        # NEW
         bundles = (
             db.query(QuestionReading)
             .filter(
                 func.lower(QuestionReading.class_name) == class_name.lower(),
-                func.regexp_replace(QuestionReading.class_year, '[^0-9]', '', 'g') == class_year,
+                func.regexp_replace(
+                    QuestionReading.class_year,
+                    '[^0-9]',
+                    '',
+                    'g'
+                ) == class_year,
                 func.lower(QuestionReading.subject) == subject.replace("_", " ").lower(),
                 func.lower(QuestionReading.difficulty) == difficulty.lower(),
                 func.lower(QuestionReading.topic) == topic_lower,
+                QuestionReading.is_used == False
             )
             .all()
         )
@@ -31363,6 +31572,8 @@ def generate_exam_oc_reading(
             )
         else:
             print(f"✅ MATCHED bundle with {matched_bundle.total_questions} questions") 
+            used_bundle_ids.append(matched_bundle.id)
+            print(f"🏷️ Tracking used bundle ID: {matched_bundle.id}")
         bundle_json = matched_bundle.exam_bundle or {}
 
         question_type = bundle_json.get("question_type")
@@ -31412,7 +31623,10 @@ def generate_exam_oc_reading(
     # 3️⃣ FINALIZE EXAM
     # --------------------------------------------------
     if not sections:
-        raise HTTPException(400, "No OC reading exam sections generated")
+        raise HTTPException(
+            400,
+            f"No sections generated. {', '.join(warnings)}"
+        )
 
     total_questions = sum(len(s["questions"]) for s in sections)
 
@@ -31425,6 +31639,30 @@ def generate_exam_oc_reading(
         "total_questions": total_questions,
         "sections": sections,
     }
+    # --------------------------------------------------
+    # 🏷️ MARK USED BUNDLES
+    # --------------------------------------------------
+    print("\n🏷️ Marking used OC reading bundles...")
+
+    used_bundle_ids = list(set(used_bundle_ids))
+    print("Used Bundle IDs:", used_bundle_ids)
+
+    if used_bundle_ids:
+        updated_rows = (
+            db.query(QuestionReading)
+            .filter(
+                QuestionReading.id.in_(used_bundle_ids),
+                QuestionReading.is_used == False
+            )
+            .update(
+                {QuestionReading.is_used: True},
+                synchronize_session=False
+            )
+        )
+
+        print("Bundles marked used:", updated_rows)
+    else:
+        print("⚠️ No bundles found to mark used")
 
     saved = GeneratedExamReading(
         config_id=cfg.id,
@@ -31458,11 +31696,11 @@ def generate_exam_reading_homework(
 ):
     print("\n================ GENERATE READING HOMEWORK ================")
     print("Incoming payload:", payload.dict())
+    used_bundle_ids = []
 
     class_name = payload.class_name.strip()
     class_year = payload.class_year.strip()
-    difficulty = payload.difficulty.strip()
-
+    
     # --------------------------------------------------
     # 1️⃣ LOAD HOMEWORK CONFIG
     # --------------------------------------------------
@@ -31471,14 +31709,15 @@ def generate_exam_reading_homework(
         .filter(
             func.lower(HomeworkReadingConfig.class_name) == class_name.lower(),
             func.lower(HomeworkReadingConfig.class_year) == class_year.lower(),
-            func.lower(HomeworkReadingConfig.difficulty) == difficulty.lower(),
         )
+        .order_by(HomeworkReadingConfig.id.desc())
         .first()
     )
 
     if not cfg:
+        
         raise HTTPException(404, "No reading homework config found")
-
+    difficulty = cfg.difficulty
     subject = cfg.subject
     topics = cfg.topics
     warnings = []
@@ -31611,14 +31850,15 @@ def generate_exam_reading(
         # 🔍 0️⃣ INPUT DEBUG
         # --------------------------------------------------
         print("📥 RAW PAYLOAD:", payload.dict())
+        used_bundle_ids = []
 
         class_name = payload.class_name.strip()
-        difficulty = payload.difficulty.strip()
+        
         class_year = payload.class_year.lower().replace("year", "").strip()
 
         print("\n🔧 NORMALIZED INPUTS:")
         print(f"   class_name  = '{class_name}'")
-        print(f"   difficulty  = '{difficulty}'")
+        
         print(f"   class_year  = '{class_year}'")
 
         if not class_year:
@@ -31634,11 +31874,15 @@ def generate_exam_reading(
             db.query(ReadingExamConfig)
             .filter(
                 func.lower(ReadingExamConfig.class_name) == class_name.lower(),
-                func.lower(ReadingExamConfig.difficulty) == difficulty.lower(),
                 func.trim(
-                    func.replace(func.lower(ReadingExamConfig.class_year), "year", "")
+                    func.replace(
+                        func.lower(ReadingExamConfig.class_year),
+                        "year",
+                        ""
+                    )
                 ) == class_year
             )
+            .order_by(ReadingExamConfig.id.desc())
         )
 
         # 🔍 Count check BEFORE fetch
@@ -31655,6 +31899,7 @@ def generate_exam_reading(
 
         if not cfg:
             raise HTTPException(404, "No reading exam config found")
+        difficulty = cfg.difficulty.strip()
 
         print("✅ Config loaded:")
         print(f"   id          = {cfg.id}")
@@ -31694,7 +31939,8 @@ def generate_exam_reading(
                     QuestionReading.total_questions == required,
                     func.trim(
                         func.replace(func.lower(QuestionReading.class_year), "year", "")
-                    ) == class_year
+                    ) == class_year,
+                    QuestionReading.is_used == False
                 )
             )
 
@@ -31721,6 +31967,7 @@ def generate_exam_reading(
                 )
 
             print(f"   ✅ Bundle selected ID: {matched_bundle.id}")
+            used_bundle_ids.append(matched_bundle.id)
 
             bundle_json = matched_bundle.exam_bundle or {}
 
@@ -31795,7 +32042,26 @@ def generate_exam_reading(
             "total_questions": total_questions,
             "sections": sections,
         }
+        # --------------------------------------------------
+        # 🏷️ MARK USED BUNDLES
+        # --------------------------------------------------
+        print("\n🏷️ Marking used reading bundles...")
 
+        print("Used Bundle IDs:", used_bundle_ids)
+
+        if used_bundle_ids:
+            updated_rows = (
+                db.query(QuestionReading)
+                .filter(QuestionReading.id.in_(used_bundle_ids))
+                .update(
+                    {QuestionReading.is_used: True},
+                    synchronize_session=False
+                )
+            )
+
+            print("Bundles marked used:", updated_rows)
+        else:
+            print("⚠️ No bundles found to mark used")
         # --------------------------------------------------
         # 💾 SAVE EXAM
         # --------------------------------------------------
@@ -32722,6 +32988,7 @@ OUTPUT:
         difficulty=difficulty.lower(),
         topic=topic,
         total_questions=len(enriched_questions),
+        is_used=False,
         exam_bundle=bundle
     )
 
@@ -32823,6 +33090,7 @@ RETURN VALID JSON ONLY.
         difficulty=parsed["difficulty"].lower(),
         topic=parsed["topic"],
         total_questions=len(enriched_questions),
+        is_used=False,
         exam_bundle=bundle
     )
 
@@ -32914,6 +33182,7 @@ RULES:
         difficulty=meta["difficulty"].lower(),
         topic=meta["topic"],
         total_questions=len(enriched_questions),
+        is_used=False,
         exam_bundle=bundle
     )
 
@@ -33159,11 +33428,12 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
     # --------------------------------------------------
     obj = QuestionReading(
         class_name=class_name.lower(),
-        class_year=class_year,   # ✅ ADD THIS
+        class_year=class_year,
         subject=subject,
         difficulty=difficulty.lower(),
         topic=topic,
         total_questions=len(enriched_questions),
+        is_used=False,
         exam_bundle=bundle
     )
 
@@ -33288,13 +33558,13 @@ async def upload_word_reading_unified(
 
             # -------- ROUTING (CORRECT & SAFE) --------
             if qtype == "comparative_analysis":
-                ids = parse_comparative_block(block, db)
+                ids = parse_comparative_block(block, db) 
 
             elif qtype == "gapped_text":
                 ids = parse_gapped_block(block, db)
 
             elif qtype == "main_idea":
-                ids = parse_main_idea_block(block, db)
+                ids = parse_main_idea_block(block, db) 
 
             elif qtype == "literary":
                 ids = parse_literary_block(block, db)
@@ -42967,7 +43237,8 @@ async def upload_word(
                     resolved_blocks
                 ),
                 options=resolved_options,
-                correct_answer=question["correct_answer"]
+                correct_answer=question["correct_answer"],
+                is_used=False
             )
 
             db.add(new_question)
