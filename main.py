@@ -3963,6 +3963,11 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
        "- The exam contains AT MOST ONE question\n"
        "- A METADATA section may appear before the question\n"
        "- Metadata fields may include: CLASS, CLASS_YEAR, SUBJECT, TOPIC, DIFFICULTY\n\n"
+
+       "PRIMARY OBJECTIVE:\n"
+        "- Extract structured data exactly as written.\n"
+        "- Accuracy is more important than creativity.\n"
+        "- Missing an explicitly present field is an error.\n\n"
    
        "CONTENT RULES:\n"
        "- Preserve wording exactly as provided\n"
@@ -43393,6 +43398,10 @@ async def upload_word(
     # PROCESS EACH EXAM (1 exam → 1 question max)
     # =================================================
     for exam_idx, exam_block in enumerate(exam_blocks, start=1):
+        print("\n" + "=" * 80)
+        print(f"[START EXAM {exam_idx}]")
+        print(f"Total blocks: {len(exam_block)}")
+        print("=" * 80)
         question_count = count_question_markers(exam_block)
 
         if question_count > 1:
@@ -43425,10 +43434,18 @@ async def upload_word(
                     })
                 else:
                     gpt_blocks.append(b)
-        
+            print(f"[EXAM {exam_idx}] RAW BLOCKS:")
+
+            for i, b in enumerate(gpt_blocks, start=1):
+                if b["type"] == "text":
+                    print(f"BLOCK {i} TEXT -> {repr(b['content'][:500])}")
+                else:
+                    print(f"BLOCK {i} IMAGE -> {b}")
             gpt_result = await parse_with_gpt({
                 "blocks": gpt_blocks
             })
+            print(f"[EXAM {exam_idx}] GPT RESULT:")
+            print(repr(gpt_result))
             
         
             question = (
@@ -43716,6 +43733,18 @@ async def upload_word(
             # -----------------------------------
             # Save row
             # -----------------------------------
+            print(f"[EXAM {exam_idx}] FINAL VALUES TO SAVE:")
+            print("class_name     =", repr(question.get("class_name")))
+            print("class_year     =", repr(class_year), type(class_year))
+            print("subject        =", repr(question.get("subject")))
+            print("topic          =", repr(question.get("topic")))
+            print("difficulty     =", repr(question.get("difficulty")))
+            print("question_type  =", repr(question.get("question_type")))
+            print("correct_answer =", repr(question.get("correct_answer")))
+            print("options        =", repr(resolved_options))
+            print("question_text length =", len(question_text))
+            print("question_text preview =", repr(question_text[:1000]))
+            print("question_blocks =", repr(filter_display_blocks(resolved_blocks)))
             new_question = Question(
                 class_name=question.get("class_name"),
                 class_year=class_year,
@@ -43736,6 +43765,7 @@ async def upload_word(
             db.add(new_question)
             db.commit()
             db.refresh(new_question)
+            print(f"[EXAM {exam_idx}] SAVED SUCCESSFULLY -> ID {new_question.id}")
 
             saved += 1
             report.append({
@@ -43745,6 +43775,17 @@ async def upload_word(
             })
 
         except Exception as e:
+            db.rollback()
+            print(f"[DB ERROR] Exam {exam_idx} -> {e}")
+            print(f"\n[DB ERROR] EXAM {exam_idx}")
+            print("QUESTION DATA:")
+            print(repr(question))
+            print("CLASS_YEAR:", repr(class_year), type(class_year))
+            print("OPTIONS:", repr(resolved_options))
+            print("QUESTION_TEXT:", repr(question_text[:2000]))
+            print("TRACEBACK:")
+            traceback.print_exc()
+
             skipped += 1
             report.append({
                 "exam": exam_idx,
