@@ -6043,7 +6043,57 @@ def extract_year_number(year_str):
         return int(year_str.strip().split()[-1])
     except:
         return None
-    
+
+@app.get("/api/student/homework-writing-review-by-attempt")
+def get_homework_writing_review_by_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n📝 HOMEWORK WRITING REVIEW")
+
+    # --------------------------------------------------
+    # 1️⃣ Find homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentHomeworkWriting)
+        .filter(StudentHomeworkWriting.id == attempt_id)
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Homework attempt not found")
+
+    print("✅ Found attempt:", attempt_id)
+
+    # --------------------------------------------------
+    # 2️⃣ Extract report JSON safely
+    # --------------------------------------------------
+    report = attempt.report_json or {}
+
+    # Debug (optional)
+    print("📦 REPORT JSON:", report)
+
+    # --------------------------------------------------
+    # 3️⃣ Return structured response
+    # --------------------------------------------------
+    return {
+        "attempt_id": attempt.id,
+        "student_id": attempt.student_id,
+
+        # 🧠 Essay content
+        "essay_text": attempt.answer_text,
+
+        # 📊 Extract from JSON (adjust keys if needed)
+        "score": report.get("score"),
+        "feedback": report.get("feedback"),
+        "band": report.get("band"),
+        "criteria": report.get("criteria"),
+
+        # 📅 Metadata
+        "completed_at": attempt.completed_at,
+        "duration_minutes": attempt.duration_minutes,
+    }
+
 @app.get("/api/student/available-subjects-naplan")
 def get_available_subjects_naplan(
     student_id: str,
