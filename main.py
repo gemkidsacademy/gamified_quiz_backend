@@ -31812,6 +31812,8 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
 
 
 import traceback
+def normalize_year_digits(value: str) -> str:
+    return "".join(ch for ch in value if ch.isdigit())
 
 @app.post("/api/exams/generate-writing")
 def generate_exam_writing(
@@ -31822,15 +31824,29 @@ def generate_exam_writing(
         print("\n================= GENERATE WRITING EXAM =================")
 
         # ----------------------------------
+        # Helpers (IMPORTANT)
+        # ----------------------------------
+        def normalize_text(value: str) -> str:
+            return value.strip().lower()
+
+        def normalize_year(value: str) -> str:
+            return value.strip().lower().replace(" ", "")
+
+        # ----------------------------------
         # Inputs
         # ----------------------------------
         class_name = "selective"
-        class_year = payload.class_year.strip()
+        class_name_norm = normalize_text(class_name)
 
-        print(f"📥 INPUTS:")
+        class_year_raw = payload.class_year
+        class_year = normalize_text(class_year_raw)
+        class_year_digits = normalize_year_digits(class_year_raw)
+
+        print("\n📥 INPUTS:")
         print(f"   class_name (fixed) = '{class_name}'")
-        print(f"   class_year (raw)   = '{payload.class_year}'")
-        print(f"   class_year (clean) = '{class_year}'")
+        print(f"   class_year (raw)   = '{class_year_raw}'")
+        print(f"   class_year (norm)  = '{class_year}'")
+        
 
         # ----------------------------------
         # Debug: show ALL setups
@@ -31838,23 +31854,19 @@ def generate_exam_writing(
         all_setups = db.query(QuizSetupWriting).all()
         print(f"\n📊 TOTAL setups in DB: {len(all_setups)}")
         for s in all_setups:
-            print(f"   → class='{s.class_name}', year='{s.class_year}', difficulty='{s.difficulty}', topic='{s.topic}'")
+            print(
+                f"   → class='{s.class_name}', year='{s.class_year}', "
+                f"difficulty='{s.difficulty}', topic='{s.topic}'"
+            )
 
         # ----------------------------------
         # Fetch setup
         # ----------------------------------
-        
-        class_year_clean = class_year.lower().replace(" ", "")
-
         setup = (
             db.query(QuizSetupWriting)
             .filter(
-                func.lower(func.trim(QuizSetupWriting.class_name)) == class_name,
-                func.replace(
-                    func.lower(func.trim(QuizSetupWriting.class_year)),
-                    " ",
-                    ""
-                ) == class_year_clean
+                func.lower(func.trim(QuizSetupWriting.class_name)) == class_name_norm,
+                func.lower(func.trim(QuizSetupWriting.class_year)) == class_year
             )
             .order_by(QuizSetupWriting.id.desc())
             .first()
@@ -31866,16 +31878,16 @@ def generate_exam_writing(
             print("❌ No setup matched")
             raise HTTPException(
                 status_code=404,
-                detail=f"No setup found for class 'Selective' and year '{class_year}'."
+                detail=f"No setup found for class '{class_name}' and year '{class_year_raw}'."
             )
 
         # ----------------------------------
         # Extract config
         # ----------------------------------
-        difficulty = setup.difficulty.strip().lower()
-        topic = setup.topic.strip().lower()
+        difficulty = normalize_text(setup.difficulty)
+        topic = normalize_text(setup.topic)
 
-        print(f"\n✅ USING SETUP:")
+        print("\n✅ USING SETUP:")
         print(f"   difficulty = '{difficulty}'")
         print(f"   topic      = '{topic}'")
 
@@ -31883,29 +31895,38 @@ def generate_exam_writing(
         # Reset system
         # ----------------------------------
         print("\n🧹 Clearing previous exams...")
-        db.query(StudentExamResponseWriting).delete(synchronize_session=False)
-        db.query(StudentExamWriting).delete(synchronize_session=False)
-        db.query(GeneratedExamWriting).filter(
-           GeneratedExamWriting.class_name == "Selective",
-           GeneratedExamWriting.class_year == class_year
-       ).delete(synchronize_session=False)
+
+        
+
+        
 
         # ----------------------------------
         # Debug: question pool
         # ----------------------------------
-        all_questions = db.query(WritingQuestionBank).count()
-        print(f"\n📊 TOTAL questions in bank: {all_questions}")
+        all_questions = db.query(WritingQuestionBank).all()
+        print(f"\n📊 TOTAL questions in bank: {len(all_questions)}")
+
+        for q in all_questions:
+            print(
+                f"   → class='{q.class_name}', year='{q.class_year}', "
+                f"difficulty='{q.difficulty}', topic='{q.topic}'"
+            )
 
         # ----------------------------------
-        # Fetch question
+        # Fetch question (FIXED 🔥)
         # ----------------------------------
         question = (
             db.query(WritingQuestionBank)
             .filter(
-                func.lower(func.trim(WritingQuestionBank.class_name)) == class_name,
+                func.lower(func.trim(WritingQuestionBank.class_name)) == class_name_norm,
                 func.lower(func.trim(WritingQuestionBank.difficulty)) == difficulty,
                 func.lower(func.trim(WritingQuestionBank.topic)) == topic,
-                func.lower(func.trim(WritingQuestionBank.class_year)) == class_year.lower()
+                func.regexp_replace(
+                    func.trim(WritingQuestionBank.class_year),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits
             )
             .order_by(func.random())
             .first()
@@ -31917,7 +31938,10 @@ def generate_exam_writing(
             print("❌ No question matched filters")
             raise HTTPException(
                 status_code=404,
-                detail=f"No question found for Selective, year '{class_year}', topic '{topic}', difficulty '{difficulty}'."
+                detail=(
+                    f"No question found for class='{class_name}', "
+                    f"year='{class_year_raw}', topic='{topic}', difficulty='{difficulty}'."
+                )
             )
 
         # ----------------------------------
@@ -31958,8 +31982,8 @@ def generate_exam_writing(
         print("\n💾 Saving exam...")
 
         exam = GeneratedExamWriting(
-            class_name="Selective",
-            class_year=class_year,
+            class_name=class_name.capitalize(),
+            class_year=class_year_raw,
             subject="writing",
             topic=question.topic,
             difficulty=difficulty.capitalize(),
@@ -31973,11 +31997,11 @@ def generate_exam_writing(
 
         print(f"✅ Exam saved with ID: {exam.id}")
 
+        print("========================================================\n")
+
         # ----------------------------------
         # Response
         # ----------------------------------
-        print("========================================================\n")
-
         return {
             "exam_id": exam.id,
             "class_name": exam.class_name,
