@@ -6245,56 +6245,59 @@ def get_available_subjects_naplan(
     language_exam_enabled = False
     language_homework_enabled = False
 
-    language_exam = (
+    # ---------- ACTUAL EXAM (LATEST ONLY) ----------
+    latest_language_exam = (
         db.query(ExamNaplanLanguageConventions)
         .filter(
             func.lower(ExamNaplanLanguageConventions.class_name) == func.lower(class_name),
             ExamNaplanLanguageConventions.year == student_year,
-            func.lower(ExamNaplanLanguageConventions.subject) == "language_conventions"
+            func.lower(ExamNaplanLanguageConventions.subject) == "language conventions"
         )
         .order_by(ExamNaplanLanguageConventions.created_at.desc())
         .first()
     )
 
-    if language_exam:
+    if latest_language_exam:
         attempt = (
             db.query(StudentExamNaplanLanguageConventions)
             .filter(
                 StudentExamNaplanLanguageConventions.student_id == student.id,
-                StudentExamNaplanLanguageConventions.exam_id == language_exam.id
+                StudentExamNaplanLanguageConventions.exam_id == latest_language_exam.id
             )
-            .order_by(StudentExamNaplanLanguageConventions.started_at.desc())
             .first()
         )
 
-        if not attempt or attempt.completed_at is None:
-            language_exam_enabled = True
+        # Enable ONLY if not attempted OR not completed
+        language_exam_enabled = (
+            not attempt or attempt.completed_at is None
+        )
 
-    language_homework_exam = (
+
+    # ---------- HOMEWORK EXAM (LATEST ONLY) ----------
+    latest_language_homework_exam = (
         db.query(ExamNaplanLanguageConventionsHomework)
         .filter(
             func.lower(ExamNaplanLanguageConventionsHomework.class_name) == func.lower(class_name),
             ExamNaplanLanguageConventionsHomework.year == student_year,
-            func.lower(ExamNaplanLanguageConventionsHomework.subject) == "language_conventions"
+            func.lower(ExamNaplanLanguageConventionsHomework.subject) == "language conventions"
         )
         .order_by(ExamNaplanLanguageConventionsHomework.created_at.desc())
         .first()
     )
 
-    if language_homework_exam:
+    if latest_language_homework_exam:
         attempt = (
             db.query(StudentExamNaplanLanguageConventionsHomework)
             .filter(
                 StudentExamNaplanLanguageConventionsHomework.student_id == student.id,
-                StudentExamNaplanLanguageConventionsHomework.exam_id == language_homework_exam.id
+                StudentExamNaplanLanguageConventionsHomework.exam_id == latest_language_homework_exam.id
             )
-            .order_by(StudentExamNaplanLanguageConventionsHomework.started_at.desc())
             .first()
         )
 
-        if not attempt or attempt.completed_at is None:
-            language_homework_enabled = True
-
+        language_homework_enabled = (
+            not attempt or attempt.completed_at is None
+        )
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
@@ -6309,7 +6312,7 @@ def get_available_subjects_naplan(
         },
         "language_conventions": {
             "exam": language_exam_enabled,
-            "homework": language_homework_enabled
+            "homework": language_homework_enabled 
         }
     }
 
