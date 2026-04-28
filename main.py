@@ -1831,6 +1831,160 @@ class StudentExamNaplanReading(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+class StudentExamNaplanReadingHomework(Base):
+    __tablename__ = (
+        "student_exam_naplan_reading_homework"
+    )
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    # -----------------------------
+    # Foreign keys
+    # -----------------------------
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey(
+            "exam_naplan_reading_homework.id"
+        ),
+        nullable=False
+    )
+
+    year = Column(
+        Integer,
+        nullable=False
+    )
+
+    # -----------------------------
+    # Timing
+    # -----------------------------
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(
+            timezone.utc
+        ),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(
+        Integer,
+        nullable=False
+    )
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship(
+        "Student"
+    )
+
+    exam = relationship(
+        "ExamNaplanReadingHomework"
+    )
+
+    responses = relationship(
+        "StudentExamResponseNaplanReadingHomework",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
+class StudentExamResponseNaplanReadingHomework(Base):
+    __tablename__ = (
+        "student_exam_response_naplan_reading_homework"
+    )
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    # -----------------------------
+    # Foreign keys
+    # -----------------------------
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey(
+            "exam_naplan_reading_homework.id"
+        ),
+        nullable=False
+    )
+
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey(
+            "student_exam_naplan_reading_homework.id"
+        ),
+        nullable=False
+    )
+
+    year = Column(
+        Integer,
+        nullable=False
+    )
+
+    # -----------------------------
+    # Question data
+    # -----------------------------
+    q_id = Column(
+        String,
+        nullable=False
+    )
+
+    topic = Column(
+        String,
+        nullable=True
+    )
+
+    selected_option = Column(
+        String,
+        nullable=True
+    )
+
+    correct_option = Column(
+        String,
+        nullable=True
+    )
+
+    is_correct = Column(
+        Boolean,
+        nullable=True
+    )
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentExamNaplanReadingHomework",
+        back_populates="responses"
+    )
+
+    student = relationship(
+        "Student"
+    )
+
+    exam = relationship(
+        "ExamNaplanReadingHomework"
+    )
 class StudentExamNaplanNumeracy(Base):
     __tablename__ = "student_exam_naplan_numeracy"
 
@@ -1884,6 +2038,64 @@ class StudentExamNaplanNumeracy(Base):
 
     responses = relationship(
         "StudentExamResponseNaplanNumeracy",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
+
+class StudentExamNaplanNumeracyHomework(Base):
+    __tablename__ = "student_exam_naplan_numeracy_homework"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # -----------------------------
+    # Foreign keys
+    # -----------------------------
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey("exam_naplan_numeracy_homework.id"),
+        nullable=False
+    )
+
+    year = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    # -----------------------------
+    # Timing
+    # -----------------------------
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(
+        Integer,
+        nullable=False
+    )
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship("Student")
+
+    exam = relationship("ExamNaplanNumeracyHomework")
+
+    responses = relationship(
+        "StudentExamResponseNaplanNumeracyHomework",
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
@@ -2127,6 +2339,142 @@ class StudentExamResponseNaplanLanguageConventions(Base):
 
     exam = relationship("ExamNaplanLanguageConventions")
 
+class StudentExamNaplanLanguageConventionsHomework(Base):
+    __tablename__ = (
+        "student_exam_naplan_language_conventions_homework"
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # -----------------------------
+    # Foreign keys
+    # -----------------------------
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey(
+            "exam_naplan_language_conventions_homework.id"
+        ),
+        nullable=False
+    )
+
+    year = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    # -----------------------------
+    # Timing
+    # -----------------------------
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    duration_minutes = Column(
+        Integer,
+        nullable=False
+    )
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    student = relationship("Student")
+
+    exam = relationship(
+        "ExamNaplanLanguageConventionsHomework"
+    )
+
+    responses = relationship(
+        "StudentExamResponseNaplanLanguageConventionsHomework",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
+class StudentExamResponseNaplanLanguageConventionsHomework(Base):
+    __tablename__ = (
+        "student_exam_response_naplan_language_conventions_homework"
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey(
+            "exam_naplan_language_conventions_homework.id"
+        ),
+        nullable=False
+    )
+
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey(
+            "student_exam_naplan_language_conventions_homework.id"
+        ),
+        nullable=False
+    )
+
+    year = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    q_id = Column(
+        Integer,
+        nullable=False
+    )
+
+    topic = Column(
+        String,
+        nullable=True
+    )
+
+    selected_option = Column(
+        String,
+        nullable=True
+    )
+
+    correct_option = Column(
+        String,
+        nullable=True
+    )
+
+    is_correct = Column(
+        Boolean,
+        nullable=True
+    )
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentExamNaplanLanguageConventionsHomework",
+        back_populates="responses"
+    )
+
+    student = relationship("Student")
+
+    exam = relationship(
+        "ExamNaplanLanguageConventionsHomework"
+    )
 
 class StudentExamResponseNaplanReading(Base):
     __tablename__ = "student_exam_response_naplan_reading"
@@ -2215,7 +2563,70 @@ class StudentExamResponseNaplanNumeracy(Base):
     student = relationship("Student")
     exam = relationship("ExamNaplanNumeracy")
     
+class StudentExamResponseNaplanNumeracyHomework(Base):
+    __tablename__ = "student_exam_response_naplan_numeracy_homework"
 
+    id = Column(Integer, primary_key=True, index=True)
+
+    student_id = Column(
+        String,
+        ForeignKey("students.id"),
+        nullable=False
+    )
+
+    exam_id = Column(
+        Integer,
+        ForeignKey("exam_naplan_numeracy_homework.id"),
+        nullable=False
+    )
+
+    exam_attempt_id = Column(
+        Integer,
+        ForeignKey("student_exam_naplan_numeracy_homework.id"),
+        nullable=False
+    )
+
+    q_id = Column(Integer, nullable=False)
+
+    topic = Column(
+        String,
+        nullable=True
+    )
+
+    year = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    selected_option = Column(
+        String,
+        nullable=True
+    )
+
+    correct_option = Column(
+        String,
+        nullable=True
+    )
+
+    is_correct = Column(
+        Boolean,
+        nullable=True
+    )
+
+    # -----------------------------
+    # Relationships
+    # -----------------------------
+    attempt = relationship(
+        "StudentExamNaplanNumeracyHomework",
+        back_populates="responses"
+    )
+
+    student = relationship("Student")
+
+    exam = relationship(
+        "ExamNaplanNumeracyHomework"
+    )
 
  
 
@@ -9203,6 +9614,116 @@ def get_exam_dates_reading(student_id: str, db: Session = Depends(get_db)):
         }
         for exam in exams
     ]
+@app.get(
+    "/api/student/exam-dates/naplan-language-conventions"
+)
+def get_naplan_language_conventions_exam_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    attempts = (
+        db.query(
+            StudentExamNaplanLanguageConventions
+        )
+        .filter(
+            StudentExamNaplanLanguageConventions.student_id
+            == student.id,
+
+            StudentExamNaplanLanguageConventions.completed_at
+            .isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventions.completed_at.desc()
+        )
+        .all()
+    )
+
+    seen = set()
+    result = []
+
+    for attempt in attempts:
+
+        if attempt.exam_id in seen:
+            continue
+
+        seen.add(attempt.exam_id)
+
+        result.append({
+            "exam_id": attempt.exam_id,
+            "date": attempt.completed_at
+        })
+
+    return result
+@app.get(
+    "/api/student/exam-dates/naplan-language-conventions-homework"
+)
+def get_naplan_language_conventions_homework_exam_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    attempts = (
+        db.query(
+            StudentExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+            StudentExamNaplanLanguageConventionsHomework.student_id
+            == student.id,
+
+            StudentExamNaplanLanguageConventionsHomework.completed_at
+            .isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventionsHomework.completed_at.desc()
+        )
+        .all()
+    )
+
+    seen = set()
+    result = []
+
+    for attempt in attempts:
+
+        if attempt.exam_id in seen:
+            continue
+
+        seen.add(attempt.exam_id)
+
+        result.append({
+            "exam_id": attempt.exam_id,
+            "date": attempt.completed_at
+        })
+
+    return result
 @app.get("/api/student/exam-dates/naplan-numeracy")
 def get_naplan_numeracy_exam_dates(
     student_id: str,
@@ -9230,6 +9751,62 @@ def get_naplan_numeracy_exam_dates(
             StudentExamNaplanNumeracy.completed_at.isnot(None)
         )
         .order_by(StudentExamNaplanNumeracy.completed_at.desc())
+        .all()
+    )
+
+    # --------------------------------------------------
+    # 3. Build response (unique exam_ids)
+    # --------------------------------------------------
+    seen_exam_ids = set()
+    exam_dates = []
+
+    for attempt in attempts:
+        if attempt.exam_id in seen_exam_ids:
+            continue
+
+        seen_exam_ids.add(attempt.exam_id)
+
+        exam_dates.append({
+            "exam_id": attempt.exam_id,
+            "date": attempt.completed_at
+        })
+
+    return exam_dates
+@app.get("/api/student/exam-dates/naplan-numeracy-homework")
+def get_naplan_numeracy_homework_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    # --------------------------------------------------
+    # 2. Get all completed homework attempts
+    # --------------------------------------------------
+    attempts = (
+        db.query(StudentExamNaplanNumeracyHomework)
+        .filter(
+            StudentExamNaplanNumeracyHomework.student_id == student.id,
+            StudentExamNaplanNumeracyHomework.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanNumeracyHomework.completed_at.desc()
+        )
         .all()
     )
 
@@ -11866,12 +12443,13 @@ def generate_naplan_numeracy_exam(
         # 5. Strict difficulty + subject + year query
         # --------------------------------------------------
         questions = (
-            db.query(QuestionNaplanReading)
+            db.query(QuestionNumeracyLC)
             .filter(
-                QuestionNaplanReading.year == year,
-                QuestionNaplanReading.topic == topic_name,
-                QuestionNaplanReading.is_used == False,
-                QuestionNaplanReading.difficulty == difficulty
+                QuestionNumeracyLC.year == class_year,
+                QuestionNumeracyLC.topic == topic_name,
+                QuestionNumeracyLC.is_used == False,
+                func.lower(func.trim(QuestionNumeracyLC.difficulty)) == normalized_difficulty,
+                func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
             )
             .all()
         )
@@ -11892,11 +12470,12 @@ def generate_naplan_numeracy_exam(
             )
 
             fallback_questions = (
-                db.query(QuestionNaplanReading)
+                db.query(QuestionNumeracyLC)
                 .filter(
-                    QuestionNaplanReading.year == year,
-                    QuestionNaplanReading.topic == topic_name,
-                    QuestionNaplanReading.is_used == False
+                    QuestionNumeracyLC.year == class_year,
+                    QuestionNumeracyLC.topic == topic_name,
+                    QuestionNumeracyLC.is_used == False,
+                    func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
                 )
                 .all()
             )
@@ -16636,14 +17215,12 @@ def get_reading_topics(
 def get_topics(
     class_name: str = Query(...),
     subject: str = Query(...),
-    difficulty: str = Query(...),
-    class_year: int = Query(...),   # ✅ NEW
+    class_year: int = Query(...),
     db: Session = Depends(get_db),
 ):
     print("\n📥 Fetching topics with filters:")
     print(f"   RAW class_name = '{class_name}'")
     print(f"   RAW subject    = '{subject}'")
-    print(f"   RAW difficulty = '{difficulty}'")
     print(f"   RAW class_year = '{class_year}'")
 
     normalized_subject = subject.lower().replace("_", " ")
@@ -16651,55 +17228,52 @@ def get_topics(
     print("\n🔧 Normalized values:")
     print(f"   class_name = '{class_name.lower()}'")
     print(f"   subject    = '{normalized_subject}'")
-    print(f"   difficulty = '{difficulty.lower()}'")
     print(f"   class_year = '{class_year}'")
 
-    # ✅ Step 1: Check total rows
+    # Step 1: Check total rows
     total_rows = db.query(Question).count()
     print(f"\n📊 Total rows in Question table: {total_rows}")
 
-    # ✅ Step 2: Check class filter only
+    # Step 2: Check class filter only
     class_filtered = db.query(Question).filter(
         func.lower(func.trim(Question.class_name)) == class_name.lower()
     ).count()
     print(f"📊 Rows after class_name filter: {class_filtered}")
 
-    # ✅ Step 3: Check subject filter only
+    # Step 3: Check subject filter only
     subject_filtered = db.query(Question).filter(
         func.lower(func.trim(Question.subject)) == normalized_subject
     ).count()
     print(f"📊 Rows after subject filter: {subject_filtered}")
 
-    # ✅ Step 4: Check difficulty filter only
-    difficulty_filtered = db.query(Question).filter(
-        func.lower(func.trim(Question.difficulty)) == difficulty.lower()
-    ).count()
-    print(f"📊 Rows after difficulty filter: {difficulty_filtered}")
-
-    # ✅ Step 5: Check class_year filter only
+    # Step 4: Check class_year filter only
     year_filtered = db.query(Question).filter(
         Question.class_year == class_year
     ).count()
     print(f"📊 Rows after class_year filter: {year_filtered}")
 
-    # ✅ Step 6: Combined filters BEFORE topic conditions
+    # Step 5: Combined filters BEFORE topic conditions
     combined_filtered = db.query(Question).filter(
         func.lower(func.trim(Question.class_name)) == class_name.lower(),
         func.lower(func.trim(Question.subject)) == normalized_subject,
-        func.lower(func.trim(Question.difficulty)) == difficulty.lower(),
-        Question.class_year == class_year,   # ✅ NEW
+        Question.class_year == class_year,
     ).count()
     print(f"📊 Rows after ALL filters (before topic check): {combined_filtered}")
 
-    # ✅ Step 7: Check topic issues
-    topic_null_count = db.query(Question).filter(Question.topic.is_(None)).count()
-    topic_empty_count = db.query(Question).filter(Question.topic == "").count()
+    # Step 6: Check topic issues
+    topic_null_count = db.query(Question).filter(
+        Question.topic.is_(None)
+    ).count()
+
+    topic_empty_count = db.query(Question).filter(
+        Question.topic == ""
+    ).count()
 
     print(f"\n⚠️ Topic issues:")
     print(f"   NULL topics  = {topic_null_count}")
     print(f"   EMPTY topics = {topic_empty_count}")
 
-    # ✅ Step 8: Sample actual DB values
+    # Step 7: Sample rows
     sample_rows = db.query(
         Question.class_name,
         Question.subject,
@@ -16710,17 +17284,21 @@ def get_topics(
 
     print("\n🔍 Sample DB rows:")
     for row in sample_rows:
-        print(f"   class='{row[0]}', subject='{row[1]}', difficulty='{row[2]}', year='{row[3]}', topic='{row[4]}'")
+        print(
+            f"   class='{row[0]}', "
+            f"subject='{row[1]}', "
+            f"difficulty='{row[2]}', "
+            f"year='{row[3]}', "
+            f"topic='{row[4]}'"
+        )
 
-    # ✅ Step 9: Final query
+    # Step 8: Final query (NO difficulty filter)
     topics = (
         db.query(func.distinct(Question.topic))
         .filter(
             func.lower(func.trim(Question.class_name)) == class_name.lower(),
             func.lower(func.trim(Question.subject)) == normalized_subject,
-            func.lower(func.trim(Question.difficulty)) == difficulty.lower(),
-            Question.class_year == class_year,   # ✅ NEW
-
+            Question.class_year == class_year,
             Question.topic.isnot(None),
             Question.topic != "",
         )
@@ -22923,12 +23501,14 @@ def get_exam_report_by_exam_id(
         status_code=404,
         detail="Report not available"
     )
- 
+           
 @app.get("/api/student/exam-report/naplan-reading")
 def get_naplan_reading_report(
-    student_id: str = Query(..., description="External student id e.g. Gem_001_naplan"),
+    student_id: str = Query(...),
+    exam_id: int | None = Query(None),
     db: Session = Depends(get_db)
 ):
+    
     print("\n================ NAPLAN READING REPORT =================")
     print("📥 Incoming request for student_id:", student_id)
 
@@ -22953,13 +23533,24 @@ def get_naplan_reading_report(
     # --------------------------------------------------
     # 2️⃣ Latest completed NAPLAN Reading attempt
     # --------------------------------------------------
-    attempt = (
+    query = (
         db.query(StudentExamNaplanReading)
         .filter(
             StudentExamNaplanReading.student_id == student.id,
             StudentExamNaplanReading.completed_at.isnot(None)
         )
-        .order_by(StudentExamNaplanReading.completed_at.desc())
+    )
+
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanReading.exam_id == exam_id
+        )
+
+    attempt = (
+        query
+        .order_by(
+            StudentExamNaplanReading.completed_at.desc()
+        )
         .first()
     )
 
@@ -23155,14 +23746,23 @@ def get_naplan_reading_report(
         "topic_accuracy": topic_accuracy,                   # Report C
         "improvement_areas": improvement_areas              # Report D
     }
- 
-@app.get("/api/student/exam-report/naplan-language-conventions")
-def get_naplan_language_conventions_report(
-    student_id: str = Query(..., description="External student id e.g. Gem_001_naplan"),
+@app.get("/api/student/exam-report/naplan-reading-homework")
+def get_naplan_reading_homework_report(
+    student_id: str = Query(
+        ...,
+        description="External student id"
+    ),
+    exam_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    print("\n================ NAPLAN LANGUAGE CONVENTIONS REPORT =================")
-    print("📥 Incoming request for student_id:", student_id)
+    print(
+        "\n================ NAPLAN "
+        "READING HOMEWORK REPORT "
+        "================="
+    )
+
+    print("📥 Incoming student_id:", student_id)
+    print("📥 Incoming exam_id:", exam_id)
 
     # --------------------------------------------------
     # 1️⃣ Resolve student
@@ -23177,62 +23777,121 @@ def get_naplan_language_conventions_report(
     )
 
     if not student:
-        print("❌ Student not found for student_id:", student_id)
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    print(f"👤 Resolved student: db_id={student.id}")
-
-    # --------------------------------------------------
-    # 2️⃣ Latest completed Language Conventions attempt
-    # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamNaplanLanguageConventions)
-        .filter(
-            StudentExamNaplanLanguageConventions.student_id == student.id,
-            StudentExamNaplanLanguageConventions.completed_at.isnot(None)
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
         )
+
+    print(
+        "👤 Student resolved:",
+        "student.id =", student.id,
+        "| external_id =", student.student_id
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Build query
+    # --------------------------------------------------
+    query = (
+        db.query(
+            StudentExamNaplanReadingHomework
+        )
+        .filter(
+            StudentExamNaplanReadingHomework.student_id
+            == student.id,
+
+            StudentExamNaplanReadingHomework.completed_at
+            .isnot(None)
+        )
+    )
+
+    print(
+        "🧠 Base query = completed homework attempts"
+    )
+
+    if exam_id is not None:
+        print(
+            "🎯 Applying exam_id filter:",
+            exam_id
+        )
+
+        query = query.filter(
+            StudentExamNaplanReadingHomework.exam_id
+            == exam_id
+        )
+    else:
+        print(
+            "ℹ️ No exam_id supplied. "
+            "Will use latest completed attempt."
+        )
+
+    attempt = (
+        query
         .order_by(
-            StudentExamNaplanLanguageConventions.completed_at.desc()
+            StudentExamNaplanReadingHomework.completed_at.desc()
         )
         .first()
     )
 
     if not attempt:
-        print("❌ No completed Language Conventions attempt found for student_id:", student.id)
+        print(
+            "❌ No completed attempt found"
+        )
+
         raise HTTPException(
             status_code=404,
-            detail="No completed NAPLAN Language Conventions exam found"
+            detail=(
+                "No completed "
+                "NAPLAN Reading "
+                "homework found"
+            )
         )
 
     print(
-        "📌 Using exam attempt:",
-        "attempt_id =", attempt.id,
-        "completed_at =", attempt.completed_at
+        "📌 Attempt chosen:",
+        "attempt.id =", attempt.id,
+        "| exam_id =", attempt.exam_id,
+        "| year =", attempt.year,
+        "| completed_at =",
+        attempt.completed_at
     )
 
     # --------------------------------------------------
-    # 3️⃣ Load responses (single source of truth)
+    # 3️⃣ Load responses
     # --------------------------------------------------
     responses = (
-        db.query(StudentExamResponseNaplanLanguageConventions)
+        db.query(
+            StudentExamResponseNaplanReadingHomework
+        )
         .filter(
-            StudentExamResponseNaplanLanguageConventions.exam_attempt_id
+            StudentExamResponseNaplanReadingHomework
+            .exam_attempt_id
             == attempt.id
         )
         .all()
     )
 
+    print(
+        "🧠 Responses found:",
+        len(responses)
+    )
+
     if not responses:
-        print("❌ No responses found for attempt_id:", attempt.id)
-        raise HTTPException(
-            status_code=404,
-            detail="No responses found for NAPLAN Language Conventions exam"
+        print(
+            "❌ No responses for attempt"
         )
 
-    print(f"🧠 Loaded responses: {len(responses)} rows")
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No responses found "
+                "for NAPLAN Reading "
+                "homework"
+            )
+        )
 
     # --------------------------------------------------
-    # 4️⃣ OVERALL SUMMARY (Report B)
+    # 4️⃣ Summary stats
     # --------------------------------------------------
     total_questions = len(responses)
 
@@ -23248,48 +23907,71 @@ def get_naplan_language_conventions_report(
 
     incorrect = sum(
         1 for r in responses
-        if r.is_correct is False and r.selected_option is not None
+        if (
+            r.is_correct is False
+            and r.selected_option is not None
+        )
     )
 
-    not_attempted = total_questions - attempted
+    not_attempted = (
+        total_questions - attempted
+    )
 
     accuracy_percent = (
-        round((correct / attempted) * 100, 2)
+        round(
+            (correct / attempted) * 100,
+            2
+        )
         if attempted else 0
     )
 
     score_percent = (
-        round((correct / total_questions) * 100, 2)
+        round(
+            (correct / total_questions) * 100,
+            2
+        )
         if total_questions else 0
     )
 
-    print("📊 OVERALL SUMMARY")
-    print("   total_questions:", total_questions)
-    print("   attempted:", attempted)
-    print("   correct:", correct)
-    print("   incorrect:", incorrect)
-    print("   not_attempted:", not_attempted)
-    print("   accuracy_percent:", accuracy_percent)
-    print("   score_percent:", score_percent)
+    print(
+        "📊 SUMMARY:",
+        "total =", total_questions,
+        "| attempted =", attempted,
+        "| correct =", correct,
+        "| incorrect =", incorrect,
+        "| not_attempted =", not_attempted
+    )
 
     overall = {
-        "total_questions": total_questions,
-        "attempted": attempted,
-        "correct": correct,
-        "incorrect": incorrect,
-        "not_attempted": not_attempted,
-        "accuracy_percent": accuracy_percent,
-        "score_percent": score_percent,
-        "pass": None
+        "total_questions":
+            total_questions,
+        "attempted":
+            attempted,
+        "correct":
+            correct,
+        "incorrect":
+            incorrect,
+        "not_attempted":
+            not_attempted,
+        "accuracy_percent":
+            accuracy_percent,
+        "score_percent":
+            score_percent,
+        "pass":
+            None
     }
 
     # --------------------------------------------------
-    # 5️⃣ TOPIC-WISE PERFORMANCE (Report A)
+    # 5️⃣ Topic wise
     # --------------------------------------------------
     topic_map = {}
 
     for r in responses:
-        topic = r.topic or "Unknown"
+
+        topic = (
+            r.topic
+            or "Unknown"
+        )
 
         if topic not in topic_map:
             topic_map[topic] = {
@@ -23307,88 +23989,1067 @@ def get_naplan_language_conventions_report(
             topic_map[topic]["not_attempted"] += 1
         else:
             topic_map[topic]["attempted"] += 1
+
             if r.is_correct:
                 topic_map[topic]["correct"] += 1
             else:
                 topic_map[topic]["incorrect"] += 1
 
-    topic_wise_performance = list(topic_map.values())
+    topic_wise_performance = list(
+        topic_map.values()
+    )
 
-    print("📚 TOPIC-WISE PERFORMANCE")
-    for t in topic_wise_performance:
+    print(
+        "📚 Topics found:",
+        len(topic_wise_performance)
+    )
+
+    # --------------------------------------------------
+    # 6️⃣ Final payload debug
+    # --------------------------------------------------
+    payload = {
+        "exam_id":
+            attempt.exam_id,
+        "exam_attempt_id":
+            attempt.id,
+        "overall":
+            overall,
+        "topic_wise_performance":
+            topic_wise_performance,
+        "topic_accuracy":
+            [],
+        "improvement_areas":
+            []
+    }
+
+    print(
+        "🚀 RETURNING PAYLOAD:"
+    )
+    print(
+        "exam_id =",
+        payload["exam_id"]
+    )
+    print(
+        "exam_attempt_id =",
+        payload["exam_attempt_id"]
+    )
+    print(
+        "overall keys =",
+        list(payload["overall"].keys())
+    )
+
+    print(
+        "================ END "
+        "READING HOMEWORK "
+        "REPORT =================\n"
+    )
+
+    return payload
+@app.get("/api/student/exam-dates/naplan-reading")
+def get_naplan_reading_exam_dates(
+    student_id: str = Query(
+        ...,
+        description="External student id"
+    ),
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n================ NAPLAN "
+        "READING EXAM DATES "
+        "================="
+    )
+
+    print("📥 Incoming student_id:", student_id)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        "👤 Student resolved:",
+        "student.id =", student.id,
+        "| external_id =", student.student_id
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Load completed actual exam attempts
+    # --------------------------------------------------
+    attempts = (
+        db.query(
+            StudentExamNaplanReading
+        )
+        .filter(
+            StudentExamNaplanReading.student_id
+            == student.id,
+
+            StudentExamNaplanReading.completed_at
+            .isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanReading.completed_at
+            .desc()
+        )
+        .all()
+    )
+
+    print(
+        "🧠 Completed attempts found:",
+        len(attempts)
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Build unique exam/date rows
+    # --------------------------------------------------
+    seen_exam_ids = set()
+
+    results = []
+
+    for attempt in attempts:
+
+        if attempt.exam_id in seen_exam_ids:
+            continue
+
+        seen_exam_ids.add(
+            attempt.exam_id
+        )
+
+        results.append(
+            {
+                "exam_id": attempt.exam_id,
+                "date": attempt.completed_at
+            }
+        )
+
+    print(
+        "📦 Returning rows:",
+        len(results)
+    )
+
+    print(
+        "================ END "
+        "READING EXAM DATES "
+        "=================\n"
+    )
+
+    return results
+@app.get("/api/student/exam-dates/naplan-reading")
+def get_naplan_reading_exam_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n================ NAPLAN "
+        "READING EXAM DATES "
+        "================="
+    )
+
+    print(
+        "📥 Incoming student_id:",
+        student_id
+    )
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(
+                Student.student_id
+            )
+            == func.lower(
+                student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        "👤 Student resolved:",
+        "db_id =", student.id
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Load completed attempts
+    # --------------------------------------------------
+    attempts = (
+        db.query(
+            StudentExamNaplanReading
+        )
+        .filter(
+            StudentExamNaplanReading.student_id
+            == student.id,
+
+            StudentExamNaplanReading.completed_at
+            .isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanReading.completed_at
+            .desc()
+        )
+        .all()
+    )
+
+    print(
+        "📚 Completed attempts found:",
+        len(attempts)
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Build response
+    # --------------------------------------------------
+    results = []
+
+    seen_exam_ids = set()
+
+    for a in attempts:
+
+        if a.exam_id in seen_exam_ids:
+            continue
+
+        seen_exam_ids.add(
+            a.exam_id
+        )
+
+        results.append({
+            "exam_id":
+                a.exam_id,
+            "exam_attempt_id":
+                a.id,
+            "date":
+                a.completed_at
+        })
+
         print(
-            f"   {t['topic']} → "
-            f"total={t['total']}, "
-            f"attempted={t['attempted']}, "
-            f"correct={t['correct']}, "
-            f"incorrect={t['incorrect']}, "
-            f"not_attempted={t['not_attempted']}"
+            "📌 Added:",
+            "exam_id =", a.exam_id,
+            "| attempt_id =", a.id,
+            "| date =", a.completed_at
+        )
+
+    print(
+        "🚀 Returning rows:",
+        len(results)
+    )
+
+    print(
+        "================ END "
+        "READING EXAM DATES "
+        "=================\n"
+    )
+
+    return results
+@app.get("/api/student/exam-dates/naplan-reading-homework")
+def get_naplan_reading_homework_exam_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n================ NAPLAN "
+        "READING HOMEWORK EXAM DATES "
+        "================="
+    )
+
+    print(
+        "📥 Incoming student_id:",
+        student_id
+    )
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(
+                Student.student_id
+            )
+            == func.lower(
+                student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        "👤 Student resolved:",
+        "db_id =", student.id
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Load completed homework attempts
+    # --------------------------------------------------
+    attempts = (
+        db.query(
+            StudentExamNaplanReadingHomework
+        )
+        .filter(
+            StudentExamNaplanReadingHomework.student_id
+            == student.id,
+
+            StudentExamNaplanReadingHomework.completed_at
+            .isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanReadingHomework.completed_at
+            .desc()
+        )
+        .all()
+    )
+
+    print(
+        "📚 Completed homework attempts found:",
+        len(attempts)
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Build response
+    # --------------------------------------------------
+    results = []
+
+    seen_exam_ids = set()
+
+    for a in attempts:
+
+        if a.exam_id in seen_exam_ids:
+            continue
+
+        seen_exam_ids.add(
+            a.exam_id
+        )
+
+        results.append({
+            "exam_id":
+                a.exam_id,
+            "exam_attempt_id":
+                a.id,
+            "date":
+                a.completed_at
+        })
+
+        print(
+            "📌 Added:",
+            "exam_id =", a.exam_id,
+            "| attempt_id =", a.id,
+            "| date =", a.completed_at
+        )
+
+    print(
+        "🚀 Returning rows:",
+        len(results)
+    )
+
+    print(
+        "================ END "
+        "READING HOMEWORK EXAM DATES "
+        "=================\n"
+    )
+
+    return results
+
+@app.get(
+    "/api/student/exam-report/naplan-language-conventions-homework"
+)
+def get_naplan_language_conventions_homework_report(
+    student_id: str = Query(
+        ...,
+        description="External student id"
+    ),
+    exam_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n=========== NAPLAN LANGUAGE "
+        "CONVENTIONS HOMEWORK REPORT ==========="
+    )
+    print(
+        "📥 Incoming request for student_id:",
+        student_id
+    )
+    print(
+        "📥 Incoming request for exam_id:",
+        exam_id
+    )
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(
+                student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        f"👤 Resolved student: "
+        f"db_id={student.id}"
+    )
+
+    # --------------------------------------------------
+    # 2. Get completed homework attempt
+    # --------------------------------------------------
+    query = (
+        db.query(
+            StudentExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+            StudentExamNaplanLanguageConventionsHomework.student_id
+            == student.id,
+
+            StudentExamNaplanLanguageConventionsHomework.completed_at
+            .isnot(None)
+        )
+    )
+
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanLanguageConventionsHomework.exam_id
+            == exam_id
+        )
+
+    attempt = (
+        query
+        .order_by(
+            StudentExamNaplanLanguageConventionsHomework.completed_at
+            .desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No completed NAPLAN "
+                "Language Conventions "
+                "homework found"
+            )
+        )
+
+    print(
+        f"📌 Using attempt_id={attempt.id}"
+    )
+
+    # --------------------------------------------------
+    # 3. Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(
+            StudentExamResponseNaplanLanguageConventionsHomework
+        )
+        .filter(
+            StudentExamResponseNaplanLanguageConventionsHomework
+            .exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        raise HTTPException(
+            status_code=404,
+            detail="No homework responses found"
         )
 
     # --------------------------------------------------
-    # 6️⃣ TOPIC ACCURACY & RESULT (Report C)
+    # 4. Overall summary
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.selected_option is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+
+    incorrect = sum(
+        1 for r in responses
+        if (
+            r.is_correct is False
+            and r.selected_option is not None
+        )
+    )
+
+    not_attempted = (
+        total_questions - attempted
+    )
+
+    accuracy_percent = (
+        round(
+            (correct / attempted) * 100,
+            2
+        )
+        if attempted else 0
+    )
+
+    score_percent = (
+        round(
+            (
+                correct
+                / total_questions
+            ) * 100,
+            2
+        )
+        if total_questions else 0
+    )
+
+    overall = {
+        "total_questions":
+            total_questions,
+        "attempted":
+            attempted,
+        "correct":
+            correct,
+        "incorrect":
+            incorrect,
+        "not_attempted":
+            not_attempted,
+        "accuracy_percent":
+            accuracy_percent,
+        "score_percent":
+            score_percent,
+        "pass":
+            None
+    }
+
+    # --------------------------------------------------
+    # 5. Topic wise performance
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+
+        topic = (
+            r.topic
+            or "Unknown"
+        )
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        topic_map[topic]["total"] += 1
+
+        if r.selected_option is None:
+            topic_map[topic][
+                "not_attempted"
+            ] += 1
+        else:
+            topic_map[topic][
+                "attempted"
+            ] += 1
+
+            if r.is_correct:
+                topic_map[topic][
+                    "correct"
+                ] += 1
+            else:
+                topic_map[topic][
+                    "incorrect"
+                ] += 1
+
+    topic_wise_performance = list(
+        topic_map.values()
+    )
+
+    # --------------------------------------------------
+    # 6. Topic accuracy
     # --------------------------------------------------
     topic_accuracy = []
 
     for t in topic_wise_performance:
-        attempted_t = t["attempted"]
+
+        attempted_t = t[
+            "attempted"
+        ]
 
         accuracy_t = (
-            round((t["correct"] / attempted_t) * 100, 2)
-            if attempted_t else 0
+            round(
+                (
+                    t["correct"]
+                    / attempted_t
+                ) * 100,
+                2
+            )
+            if attempted_t
+            else 0
         )
 
         score_t = (
-            round((t["correct"] / t["total"]) * 100, 2)
-            if t["total"] else 0
+            round(
+                (
+                    t["correct"]
+                    / t["total"]
+                ) * 100,
+                2
+            )
+            if t["total"]
+            else 0
         )
 
         topic_accuracy.append({
-            "topic": t["topic"],
-            "total_questions": t["total"],
-            "attempted": attempted_t,
-            "correct": t["correct"],
-            "incorrect": t["incorrect"],
-            "accuracy_percent": accuracy_t,
-            "score_percent": score_t,
-            "pass": None
+            "topic":
+                t["topic"],
+            "total_questions":
+                t["total"],
+            "attempted":
+                attempted_t,
+            "correct":
+                t["correct"],
+            "incorrect":
+                t["incorrect"],
+            "accuracy_percent":
+                accuracy_t,
+            "score_percent":
+                score_t,
+            "pass":
+                None
         })
 
     # --------------------------------------------------
-    # 7️⃣ IMPROVEMENT AREAS (Report D)
+    # 7. Improvement areas
     # --------------------------------------------------
     improvement_areas = []
 
     for t in topic_accuracy:
         improvement_areas.append({
-            "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
-            "score_percent": t["score_percent"],
-            "total_questions": t["total_questions"],
-            "limited_data": t["total_questions"] < 5
+            "topic":
+                t["topic"],
+            "accuracy_percent":
+                t["accuracy_percent"],
+            "score_percent":
+                t["score_percent"],
+            "total_questions":
+                t["total_questions"],
+            "limited_data":
+                t["total_questions"] < 5
         })
 
-    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+    improvement_areas.sort(
+        key=lambda x: x[
+            "accuracy_percent"
+        ]
+    )
 
-    print("📉 IMPROVEMENT AREAS (sorted by accuracy)")
-    for i in improvement_areas:
+    print(
+        "=========== END HOMEWORK "
+        "REPORT ===========\n"
+    )
+
+    # --------------------------------------------------
+    # 8. Final response
+    # --------------------------------------------------
+    return {
+        "exam_attempt_id":
+            attempt.id,
+        "overall":
+            overall,
+        "topic_wise_performance":
+            topic_wise_performance,
+        "topic_accuracy":
+            topic_accuracy,
+        "improvement_areas":
+            improvement_areas
+    }
+ 
+@app.get("/api/student/exam-report/naplan-language-conventions")
+def get_naplan_language_conventions_report(
+    student_id: str = Query(
+        ...,
+        description="External student id e.g. Gem_001_naplan"
+    ),
+    exam_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n================ NAPLAN LANGUAGE "
+        "CONVENTIONS REPORT ================="
+    )
+    print(
+        "📥 Incoming request for student_id:",
+        student_id
+    )
+    print(
+        "📥 Incoming request for exam_id:",
+        exam_id
+    )
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(
+                student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
         print(
-            f"   {i['topic']} → "
-            f"accuracy={i['accuracy_percent']}%, "
-            f"score={i['score_percent']}%, "
-            f"total={i['total_questions']}"
+            "❌ Student not found for student_id:",
+            student_id
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
         )
 
-    print("================ END LANGUAGE CONVENTIONS REPORT =================\n")
+    print(
+        f"👤 Resolved student: "
+        f"db_id={student.id}"
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Get completed attempt
+    # --------------------------------------------------
+    query = (
+        db.query(
+            StudentExamNaplanLanguageConventions
+        )
+        .filter(
+            StudentExamNaplanLanguageConventions.student_id
+            == student.id,
+
+            StudentExamNaplanLanguageConventions.completed_at
+            .isnot(None)
+        )
+    )
+
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanLanguageConventions.exam_id
+            == exam_id
+        )
+
+    attempt = (
+        query
+        .order_by(
+            StudentExamNaplanLanguageConventions.completed_at
+            .desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        print(
+            "❌ No completed Language "
+            "Conventions attempt found"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No completed NAPLAN "
+                "Language Conventions exam found"
+            )
+        )
+
+    print(
+        "📌 Using exam attempt:",
+        "attempt_id =", attempt.id,
+        "completed_at =", attempt.completed_at
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(
+            StudentExamResponseNaplanLanguageConventions
+        )
+        .filter(
+            StudentExamResponseNaplanLanguageConventions
+            .exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        print(
+            "❌ No responses found "
+            "for attempt_id:",
+            attempt.id
+        )
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No responses found for "
+                "NAPLAN Language "
+                "Conventions exam"
+            )
+        )
+
+    print(
+        f"🧠 Loaded responses: "
+        f"{len(responses)} rows"
+    )
+
+    # --------------------------------------------------
+    # 4️⃣ OVERALL SUMMARY
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.selected_option is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+
+    incorrect = sum(
+        1 for r in responses
+        if (
+            r.is_correct is False
+            and r.selected_option
+            is not None
+        )
+    )
+
+    not_attempted = (
+        total_questions - attempted
+    )
+
+    accuracy_percent = (
+        round(
+            (correct / attempted) * 100,
+            2
+        )
+        if attempted else 0
+    )
+
+    score_percent = (
+        round(
+            (
+                correct
+                / total_questions
+            ) * 100,
+            2
+        )
+        if total_questions else 0
+    )
+
+    overall = {
+        "total_questions":
+            total_questions,
+        "attempted":
+            attempted,
+        "correct":
+            correct,
+        "incorrect":
+            incorrect,
+        "not_attempted":
+            not_attempted,
+        "accuracy_percent":
+            accuracy_percent,
+        "score_percent":
+            score_percent,
+        "pass":
+            None
+    }
+
+    # --------------------------------------------------
+    # 5️⃣ TOPIC-WISE PERFORMANCE
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+
+        topic = (
+            r.topic
+            or "Unknown"
+        )
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        topic_map[topic]["total"] += 1
+
+        if r.selected_option is None:
+            topic_map[topic][
+                "not_attempted"
+            ] += 1
+        else:
+            topic_map[topic][
+                "attempted"
+            ] += 1
+
+            if r.is_correct:
+                topic_map[topic][
+                    "correct"
+                ] += 1
+            else:
+                topic_map[topic][
+                    "incorrect"
+                ] += 1
+
+    topic_wise_performance = list(
+        topic_map.values()
+    )
+
+    # --------------------------------------------------
+    # 6️⃣ TOPIC ACCURACY
+    # --------------------------------------------------
+    topic_accuracy = []
+
+    for t in topic_wise_performance:
+
+        attempted_t = t[
+            "attempted"
+        ]
+
+        accuracy_t = (
+            round(
+                (
+                    t["correct"]
+                    / attempted_t
+                ) * 100,
+                2
+            )
+            if attempted_t
+            else 0
+        )
+
+        score_t = (
+            round(
+                (
+                    t["correct"]
+                    / t["total"]
+                ) * 100,
+                2
+            )
+            if t["total"]
+            else 0
+        )
+
+        topic_accuracy.append({
+            "topic":
+                t["topic"],
+            "total_questions":
+                t["total"],
+            "attempted":
+                attempted_t,
+            "correct":
+                t["correct"],
+            "incorrect":
+                t["incorrect"],
+            "accuracy_percent":
+                accuracy_t,
+            "score_percent":
+                score_t,
+            "pass":
+                None
+        })
+
+    # --------------------------------------------------
+    # 7️⃣ IMPROVEMENT AREAS
+    # --------------------------------------------------
+    improvement_areas = []
+
+    for t in topic_accuracy:
+        improvement_areas.append({
+            "topic":
+                t["topic"],
+            "accuracy_percent":
+                t["accuracy_percent"],
+            "score_percent":
+                t["score_percent"],
+            "total_questions":
+                t["total_questions"],
+            "limited_data":
+                t["total_questions"] < 5
+        })
+
+    improvement_areas.sort(
+        key=lambda x: x[
+            "accuracy_percent"
+        ]
+    )
+
+    print(
+        "================ END LANGUAGE "
+        "CONVENTIONS REPORT =================\n"
+    )
 
     # --------------------------------------------------
     # 8️⃣ Final response
     # --------------------------------------------------
     return {
-        "overall": overall,                                 # Report B
-        "topic_wise_performance": topic_wise_performance,   # Report A
-        "topic_accuracy": topic_accuracy,                   # Report C
-        "improvement_areas": improvement_areas              # Report D
+        "exam_attempt_id":
+            attempt.id,
+        "overall":
+            overall,
+        "topic_wise_performance":
+            topic_wise_performance,
+        "topic_accuracy":
+            topic_accuracy,
+        "improvement_areas":
+            improvement_areas
     }
 @app.get("/api/student/exam-report/naplan-numeracy")
 def get_naplan_numeracy_report(
@@ -23420,9 +25081,18 @@ def get_naplan_numeracy_report(
     # --------------------------------------------------
     # 2️⃣ Latest completed NAPLAN Numeracy attempt
     # --------------------------------------------------
-    query = db.query(StudentExamNaplanNumeracy).filter(
-        StudentExamNaplanNumeracy.student_id == student.id,
-        StudentExamNaplanNumeracy.completed_at.isnot(None)
+    query = (
+        db.query(StudentExamNaplanNumeracy)
+        .join(
+            StudentExamResponseNaplanNumeracy,
+            StudentExamResponseNaplanNumeracy.exam_attempt_id
+            == StudentExamNaplanNumeracy.id
+        )
+        .filter(
+            StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.completed_at.isnot(None)
+        )
+        .distinct()
     )
     
     # 🔥 NEW: filter by exam_id
@@ -23628,6 +25298,225 @@ def get_naplan_numeracy_report(
         "topic_wise_performance": topic_wise_performance,   # Report A
         "topic_accuracy": topic_accuracy,                   # Report C
         "improvement_areas": improvement_areas              # Report D
+    }
+@app.get("/api/student/exam-report/naplan-numeracy-homework")
+def get_naplan_numeracy_homework_report(
+    student_id: str = Query(..., description="External student id"),
+    exam_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    print("\n=========== NAPLAN NUMERACY HOMEWORK REPORT ===========")
+    print("📥 Incoming request for student_id:", student_id)
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(f"👤 Resolved student: {student.id}")
+
+    # --------------------------------------------------
+    # 2. Find latest completed homework attempt
+    # --------------------------------------------------
+    query = (
+        db.query(StudentExamNaplanNumeracyHomework)
+        .join(
+            StudentExamResponseNaplanNumeracyHomework,
+            StudentExamResponseNaplanNumeracyHomework.exam_attempt_id
+            == StudentExamNaplanNumeracyHomework.id
+        )
+        .filter(
+            StudentExamNaplanNumeracyHomework.student_id == student.id,
+            StudentExamNaplanNumeracyHomework.completed_at.isnot(None)
+        )
+        .distinct()
+    )
+
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanNumeracyHomework.exam_id == exam_id
+        )
+
+    attempt = (
+        query
+        .order_by(
+            StudentExamNaplanNumeracyHomework.completed_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed homework exam found"
+        )
+
+    print(f"📘 Using attempt ID: {attempt.id}")
+
+    # --------------------------------------------------
+    # 3. Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseNaplanNumeracyHomework)
+        .filter(
+            StudentExamResponseNaplanNumeracyHomework.exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        raise HTTPException(
+            status_code=404,
+            detail="No homework responses found"
+        )
+
+    # --------------------------------------------------
+    # 4. Overall summary
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.selected_option is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+
+    incorrect = sum(
+        1 for r in responses
+        if r.is_correct is False
+        and r.selected_option is not None
+    )
+
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
+
+    score_percent = (
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent,
+        "pass": None
+    }
+
+    # --------------------------------------------------
+    # 5. Topic wise performance
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic or "Unknown"
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        topic_map[topic]["total"] += 1
+
+        if r.selected_option is None:
+            topic_map[topic]["not_attempted"] += 1
+        else:
+            topic_map[topic]["attempted"] += 1
+
+            if r.is_correct:
+                topic_map[topic]["correct"] += 1
+            else:
+                topic_map[topic]["incorrect"] += 1
+
+    topic_wise_performance = list(topic_map.values())
+
+    # --------------------------------------------------
+    # 6. Topic accuracy
+    # --------------------------------------------------
+    topic_accuracy = []
+
+    for t in topic_wise_performance:
+        attempted_t = t["attempted"]
+
+        accuracy_t = (
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
+        )
+
+        score_t = (
+            round((t["correct"] / t["total"]) * 100, 2)
+            if t["total"] else 0
+        )
+
+        topic_accuracy.append({
+            "topic": t["topic"],
+            "total_questions": t["total"],
+            "attempted": attempted_t,
+            "correct": t["correct"],
+            "incorrect": t["incorrect"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": score_t,
+            "pass": None
+        })
+
+    # --------------------------------------------------
+    # 7. Improvement areas
+    # --------------------------------------------------
+    improvement_areas = []
+
+    for t in topic_accuracy:
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy_percent": t["accuracy_percent"],
+            "score_percent": t["score_percent"],
+            "total_questions": t["total_questions"],
+            "limited_data": t["total_questions"] < 5
+        })
+
+    improvement_areas.sort(
+        key=lambda x: x["accuracy_percent"]
+    )
+
+    print("=========== END HOMEWORK REPORT ===========\n")
+
+    # --------------------------------------------------
+    # 8. Final response
+    # --------------------------------------------------
+    return {
+        "overall": overall,
+        "topic_wise_performance": topic_wise_performance,
+        "topic_accuracy": topic_accuracy,
+        "improvement_areas": improvement_areas
     }
 @app.get("/api/student/homework-report/thinking-skills")
 def get_homework_thinking_skills_report(
@@ -30440,6 +32329,270 @@ def normalize_type6_image_option_question(question: dict):
 
     question["question_blocks"] = cleaned_blocks
     return question
+@app.post("/api/student/start-homework-exam/naplan-language-conventions")
+def start_naplan_language_conventions_homework_exam(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n========== START NAPLAN LANGUAGE "
+        "CONVENTIONS HOMEWORK EXAM =========="
+    )
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    student_year = int(
+        student.student_year
+        .replace("Year", "")
+        .strip()
+    )
+
+    if not student_year:
+        raise HTTPException(
+            status_code=400,
+            detail="Student year not set"
+        )
+
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id} | "
+        f"year={student_year}"
+    )
+
+    # --------------------------------------------------
+    # 2. Load latest homework exam for year
+    # --------------------------------------------------
+    exam = (
+        db.query(
+            ExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+            ExamNaplanLanguageConventionsHomework.year
+            == student_year
+        )
+        .order_by(
+            ExamNaplanLanguageConventionsHomework
+            .id.desc()
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "NAPLAN Language Conventions "
+                "homework exam not found"
+            )
+        )
+
+    # --------------------------------------------------
+    # 3. Timing setup
+    # --------------------------------------------------
+    MAX_DURATION = timedelta(minutes=40)
+    now = datetime.now(timezone.utc)
+
+    uploaded_images = db.query(
+        UploadedImage
+    ).all()
+
+    image_map = {
+        img.original_name: img.gcs_url
+        for img in uploaded_images
+    }
+
+    # --------------------------------------------------
+    # 4. Find latest attempt for this homework exam
+    # --------------------------------------------------
+    attempt = (
+        db.query(
+            StudentExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+            StudentExamNaplanLanguageConventionsHomework.student_id
+            == student.id,
+
+            StudentExamNaplanLanguageConventionsHomework.exam_id
+            == exam.id,
+
+            StudentExamNaplanLanguageConventionsHomework.year
+            == student_year
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventionsHomework
+            .started_at.desc()
+        )
+        .first()
+    )
+
+    # --------------------------------------------------
+    # 5. Existing attempt logic
+    # --------------------------------------------------
+    if attempt:
+
+        print(
+            f"♻️ Existing homework attempt found | "
+            f"id={attempt.id}"
+        )
+
+        started_at = attempt.started_at
+
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        expires_at = started_at + MAX_DURATION
+
+        elapsed = int(
+            (now - started_at).total_seconds()
+        )
+
+        # timeout
+        if (
+            attempt.completed_at is None
+            and now > expires_at
+        ):
+            attempt.completed_at = expires_at
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        # already completed
+        if attempt.completed_at is not None:
+            return {
+                "completed": True
+            }
+
+        # resume active
+        remaining = max(
+            0,
+            attempt.duration_minutes * 60
+            - elapsed
+        )
+
+        raw_questions = (
+            normalize_naplan_language_conventions_questions_live(
+                exam.questions or [],
+                image_map
+            )
+        )
+
+        normalized_questions = []
+
+        for q in raw_questions:
+
+            if q.get("question_type") == 1:
+                q = serialize_type1_question_for_exam(q)
+
+            normalized_questions.append(q)
+
+        return {
+            "completed": False,
+            "questions": normalized_questions,
+            "remaining_time": remaining
+        }
+
+    # --------------------------------------------------
+    # 6. First attempt
+    # --------------------------------------------------
+    print("🆕 Creating first homework attempt")
+
+    raw_questions = (
+        normalize_naplan_language_conventions_questions_live(
+            exam.questions or [],
+            image_map
+        )
+    )
+
+    normalized_questions = []
+
+    for q in raw_questions:
+
+        if q.get("question_type") == 1:
+            q = serialize_type1_question_for_exam(q)
+
+        normalized_questions.append(q)
+
+    new_attempt = (
+        StudentExamNaplanLanguageConventionsHomework(
+            student_id=student.id,
+            exam_id=exam.id,
+            year=student_year,
+            started_at=now,
+            duration_minutes=40
+        )
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    print(
+        f"🆕 New homework attempt created | "
+        f"id={new_attempt.id}"
+    )
+
+    # --------------------------------------------------
+    # 7. Pre-create response rows
+    # --------------------------------------------------
+    for original_q in exam.questions or []:
+
+        correct_option = (
+            normalize_correct_option_for_db(
+                original_q.get(
+                    "correct_answer"
+                )
+            )
+        )
+
+        db.add(
+            StudentExamResponseNaplanLanguageConventionsHomework(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=new_attempt.id,
+                year=student_year,
+                q_id=original_q["id"],
+                topic=original_q.get("topic"),
+                selected_option=None,
+                correct_option=correct_option,
+                is_correct=None
+            )
+        )
+
+    db.commit()
+
+    print(
+        "========== END START NAPLAN LANGUAGE "
+        "CONVENTIONS HOMEWORK ==========\n"
+    )
+
+    return {
+        "completed": False,
+        "questions": normalized_questions,
+        "remaining_time": 40 * 60
+    }
+
 @app.post("/api/student/start-exam/naplan-language-conventions")
 def start_naplan_language_conventions_exam(
     req: StartExamRequest = Body(...),
@@ -39644,7 +41797,24 @@ def start_naplan_reading_exam(
     available_years = [y[0] for y in available_exams]
 
     print("📊 Available exam years in exam_naplan_reading:", available_years)
+    exam = (
+        db.query(ExamNaplanReading)
+        .filter(
+            ExamNaplanReading.year == student_year,
+            func.lower(ExamNaplanReading.subject) == "reading"
+        )
+        .order_by(ExamNaplanReading.created_at.desc())
+        .first()
+    )
 
+    if not exam:
+        print("❌ No exam found for year:", student_year)
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Reading exam available for Year {student_year}"
+        )
+
+    print(f"📘 Selected latest exam id={exam.id} for year={exam.year}")
     # --------------------------------------------------
     # EXISTING ATTEMPT
     # --------------------------------------------------
@@ -39652,7 +41822,7 @@ def start_naplan_reading_exam(
         db.query(StudentExamNaplanReading)
         .filter(
             StudentExamNaplanReading.student_id == student.id,
-            StudentExamNaplanReading.year == student_year
+            StudentExamNaplanReading.exam_id == exam.id
         )
         .order_by(StudentExamNaplanReading.started_at.desc())
         .first()
@@ -39820,7 +41990,7 @@ def start_naplan_reading_exam(
                 exam_id=exam.id,
                 exam_attempt_id=new_attempt.id,
                 year=student_year,
-                q_id=original_q.get("passage_id"),
+                q_id=str(original_q.get("question_id")),
                 topic=original_q.get("topic"),
                 selected_option=None,
                 correct_option=normalized_correct_option,
@@ -39838,6 +42008,406 @@ def start_naplan_reading_exam(
         "answers": {},
         "questions": normalized_questions,
         "remaining_time": new_attempt.duration_minutes * 60
+    }
+@app.post("/api/student/start-homework-exam/naplan-reading")
+def start_naplan_reading_homework_exam(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n============ START NAPLAN "
+        "READING HOMEWORK EXAM ============"
+    )
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 1. STUDENT LOOKUP
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(
+                req.student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        f"✅ Student found: "
+        f"{student.student_id}"
+    )
+
+    try:
+        student_year = int(
+            student.student_year
+            .lower()
+            .replace("year", "")
+            .strip()
+        )
+    except Exception:
+        print(
+            "❌ Failed to parse year:",
+            student.student_year
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid student_year format"
+        )
+
+    print(
+        f"🎓 Parsed student year: "
+        f"{student_year}"
+    )
+    exam = (
+        db.query(ExamNaplanReadingHomework)
+        .filter(
+            ExamNaplanReadingHomework.year == student_year,
+            func.lower(
+                func.trim(
+                    ExamNaplanReadingHomework.subject
+                )
+            ) == "reading"
+        )
+        .order_by(
+            ExamNaplanReadingHomework.id.desc()
+        )
+        .first()
+    )
+    # --------------------------------------------------
+    # 2. EXISTING ATTEMPT
+    # --------------------------------------------------
+    attempt = (
+        db.query(
+            StudentExamNaplanReadingHomework
+        )
+        .filter(
+            StudentExamNaplanReadingHomework.student_id
+            == student.id,
+
+            StudentExamNaplanReadingHomework.exam_id
+            == exam.id
+        )
+        .order_by(
+            StudentExamNaplanReadingHomework.started_at
+            .desc()
+        )
+        .first()
+    )
+
+    MAX_DURATION = timedelta(
+        minutes=40
+    )
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    uploaded_images = (
+        db.query(
+            UploadedImage
+        ).all()
+    )
+
+    image_map = {
+        img.original_name:
+        img.gcs_url
+        for img in uploaded_images
+    }
+
+    # --------------------------------------------------
+    # 3. RESUME ATTEMPT
+    # --------------------------------------------------
+    if attempt:
+
+        print(
+            f"🔁 Resuming homework "
+            f"attempt id={attempt.id}"
+        )
+
+        responses = (
+            db.query(
+                StudentExamResponseNaplanReadingHomework
+            )
+            .filter(
+                StudentExamResponseNaplanReadingHomework
+                .exam_attempt_id
+                == attempt.id
+            )
+            .all()
+        )
+
+        answers = {
+            str(r.q_id):
+            r.selected_option
+            for r in responses
+            if r.selected_option
+            is not None
+        }
+
+        started_at = attempt.started_at
+
+        if started_at.tzinfo is None:
+            started_at = (
+                started_at.replace(
+                    tzinfo=timezone.utc
+                )
+            )
+
+        expires_at = (
+            started_at
+            + MAX_DURATION
+        )
+
+        elapsed = int(
+            (
+                now - started_at
+            ).total_seconds()
+        )
+
+        if (
+            attempt.completed_at
+            is None
+            and now > expires_at
+        ):
+            print(
+                "⏱ Homework "
+                "attempt expired"
+            )
+
+            attempt.completed_at = (
+                expires_at
+            )
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        if (
+            attempt.completed_at
+            is not None
+        ):
+            print(
+                "✅ Homework "
+                "already completed"
+            )
+
+            return {
+                "completed": True
+            }
+
+        remaining = max(
+            0,
+            attempt.duration_minutes
+            * 60
+            - elapsed
+        )
+
+        # ----------------------------------------------
+        # Load homework exam by exam_id
+        # ----------------------------------------------
+        exam = (
+            db.query(
+                ExamNaplanReadingHomework
+            )
+            .filter(
+                ExamNaplanReadingHomework.id
+                == attempt.exam_id
+            )
+            .first()
+        )
+
+        if not exam:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Homework exam "
+                    "not found"
+                )
+            )
+
+        raw_questions = (
+            exam.questions or []
+        )
+
+        normalized_questions = []
+
+        for q in raw_questions:
+
+            normalize_images_in_question(
+                q,
+                image_map
+            )
+
+            normalize_type2_correct_answer(q)
+            normalize_reading_gap_questions(q)
+            normalize_true_false_questions(q)
+
+            sanitized_q = (
+                strip_correct_answers_from_question(
+                    q
+                )
+            )
+
+            normalized_questions.append(
+                sanitized_q
+            )
+
+        return {
+            "completed": False,
+            "is_resumed": True,
+            "answers": answers,
+            "questions":
+                normalized_questions,
+            "remaining_time":
+                remaining
+        }
+
+    # --------------------------------------------------
+    # 4. FIRST ATTEMPT
+    # --------------------------------------------------
+    print(
+        "🆕 No homework attempt "
+        "found. Creating new one."
+    )
+
+    exam = (
+        db.query(
+            ExamNaplanReadingHomework
+        )
+        .filter(
+            ExamNaplanReadingHomework.year
+            == student_year,
+
+            func.lower(
+                func.trim(
+                    ExamNaplanReadingHomework.subject
+                )
+            ) == "reading"
+            )
+        .order_by(
+            ExamNaplanReadingHomework.id.desc()
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No Reading homework "
+                f"available for "
+                f"Year {student_year}"
+            )
+        )
+
+    raw_questions = (
+        exam.questions or []
+    )
+
+    normalized_questions = []
+
+    for q in raw_questions:
+
+        normalize_images_in_question(
+            q,
+            image_map
+        )
+
+        normalize_type2_correct_answer(q)
+        normalize_reading_gap_questions(q)
+        normalize_true_false_questions(q)
+
+        sanitized_q = (
+            strip_correct_answers_from_question(
+                q
+            )
+        )
+
+        normalized_questions.append(
+            sanitized_q
+        )
+
+    # --------------------------------------------------
+    # 5. CREATE ATTEMPT
+    # --------------------------------------------------
+    new_attempt = (
+        StudentExamNaplanReadingHomework(
+            student_id=student.id,
+            exam_id=exam.id,
+            year=student_year,
+            started_at=now,
+            duration_minutes=40
+        )
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    print(
+        f"🧾 Created homework "
+        f"attempt id={new_attempt.id}"
+    )
+
+    # --------------------------------------------------
+    # 6. SEED RESPONSES
+    # --------------------------------------------------
+    for original_q in (
+        exam.questions or []
+    ):
+
+        normalized_correct_option = (
+            normalize_correct_option_for_db(
+                original_q.get(
+                    "correct_answer"
+                )
+            )
+        )
+
+        db.add(
+            StudentExamResponseNaplanReadingHomework(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=new_attempt.id,
+                year=student_year,
+                q_id=str(original_q.get("question_id")),
+                topic=original_q.get(
+                    "topic"
+                ),
+                selected_option=None,
+                correct_option=(
+                    normalized_correct_option
+                ),
+                is_correct=None
+            )
+        )
+
+    db.commit()
+
+    print(
+        "✅ Homework response "
+        "rows seeded"
+    )
+
+    return {
+        "completed": False,
+        "is_resumed": False,
+        "answers": {},
+        "questions":
+            normalized_questions,
+        "remaining_time":
+            new_attempt.duration_minutes * 60
     }
  
 def hydrate_naplan_question_structure(raw_questions):
@@ -39914,14 +42484,252 @@ def hydrate_naplan_question_structure(raw_questions):
 
     return hydrated
  
-def student_year_to_int(student_year: str):
+def student_year_to_int_naplan(student_year):
+    print("\n=== student_year_to_int DEBUG START ===")
+    print("RAW INPUT:", student_year)
+    print("RAW INPUT repr:", repr(student_year))
+    print("RAW INPUT type:", type(student_year))
+
     if not student_year:
+        print("❌ Empty / None input received")
+        print("=== student_year_to_int DEBUG END ===\n")
         return None
 
-    try:
-        return int(student_year.split()[-1])
-    except Exception:
-        return None 
+    cleaned_value = str(student_year).strip()
+
+    print("CLEANED VALUE:", cleaned_value)
+    print("CLEANED VALUE repr:", repr(cleaned_value))
+
+    match = re.search(r"\d+", cleaned_value)
+
+    print("REGEX MATCH:", match)
+
+    if match:
+        extracted_year = int(match.group())
+        print("✅ EXTRACTED YEAR:", extracted_year)
+        print("=== student_year_to_int DEBUG END ===\n")
+        return extracted_year
+
+    print("❌ No digits found in input")
+    print("=== student_year_to_int DEBUG END ===\n")
+    return None
+
+@app.post("/api/student/start-homework-exam/naplan-numeracy")
+def start_naplan_numeracy_homework_exam(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    print("\n========== START NAPLAN NUMERACY HOMEWORK ==========")
+    print("📥 Incoming payload:", req.dict())
+
+    # --------------------------------------------------
+    # 0. Fetch student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(f"👤 Student found: {student.id}")
+
+    student_year = student_year_to_int_naplan(
+        student.student_year
+    )
+
+    print(f"📅 Student year: {student_year}")
+
+    # --------------------------------------------------
+    # 1. Load latest generated homework exam
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanNumeracyHomework)
+        .filter(
+            ExamNaplanNumeracyHomework.year == student_year
+        )
+        .order_by(
+            ExamNaplanNumeracyHomework.created_at.desc()
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="Homework exam not found"
+        )
+
+    print(f"📘 Homework exam ID: {exam.id}")
+
+    # --------------------------------------------------
+    # 2. Constants
+    # --------------------------------------------------
+    MAX_DURATION = timedelta(minutes=40)
+    now = datetime.now(timezone.utc)
+
+    uploaded_images = db.query(UploadedImage).all()
+
+    image_map = {
+        img.original_name: img.gcs_url
+        for img in uploaded_images
+    }
+
+    # --------------------------------------------------
+    # 3. Block completed attempt
+    # --------------------------------------------------
+    existing_completed_attempt = (
+        db.query(StudentExamNaplanNumeracyHomework)
+        .filter(
+            StudentExamNaplanNumeracyHomework.student_id == student.id,
+            StudentExamNaplanNumeracyHomework.exam_id == exam.id,
+            StudentExamNaplanNumeracyHomework.year == student_year,
+            StudentExamNaplanNumeracyHomework.completed_at.isnot(None)
+        )
+        .first()
+    )
+
+    if existing_completed_attempt:
+        print("🚫 Homework already completed")
+
+        return {
+            "completed": True,
+            "message": "Homework already completed"
+        }
+
+    # --------------------------------------------------
+    # 4. Resume active attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanNumeracyHomework)
+        .filter(
+            StudentExamNaplanNumeracyHomework.student_id == student.id,
+            StudentExamNaplanNumeracyHomework.exam_id == exam.id,
+            StudentExamNaplanNumeracyHomework.year == student_year,
+            StudentExamNaplanNumeracyHomework.completed_at.is_(None)
+        )
+        .order_by(
+            StudentExamNaplanNumeracyHomework.started_at.desc()
+        )
+        .first()
+    )
+
+    if attempt:
+        print(f"♻️ Reusing attempt {attempt.id}")
+
+        started_at = attempt.started_at
+
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        expires_at = started_at + MAX_DURATION
+
+        elapsed_seconds = int(
+            (now - started_at).total_seconds()
+        )
+
+        if now > expires_at:
+            print("⏱️ Homework expired")
+
+            attempt.completed_at = expires_at
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        remaining_seconds = max(
+            0,
+            attempt.duration_minutes * 60 - elapsed_seconds
+        )
+
+        raw_questions = hydrate_naplan_question_structure(
+            exam.questions or []
+        )
+
+        raw_questions = normalize_naplan_numeracy_questions_live(
+            raw_questions
+        )
+
+        normalized_questions = []
+
+        for q in raw_questions:
+            if q.get("question_type") == 1:
+                q = serialize_type1_question_for_exam(q)
+
+            normalize_images_in_question(q, image_map)
+            normalize_type2_image_multiselect(q)
+            normalize_type2_correct_answer(q)
+            normalize_type3_numeric_input_question(q)
+            normalize_type4_text_input_question(q)
+            normalize_type6_visual_counting_question(q)
+
+            normalized_questions.append(q)
+
+        return {
+            "completed": False,
+            "questions": normalized_questions,
+            "remaining_time": remaining_seconds
+        }
+
+    # --------------------------------------------------
+    # 5. Create new homework attempt
+    # --------------------------------------------------
+    print("🆕 Creating new homework attempt")
+
+    raw_questions = hydrate_naplan_question_structure(
+        exam.questions or []
+    )
+
+    raw_questions = normalize_naplan_numeracy_questions_live(
+        raw_questions
+    )
+
+    normalized_questions = []
+
+    for q in raw_questions:
+        if q.get("question_type") == 1:
+            q = serialize_type1_question_for_exam(q)
+
+        normalize_images_in_question(q, image_map)
+        normalize_type2_image_multiselect(q)
+        normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
+        normalize_type6_visual_counting_question(q)
+
+        normalized_questions.append(q)
+
+    new_attempt = StudentExamNaplanNumeracyHomework(
+        student_id=student.id,
+        exam_id=exam.id,
+        year=student_year,
+        started_at=now,
+        duration_minutes=40
+    )
+
+    db.add(new_attempt)
+    db.commit()
+    db.refresh(new_attempt)
+
+    print(f"✅ New homework attempt: {new_attempt.id}")
+
+    return {
+        "completed": False,
+        "questions": normalized_questions,
+        "remaining_time": 40 * 60
+    }
+ 
 @app.post("/api/student/start-exam/naplan-numeracy")
 def start_naplan_numeracy_exam(
     req: StartExamRequest = Body(...),
@@ -39948,7 +42756,7 @@ def start_naplan_numeracy_exam(
 
     print(f"👤 Student DB ID: {student.id}, Class: {student.class_name}")
     student_year_str = student.student_year
-    student_year = student_year_to_int(student_year_str)
+    student_year = student_year_to_int_naplan(student_year_str)
 
     print(f"📅 START: student year = {student_year}")
 
@@ -41775,6 +44583,387 @@ def copy_to_admin_snapshot_naplan_language_conventions(db, attempt_id, student_y
     
 
     print("✅ ADMIN SNAPSHOT SAVED")
+@app.post(
+    "/api/student/finish-homework-exam/naplan-language-conventions"
+)
+def finish_naplan_language_conventions_homework_exam(
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    print(
+        "🔔 FINISH NAPLAN LANGUAGE "
+        "CONVENTIONS HOMEWORK CALLED"
+    )
+    print("📦 RAW PAYLOAD:", payload)
+
+    # --------------------------------------------------
+    # 0. Extract payload
+    # --------------------------------------------------
+    external_student_id = payload.get(
+        "student_id"
+    )
+
+    answers = payload.get(
+        "answers",
+        {}
+    )
+
+    if not external_student_id:
+        raise HTTPException(
+            status_code=400,
+            detail="student_id is required"
+        )
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(
+                external_student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    student_year = int(
+        student.student_year
+        .replace("Year", "")
+        .strip()
+    )
+
+    print(
+        f"👤 Student resolved | "
+        f"id={student.id} | "
+        f"year={student_year}"
+    )
+
+    # --------------------------------------------------
+    # 2. Fetch latest active homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(
+            StudentExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+            StudentExamNaplanLanguageConventionsHomework.student_id
+            == student.id,
+
+            StudentExamNaplanLanguageConventionsHomework.year
+            == student_year,
+
+            StudentExamNaplanLanguageConventionsHomework.completed_at
+            .is_(None)
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventionsHomework
+            .started_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No active homework "
+                "attempt to finish"
+            )
+        )
+
+    # --------------------------------------------------
+    # 3. Idempotent guard
+    # --------------------------------------------------
+    if attempt.completed_at is not None:
+        return {
+            "status":
+                "already_completed",
+            "exam_attempt_id":
+                attempt.id
+        }
+
+    # --------------------------------------------------
+    # 4. Fetch linked homework exam
+    # --------------------------------------------------
+    exam = (
+        db.query(
+            ExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+            ExamNaplanLanguageConventionsHomework.id
+            == attempt.exam_id,
+
+            ExamNaplanLanguageConventionsHomework.year
+            == student_year
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Homework exam not found "
+                "for this attempt"
+            )
+        )
+
+    questions = exam.questions or []
+
+    # --------------------------------------------------
+    # 5. Clear old responses
+    # --------------------------------------------------
+    db.query(
+        StudentExamResponseNaplanLanguageConventionsHomework
+    ).filter(
+        StudentExamResponseNaplanLanguageConventionsHomework
+        .exam_attempt_id == attempt.id,
+
+        StudentExamResponseNaplanLanguageConventionsHomework
+        .year == student_year
+    ).delete()
+
+    correct_count = 0
+    wrong_count = 0
+
+    # --------------------------------------------------
+    # 6. Evaluate answers
+    # --------------------------------------------------
+    for q in questions:
+
+        q_id = str(q.get("id"))
+
+        correct_answer = q.get(
+            "correct_answer"
+        )
+
+        options = q.get("options")
+
+        if (
+            isinstance(
+                correct_answer,
+                str
+            )
+            and options
+            and correct_answer in options
+        ):
+            correct_answer = options[
+                correct_answer
+            ]
+
+        topic = q.get("topic")
+
+        student_answer = answers.get(q_id)
+
+        normalized_correct = (
+            correct_answer
+        )
+
+        if student_answer in (
+            None,
+            "",
+            [],
+            {}
+        ):
+            selected_option = None
+            is_correct = False
+
+        else:
+            selected_option = (
+                json.dumps(student_answer)
+                if isinstance(
+                    student_answer,
+                    list
+                )
+                else str(student_answer)
+            )
+
+            if (
+                isinstance(
+                    normalized_correct,
+                    str
+                )
+                and "value"
+                in normalized_correct
+            ):
+                try:
+                    normalized_correct = (
+                        json.loads(
+                            normalized_correct.replace(
+                                "'",
+                                '"'
+                            )
+                        )["value"]
+                    )
+                except:
+                    pass
+
+            if (
+                isinstance(
+                    normalized_correct,
+                    dict
+                )
+                and "value"
+                in normalized_correct
+            ):
+                normalized_correct = (
+                    normalized_correct[
+                        "value"
+                    ]
+                )
+
+            normalized_student = (
+                normalize_naplan_evaluation_answer_value(
+                    student_answer
+                )
+            )
+
+            normalized_correct = (
+                normalize_naplan_evaluation_answer_value(
+                    normalized_correct
+                )
+            )
+
+            if isinstance(
+                normalized_correct,
+                str
+            ):
+                try:
+                    parsed = json.loads(
+                        normalized_correct.replace(
+                            "'",
+                            '"'
+                        )
+                    )
+
+                    if isinstance(
+                        parsed,
+                        list
+                    ):
+                        normalized_correct = parsed
+
+                except:
+                    if (
+                        normalized_correct.isalpha()
+                        and normalized_correct.isupper()
+                    ):
+                        normalized_correct = list(
+                            normalized_correct
+                        )
+
+            if isinstance(
+                normalized_correct,
+                list
+            ):
+                normalized_correct = [
+                    str(x).upper()
+                    for x in normalized_correct
+                ]
+
+            if isinstance(
+                normalized_student,
+                list
+            ):
+                normalized_student = [
+                    str(x).upper()
+                    for x in normalized_student
+                ]
+
+            if isinstance(
+                normalized_correct,
+                list
+            ):
+                if isinstance(
+                    normalized_student,
+                    list
+                ):
+                    is_correct = (
+                        sorted(
+                            normalized_correct
+                        )
+                        ==
+                        sorted(
+                            normalized_student
+                        )
+                    )
+                else:
+                    is_correct = False
+            else:
+                is_correct = (
+                    normalized_student
+                    ==
+                    normalized_correct
+                )
+
+        if is_correct:
+            correct_count += 1
+        else:
+            wrong_count += 1
+
+        db.add(
+            StudentExamResponseNaplanLanguageConventionsHomework(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=attempt.id,
+                year=student_year,
+                q_id=int(q_id),
+                topic=topic,
+                selected_option=selected_option,
+                correct_option=str(
+                    correct_answer
+                ),
+                is_correct=is_correct
+            )
+        )
+
+    # --------------------------------------------------
+    # 7. Complete attempt
+    # --------------------------------------------------
+    total_questions = len(
+        questions
+    )
+
+    accuracy = (
+        round(
+            (
+                correct_count
+                / total_questions
+            ) * 100,
+            2
+        )
+        if total_questions
+        else 0
+    )
+
+    attempt.completed_at = (
+        datetime.now(
+            timezone.utc
+        )
+    )
+
+    db.commit()
+
+    print(
+        "🏁 Language Conventions "
+        "homework completed"
+    )
+
+    return {
+        "status": "success",
+        "exam_attempt_id":
+            attempt.id,
+        "accuracy_percent":
+            accuracy
+    }
+
 @app.post("/api/student/finish-exam/naplan-language-conventions")
 def finish_naplan_language_conventions_exam(
     payload: dict,
@@ -42345,6 +45534,424 @@ def finish_naplan_reading_exam(
         "exam_attempt_id": attempt.id,
         "accuracy_percent": accuracy
     }
+@app.post("/api/student/finish-homework-exam/naplan-reading")
+def finish_naplan_reading_homework_exam(
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    print(
+        "🔔 FINISH NAPLAN "
+        "READING HOMEWORK EXAM CALLED"
+    )
+    print(
+        "📦 RAW PAYLOAD:",
+        payload
+    )
+
+    # --------------------------------------------------
+    # 0️⃣ Extract + validate student_id
+    # --------------------------------------------------
+    external_student_id = payload.get(
+        "student_id"
+    )
+
+    answers = payload.get(
+        "answers",
+        {}
+    )
+
+    if not external_student_id:
+        print("❌ Missing student_id")
+
+        raise HTTPException(
+            status_code=400,
+            detail="student_id is required"
+        )
+
+    print(
+        f"👤 External Student ID: "
+        f"{external_student_id}"
+    )
+
+    print(
+        f"📝 Answers received: "
+        f"{answers}"
+    )
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve Student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(
+                Student.student_id
+            )
+            == func.lower(
+                external_student_id
+                .strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+        print(
+            "❌ Student not found "
+            "in finish-homework-exam"
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        f"👤 Resolved DB Student ID: "
+        f"{student.id}"
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch latest unfinished homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(
+            StudentExamNaplanReadingHomework
+        )
+        .filter(
+            StudentExamNaplanReadingHomework.student_id
+            == student.id,
+
+            StudentExamNaplanReadingHomework.completed_at
+            .is_(None)
+        )
+        .order_by(
+            StudentExamNaplanReadingHomework.started_at
+            .desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        print(
+            "❌ No active Reading "
+            "homework attempt found"
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No active NAPLAN "
+                "Reading homework "
+                "attempt to finish"
+            )
+        )
+
+    print(
+        f"📌 Found attempt ID: "
+        f"{attempt.id}"
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Idempotent completion guard
+    # --------------------------------------------------
+    if attempt.completed_at is not None:
+        print(
+            "⚠️ Reading homework "
+            "already completed"
+        )
+
+        return {
+            "status":
+                "already_completed",
+            "exam_attempt_id":
+                attempt.id
+        }
+
+    # --------------------------------------------------
+    # 4️⃣ Fetch linked homework exam
+    # --------------------------------------------------
+    exam = (
+        db.query(
+            ExamNaplanReadingHomework
+        )
+        .filter(
+            ExamNaplanReadingHomework.id
+            == attempt.exam_id
+        )
+        .first()
+    )
+
+    if not exam:
+        print(
+            "❌ Homework exam "
+            "not found"
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "NAPLAN Reading "
+                "homework exam "
+                "not found"
+            )
+        )
+
+    questions = (
+        exam.questions or []
+    )
+
+    print(
+        "🧠 DEBUG:",
+        "exam_id =", exam.id,
+        "questions_len =",
+        len(questions),
+        "attempt_id =",
+        attempt.id
+    )
+
+    # --------------------------------------------------
+    # 5️⃣ Clear previous responses
+    # --------------------------------------------------
+    deleted = (
+        db.query(
+            StudentExamResponseNaplanReadingHomework
+        )
+        .filter(
+            StudentExamResponseNaplanReadingHomework
+            .exam_attempt_id
+            == attempt.id
+        )
+        .delete()
+    )
+
+    print(
+        f"🧹 Cleared previous "
+        f"homework responses: "
+        f"{deleted}"
+    )
+
+    correct_count = 0
+    wrong_count = 0
+
+    # --------------------------------------------------
+    # 6️⃣ Evaluate answers
+    # --------------------------------------------------
+    for q in questions:
+
+        q_id = str(
+            q.get("question_id")
+            or q.get("id")
+            or q.get("passage_id")
+        )
+
+        bundle = (
+            q.get("exam_bundle")
+            or {}
+        )
+
+        correct_answer = (
+            q.get("correct_answer")
+            or bundle.get(
+                "correct_answer"
+            )
+        )
+
+        # fallback word_select
+        if correct_answer is None:
+
+            for block in bundle.get(
+                "question_blocks",
+                []
+            ):
+                if (
+                    block.get("type")
+                    == "word_select"
+                ):
+                    arr = (
+                        block.get(
+                            "correct_answers"
+                        )
+                        or []
+                    )
+
+                    if arr:
+                        correct_answer = arr[0]
+                        break
+
+        topic = q.get("topic")
+
+        student_answer = answers.get(
+            q_id
+        )
+
+        student_answer = (
+            normalize_student_answer(
+                student_answer
+            )
+        )
+
+        if student_answer in (
+            None,
+            "",
+            [],
+            {}
+        ):
+            selected_option = None
+            is_correct = False
+
+        else:
+            selected_option = str(
+                student_answer
+            )
+
+            if isinstance(
+                correct_answer,
+                list
+            ):
+
+                if (
+                    len(correct_answer)
+                    == 1
+                    and not isinstance(
+                        student_answer,
+                        list
+                    )
+                ):
+                    is_correct = (
+                        str(
+                            student_answer
+                        ).strip()
+                        ==
+                        str(
+                            correct_answer[0]
+                        ).strip()
+                    )
+
+                elif isinstance(
+                    student_answer,
+                    list
+                ):
+
+                    safe_correct = [
+                        str(x).strip()
+                        for x in (
+                            correct_answer
+                            or []
+                        )
+                        if x not in (
+                            None,
+                            ""
+                        )
+                    ]
+
+                    safe_student = [
+                        str(x).strip()
+                        for x in (
+                            student_answer
+                            or []
+                        )
+                        if x not in (
+                            None,
+                            ""
+                        )
+                    ]
+
+                    tf_values = {
+                        "True",
+                        "False"
+                    }
+
+                    if set(
+                        safe_correct
+                    ).issubset(
+                        tf_values
+                    ):
+                        is_correct = (
+                            safe_student
+                            ==
+                            safe_correct
+                        )
+                    else:
+                        is_correct = (
+                            sorted(
+                                safe_student
+                            )
+                            ==
+                            sorted(
+                                safe_correct
+                            )
+                        )
+
+                else:
+                    is_correct = False
+
+            else:
+                is_correct = (
+                    str(
+                        student_answer
+                    ).strip()
+                    ==
+                    str(
+                        correct_answer
+                    ).strip()
+                )
+
+        if is_correct:
+            correct_count += 1
+        else:
+            wrong_count += 1
+
+        db.add(
+            StudentExamResponseNaplanReadingHomework(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=attempt.id,
+                year=attempt.year,
+                q_id=q_id,
+                topic=topic,
+                selected_option=selected_option,
+                correct_option=str(
+                    correct_answer
+                ),
+                is_correct=is_correct
+            )
+        )
+
+    # --------------------------------------------------
+    # 7️⃣ Save results
+    # --------------------------------------------------
+    total_questions = len(
+        questions
+    )
+
+    accuracy = round(
+        (
+            correct_count
+            / total_questions
+        ) * 100,
+        2
+    ) if total_questions else 0
+
+    attempt.completed_at = datetime.now(
+        timezone.utc
+    )
+
+    db.commit()
+
+    print(
+        "🏁 NAPLAN Reading "
+        "homework successfully completed"
+    )
+
+    return {
+        "status":
+            "success",
+        "exam_attempt_id":
+            attempt.id,
+        "accuracy_percent":
+            accuracy
+    }
 def snapshot_naplan_numeracy_responses_for_admin(db: Session, attempt):
 
     print("📦 Snapshotting Naplan Numeracy responses")
@@ -42409,7 +46016,7 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Student not found")
 
     student_year_str = student.student_year
-    student_year = student_year_to_int(student_year_str)
+    student_year = student_year_to_int_naplan(student_year_str)
     
     print(f"📅 Student year string: {student_year_str}")
     print(f"📅 Student year int: {student_year}")
@@ -42602,6 +46209,230 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         "accuracy_percent": accuracy
     }
 
+@app.post("/api/student/finish-homework-exam/naplan-numeracy")
+def finish_naplan_numeracy_homework_exam(
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+
+    print("🔔 FINISH NAPLAN NUMERACY HOMEWORK CALLED")
+    print("📦 RAW PAYLOAD:", payload)
+
+    # --------------------------------------------------
+    # 0. Extract payload
+    # --------------------------------------------------
+    external_student_id = payload.get("student_id")
+    answers = payload.get("answers", {})
+
+    if not external_student_id:
+        raise HTTPException(
+            status_code=400,
+            detail="student_id is required"
+        )
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(external_student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    student_year = student_year_to_int_naplan(
+        student.student_year
+    )
+
+    print(f"👤 Student: {student.id}")
+    print(f"📅 Year: {student_year}")
+
+    # --------------------------------------------------
+    # 2. Fetch active homework attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanNumeracyHomework)
+        .filter(
+            StudentExamNaplanNumeracyHomework.student_id == student.id,
+            StudentExamNaplanNumeracyHomework.year == student_year,
+            StudentExamNaplanNumeracyHomework.completed_at.is_(None)
+        )
+        .order_by(
+            StudentExamNaplanNumeracyHomework.started_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail="No active homework attempt to finish"
+        )
+
+    # --------------------------------------------------
+    # 3. Already completed guard
+    # --------------------------------------------------
+    if attempt.completed_at is not None:
+        return {
+            "status": "already_completed",
+            "exam_attempt_id": attempt.id
+        }
+
+    # --------------------------------------------------
+    # 4. Fetch linked homework exam
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanNumeracyHomework)
+        .filter(
+            ExamNaplanNumeracyHomework.id == attempt.exam_id,
+            ExamNaplanNumeracyHomework.year == student_year
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=500,
+            detail="Homework exam linked to attempt not found"
+        )
+
+    questions = exam.questions or []
+
+    # --------------------------------------------------
+    # 5. Clear previous responses
+    # --------------------------------------------------
+    db.query(
+        StudentExamResponseNaplanNumeracyHomework
+    ).filter(
+        StudentExamResponseNaplanNumeracyHomework.exam_attempt_id
+        == attempt.id
+    ).delete()
+
+    correct_count = 0
+    wrong_count = 0
+
+    # --------------------------------------------------
+    # 6. Evaluate answers
+    # --------------------------------------------------
+    for q in questions:
+
+        q_id = str(q.get("id"))
+        topic = q.get("topic")
+        correct_answer = q.get("correct_answer")
+        student_answer = answers.get(q_id)
+
+        if (
+            isinstance(student_answer, str)
+            and student_answer.isdigit()
+        ):
+            student_answer = int(student_answer)
+
+        normalized_correct = correct_answer
+
+        if student_answer in (None, "", [], {}):
+            selected_option = None
+            is_correct = False
+
+        else:
+            selected_option = (
+                json.dumps(student_answer)
+                if isinstance(student_answer, list)
+                else str(student_answer)
+            )
+
+            if isinstance(correct_answer, dict):
+                normalized_correct = (
+                    correct_answer.get("value")
+                )
+
+            if (
+                isinstance(normalized_correct, str)
+                and normalized_correct.isdigit()
+            ):
+                normalized_correct = int(
+                    normalized_correct
+                )
+
+            options = q.get("options")
+
+            if (
+                q.get("question_type") == 5
+                and options
+                and isinstance(normalized_correct, str)
+                and normalized_correct in options
+            ):
+                normalized_correct = options[
+                    normalized_correct
+                ]
+
+            if isinstance(normalized_correct, list):
+                if isinstance(student_answer, list):
+                    is_correct = sorted(
+                        map(str, normalized_correct)
+                    ) == sorted(
+                        map(str, student_answer)
+                    )
+                else:
+                    is_correct = False
+            else:
+                is_correct = (
+                    str(student_answer).strip()
+                    == str(normalized_correct).strip()
+                )
+
+        if is_correct:
+            correct_count += 1
+        else:
+            wrong_count += 1
+
+        db.add(
+            StudentExamResponseNaplanNumeracyHomework(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=attempt.id,
+                year=student_year,
+                q_id=int(q_id),
+                topic=topic,
+                selected_option=selected_option,
+                correct_option=str(normalized_correct),
+                is_correct=is_correct
+            )
+        )
+
+    # --------------------------------------------------
+    # 7. Finish attempt
+    # --------------------------------------------------
+    total_questions = len(questions)
+
+    accuracy = (
+        round(
+            (correct_count / total_questions) * 100,
+            2
+        )
+        if total_questions else 0
+    )
+
+    attempt.completed_at = datetime.now(
+        timezone.utc
+    )
+
+    db.commit()
+
+    print("🏁 Homework completed successfully")
+
+    return {
+        "status": "success",
+        "exam_attempt_id": attempt.id,
+        "accuracy_percent": accuracy
+    }
 
 @app.get("/api/student/exam-review/naplan-reading")
 def get_naplan_reading_review(
@@ -42773,13 +46604,264 @@ def get_naplan_reading_review(
         "questions": normalized_questions,
         "student_answers": student_answers
     }
-
-@app.get("/api/student/exam-review/naplan-language-conventions")
-def get_naplan_language_conventions_review(
+@app.get("/api/student/exam-review/naplan-reading-homework")
+def get_naplan_reading_homework_review(
     student_id: str,
+    exam_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    print("\n================ NAPLAN LANGUAGE CONVENTIONS REVIEW =================")
+    print(
+        "\n================ NAPLAN "
+        "READING HOMEWORK REVIEW "
+        "================="
+    )
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(
+                Student.student_id
+            )
+            == func.lower(
+                student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    # --------------------------------------------------
+    # 2. Get completed homework attempt
+    # --------------------------------------------------
+    query = (
+        db.query(
+            StudentExamNaplanReadingHomework
+        )
+        .filter(
+            StudentExamNaplanReadingHomework.student_id
+            == student.id,
+
+            StudentExamNaplanReadingHomework.completed_at
+            .isnot(None)
+        )
+    )
+
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanReadingHomework.exam_id
+            == exam_id
+        )
+
+    attempt = (
+        query
+        .order_by(
+            StudentExamNaplanReadingHomework.completed_at
+            .desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No completed "
+                "homework attempt found"
+            )
+        )
+
+    # --------------------------------------------------
+    # 3. Fetch exam definition
+    # --------------------------------------------------
+    exam = (
+        db.query(
+            ExamNaplanReadingHomework
+        )
+        .filter(
+            ExamNaplanReadingHomework.id
+            == attempt.exam_id
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Homework exam linked "
+                "to attempt not found"
+            )
+        )
+
+    # --------------------------------------------------
+    # 4. Hydrate + normalize questions
+    # --------------------------------------------------
+    uploaded_images = (
+        db.query(
+            UploadedImage
+        ).all()
+    )
+
+    image_map = {
+        img.original_name:
+        img.gcs_url
+        for img in uploaded_images
+    }
+
+    raw_questions = (
+        hydrate_naplan_question_structure(
+            exam.questions or []
+        )
+    )
+
+    normalized_questions = []
+
+    for q in raw_questions:
+
+        normalize_images_in_question(
+            q,
+            image_map
+        )
+
+        normalize_type2_image_multiselect(q)
+        normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
+        normalize_type6_visual_counting_question(q)
+
+        bundle = q.get(
+            "exam_bundle",
+            {}
+        )
+
+        # ----------------------------------------------
+        # Ensure correct_answer exists
+        # ----------------------------------------------
+        if (
+            "correct_answers"
+            in bundle
+            and bundle[
+                "correct_answers"
+            ]
+        ):
+            bundle[
+                "correct_answer"
+            ] = bundle[
+                "correct_answers"
+            ][0]
+
+        elif (
+            "correct_answer"
+            in bundle
+        ):
+            pass
+
+        else:
+            blocks = bundle.get(
+                "question_blocks",
+                []
+            )
+
+            for b in blocks:
+                if (
+                    b.get("type")
+                    == "word_select"
+                ):
+                    if b.get(
+                        "correct_answers"
+                    ):
+                        bundle[
+                            "correct_answer"
+                        ] = b[
+                            "correct_answers"
+                        ][0]
+                        break
+
+        normalized_questions.append(
+            q
+        )
+
+    # --------------------------------------------------
+    # 5. Fetch student responses
+    # --------------------------------------------------
+    responses = (
+        db.query(
+            StudentExamResponseNaplanReadingHomework
+        )
+        .filter(
+            StudentExamResponseNaplanReadingHomework
+            .exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    student_answers = {}
+
+    for r in responses:
+
+        qid = str(r.q_id)
+
+        raw = r.selected_option
+
+        if raw is None:
+            value = None
+
+        elif isinstance(
+            raw,
+            str
+        ):
+            cleaned = raw.replace(
+                "'",
+                '"'
+            )
+
+            try:
+                value = json.loads(
+                    cleaned
+                )
+            except Exception:
+                value = raw
+
+        else:
+            value = raw
+
+        student_answers[qid] = {
+            "answer":
+                value,
+            "is_correct":
+                r.is_correct
+        }
+
+    # --------------------------------------------------
+    # 6. Return review payload
+    # --------------------------------------------------
+    return {
+        "questions":
+            normalized_questions,
+        "student_answers":
+            student_answers
+    }
+@app.get(
+    "/api/student/exam-review/naplan-language-conventions-homework"
+)
+def get_naplan_language_conventions_homework_review(
+    student_id: str,
+    exam_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n=========== NAPLAN LANGUAGE "
+        "CONVENTIONS HOMEWORK REVIEW ==========="
+    )
 
     # --------------------------------------------------
     # 1. Resolve student
@@ -42788,25 +46870,260 @@ def get_naplan_language_conventions_review(
         db.query(Student)
         .filter(
             func.lower(Student.student_id)
-            == func.lower(student_id.strip())
+            == func.lower(
+                student_id.strip()
+            )
         )
         .first()
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    # --------------------------------------------------
+    # 2. Get completed homework attempt
+    # --------------------------------------------------
+    query = (
+        db.query(
+            StudentExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+            StudentExamNaplanLanguageConventionsHomework.student_id
+            == student.id,
+
+            StudentExamNaplanLanguageConventionsHomework.completed_at
+            .isnot(None)
+        )
+    )
+
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanLanguageConventionsHomework.exam_id
+            == exam_id
+        )
+
+    attempt = (
+        query
+        .order_by(
+            StudentExamNaplanLanguageConventionsHomework.completed_at
+            .desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No completed homework "
+                "attempt found"
+            )
+        )
+
+    # --------------------------------------------------
+    # 3. Fetch homework exam
+    # --------------------------------------------------
+    exam = (
+        db.query(
+            ExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+            ExamNaplanLanguageConventionsHomework.id
+            == attempt.exam_id
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Homework exam linked "
+                "to attempt not found"
+            )
+        )
+
+    # --------------------------------------------------
+    # 4. Normalize questions
+    # --------------------------------------------------
+    uploaded_images = (
+        db.query(
+            UploadedImage
+        ).all()
+    )
+
+    image_map = {
+        img.original_name:
+        img.gcs_url
+        for img in uploaded_images
+    }
+
+    raw_questions = (
+        hydrate_naplan_question_structure(
+            exam.questions or []
+        )
+    )
+
+    raw_questions = (
+        normalize_naplan_numeracy_questions_live(
+            raw_questions
+        )
+    )
+
+    normalized_questions = []
+
+    for q in raw_questions:
+
+        if q.get("question_type") == 1:
+            q = (
+                serialize_type1_question_for_exam(
+                    q
+                )
+            )
+
+        normalize_images_in_question(
+            q,
+            image_map
+        )
+
+        normalize_type2_image_multiselect(q)
+        normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
+        normalize_type6_visual_counting_question(q)
+
+        normalized_questions.append(q)
+
+    # --------------------------------------------------
+    # 5. Fetch student responses
+    # --------------------------------------------------
+    responses = (
+        db.query(
+            StudentExamResponseNaplanLanguageConventionsHomework
+        )
+        .filter(
+            StudentExamResponseNaplanLanguageConventionsHomework
+            .exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    student_answers = {}
+    response_map = {}
+
+    for r in responses:
+
+        qid = str(r.q_id)
+
+        try:
+            value = json.loads(
+                r.selected_option
+            )
+        except Exception:
+            value = r.selected_option
+
+        student_answers[qid] = value
+
+        response_map[qid] = {
+            "correct_answer":
+                r.correct_option,
+            "is_correct":
+                r.is_correct
+        }
+
+    # --------------------------------------------------
+    # 6. Inject answers
+    # --------------------------------------------------
+    for q in normalized_questions:
+
+        qid = str(q.get("id"))
+
+        if qid in response_map:
+
+            q["correct_answer"] = (
+                response_map[qid][
+                    "correct_answer"
+                ]
+            )
+
+            q["is_correct"] = (
+                response_map[qid][
+                    "is_correct"
+                ]
+            )
+
+    # --------------------------------------------------
+    # 7. Return payload
+    # --------------------------------------------------
+    return {
+        "questions":
+            normalized_questions,
+        "student_answers":
+            student_answers
+    }
+
+@app.get("/api/student/exam-review/naplan-language-conventions")
+def get_naplan_language_conventions_review(
+    student_id: str,
+    exam_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    print(
+        "\n================ NAPLAN LANGUAGE "
+        "CONVENTIONS REVIEW ================="
+    )
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(
+                student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
 
     # --------------------------------------------------
     # 2. Get completed attempt
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamNaplanLanguageConventions)
-        .filter(
-            StudentExamNaplanLanguageConventions.student_id == student.id,
-            StudentExamNaplanLanguageConventions.completed_at.isnot(None)
+    query = (
+        db.query(
+            StudentExamNaplanLanguageConventions
         )
+        .filter(
+            StudentExamNaplanLanguageConventions.student_id
+            == student.id,
+
+            StudentExamNaplanLanguageConventions.completed_at
+            .isnot(None)
+        )
+    )
+
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanLanguageConventions.exam_id
+            == exam_id
+        )
+
+    attempt = (
+        query
         .order_by(
-            StudentExamNaplanLanguageConventions.completed_at.desc()
+            StudentExamNaplanLanguageConventions.completed_at
+            .desc()
         )
         .first()
     )
@@ -42821,42 +47138,68 @@ def get_naplan_language_conventions_review(
     # 3. Fetch exam
     # --------------------------------------------------
     exam = (
-        db.query(ExamNaplanLanguageConventions)
-        .filter(ExamNaplanLanguageConventions.id == attempt.exam_id)
+        db.query(
+            ExamNaplanLanguageConventions
+        )
+        .filter(
+            ExamNaplanLanguageConventions.id
+            == attempt.exam_id
+        )
         .first()
     )
 
     if not exam:
         raise HTTPException(
             status_code=500,
-            detail="Exam linked to attempt not found"
+            detail=(
+                "Exam linked to attempt "
+                "not found"
+            )
         )
 
     # --------------------------------------------------
     # 4. Normalize questions
-    # (same pipeline used for numeracy)
     # --------------------------------------------------
-    uploaded_images = db.query(UploadedImage).all()
+    uploaded_images = (
+        db.query(
+            UploadedImage
+        ).all()
+    )
+
     image_map = {
-        img.original_name: img.gcs_url
+        img.original_name:
+        img.gcs_url
         for img in uploaded_images
     }
 
-    raw_questions = hydrate_naplan_question_structure(
-        exam.questions or []
+    raw_questions = (
+        hydrate_naplan_question_structure(
+            exam.questions or []
+        )
     )
 
-    # Same normalization because question types are identical
-    raw_questions = normalize_naplan_numeracy_questions_live(raw_questions)
+    raw_questions = (
+        normalize_naplan_numeracy_questions_live(
+            raw_questions
+        )
+    )
 
     normalized_questions = []
 
     for q in raw_questions:
 
         if q.get("question_type") == 1:
-            q = serialize_type1_question_for_exam(q)
+            q = (
+                serialize_type1_question_for_exam(
+                    q
+                )
+            )
 
-        normalize_images_in_question(q, image_map)
+        normalize_images_in_question(
+            q,
+            image_map
+        )
+
         normalize_type2_image_multiselect(q)
         normalize_type2_correct_answer(q)
         normalize_type3_numeric_input_question(q)
@@ -42869,9 +47212,12 @@ def get_naplan_language_conventions_review(
     # 5. Fetch student responses
     # --------------------------------------------------
     responses = (
-        db.query(StudentExamResponseNaplanLanguageConventions)
+        db.query(
+            StudentExamResponseNaplanLanguageConventions
+        )
         .filter(
-            StudentExamResponseNaplanLanguageConventions.exam_attempt_id
+            StudentExamResponseNaplanLanguageConventions
+            .exam_attempt_id
             == attempt.id
         )
         .all()
@@ -42881,38 +47227,54 @@ def get_naplan_language_conventions_review(
     response_map = {}
 
     for r in responses:
+
         qid = str(r.q_id)
 
-        # student answer
         try:
-            value = json.loads(r.selected_option)
+            value = json.loads(
+                r.selected_option
+            )
         except Exception:
             value = r.selected_option
 
         student_answers[qid] = value
 
-        # correct answer
         response_map[qid] = {
-            "correct_answer": r.correct_option,
-            "is_correct": r.is_correct
+            "correct_answer":
+                r.correct_option,
+            "is_correct":
+                r.is_correct
         }
 
     # --------------------------------------------------
-    # 6. Inject correct_answer into questions
+    # 6. Inject answers into questions
     # --------------------------------------------------
     for q in normalized_questions:
+
         qid = str(q.get("id"))
 
         if qid in response_map:
-           q["correct_answer"] = response_map[qid]["correct_answer"]
-           q["is_correct"] = response_map[qid]["is_correct"]
+
+            q["correct_answer"] = (
+                response_map[qid][
+                    "correct_answer"
+                ]
+            )
+
+            q["is_correct"] = (
+                response_map[qid][
+                    "is_correct"
+                ]
+            )
 
     # --------------------------------------------------
-    # 7. Return review payload
+    # 7. Return payload
     # --------------------------------------------------
     return {
-        "questions": normalized_questions,
-        "student_answers": student_answers
+        "questions":
+            normalized_questions,
+        "student_answers":
+            student_answers
     }
 
 @app.get("/api/student/exam-review/naplan-numeracy")
@@ -43048,7 +47410,157 @@ def get_naplan_numeracy_review(
         "questions": normalized_questions,
         "student_answers": student_answers
     }
- 
+@app.get("/api/student/exam-review/naplan-numeracy-homework")
+def get_naplan_numeracy_homework_review(
+    student_id: str,
+    exam_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    print("\n=========== NAPLAN NUMERACY HOMEWORK REVIEW ===========")
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    # --------------------------------------------------
+    # 2. Get completed homework attempt
+    # --------------------------------------------------
+    query = db.query(
+        StudentExamNaplanNumeracyHomework
+    ).filter(
+        StudentExamNaplanNumeracyHomework.student_id == student.id,
+        StudentExamNaplanNumeracyHomework.completed_at.isnot(None)
+    )
+
+    if exam_id is not None:
+        query = query.filter(
+            StudentExamNaplanNumeracyHomework.exam_id == exam_id
+        )
+
+    attempt = (
+        query
+        .order_by(
+            StudentExamNaplanNumeracyHomework.completed_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail="No completed homework attempt found"
+        )
+
+    # --------------------------------------------------
+    # 3. Fetch homework exam
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanNumeracyHomework)
+        .filter(
+            ExamNaplanNumeracyHomework.id == attempt.exam_id
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=500,
+            detail="Homework exam linked to attempt not found"
+        )
+
+    # --------------------------------------------------
+    # 4. Normalize questions
+    # --------------------------------------------------
+    uploaded_images = db.query(
+        UploadedImage
+    ).all()
+
+    image_map = {
+        img.original_name: img.gcs_url
+        for img in uploaded_images
+    }
+
+    raw_questions = hydrate_naplan_question_structure(
+        exam.questions or []
+    )
+
+    raw_questions = normalize_naplan_numeracy_questions_live(
+        raw_questions
+    )
+
+    normalized_questions = []
+
+    for q in raw_questions:
+        if q.get("question_type") == 1:
+            q = serialize_type1_question_for_exam(q)
+
+        normalize_images_in_question(q, image_map)
+        normalize_type2_image_multiselect(q)
+        normalize_type2_correct_answer(q)
+        normalize_type3_numeric_input_question(q)
+        normalize_type4_text_input_question(q)
+        normalize_type6_visual_counting_question(q)
+
+        normalized_questions.append(q)
+
+    # --------------------------------------------------
+    # 5. Fetch student responses
+    # --------------------------------------------------
+    responses = (
+        db.query(
+            StudentExamResponseNaplanNumeracyHomework
+        )
+        .filter(
+            StudentExamResponseNaplanNumeracyHomework.exam_attempt_id
+            == attempt.id
+        )
+        .all()
+    )
+
+    student_answers = {}
+    response_map = {}
+
+    for r in responses:
+        qid = str(r.q_id)
+
+        try:
+            value = json.loads(r.selected_option)
+        except Exception:
+            value = r.selected_option
+
+        student_answers[qid] = value
+        response_map[qid] = r.correct_option
+
+    # --------------------------------------------------
+    # 6. Inject correct answers
+    # --------------------------------------------------
+    for q in normalized_questions:
+        qid = str(q.get("id"))
+
+        if qid in response_map:
+            q["correct_answer"] = response_map[qid]
+
+    # --------------------------------------------------
+    # 7. Return payload
+    # --------------------------------------------------
+    return {
+        "questions": normalized_questions,
+        "student_answers": student_answers
+    } 
 def snapshot_thinking_skills_responses_for_admin(db, attempt):
     responses = (
         db.query(StudentExamResponseThinkingSkills)
