@@ -9804,6 +9804,7 @@ def get_homework_dates_reading(student_id: str, db: Session = Depends(get_db)):
     return [
         {
             "exam_id": exam.exam_id,
+             "session_id": exam.id, 
             "date": exam.completed_at  # ✅ SAFE (always exists after submit)
         }
         for exam in exams
