@@ -6038,7 +6038,235 @@ def normalize_questions_for_homework(raw_questions):
 
     return normalized
 
-     
+def extract_year_number(year_str):
+    try:
+        return int(year_str.strip().split()[-1])
+    except:
+        return None
+    
+@app.get("/api/student/available-subjects-naplan")
+def get_available_subjects_naplan(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n📡 NAPLAN AVAILABLE-SUBJECTS REQUEST")
+    print("➡ student_id:", student_id)
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # --------------------------------------------------
+    # 2️⃣ Normalize year
+    # --------------------------------------------------
+    student_year = extract_year_number(student.student_year)
+
+    if student_year is None:
+        raise HTTPException(status_code=400, detail="Invalid student year format")
+
+    class_name = student.class_name.strip()
+
+    # ==================================================
+    # 🔢 NUMERACY
+    # ==================================================
+    numeracy_exam_enabled = False
+    numeracy_homework_enabled = False
+
+    numeracy_exam = (
+        db.query(ExamNaplanNumeracy)
+        .filter(
+            func.lower(ExamNaplanNumeracy.class_name) == func.lower(class_name),
+            ExamNaplanNumeracy.year == student_year,
+            func.lower(ExamNaplanNumeracy.subject) == "numeracy"
+        )
+        .order_by(ExamNaplanNumeracy.created_at.desc())
+        .first()
+    )
+
+    if numeracy_exam:
+        attempt = (
+            db.query(StudentExamNaplanNumeracy)
+            .filter(
+                StudentExamNaplanNumeracy.student_id == student.id,
+                StudentExamNaplanNumeracy.exam_id == numeracy_exam.id
+            )
+            .order_by(StudentExamNaplanNumeracy.started_at.desc())
+            .first()
+        )
+
+        if not attempt or attempt.completed_at is None:
+            numeracy_exam_enabled = True
+
+    numeracy_homework_exam = (
+        db.query(ExamNaplanNumeracyHomework)
+        .filter(
+            func.lower(ExamNaplanNumeracyHomework.class_name) == func.lower(class_name),
+            ExamNaplanNumeracyHomework.year == student_year,
+            func.lower(ExamNaplanNumeracyHomework.subject) == "numeracy"
+        )
+        .order_by(ExamNaplanNumeracyHomework.created_at.desc())
+        .first()
+    )
+
+    if numeracy_homework_exam:
+        attempt = (
+            db.query(StudentExamNaplanNumeracyHomework)
+            .filter(
+                StudentExamNaplanNumeracyHomework.student_id == student.id,
+                StudentExamNaplanNumeracyHomework.exam_id == numeracy_homework_exam.id
+            )
+            .order_by(StudentExamNaplanNumeracyHomework.started_at.desc())
+            .first()
+        )
+
+        if not attempt or attempt.completed_at is None:
+            numeracy_homework_enabled = True
+
+    # ==================================================
+    # 📖 READING
+    # ==================================================
+    reading_exam_enabled = False
+    reading_homework_enabled = False
+
+    reading_exam = (
+        db.query(ExamNaplanReading)
+        .filter(
+            func.lower(ExamNaplanReading.class_name) == func.lower(class_name),
+            ExamNaplanReading.year == student_year,
+            func.lower(ExamNaplanReading.subject) == "reading"
+        )
+        .order_by(ExamNaplanReading.created_at.desc())
+        .first()
+    )
+
+    if reading_exam:
+        attempt = (
+            db.query(StudentExamNaplanReading)
+            .filter(
+                StudentExamNaplanReading.student_id == student.id,
+                StudentExamNaplanReading.exam_id == reading_exam.id
+            )
+            .order_by(StudentExamNaplanReading.started_at.desc())
+            .first()
+        )
+
+        if not attempt or attempt.completed_at is None:
+            reading_exam_enabled = True
+
+    reading_homework_exam = (
+        db.query(ExamNaplanReadingHomework)
+        .filter(
+            func.lower(ExamNaplanReadingHomework.class_name) == func.lower(class_name),
+            ExamNaplanReadingHomework.year == student_year,
+            func.lower(ExamNaplanReadingHomework.subject) == "reading"
+        )
+        .order_by(ExamNaplanReadingHomework.created_at.desc())
+        .first()
+    )
+
+    if reading_homework_exam:
+        attempt = (
+            db.query(StudentExamNaplanReadingHomework)
+            .filter(
+                StudentExamNaplanReadingHomework.student_id == student.id,
+                StudentExamNaplanReadingHomework.exam_id == reading_homework_exam.id
+            )
+            .order_by(StudentExamNaplanReadingHomework.started_at.desc())
+            .first()
+        )
+
+        if not attempt or attempt.completed_at is None:
+            reading_homework_enabled = True
+
+    # ==================================================
+    # 🧾 LANGUAGE CONVENTIONS
+    # ==================================================
+    language_exam_enabled = False
+    language_homework_enabled = False
+
+    language_exam = (
+        db.query(ExamNaplanLanguageConventions)
+        .filter(
+            func.lower(ExamNaplanLanguageConventions.class_name) == func.lower(class_name),
+            ExamNaplanLanguageConventions.year == student_year,
+            func.lower(ExamNaplanLanguageConventions.subject) == "language_conventions"
+        )
+        .order_by(ExamNaplanLanguageConventions.created_at.desc())
+        .first()
+    )
+
+    if language_exam:
+        attempt = (
+            db.query(StudentExamNaplanLanguageConventions)
+            .filter(
+                StudentExamNaplanLanguageConventions.student_id == student.id,
+                StudentExamNaplanLanguageConventions.exam_id == language_exam.id
+            )
+            .order_by(StudentExamNaplanLanguageConventions.started_at.desc())
+            .first()
+        )
+
+        if not attempt or attempt.completed_at is None:
+            language_exam_enabled = True
+
+    language_homework_exam = (
+        db.query(ExamNaplanLanguageConventionsHomework)
+        .filter(
+            func.lower(ExamNaplanLanguageConventionsHomework.class_name) == func.lower(class_name),
+            ExamNaplanLanguageConventionsHomework.year == student_year,
+            func.lower(ExamNaplanLanguageConventionsHomework.subject) == "language_conventions"
+        )
+        .order_by(ExamNaplanLanguageConventionsHomework.created_at.desc())
+        .first()
+    )
+
+    if language_homework_exam:
+        attempt = (
+            db.query(StudentExamNaplanLanguageConventionsHomework)
+            .filter(
+                StudentExamNaplanLanguageConventionsHomework.student_id == student.id,
+                StudentExamNaplanLanguageConventionsHomework.exam_id == language_homework_exam.id
+            )
+            .order_by(StudentExamNaplanLanguageConventionsHomework.started_at.desc())
+            .first()
+        )
+
+        if not attempt or attempt.completed_at is None:
+            language_homework_enabled = True
+
+    # ==================================================
+    # 🎯 FINAL RESPONSE
+    # ==================================================
+    response = {
+        "numeracy": {
+            "exam": numeracy_exam_enabled,
+            "homework": numeracy_homework_enabled
+        },
+        "reading": {
+            "exam": reading_exam_enabled,
+            "homework": reading_homework_enabled
+        },
+        "language_conventions": {
+            "exam": language_exam_enabled,
+            "homework": language_homework_enabled
+        }
+    }
+
+    print("✅ NAPLAN Availability response:", response)
+
+    return response
+
 @app.delete("/api/admin/delete-writing-homework-questions")
 def delete_all_writing_questions(db: Session = Depends(get_db)):
     try:
@@ -17032,25 +17260,51 @@ def get_question_bank_mathematical_reasoning(
         for row in results
     ]
  
+import re
+
+def helper_extract_year_writing_api(value):
+    if not value:
+        return None
+
+    if isinstance(value, int):
+        return value
+
+    if isinstance(value, str):
+        match = re.search(r"\d+", value)
+        return int(match.group()) if match else None
+
+    return None
+
+
 @app.get("/api/writing/topics")
 def get_writing_topics(
     difficulty: str = Query(...),
-    class_year: str = Query(...),   # ✅ ADD
-    class_name: str = Query(...),   # ✅ ADD (optional but good)
+    class_year: str = Query(...),
+    class_name: str = Query(...),
     db: Session = Depends(get_db),
 ):
     print("📥 Fetching Writing topics")
-    print(f"   difficulty={difficulty}, class_year={class_year}, class_name={class_name}")
+    print(f"   RAW → difficulty={difficulty}, class_year={class_year}, class_name={class_name}")
 
     DB_SUBJECT = "Writing"
+
+    normalized_year = helper_extract_year_writing_api(class_year)
+
+    if normalized_year is None:
+        print("❌ Invalid class_year after normalization")
+        return []
+
+    normalized_year_str = str(normalized_year)
+
+    print(f"   NORMALIZED class_year → {normalized_year_str}")
 
     topics = (
         db.query(func.distinct(WritingQuestionBank.topic))
         .filter(
             func.lower(func.trim(WritingQuestionBank.subject)) == DB_SUBJECT.lower(),
             func.lower(func.trim(WritingQuestionBank.difficulty)) == difficulty.lower(),
-            func.lower(func.trim(WritingQuestionBank.class_year)) == class_year.lower(),   # ✅ ADD
-            func.lower(func.trim(WritingQuestionBank.class_name)) == class_name.lower(),   # ✅ ADD
+            WritingQuestionBank.class_year == normalized_year_str,  # ✅ FIXED
+            func.lower(func.trim(WritingQuestionBank.class_name)) == class_name.lower(),
         )
         .order_by(WritingQuestionBank.topic)
         .all()
@@ -25108,11 +25362,14 @@ def get_naplan_numeracy_report(
     )
 
     if not attempt:
-        print("❌ No completed Numeracy attempt found for student_id:", student.id)
-        raise HTTPException(
-            status_code=404,
-            detail="No completed NAPLAN Numeracy exam found"
-        )
+        return {
+            "status": "no_data",
+            "message": "No completed NAPLAN Numeracy exam found",
+            "overall": None,
+            "topic_wise_performance": [],
+            "topic_accuracy": [],
+            "improvement_areas": []
+        }
 
     print(
         "📌 Using exam attempt:",
@@ -25132,11 +25389,14 @@ def get_naplan_numeracy_report(
     )
 
     if not responses:
-        print("❌ No responses found for attempt_id:", attempt.id)
-        raise HTTPException(
-            status_code=404,
-            detail="No responses found for NAPLAN Numeracy exam"
-        )
+        return {
+            "status": "no_data",
+            "message": "No responses found for this exam",
+            "overall": None,
+            "topic_wise_performance": [],
+            "topic_accuracy": [],
+            "improvement_areas": []
+        }
 
     print(f"🧠 Loaded responses: {len(responses)} rows")
 
@@ -31845,13 +32105,41 @@ def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
         raise ValueError("No valid writing questions detected")
 
     return normalized
+import re
+
+def helper_extract_year_writing_v2(value):
+    print("\n🔍 RAW class_year value:", value, "| type:", type(value))
+
+    if not value:
+        print("⚠️ class_year is missing or empty")
+        return None
+
+    if isinstance(value, int):
+        print("✅ class_year is already int:", value)
+        return value
+
+    if isinstance(value, str):
+        match = re.search(r"\d+", value)
+        if match:
+            extracted = int(match.group())
+            print("✅ Extracted year from string:", extracted)
+            return extracted
+        else:
+            print("❌ No number found in string:", value)
+            return None
+
+    print("❌ Unsupported type for class_year:", type(value))
+    return None
+
 
 @app.post("/upload-word-writing")
 async def upload_word_writing(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    print("\n=== UPLOAD WORD WRITING ===")
+    print("\n=== 📥 UPLOAD WORD WRITING START ===")
+    print("📄 File name:", file.filename)
+    print("📄 Content type:", file.content_type)
 
     if file.content_type != (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -31859,7 +32147,10 @@ async def upload_word_writing(
         raise HTTPException(400, "File must be .docx")
 
     raw = await file.read()
+    print("📦 File size (bytes):", len(raw))
+
     extracted_text = extract_text_from_docx(raw)
+    print("🧾 Extracted text preview:", extracted_text[:300])
 
     try:
         parsed_list = parse_and_normalize_writing_with_openai(extracted_text)
@@ -31867,37 +32158,74 @@ async def upload_word_writing(
         print("❌ Writing normalization error:", e)
         raise HTTPException(400, str(e))
 
+    print("📊 Total parsed items:", len(parsed_list))
+
     if not parsed_list:
         raise HTTPException(400, "No writing questions detected")
 
     saved_ids = []
 
-    for parsed in parsed_list:
+    for idx, parsed in enumerate(parsed_list):
+        print(f"\n================ ITEM {idx + 1} ================")
+        print("📦 FULL PARSED OBJECT:\n", parsed)
+
+        # 🔥 Extract and debug class year
+        raw_class_year = parsed.get("class_year")
+        class_year = helper_extract_year_writing_v2(raw_class_year)
+
+        print("➡️ Final class_year being saved:", class_year)
+
+        # 🔍 Validate required fields
+        required_fields = ["class_name", "subject", "topic", "difficulty", "question_text", "question_prompt"]
+
+        for field in required_fields:
+            if field not in parsed:
+                print(f"❌ Missing field: {field}")
+
         obj = WritingQuestionBank(
-            class_name=parsed["class_name"],
-            class_year=parsed.get("class_year"),
-            subject=parsed["subject"],
-            topic=parsed["topic"],
-            difficulty=parsed["difficulty"],
-            
+            class_name=parsed.get("class_name"),
+            class_year=class_year,   # ✅ FIXED (no comma)
+            subject=parsed.get("subject"),
+            topic=parsed.get("topic"),
+            difficulty=parsed.get("difficulty"),
+
             title=parsed.get("title"),
-            question_text=parsed["question_text"],
-            question_prompt=parsed["question_prompt"],
+            question_text=parsed.get("question_text"),
+            question_prompt=parsed.get("question_prompt"),
             statement=parsed.get("statement"),
             opening_sentence=parsed.get("opening_sentence"),
-        
-            guidelines=parsed["guidelines"],          # ✅ ADD THIS
-        
+            guidelines=parsed.get("guidelines"),
+
             source_file=file.filename
         )
 
-
+        print("🧠 DB OBJECT BEFORE SAVE:")
+        print("   class_name:", obj.class_name)
+        print("   class_year:", obj.class_year)
+        print("   subject:", obj.subject)
+        print("   topic:", obj.topic)
+        print("   difficulty:", obj.difficulty)
 
         db.add(obj)
-        db.flush()          # get ID before commit
-        saved_ids.append(obj.id)
 
-    db.commit()
+        try:
+            db.flush()
+            print("✅ Saved with ID:", obj.id)
+            saved_ids.append(obj.id)
+        except Exception as db_error:
+            print("❌ DB FLUSH ERROR:", db_error)
+            db.rollback()
+            raise
+
+    try:
+        db.commit()
+        print("\n✅ DB COMMIT SUCCESSFUL")
+    except Exception as commit_error:
+        print("❌ DB COMMIT ERROR:", commit_error)
+        db.rollback()
+        raise
+
+    print("\n=== 🎉 UPLOAD COMPLETE ===")
 
     return {
         "message": "Writing questions uploaded successfully",
@@ -42768,7 +43096,8 @@ def start_naplan_numeracy_exam(
         .filter(
             func.lower(ExamNaplanNumeracy.class_name)
             == func.lower(student.class_name),
-            func.lower(ExamNaplanNumeracy.subject) == "numeracy"
+            func.lower(ExamNaplanNumeracy.subject) == "numeracy",
+            ExamNaplanNumeracy.year == student_year   # ✅ KEY FIX
         )
         .order_by(ExamNaplanNumeracy.created_at.desc())
         .first()
@@ -42808,7 +43137,8 @@ def start_naplan_numeracy_exam(
         print("🚫 Exam already completed — blocking restart")
         return {
             "completed": True,
-            "message": "Exam already completed"
+            "message": "Exam already completed",
+            "exam_id": exam.id
         }
 
     # --------------------------------------------------
@@ -42818,7 +43148,7 @@ def start_naplan_numeracy_exam(
         db.query(StudentExamNaplanNumeracy)
         .filter(
             StudentExamNaplanNumeracy.student_id == student.id,
-            StudentExamNaplanNumeracy.year == student_year,  # ✅ ADD THIS
+            StudentExamNaplanNumeracy.exam_id == exam.id,   # ✅ ADD THIS
             StudentExamNaplanNumeracy.completed_at.is_(None)
         )
         .order_by(StudentExamNaplanNumeracy.started_at.desc())
@@ -42883,20 +43213,11 @@ def start_naplan_numeracy_exam(
     # --------------------------------------------------
     print("🆕 Creating new exam attempt")
 
-    exam = (
-        db.query(ExamNaplanNumeracy)
-        .filter(
-            func.lower(ExamNaplanNumeracy.class_name)
-            == func.lower(student.class_name),
-            func.lower(ExamNaplanNumeracy.subject) == "numeracy"
-        )
-        .order_by(ExamNaplanNumeracy.created_at.desc())
-        .first()
-    )
-
-    if not exam:
-        print("❌ Exam not found")
-        raise HTTPException(status_code=404, detail="Exam not found")
+    db.query(StudentExamNaplanNumeracy).filter(
+        StudentExamNaplanNumeracy.student_id == student.id,
+        StudentExamNaplanNumeracy.exam_id == exam.id,
+        StudentExamNaplanNumeracy.completed_at.is_(None)
+    ).delete()
 
     raw_questions = hydrate_naplan_question_structure(
             exam.questions or []
@@ -46209,6 +46530,204 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         "accuracy_percent": accuracy
     }
 
+@app.post("/api/student/finish-exam/naplan-numeracy")
+def finish_naplan_numeracy_exam(
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    print("\n🔔 FINISH NAPLAN NUMERACY EXAM CALLED")
+    print("📦 RAW PAYLOAD:", payload)
+
+    # --------------------------------------------------
+    # 0. Extract payload
+    # --------------------------------------------------
+    external_student_id = payload.get("student_id")
+    answers = payload.get("answers", {})
+    exam_id = payload.get("exam_id")  # 🔥 REQUIRED
+
+    if not external_student_id or not exam_id:
+        raise HTTPException(
+            status_code=400,
+            detail="student_id and exam_id are required"
+        )
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(external_student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    student_year = student_year_to_int_naplan(student.student_year)
+
+    print(f"👤 Student: {student.id}")
+    print(f"📅 Year: {student_year}")
+    print(f"🧾 Exam ID: {exam_id}")
+
+    # --------------------------------------------------
+    # 2. Fetch ACTIVE attempt for this exam_id
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamNaplanNumeracy)
+        .filter(
+            StudentExamNaplanNumeracy.student_id == student.id,
+            StudentExamNaplanNumeracy.exam_id == exam_id,   # ✅ CRITICAL
+            StudentExamNaplanNumeracy.year == student_year,
+            StudentExamNaplanNumeracy.completed_at.is_(None)
+        )
+        .order_by(StudentExamNaplanNumeracy.started_at.desc())
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail="No active attempt found for this exam"
+        )
+
+    print(f"📌 Using attempt ID: {attempt.id}")
+
+    # --------------------------------------------------
+    # 3. Already completed guard
+    # --------------------------------------------------
+    if attempt.completed_at is not None:
+        return {
+            "status": "already_completed",
+            "exam_attempt_id": attempt.id
+        }
+
+    # --------------------------------------------------
+    # 4. Fetch exam
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanNumeracy)
+        .filter(
+            ExamNaplanNumeracy.id == exam_id,
+            ExamNaplanNumeracy.year == student_year
+        )
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=500,
+            detail="Exam not found"
+        )
+
+    questions = exam.questions or []
+
+    
+
+    # --------------------------------------------------
+    # 6. Evaluate answers
+    # --------------------------------------------------
+    for q in questions:
+
+        q_id = str(q.get("id"))
+        topic = q.get("topic")
+        correct_answer = q.get("correct_answer")
+        student_answer = answers.get(q_id)
+
+        # normalize numeric strings
+        if isinstance(student_answer, str) and student_answer.isdigit():
+            student_answer = int(student_answer)
+
+        normalized_correct = correct_answer
+
+        if student_answer in (None, "", [], {}):
+            selected_option = None
+            is_correct = False
+        else:
+            selected_option = (
+                json.dumps(student_answer)
+                if isinstance(student_answer, list)
+                else str(student_answer)
+            )
+
+            # unwrap {"value": "A"}
+            if isinstance(correct_answer, dict):
+                normalized_correct = correct_answer.get("value")
+
+            # normalize numeric
+            if isinstance(normalized_correct, str) and normalized_correct.isdigit():
+                normalized_correct = int(normalized_correct)
+
+            options = q.get("options")
+
+            # special handling (same as homework)
+            if (
+                q.get("question_type") == 5
+                and options
+                and isinstance(normalized_correct, str)
+                and normalized_correct in options
+            ):
+                normalized_correct = options[normalized_correct]
+
+            # multi-select
+            if isinstance(normalized_correct, list):
+                if isinstance(student_answer, list):
+                    is_correct = sorted(map(str, normalized_correct)) == sorted(map(str, student_answer))
+                else:
+                    is_correct = False
+            else:
+                is_correct = (
+                    str(student_answer).strip()
+                    == str(normalized_correct).strip()
+                )
+
+        if is_correct:
+            correct_count += 1
+        else:
+            wrong_count += 1
+
+        db.add(
+            StudentExamResponseNaplanNumeracy(
+                student_id=student.id,
+                exam_id=exam.id,
+                exam_attempt_id=attempt.id,
+                year=student_year,
+                q_id=int(q_id),
+                topic=topic,
+                selected_option=selected_option,
+                correct_option=str(normalized_correct),
+                is_correct=is_correct
+            )
+        )
+
+    # --------------------------------------------------
+    # 7. COMPLETE ATTEMPT (🔥 YOUR MISSING PIECE)
+    # --------------------------------------------------
+    total_questions = len(questions)
+
+    accuracy = (
+        round((correct_count / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    attempt.completed_at = datetime.now(timezone.utc)  # ✅ CRITICAL FIX
+
+    db.commit()
+
+    print("🏁 Exam completed successfully")
+
+    return {
+        "status": "success",
+        "exam_attempt_id": attempt.id,
+        "accuracy_percent": accuracy
+    }
+
+
 @app.post("/api/student/finish-homework-exam/naplan-numeracy")
 def finish_naplan_numeracy_homework_exam(
     payload: dict,
@@ -46217,6 +46736,8 @@ def finish_naplan_numeracy_homework_exam(
 
     print("🔔 FINISH NAPLAN NUMERACY HOMEWORK CALLED")
     print("📦 RAW PAYLOAD:", payload)
+    wrong_count = 0
+    correct_count = 0
 
     # --------------------------------------------------
     # 0. Extract payload
@@ -46306,18 +46827,7 @@ def finish_naplan_numeracy_homework_exam(
 
     questions = exam.questions or []
 
-    # --------------------------------------------------
-    # 5. Clear previous responses
-    # --------------------------------------------------
-    db.query(
-        StudentExamResponseNaplanNumeracyHomework
-    ).filter(
-        StudentExamResponseNaplanNumeracyHomework.exam_attempt_id
-        == attempt.id
-    ).delete()
-
-    correct_count = 0
-    wrong_count = 0
+    
 
     # --------------------------------------------------
     # 6. Evaluate answers
@@ -53127,7 +53637,7 @@ def create_quiz_oc_mathematical_reasoning(
 
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-     
+     #here12345
 @app.post("/api/quizzes-homework")
 def create_homework_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
