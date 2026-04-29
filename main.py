@@ -6130,8 +6130,19 @@ def get_available_subjects_naplan(
     # ==================================================
     # 🔢 NUMERACY
     # ==================================================
+    print("\n================ NAPLAN NUMERACY AVAILABILITY DEBUG =================")
+
     numeracy_exam_enabled = False
     numeracy_homework_enabled = False
+
+    print(f"🎓 Student ID: {student.id}")
+    print(f"🏫 Class Name (input): '{class_name}'")
+    print(f"📅 Student Year (input): {student_year}")
+
+    # =========================================================
+    # 🔎 FETCH NUMERACY EXAM
+    # =========================================================
+    print("\n--- 🔎 FETCHING NUMERACY EXAM ---")
 
     numeracy_exam = (
         db.query(ExamNaplanNumeracy)
@@ -6144,7 +6155,20 @@ def get_available_subjects_naplan(
         .first()
     )
 
+    print("📦 Numeracy exam result:", numeracy_exam)
+
     if numeracy_exam:
+        print(f"✅ Found Numeracy Exam ID: {numeracy_exam.id}")
+        print(f"   Class: {numeracy_exam.class_name}")
+        print(f"   Year: {numeracy_exam.year}")
+        print(f"   Subject: {numeracy_exam.subject}")
+        print(f"   Created At: {numeracy_exam.created_at}")
+
+        # =========================================================
+        # 🔎 FETCH ATTEMPT FOR THIS EXAM
+        # =========================================================
+        print("\n--- 🔎 FETCHING ATTEMPT FOR THIS EXAM ---")
+
         attempt = (
             db.query(StudentExamNaplanNumeracy)
             .filter(
@@ -6155,8 +6179,33 @@ def get_available_subjects_naplan(
             .first()
         )
 
-        if not attempt or attempt.completed_at is None:
+        print("📦 Attempt result:", attempt)
+
+        if attempt:
+            print(f"🔁 Attempt found → ID: {attempt.id}")
+            print(f"   Started At: {attempt.started_at}")
+            print(f"   Completed At: {attempt.completed_at}")
+
+            if attempt.completed_at is None:
+                print("🟡 Attempt is IN PROGRESS → enabling exam (resume)")
+                numeracy_exam_enabled = True
+            else:
+                print("🔴 Attempt is COMPLETED → disabling exam")
+                numeracy_exam_enabled = False
+
+        else:
+            print("🟢 No attempt found → enabling exam (fresh start)")
             numeracy_exam_enabled = True
+
+    else:
+        print("❌ No numeracy exam found → disabling button")
+        numeracy_exam_enabled = False
+
+
+    # =========================================================
+    # 🔎 FETCH NUMERACY HOMEWORK EXAM
+    # =========================================================
+    print("\n--- 🔎 FETCHING NUMERACY HOMEWORK EXAM ---")
 
     numeracy_homework_exam = (
         db.query(ExamNaplanNumeracyHomework)
@@ -6169,7 +6218,16 @@ def get_available_subjects_naplan(
         .first()
     )
 
+    print("📦 Numeracy homework exam result:", numeracy_homework_exam)
+
     if numeracy_homework_exam:
+        print(f"✅ Found Homework Exam ID: {numeracy_homework_exam.id}")
+
+        # =========================================================
+        # 🔎 FETCH HOMEWORK ATTEMPT
+        # =========================================================
+        print("\n--- 🔎 FETCHING HOMEWORK ATTEMPT ---")
+
         attempt = (
             db.query(StudentExamNaplanNumeracyHomework)
             .filter(
@@ -6180,8 +6238,30 @@ def get_available_subjects_naplan(
             .first()
         )
 
-        if not attempt or attempt.completed_at is None:
+        print("📦 Homework attempt result:", attempt)
+
+        if attempt:
+            print(f"🔁 Homework attempt found → ID: {attempt.id}")
+            print(f"   Completed At: {attempt.completed_at}")
+
+            if attempt.completed_at is None:
+                print("🟡 Homework attempt IN PROGRESS → enabling")
+                numeracy_homework_enabled = True
+            else:
+                print("🔴 Homework attempt COMPLETED → disabling")
+                numeracy_homework_enabled = False
+
+        else:
+            print("🟢 No homework attempt → enabling")
             numeracy_homework_enabled = True
+
+    else:
+        print("❌ No homework exam found → disabling")
+
+    print("\n================ FINAL AVAILABILITY =================")
+    print("📊 Numeracy Exam Enabled:", numeracy_exam_enabled)
+    print("📊 Numeracy Homework Enabled:", numeracy_homework_enabled)
+    print("====================================================\n")
 
     # ==================================================
     # 📖 READING
@@ -33036,21 +33116,44 @@ def start_naplan_language_conventions_exam(
         f"student_id={student.student_id} | "
         f"internal_id={student.id}"
     )
+    # --------------------------------------------------
+    # 2️⃣ Fetch latest exam FIRST
+    # --------------------------------------------------
+    exam = (
+        db.query(ExamNaplanLanguageConventions)
+        .filter(
+            func.lower(ExamNaplanLanguageConventions.class_name) == func.lower(student.class_name),
+            func.lower(ExamNaplanLanguageConventions.subject) == "language conventions",
+            ExamNaplanLanguageConventions.year == student_year
+        )
+        .order_by(ExamNaplanLanguageConventions.created_at.desc())
+        .first()
+    )
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="NAPLAN Language Conventions exam not found"
+        )
+
+    print(f"📦 Latest exam ID: {exam.id}")
 
     # --------------------------------------------------
-    # 2️⃣ Fetch latest attempt
+    # 3️⃣ Fetch attempt ONLY for this exam
     # --------------------------------------------------
     attempt = (
         db.query(StudentExamNaplanLanguageConventions)
         .filter(
             StudentExamNaplanLanguageConventions.student_id == student.id,
-            StudentExamNaplanLanguageConventions.year == student_year
+            StudentExamNaplanLanguageConventions.exam_id == exam.id
         )
         .order_by(
             StudentExamNaplanLanguageConventions.started_at.desc()
         )
         .first()
     )
+
+    print("📦 Attempt for this exam:", attempt.id if attempt else None)
 
     MAX_DURATION = timedelta(minutes=40)
     now = datetime.now(timezone.utc)
@@ -33096,26 +33199,7 @@ def start_naplan_language_conventions_exam(
         # ▶ Resume active attempt
         remaining = max(0, attempt.duration_minutes * 60 - elapsed)
 
-        exam = (
-            db.query(ExamNaplanLanguageConventions)
-            .filter(
-                func.lower(ExamNaplanLanguageConventions.class_name) ==
-                func.lower(student.class_name),
-                func.lower(ExamNaplanLanguageConventions.subject) ==
-                "language conventions",
-                ExamNaplanLanguageConventions.year == student_year
-            )
-            .order_by(
-                ExamNaplanLanguageConventions.created_at.desc()
-            )
-            .first()
-        )
-
-        if not exam:
-            raise HTTPException(
-                status_code=404,
-                detail="NAPLAN Language Conventions exam not found"
-            )
+        
 
         # 🔥 SANITIZE BEFORE RETURNING
         raw_questions = normalize_naplan_language_conventions_questions_live(
