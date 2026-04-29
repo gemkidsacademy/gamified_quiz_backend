@@ -1,4 +1,4 @@
-# main.py
+# main.py (new feature branch)
 from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body, Request    
 from passlib.context import CryptContext     
 import uvicorn       
@@ -80,11 +80,16 @@ print("PGHOST:", os.environ.get("PGHOST"))
 print("PGPORT:", os.environ.get("PGPORT"))
 print("PGDATABASE:", os.environ.get("PGDATABASE"))
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or (
-    f"postgresql://{os.environ['PGUSER']}:{os.environ['PGPASSWORD']}"
-    f"@{os.environ['PGHOST']}:{os.environ['PGPORT']}/{os.environ['PGDATABASE']}"
-)
-print("Connecting to DATABASE_URL:", DATABASE_URL)
+
+
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise Exception("❌ DATABASE_URL must be explicitly set")
+
+print("✅ Connecting to DATABASE_URL:", DATABASE_URL)
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -730,11 +735,7 @@ class StudentHomeworkMathematicalReasoning(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(
-        Integer,
-        ForeignKey("students.id"),
-        nullable=False
-    )
+    student_id = Column(Integer)
 
     homework_id = Column(
         Integer,
@@ -1235,12 +1236,7 @@ class StudentExamResponseMathematicalReasoning(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # 🔑 Internal student FK (students.id)
-    student_id = Column(
-        Integer,
-        ForeignKey("students.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
+    student_id = Column(Integer)
     exam_id = Column(
         Integer,
         ForeignKey("exams.id", ondelete="CASCADE"),
@@ -1332,12 +1328,7 @@ class StudentExamMathematicalReasoning(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # 🔑 INTERNAL student FK (students.id)"
-    student_id = Column(
-        Integer,
-        ForeignKey("students.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
+    student_id = Column(Integer)
 
     # 🔑 Exam definition FK (exams.id)
     exam_id = Column(
@@ -1693,7 +1684,7 @@ class StudentExamThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer)
     exam_id = Column(
         Integer,
         ForeignKey("exams.id", ondelete="SET NULL"),
@@ -2107,7 +2098,7 @@ class StudentExamResponseThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer)
     exam_id = Column(
         Integer,
         ForeignKey("exams.id", ondelete="SET NULL"),
@@ -3027,7 +3018,7 @@ class StudentExamWriting(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # Internal student reference
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer)
 
     # Writing exam definition
     exam_id = Column(Integer, ForeignKey("generated_exam_writing.id"))
@@ -3868,16 +3859,13 @@ class Activity(Base):
     class_day = Column(String)
     week_number = Column(Integer)  
     
-class ActivityAttempt(Base):
-    __tablename__ = "activity_attempts"
-    attempt_id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("users_temp.id"))
-    quiz_id = Column(Integer, ForeignKey("student_quizzes.quiz_id"))
-    score = Column(Integer)
-    time_taken = Column(Integer)
-    week_number = Column(Integer)
-    term_number = Column(Integer)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+#class ActivityAttempt(Base):
+ #quiz_id = Column(Integer, ForeignKey("student_quizzes.quiz_id"))
+    #score = Column(Integer)
+    #time_taken = Column(Integer)
+    #week_number = Column(Integer)
+    #term_number = Column(Integer)
+    #timestamp = Column(DateTime, default=datetime.utcnow)
 
 class OTPRequest(BaseModel):
     email: str
