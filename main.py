@@ -6043,6 +6043,53 @@ def extract_year_number(year_str):
         return int(year_str.strip().split()[-1])
     except:
         return None
+@app.get("/api/exams/writing/review-by-attempt")
+def get_writing_review_by_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n📝 WRITING EXAM REVIEW")
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamWriting)
+        .filter(StudentExamWriting.id == attempt_id)
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+
+    print("✅ Found attempt:", attempt_id)
+
+    # --------------------------------------------------
+    # 2️⃣ Extract evaluation safely
+    # --------------------------------------------------
+    evaluation = attempt.ai_evaluation_json or {}
+
+    print("📦 Evaluation JSON:", evaluation)
+
+    # --------------------------------------------------
+    # 3️⃣ Return response
+    # --------------------------------------------------
+    return {
+        "attempt_id": attempt.id,
+        "student_id": attempt.student_id,
+
+        # 🔥 THIS IS WHAT YOUR UI NEEDS
+        "answer_text": attempt.answer_text,
+
+        # 📊 Evaluation
+        "score": attempt.ai_score,
+        "evaluation": evaluation,
+        "selective_readiness_band": evaluation.get("selective_readiness_band"),
+
+        # 📅 Metadata
+        "completed_at": attempt.completed_at,
+        "duration_minutes": attempt.duration_minutes,
+    }
 
 @app.get("/api/student/homework-writing-review-by-attempt")
 def get_homework_writing_review_by_attempt(
