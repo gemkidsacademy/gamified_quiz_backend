@@ -53991,7 +53991,7 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
             Quiz.class_name == quiz.class_name,
             Quiz.subject == quiz.subject,
             Quiz.class_year == quiz.class_year,   # ✅ IMPORTANT
-            Quiz.difficulty == quiz.difficulty
+            
         ).delete(synchronize_session=False)
 
         print(f"🗑️ Deleted quizzes (scoped): {deleted_quizzes}")
@@ -54008,7 +54008,7 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
             class_name=quiz.class_name,     # ✅ already correct
             subject=quiz.subject,
             class_year=quiz.class_year,     # ✅ NEW (CRITICAL)
-            difficulty=quiz.difficulty,
+            
             num_topics=quiz.num_topics,
             topics=[t.dict() for t in quiz.topics]
         )
