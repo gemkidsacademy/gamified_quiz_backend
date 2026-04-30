@@ -41249,7 +41249,15 @@ def start_exam(
     # 3️⃣ Load quiz (class-based) 
     # --------------------------------------------------
     quiz = (
-        db.query(Quiz)
+        db.query(
+            Quiz.id,
+            Quiz.class_name,
+            Quiz.subject,
+            Quiz.class_year,
+            Quiz.num_topics,
+            Quiz.topics,
+            Quiz.created_at
+        )
         .filter(func.lower(Quiz.class_name) == func.lower(student.class_name))
         .order_by(Quiz.id.desc())
         .first()
