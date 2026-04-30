@@ -6973,6 +6973,7 @@ def get_available_subjects(
     
             if completed_homework_attempt:
                 thinking_homework_enabled = False
+    
     # ==================================================
     # 📖 READING
     # ==================================================
@@ -6981,63 +6982,62 @@ def get_available_subjects(
 
     print("\n========== 📖 READING AVAILABILITY DEBUG START ==========")
 
-    # -----------------------------
-    # 1️⃣ CHECK LATEST ATTEMPT (SOURCE OF TRUTH)
-    # -----------------------------
-    reading_attempt = (
+    # Normalize student values
+    class_name = student.class_name.strip().lower()
+    class_year = student.student_year.strip().lower()
+
+    # ==================================================
+    # 1️⃣ EXAM LOGIC
+    # ==================================================
+
+    # --- Latest Exam ---
+    latest_exam = (
+        db.query(GeneratedExamReading)
+        .filter(func.lower(GeneratedExamReading.class_name) == class_name)
+        .order_by(GeneratedExamReading.id.desc())
+        .first()
+    )
+
+    print("📘 Latest exam:", latest_exam)
+
+    # --- Latest Attempt ---
+    latest_attempt = (
         db.query(StudentExamReading)
         .filter(StudentExamReading.student_id == student.id)
         .order_by(StudentExamReading.started_at.desc())
         .first()
     )
 
-    print("🔎 Latest reading attempt:", reading_attempt)
+    print("🔎 Latest exam attempt:", latest_attempt)
 
-    if reading_attempt:
-        print(f"   ├─ attempt.id: {reading_attempt.id}")
-        print(f"   ├─ exam_id: {reading_attempt.exam_id}")
-        print(f"   ├─ started_at: {reading_attempt.started_at}")
-        print(f"   └─ finished: {reading_attempt.finished}")
+    # --- Decision ---
+    if not latest_exam:
+        print("❌ No exam → disable")
+        reading_exam_enabled = False
 
-        if reading_attempt.finished is True:
-            print("⛔ Attempt already completed → disabling button")
-            reading_exam_enabled = False
-        else:
-            print("🟡 Attempt in progress → enabling (resume)")
-            reading_exam_enabled = True
+    elif not latest_attempt:
+        print("🆕 No attempt → enable")
+        reading_exam_enabled = True
 
-    # -----------------------------
-    # 2️⃣ NO ATTEMPT → CHECK IF EXAM EXISTS
-    # -----------------------------
+    elif latest_attempt.exam_id != latest_exam.id:
+        print("🆕 New exam available → enable")
+        reading_exam_enabled = True
+
+    elif latest_attempt.finished is False:
+        print("🟡 Resume attempt → enable")
+        reading_exam_enabled = True
+
     else:
-        print("🆕 No attempt found → checking for available exam")
+        print("⛔ Exam already completed → disable")
+        reading_exam_enabled = False
 
-        reading_exam = (
-            db.query(GeneratedExamReading)
-            .filter(GeneratedExamReading.class_name == "selective")
-            .order_by(GeneratedExamReading.id.desc())
-            .first()
-        )
 
-        print("🔎 Reading exam fetched:", reading_exam)
+    # ==================================================
+    # 2️⃣ HOMEWORK LOGIC (FIXED SAME WAY)
+    # ==================================================
 
-        if reading_exam:
-            print(f"✅ Exam exists (ID: {reading_exam.id}) → enabling button")
-            reading_exam_enabled = True
-        else:
-            print("❌ No exam found → disabling button")
-            reading_exam_enabled = False
-
-    print(f"🎯 Final reading_exam_enabled = {reading_exam_enabled}")
-    print("========== 📖 READING AVAILABILITY DEBUG END ==========\n")
-    
-    # -----------------------------
-    # 2️⃣ HOMEWORK
-    # -----------------------------
-    class_name = student.class_name.strip().lower()
-    class_year = student.student_year.strip().lower()
-    
-    homework_exam = (
+    # --- Latest Homework Exam ---
+    latest_homework_exam = (
         db.query(GeneratedHomeworkReading)
         .filter(
             func.lower(GeneratedHomeworkReading.class_name) == class_name,
@@ -7046,22 +7046,44 @@ def get_available_subjects(
         .order_by(GeneratedHomeworkReading.id.desc())
         .first()
     )
-    
-    if not homework_exam:
+
+    print("📘 Latest homework exam:", latest_homework_exam)
+
+    # --- Latest Homework Attempt ---
+    latest_homework_attempt = (
+        db.query(StudentHomeworkReading)
+        .filter(StudentHomeworkReading.student_id == student.id)
+        .order_by(StudentHomeworkReading.started_at.desc())
+        .first()
+    )
+
+    print("🔎 Latest homework attempt:", latest_homework_attempt)
+
+    # --- Decision ---
+    if not latest_homework_exam:
+        print("❌ No homework → disable")
         reading_homework_enabled = False
+
+    elif not latest_homework_attempt:
+        print("🆕 No homework attempt → enable")
+        reading_homework_enabled = True
+
+    elif latest_homework_attempt.exam_id != latest_homework_exam.id:
+        print("🆕 New homework available → enable")
+        reading_homework_enabled = True
+
+    elif latest_homework_attempt.finished is False:
+        print("🟡 Homework in progress → enable")
+        reading_homework_enabled = True
+
     else:
-        homework_attempt = (
-            db.query(StudentHomeworkReading)
-            .filter(
-                StudentHomeworkReading.student_id == student.id,
-                StudentHomeworkReading.exam_id == homework_exam.id
-            )
-            .order_by(StudentHomeworkReading.started_at.desc())
-            .first()
-        )
-    
-        if homework_attempt and homework_attempt.finished:
-            reading_homework_enabled = False
+        print("⛔ Homework already completed → disable")
+        reading_homework_enabled = False
+
+
+    print(f"🎯 Final reading_exam_enabled = {reading_exam_enabled}")
+    print(f"🎯 Final reading_homework_enabled = {reading_homework_enabled}")
+    print("========== 📖 READING AVAILABILITY DEBUG END ==========\n")
     # ==================================================
     # ✍️ WRITING
     # ==================================================
