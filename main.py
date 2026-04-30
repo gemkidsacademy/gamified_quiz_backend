@@ -54007,7 +54007,8 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         new_quiz = Quiz(
             class_name=quiz.class_name,     # ✅ already correct
             subject=quiz.subject,
-            class_year=quiz.class_year,     # ✅ NEW (CRITICAL)
+            class_year=quiz.class_year,
+            difficulty=quiz.difficulty,      # ✅ NEW (CRITICAL)
             
             num_topics=quiz.num_topics,
             topics=[t.dict() for t in quiz.topics]
