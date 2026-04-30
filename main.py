@@ -6929,35 +6929,60 @@ def get_available_subjects(
     # ==================================================
     # 📖 READING
     # ==================================================
-    reading_exam_enabled = True
+    reading_exam_enabled = False
     reading_homework_enabled = True
-    
+
+    print("\n========== 📖 READING AVAILABILITY DEBUG START ==========")
+
     # -----------------------------
-    # 1️⃣ NORMAL EXAM
+    # 1️⃣ CHECK LATEST ATTEMPT (SOURCE OF TRUTH)
     # -----------------------------
-    reading_exam = (
-        db.query(GeneratedExamReading)
-        .filter(GeneratedExamReading.class_name == "selective")
-        .order_by(GeneratedExamReading.id.desc())
+    reading_attempt = (
+        db.query(StudentExamReading)
+        .filter(StudentExamReading.student_id == student.id)
+        .order_by(StudentExamReading.started_at.desc())
         .first()
     )
-    
-    if not reading_exam:
-        reading_exam_enabled = False
+
+    print("🔎 Latest reading attempt:", reading_attempt)
+
+    if reading_attempt:
+        print(f"   ├─ attempt.id: {reading_attempt.id}")
+        print(f"   ├─ exam_id: {reading_attempt.exam_id}")
+        print(f"   ├─ started_at: {reading_attempt.started_at}")
+        print(f"   └─ finished: {reading_attempt.finished}")
+
+        if reading_attempt.finished is True:
+            print("⛔ Attempt already completed → disabling button")
+            reading_exam_enabled = False
+        else:
+            print("🟡 Attempt in progress → enabling (resume)")
+            reading_exam_enabled = True
+
+    # -----------------------------
+    # 2️⃣ NO ATTEMPT → CHECK IF EXAM EXISTS
+    # -----------------------------
     else:
-        reading_attempt = (
-            db.query(StudentExamReading)
-            .filter(
-                StudentExamReading.student_id == student.id,
-                StudentExamReading.exam_id == reading_exam.id
-            )
-            .order_by(StudentExamReading.started_at.desc())
+        print("🆕 No attempt found → checking for available exam")
+
+        reading_exam = (
+            db.query(GeneratedExamReading)
+            .filter(GeneratedExamReading.class_name == "selective")
+            .order_by(GeneratedExamReading.id.desc())
             .first()
         )
-    
-        if reading_attempt and reading_attempt.finished:
+
+        print("🔎 Reading exam fetched:", reading_exam)
+
+        if reading_exam:
+            print(f"✅ Exam exists (ID: {reading_exam.id}) → enabling button")
+            reading_exam_enabled = True
+        else:
+            print("❌ No exam found → disabling button")
             reading_exam_enabled = False
-    
+
+    print(f"🎯 Final reading_exam_enabled = {reading_exam_enabled}")
+    print("========== 📖 READING AVAILABILITY DEBUG END ==========\n")
     
     # -----------------------------
     # 2️⃣ HOMEWORK
