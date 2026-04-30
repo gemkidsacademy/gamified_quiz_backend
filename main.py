@@ -19630,7 +19630,6 @@ def generate_exam(
         class_name=quiz.class_name,
         subject=quiz.subject,
         class_year=class_year,   # ✅ THIS FIXES YOUR SYSTEM
-        difficulty=quiz.difficulty,
         questions=questions,
     )
 
