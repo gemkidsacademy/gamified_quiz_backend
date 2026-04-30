@@ -73,7 +73,7 @@ GLOBAL_IMAGE_MAP = {}
 # ---------------------------
 # Database Setup PGUSER,PGPASSWORD,PGHOST,PGPORT,PGDATABASE rewrite "" using PGPASSWORD=lgZmFsBTApVPJIyTegBttTLfdWnvccHj psql -h metro.proxy.rlwy.net -U postgres -p 31631 -d railway
 # ---------------------------
-#DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 # Confirm connection details
 print("PGUSER:", os.environ.get("PGUSER"))
 print("PGHOST:", os.environ.get("PGHOST"))
@@ -83,10 +83,10 @@ print("PGDATABASE:", os.environ.get("PGDATABASE"))
 
 
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or (
-    f"postgresql://{os.environ['PGUSER']}:{os.environ['PGPASSWORD']}"
-    f"@{os.environ['PGHOST']}:{os.environ['PGPORT']}/{os.environ['PGDATABASE']}"
-)
+#DATABASE_URL = os.environ.get("DATABASE_URL") or (
+ #   f"postgresql://{os.environ['PGUSER']}:{os.environ['PGPASSWORD']}"
+  #  f"@{os.environ['PGHOST']}:{os.environ['PGPORT']}/{os.environ['PGDATABASE']}"
+#)
 
 if not DATABASE_URL:
     raise Exception("❌ DATABASE_URL must be explicitly set")
