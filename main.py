@@ -2638,6 +2638,20 @@ class QuizMathematicalReasoning(Base):
 
     # Stores topic configs as JSON
     topics = Column(JSON, nullable=False)
+class QuizMathematicalReasoning_testing(Base):
+    __tablename__ = "quiz_mathematical_reasoning_testing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)  # always mathematical_reasoning
+    
+
+    num_topics = Column(Integer, nullable=False)
+    
+
+    # Stores topic configs as JSON
+    topics = Column(JSON, nullable=False)
  
 class QuizNaplanNumeracy(Base):
     __tablename__ = "quiz_naplan_numeracy"
@@ -6014,77 +6028,61 @@ def get_question_count(
     normalized_class_name = class_name.strip().lower()
     normalized_subject = subject.replace("_", " ").strip().lower()
 
-    print(f"➡️ Raw topic: '{topic}' → normalized: '{normalized_topic}'")
+    print(f"➡️ topic: '{normalized_topic}'")
     print(f"➡️ class_year: {class_year}")
-    print(f"➡️ Raw class_name: '{class_name}' → normalized: '{normalized_class_name}'")
-    print(f"➡️ Raw subject: '{subject}' → normalized: '{normalized_subject}'")
+    print(f"➡️ class_name: '{normalized_class_name}'")
+    print(f"➡️ subject: '{normalized_subject}'")
 
     try:
         # -------------------------------
-        # Step 1: Topic only
+        # 🔁 Base query (reusable)
         # -------------------------------
-        total_topic = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic
-        ).count()
-        print(f"🔎 Total questions (topic only): {total_topic}")
+        base_query = db.query(Question_testing).filter(
+            func.lower(Question_testing.topic) == normalized_topic,
+            Question_testing.class_year == class_year,
+            func.lower(Question_testing.class_name) == normalized_class_name,
+            func.lower(Question_testing.subject) == normalized_subject
+        )
 
         # -------------------------------
-        # Step 2: + class_year
+        # Step 1–5: Progressive debug counts
         # -------------------------------
-        total_year = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year
+        print(f"🔎 Topic only: {db.query(Question_testing).filter(func.lower(Question_testing.topic) == normalized_topic).count()}")
+
+        count_year = db.query(Question_testing).filter(
+            func.lower(Question_testing.topic) == normalized_topic,
+            Question_testing.class_year == class_year
         ).count()
-        print(f"🔎 After class_year filter: {total_year}")
+
+        print(f"🔎 + class_year: {count_year}")
+
+        count_class = db.query(Question_testing).filter(
+            func.lower(Question_testing.topic) == normalized_topic,
+            Question_testing.class_year == class_year,
+            func.lower(Question_testing.class_name) == normalized_class_name
+        ).count()
+
+        print(f"🔎 + class_name: {count_class}")
+        print(f"🔎 + subject: {base_query.count()}")
+
+        unused_query = base_query.filter(Question_testing.is_used == False)
+        print(f"🔎 + is_used=False: {unused_query.count()}")
 
         # -------------------------------
-        # Step 3: + class_name (case insensitive)
-        # -------------------------------
-        total_class = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year,
-            func.lower(Question.class_name) == normalized_class_name
-        ).count()
-        print(f"🔎 After class_name filter: {total_class}")
-
-        # -------------------------------
-        # Step 4: + subject (normalized)
-        # -------------------------------
-        total_subject = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year,
-            func.lower(Question.class_name) == normalized_class_name,
-            func.lower(Question.subject) == normalized_subject
-        ).count()
-        print(f"🔎 After subject filter: {total_subject}")
-
-        # -------------------------------
-        # Step 5: + unused only
-        # -------------------------------
-        total_unused = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year,
-            func.lower(Question.class_name) == normalized_class_name,
-            func.lower(Question.subject) == normalized_subject,
-            Question.is_used == False
-        ).count()
-        print(f"🔎 After is_used filter: {total_unused}")
-
-        # -------------------------------
-        # Step 6: Grouped count by difficulty
+        # Step 6: Group by difficulty
         # -------------------------------
         results = db.query(
-            func.lower(Question.difficulty),
-            func.count(Question.id)
+            func.lower(Question_testing.difficulty),
+            func.count(Question_testing.id)
         ).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year,
-            func.lower(Question.class_name) == normalized_class_name,
-            func.lower(Question.subject) == normalized_subject,
-            Question.is_used == False
-        ).group_by(func.lower(Question.difficulty)).all()
+            func.lower(Question_testing.topic) == normalized_topic,
+            Question_testing.class_year == class_year,
+            func.lower(Question_testing.class_name) == normalized_class_name,
+            func.lower(Question_testing.subject) == normalized_subject,
+            Question_testing.is_used == False
+        ).group_by(func.lower(Question_testing.difficulty)).all()
 
-        print("📊 Raw grouped results:", results)
+        print("📊 Grouped results:", results)
 
         # -------------------------------
         # Step 7: Build response
@@ -6096,7 +6094,6 @@ def get_question_count(
         }
 
         for difficulty, count in results:
-            print(f"➡️ Found: {difficulty} = {count}")
             if difficulty in counts:
                 counts[difficulty] = count
 
@@ -17676,95 +17673,113 @@ def get_topics(
     print(f"   RAW subject    = '{subject}'")
     print(f"   RAW class_year = '{class_year}'")
 
-    normalized_subject = subject.lower().replace("_", " ")
+    # -------------------------------
+    # 🔧 Normalize inputs
+    # -------------------------------
+    normalized_class = class_name.strip().lower()
+    normalized_subject = subject.replace("_", " ").strip().lower()
 
     print("\n🔧 Normalized values:")
-    print(f"   class_name = '{class_name.lower()}'")
+    print(f"   class_name = '{normalized_class}'")
     print(f"   subject    = '{normalized_subject}'")
     print(f"   class_year = '{class_year}'")
 
-    # Step 1: Check total rows
-    total_rows = db.query(Question).count()
-    print(f"\n📊 Total rows in Question table: {total_rows}")
+    try:
+        # -------------------------------
+        # 📊 Basic counts
+        # -------------------------------
+        total_rows = db.query(Question_testing).count()
+        print(f"\n📊 Total rows in Question_testing: {total_rows}")
 
-    # Step 2: Check class filter only
-    class_filtered = db.query(Question).filter(
-        func.lower(func.trim(Question.class_name)) == class_name.lower()
-    ).count()
-    print(f"📊 Rows after class_name filter: {class_filtered}")
+        class_filtered = db.query(Question_testing).filter(
+            func.lower(func.trim(Question_testing.class_name)) == normalized_class
+        ).count()
+        print(f"📊 Rows after class_name filter: {class_filtered}")
 
-    # Step 3: Check subject filter only
-    subject_filtered = db.query(Question).filter(
-        func.lower(func.trim(Question.subject)) == normalized_subject
-    ).count()
-    print(f"📊 Rows after subject filter: {subject_filtered}")
+        subject_filtered = db.query(Question_testing).filter(
+            func.lower(func.trim(Question_testing.subject)) == normalized_subject
+        ).count()
+        print(f"📊 Rows after subject filter: {subject_filtered}")
 
-    # Step 4: Check class_year filter only
-    year_filtered = db.query(Question).filter(
-        Question.class_year == class_year
-    ).count()
-    print(f"📊 Rows after class_year filter: {year_filtered}")
+        year_filtered = db.query(Question_testing).filter(
+            Question_testing.class_year == class_year
+        ).count()
+        print(f"📊 Rows after class_year filter: {year_filtered}")
 
-    # Step 5: Combined filters BEFORE topic conditions
-    combined_filtered = db.query(Question).filter(
-        func.lower(func.trim(Question.class_name)) == class_name.lower(),
-        func.lower(func.trim(Question.subject)) == normalized_subject,
-        Question.class_year == class_year,
-    ).count()
-    print(f"📊 Rows after ALL filters (before topic check): {combined_filtered}")
-
-    # Step 6: Check topic issues
-    topic_null_count = db.query(Question).filter(
-        Question.topic.is_(None)
-    ).count()
-
-    topic_empty_count = db.query(Question).filter(
-        Question.topic == ""
-    ).count()
-
-    print(f"\n⚠️ Topic issues:")
-    print(f"   NULL topics  = {topic_null_count}")
-    print(f"   EMPTY topics = {topic_empty_count}")
-
-    # Step 7: Sample rows
-    sample_rows = db.query(
-        Question.class_name,
-        Question.subject,
-        Question.difficulty,
-        Question.class_year,
-        Question.topic
-    ).limit(5).all()
-
-    print("\n🔍 Sample DB rows:")
-    for row in sample_rows:
-        print(
-            f"   class='{row[0]}', "
-            f"subject='{row[1]}', "
-            f"difficulty='{row[2]}', "
-            f"year='{row[3]}', "
-            f"topic='{row[4]}'"
+        # -------------------------------
+        # 🔁 Base query (reusable)
+        # -------------------------------
+        base_query = db.query(Question_testing).filter(
+            func.lower(func.trim(Question_testing.class_name)) == normalized_class,
+            func.lower(func.trim(Question_testing.subject)) == normalized_subject,
+            Question_testing.class_year == class_year,
         )
 
-    # Step 8: Final query (NO difficulty filter)
-    topics = (
-        db.query(func.distinct(Question.topic))
-        .filter(
-            func.lower(func.trim(Question.class_name)) == class_name.lower(),
-            func.lower(func.trim(Question.subject)) == normalized_subject,
-            Question.class_year == class_year,
-            Question.topic.isnot(None),
-            Question.topic != "",
+        combined_filtered = base_query.count()
+        print(f"📊 Rows after ALL filters (before topic check): {combined_filtered}")
+
+        # -------------------------------
+        # ⚠️ Topic issues
+        # -------------------------------
+        topic_null_count = db.query(Question_testing).filter(
+            Question_testing.topic.is_(None)
+        ).count()
+
+        topic_empty_count = db.query(Question_testing).filter(
+            Question_testing.topic == ""
+        ).count()
+
+        print(f"\n⚠️ Topic issues:")
+        print(f"   NULL topics  = {topic_null_count}")
+        print(f"   EMPTY topics = {topic_empty_count}")
+
+        # -------------------------------
+        # 🔍 Sample rows
+        # -------------------------------
+        sample_rows = db.query(
+            Question_testing.class_name,
+            Question_testing.subject,
+            Question_testing.difficulty,
+            Question_testing.class_year,
+            Question_testing.topic
+        ).limit(5).all()
+
+        print("\n🔍 Sample DB rows:")
+        for row in sample_rows:
+            print(
+                f"   class='{row[0]}', "
+                f"subject='{row[1]}', "
+                f"difficulty='{row[2]}', "
+                f"year='{row[3]}', "
+                f"topic='{row[4]}'"
+            )
+
+        # -------------------------------
+        # ✅ Final topic query
+        # -------------------------------
+        topics = (
+            db.query(func.distinct(Question_testing.topic))
+            .filter(
+                func.lower(func.trim(Question_testing.class_name)) == normalized_class,
+                func.lower(func.trim(Question_testing.subject)) == normalized_subject,
+                Question_testing.class_year == class_year,
+                Question_testing.topic.isnot(None),
+                Question_testing.topic != "",
+            )
+            .order_by(Question_testing.topic)
+            .all()
         )
-        .order_by(Question.topic)
-        .all()
-    )
 
-    topic_list = [{"name": t[0]} for t in topics]
+        topic_list = [{"name": t[0]} for t in topics]
 
-    print(f"\n✅ Final Topics found: {len(topic_list)}")
-    print(f"📦 Topics: {topic_list}\n")
+        print(f"\n✅ Final Topics found: {len(topic_list)}")
+        print(f"📦 Topics: {topic_list}\n")
 
-    return topic_list
+        return topic_list
+
+    except Exception as e:
+        print("❌ ERROR in get_topics:", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/topic/oc/math")
 def get_topics_oc_math(
@@ -23055,15 +23070,16 @@ def create_quiz_mathematical_reasoning(
     db: Session = Depends(get_db)
 ):
     """
-    Create a Mathematical Reasoning quiz (admin specification).
-    Stored in quiz_mathematical_reasoning table.
+    Create a Mathematical Reasoning quiz (testing version).
+    Stored in quiz_mathematical_reasoning_testing table.
     """
 
-    print("\n========== MATHEMATICAL REASONING QUIZ CREATION START ==========")
-
+    print("\n========== MR QUIZ (TESTING) CREATION START ==========")
     print("🔍 Incoming payload:", quiz)
 
-    # Convert to dict for debugging
+    # -------------------------------
+    # Validate payload
+    # -------------------------------
     try:
         quiz_dict = quiz.dict()
         print("📦 Parsed quiz payload:", quiz_dict)
@@ -23071,7 +23087,7 @@ def create_quiz_mathematical_reasoning(
         print("❌ Invalid payload")
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Enforce subject correctness
+    # Enforce subject
     if quiz.subject != "mathematical_reasoning":
         raise HTTPException(
             status_code=400,
@@ -23090,18 +23106,24 @@ def create_quiz_mathematical_reasoning(
         print(f"   └─ Topic {i}: {t}")
 
     try:
-        print("\n--- Deleting existing Mathematical Reasoning quizzes ---")
+        # -------------------------------
+        # Delete existing (overwrite mode)
+        # -------------------------------
+        print("\n--- Deleting existing TESTING quizzes ---")
 
-        db.query(QuizMathematicalReasoning).delete()
+        db.query(QuizMathematicalReasoning_testing).delete()
         db.commit()
 
-        print("🗑️ All previous quizzes deleted")
-     
+        print("🗑️ All previous testing quizzes deleted")
+
+        # -------------------------------
+        # Create new quiz
+        # -------------------------------
         print("\n--- Creating SQLAlchemy object ---")
 
-        new_quiz = QuizMathematicalReasoning(
+        new_quiz = QuizMathematicalReasoning_testing(
             class_name=quiz.class_name.strip(),
-            subject="mathematical_reasoning",  # forced
+            subject="mathematical_reasoning",  # enforced
             difficulty=quiz.difficulty.strip(),
             num_topics=quiz.num_topics,
             topics=[t.dict() for t in quiz.topics]
@@ -23111,11 +23133,11 @@ def create_quiz_mathematical_reasoning(
         db.commit()
         db.refresh(new_quiz)
 
-        print("✅ Quiz saved with ID:", new_quiz.id)
-        print("========== QUIZ CREATION COMPLETE ==========\n")
+        print("✅ Testing quiz saved with ID:", new_quiz.id)
+        print("========== MR QUIZ (TESTING) CREATED ==========\n")
 
         return {
-            "message": "Mathematical Reasoning quiz created successfully",
+            "message": "Mathematical Reasoning TESTING quiz created successfully",
             "quiz_id": new_quiz.id
         }
 
@@ -23124,7 +23146,7 @@ def create_quiz_mathematical_reasoning(
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail="Error creating Mathematical Reasoning quiz"
+            detail="Error creating Mathematical Reasoning testing quiz"
         )
 
 @app.post("/api/quizzes/mathematical-reasoning")
