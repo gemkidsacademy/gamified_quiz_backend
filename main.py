@@ -3674,6 +3674,39 @@ class Question(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class Question_testing(Base):
+    __tablename__ = "questions_testing"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    class_name = Column(String(50), nullable=False)
+    subject = Column(String(50), nullable=False)
+    class_year = Column(Integer, nullable=False)
+
+    # NEW — topic extracted from Word/GPT parser
+    topic = Column(String(100), nullable=True)
+
+    difficulty = Column(String(20), nullable=False)
+
+    question_type = Column(String(50), nullable=False)
+    # e.g. "domino_multi_image", "chart_mcq", "text_mcq", "two_diagram_mcq"
+
+    question_text = Column(Text, nullable=True)
+    # ✅ NEW — ordered visual blocks (text + images)
+    question_blocks = Column(JSON, nullable=True)
+
+    # Structured images (list of dicts)
+    images = Column(JSON, nullable=True)
+
+    # Structured MCQ options
+    # e.g. {"A": "...", "B": "...", "C": "...", "D": "..."}
+    options = Column(JSON, nullable=True)
+    is_used = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    correct_answer = Column(String(5), nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class QuestionNaplanReading(Base):
     __tablename__ = "questions_naplan_reading"
 
