@@ -684,7 +684,7 @@ class HomeworkExamMathematicalReasoning(Base):
     class_name = Column(String)
     class_year = Column(String, index=True)  # 👈 added (important)
     subject = Column(String)
-    difficulty = Column(String)
+    
     questions = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
  
@@ -19424,7 +19424,6 @@ def generate_homework_exam(
         class_name=quiz.class_name,
         class_year=class_year,   # 👈 KEY ADDITION
         subject=quiz.subject,
-        difficulty=quiz.difficulty,
         questions=questions,
     )
 
@@ -19646,7 +19645,6 @@ def generate_exam(
         "quiz_id": quiz.id,
         "class_name": quiz.class_name,
         "subject": quiz.subject,
-        "difficulty": quiz.difficulty,
         "total_questions": len(questions),
         "questions": questions,
     }
