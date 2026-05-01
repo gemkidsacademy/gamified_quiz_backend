@@ -257,6 +257,11 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class ResetUsedQuestionsRequest(BaseModel):
+    class_name: str
+    subject: str
+    class_year: int
+    
 class ExamNaplanNumeracyHomework(Base):
     __tablename__ = "exam_naplan_numeracy_homework"
 
@@ -446,7 +451,7 @@ class HomeworkQuiz_OC_MR(Base):
     class_name = Column(String, nullable=False)   # "oc"
     class_year = Column(String, nullable=False)   # "Year 5"
     subject = Column(String, nullable=False)      # "mathematical_reasoning"
-    difficulty = Column(String, nullable=False)
+    
 
     num_topics = Column(Integer, nullable=False)
 
@@ -863,7 +868,7 @@ class HomeWorkExam(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
-    difficulty = Column(String, nullable=False)
+    
 
     questions = Column(JSON, nullable=False)
 
@@ -5965,6 +5970,72 @@ def extract_year_number(year_str):
         return None
     
 from sqlalchemy import func
+from sqlalchemy import func
+
+@app.post("/api/admin/reset-used-questions")
+def reset_used_questions(
+    payload: ResetUsedQuestionsRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n🔁 RESET USED QUESTIONS REQUEST")
+    print("➡ class_name:", payload.class_name)
+    print("➡ subject:", payload.subject)
+    print("➡ class_year:", payload.class_year)
+
+    try:
+        # 🔥 Normalize incoming values
+        subject_map = {
+            "thinking_skills": "Thinking Skills",
+            "mathematical_reasoning": "Mathematical Reasoning",
+            "reading": "Reading",
+            "writing": "Writing",
+        }
+
+        class_map = {
+            "selective": "Selective"
+        }
+
+        db_subject = subject_map.get(payload.subject, payload.subject)
+        db_class = class_map.get(payload.class_name, payload.class_name)
+
+        print("➡ mapped subject:", db_subject)
+        print("➡ mapped class_name:", db_class)
+
+        # ==================================================
+        # UPDATE MATCHING ROWS
+        # ==================================================
+        updated_count = (
+            db.query(Question)
+            .filter(
+                Question.class_year == payload.class_year,
+                func.lower(Question.subject) == db_subject.lower(),
+                func.lower(Question.class_name) == db_class.lower(),
+                Question.is_used == True
+            )
+            .update(
+                {Question.is_used: False},
+                synchronize_session=False
+            )
+        )
+
+        db.commit()
+
+        print(f"✅ Updated {updated_count} questions")
+
+        return {
+            "message": "Used questions reset successfully",
+            "updated_count": updated_count
+        }
+
+    except Exception as e:
+        db.rollback()
+
+        print("❌ ERROR:", str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reset used questions: {str(e)}"
+        )
 
 @app.get("/api/question-count")
 def get_question_count(
@@ -22022,6 +22093,7 @@ def generate_thinking_skills_homework_exam(
 ):
     """
     Generate a Thinking Skills homework exam based on class year.
+    Uses configuration stored in HomeWorkQuiz.
     """
 
     payload = payload or {}
@@ -22034,41 +22106,42 @@ def generate_thinking_skills_homework_exam(
     if not class_year:
         raise HTTPException(
             status_code=400,
-            detail="class_year is required (e.g. year_5)"
+            detail="class_year is required"
         )
 
-    print(f"📘 Generating Thinking Skills HOMEWORK for: {class_year}")
-
     # ==================================================
-    # 1️⃣ Fetch Homework Quiz (NEW TABLE)
+    # 1️⃣ Fetch Latest Homework Quiz
     # ==================================================
-    quiz_query = db.query(HomeWorkQuiz).filter(
-        HomeWorkQuiz.subject == "thinking_skills",
-        HomeWorkQuiz.class_name == "selective",
-        HomeWorkQuiz.class_year == class_year
+    quiz = (
+        db.query(HomeWorkQuiz)
+        .filter(
+            HomeWorkQuiz.subject == "thinking_skills",
+            HomeWorkQuiz.class_name == "selective",
+            HomeWorkQuiz.class_year == class_year
+        )
+        .order_by(HomeWorkQuiz.id.desc())
+        .first()
     )
-
-    quiz = quiz_query.order_by(HomeWorkQuiz.id.desc()).first()
 
     if not quiz:
         raise HTTPException(
             status_code=404,
-            detail=f"No Thinking Skills homework quiz found for {class_year}"
+            detail=f"No Thinking Skills homework quiz found for class_year {class_year}"
         )
 
-    
-
-    # 2️⃣ Generate Questions (unused only)
+    # ==================================================
+    # 2️⃣ Generate Questions
+    # ==================================================
     try:
         generated_questions = generate_exam_questions_selective_ts(
             quiz,
             db,
             only_unused=True
         )
-    except Exception as generation_error:
+    except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate Thinking Skills homework: {str(generation_error)}"
+            detail=f"Failed to generate Thinking Skills homework: {str(e)}"
         )
 
     if not generated_questions:
@@ -22077,15 +22150,12 @@ def generate_thinking_skills_homework_exam(
             detail="No questions generated for Thinking Skills homework"
         )
 
-
+    # ==================================================
     # 3️⃣ Mark Used Questions
-    used_question_ids = []
-
-    for question in generated_questions:
-        question_id = question.get("id")
-
-        if question_id:
-            used_question_ids.append(question_id)
+    # ==================================================
+    used_question_ids = [
+        q.get("id") for q in generated_questions if q.get("id")
+    ]
 
     if used_question_ids:
         db.query(Question).filter(
@@ -22096,13 +22166,14 @@ def generate_thinking_skills_homework_exam(
             synchronize_session=False
         )
 
-
-    # 4️⃣ Save Homework Exam (NEW TABLE)
+    # ==================================================
+    # 4️⃣ Save Homework Exam
+    # ==================================================
     new_exam = HomeWorkExam(
         quiz_id=quiz.id,
         class_name=quiz.class_name,
         subject=quiz.subject,
-        difficulty=quiz.difficulty,
+        
         class_year=class_year,
         questions=generated_questions
     )
@@ -22112,7 +22183,7 @@ def generate_thinking_skills_homework_exam(
     db.refresh(new_exam)
 
     # ==================================================
-    # 4️⃣ Response
+    # 5️⃣ Response
     # ==================================================
     return {
         "message": "Thinking Skills homework generated successfully",
@@ -22120,12 +22191,10 @@ def generate_thinking_skills_homework_exam(
         "quiz_id": quiz.id,
         "class_name": quiz.class_name,
         "class_year": class_year,
-        "subject": quiz.subject,
-        "difficulty": quiz.difficulty,
+        "subject": quiz.subject,        
         "total_questions": len(generated_questions),
         "questions": generated_questions
-    }
- 
+    } 
 
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
@@ -53835,80 +53904,101 @@ def create_quiz_oc_mathematical_reasoning(
 @app.post("/api/quizzes-homework")
 def create_homework_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
-    Create a new homework quiz with controlled deletion (scoped).
+    Create or replace a homework quiz (scoped by class, subject, year, difficulty).
     """
 
-    print("\n========== HOMEWORK QUIZ CREATION START ==========")
-
-    # Debug incoming payload
-    try:
-        quiz_dict = quiz.dict()
-        print("📦 Parsed quiz payload:", quiz_dict)
-    except Exception as e:
-        print("❌ Failed to parse quiz:", e)
-        traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e))
-
-    print("➡️ class_name:", quiz.class_name)
-    print("➡️ subject:", quiz.subject)
-    print("➡️ class_year:", quiz.class_year)
-    print("➡️ difficulty:", quiz.difficulty)
-    print("➡️ num_topics:", quiz.num_topics)
-    print("➡️ topics count:", len(quiz.topics))
-
-    # Validate topics
-    if not isinstance(quiz.topics, list):
-        raise HTTPException(status_code=400, detail="topics must be a list")
+    print("\n========== CREATE HOMEWORK QUIZ START ==========")
 
     try:
         # ==================================================
-        # 1️⃣ SAFE DELETE (scoped)
+        # 0️⃣ Incoming Payload Debug
         # ==================================================
-        deleted_quizzes = db.query(HomeWorkQuiz).filter(
+        try:
+            quiz_dict = quiz.dict()
+            print("📦 Incoming payload:", quiz_dict)
+        except Exception as e:
+            print("❌ Failed to parse quiz payload:", str(e))
+            raise HTTPException(status_code=400, detail="Invalid quiz payload")
+
+        print(f"➡️ class_name: {quiz.class_name}")
+        print(f"➡️ subject: {quiz.subject}")
+        print(f"➡️ class_year: {quiz.class_year}")
+        
+        print(f"➡️ num_topics: {quiz.num_topics}")
+        print(f"➡️ topics count: {len(quiz.topics) if quiz.topics else 0}")
+
+        # ==================================================
+        # 1️⃣ Validation
+        # ==================================================
+        if not isinstance(quiz.topics, list):
+            print("❌ topics is not a list")
+            raise HTTPException(status_code=400, detail="topics must be a list")
+
+        # ==================================================
+        # 2️⃣ Delete Existing (Scoped)
+        # ==================================================
+        print("\n--- Deleting existing homework quizzes ---")
+
+        deleted_count = db.query(HomeWorkQuiz).filter(
             HomeWorkQuiz.class_name == quiz.class_name,
             HomeWorkQuiz.subject == quiz.subject,
-            HomeWorkQuiz.class_year == quiz.class_year,
-            HomeWorkQuiz.difficulty == quiz.difficulty
+            HomeWorkQuiz.class_year == quiz.class_year
         ).delete(synchronize_session=False)
 
-        print(f"🗑️ Deleted homework quizzes (scoped): {deleted_quizzes}")
+        print(f"🗑️ Deleted rows: {deleted_count}")
 
         db.commit()
-        print("✅ Cleanup commit complete")
+        print("✅ Delete commit successful")
 
         # ==================================================
-        # 2️⃣ CREATE HOMEWORK QUIZ
+        # 3️⃣ Create New Quiz
         # ==================================================
-        print("\n--- Creating Homework Quiz ---")
+        print("\n--- Creating new homework quiz ---")
+
+        try:
+            topics_data = [t.dict() for t in quiz.topics]
+            print(f"📊 Topics prepared: {len(topics_data)}")
+        except Exception as e:
+            print("❌ Error converting topics:", str(e))
+            raise
 
         new_quiz = HomeWorkQuiz(
             class_name=quiz.class_name,
             subject=quiz.subject,
             class_year=quiz.class_year,
-            difficulty=quiz.difficulty,
             num_topics=quiz.num_topics,
-            topics=[t.dict() for t in quiz.topics]
+            topics=topics_data
         )
 
         db.add(new_quiz)
         db.commit()
         db.refresh(new_quiz)
 
-        print("✅ Homework Quiz created with ID:", new_quiz.id)
-        print("========== HOMEWORK QUIZ CREATION COMPLETE ==========\n")
+        print(f"✅ Homework quiz created with ID: {new_quiz.id}")
+        print("========== CREATE HOMEWORK QUIZ COMPLETE ==========\n")
 
         return {
-            "message": "Homework quiz created successfully",
-            "quiz_id": new_quiz.id
+            "id": new_quiz.id,
+            "class_name": new_quiz.class_name,
+            "subject": new_quiz.subject,
+            
+            "message": "Homework quiz created successfully"
         }
 
     except Exception as e:
-        print("\n❌ DB ERROR ❌")
-        print(str(e))
+        print("\n❌ ERROR DURING HOMEWORK QUIZ CREATION ❌")
+        print("Error:", str(e))
+
+        import traceback
         traceback.print_exc()
 
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        print("🔄 Rolled back transaction")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating homework quiz: {str(e)}"
+        )
      
 @app.post("/api/quizzes")
 def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
