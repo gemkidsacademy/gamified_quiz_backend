@@ -30408,7 +30408,7 @@ def start_homework_reading(
         raise HTTPException(status_code=404, detail="Student not found")
 
     class_name = student.class_name.strip().lower()
-    class_year = student.student_year.strip().lower()
+    class_year = student.student_year.strip().lower().replace("year", "").strip()
 
     print("✅ Student resolved:", {
         "student_pk": student.id,
@@ -30422,8 +30422,15 @@ def start_homework_reading(
     exam = (
         db.query(GeneratedHomeworkReading)
         .filter(
-            func.lower(GeneratedHomeworkReading.class_name) == class_name,
-            func.lower(GeneratedHomeworkReading.class_year) == class_year
+            func.lower(func.trim(GeneratedHomeworkReading.class_name)) == class_name,
+
+            func.trim(
+                func.replace(
+                    func.lower(GeneratedHomeworkReading.class_year),
+                    "year",
+                    ""
+                )
+            ) == class_year
         )
         .order_by(GeneratedHomeworkReading.id.desc())
         .first()
