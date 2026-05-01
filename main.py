@@ -3941,7 +3941,7 @@ class Exam(Base):
 
     # just a number, NO foreign key
     quiz_id = Column(Integer, nullable=True)
-    difficulty = Column(String, nullable=False)
+    
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
