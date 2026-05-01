@@ -697,7 +697,7 @@ class HomeworkExamMathematicalReasoning(Base):
     class_name = Column(String)
     class_year = Column(String, index=True)  # 👈 added (important)
     subject = Column(String)
-    difficulty = Column(String)
+    
     questions = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
  
@@ -882,7 +882,7 @@ class HomeWorkQuiz(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
-    difficulty = Column(String, nullable=False)
+    
 
     num_topics = Column(Integer, nullable=False)
     topics = Column(JSON, nullable=False)
@@ -3941,7 +3941,7 @@ class Exam(Base):
 
     # just a number, NO foreign key
     quiz_id = Column(Integer, nullable=True)
-
+    difficulty = Column(String, nullable=False)
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
@@ -5968,187 +5968,54 @@ def extract_year_number(year_str):
         return int(year_str.strip().split()[-1])
     except:
         return None
-    
-from sqlalchemy import func
-from sqlalchemy import func
-
-@app.post("/api/admin/reset-used-questions")
-def reset_used_questions(
-    payload: ResetUsedQuestionsRequest,
+@app.get("/api/exams/writing/review-by-attempt")
+def get_writing_review_by_attempt(
+    attempt_id: int,
     db: Session = Depends(get_db)
 ):
-    print("\n🔁 RESET USED QUESTIONS REQUEST")
-    print("➡ class_name:", payload.class_name)
-    print("➡ subject:", payload.subject)
-    print("➡ class_year:", payload.class_year)
+    print("\n📝 WRITING EXAM REVIEW")
 
-    try:
-        # 🔥 Normalize incoming values
-        subject_map = {
-            "thinking_skills": "Thinking Skills",
-            "mathematical_reasoning": "Mathematical Reasoning",
-            "reading": "Reading",
-            "writing": "Writing",
-        }
+    # --------------------------------------------------
+    # 1️⃣ Fetch attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamWriting)
+        .filter(StudentExamWriting.id == attempt_id)
+        .first()
+    )
 
-        class_map = {
-            "selective": "Selective"
-        }
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
 
-        db_subject = subject_map.get(payload.subject, payload.subject)
-        db_class = class_map.get(payload.class_name, payload.class_name)
+    print("✅ Found attempt:", attempt_id)
 
-        print("➡ mapped subject:", db_subject)
-        print("➡ mapped class_name:", db_class)
+    # --------------------------------------------------
+    # 2️⃣ Extract evaluation safely
+    # --------------------------------------------------
+    evaluation = attempt.ai_evaluation_json or {}
 
-        # ==================================================
-        # UPDATE MATCHING ROWS
-        # ==================================================
-        updated_count = (
-            db.query(Question)
-            .filter(
-                Question.class_year == payload.class_year,
-                func.lower(Question.subject) == db_subject.lower(),
-                func.lower(Question.class_name) == db_class.lower(),
-                Question.is_used == True
-            )
-            .update(
-                {Question.is_used: False},
-                synchronize_session=False
-            )
-        )
+    print("📦 Evaluation JSON:", evaluation)
 
-        db.commit()
+    # --------------------------------------------------
+    # 3️⃣ Return response
+    # --------------------------------------------------
+    return {
+        "attempt_id": attempt.id,
+        "student_id": attempt.student_id,
 
-        print(f"✅ Updated {updated_count} questions")
+        # 🔥 THIS IS WHAT YOUR UI NEEDS
+        "answer_text": attempt.answer_text,
 
-        return {
-            "message": "Used questions reset successfully",
-            "updated_count": updated_count
-        }
+        # 📊 Evaluation
+        "score": attempt.ai_score,
+        "evaluation": evaluation,
+        "selective_readiness_band": evaluation.get("selective_readiness_band"),
 
-    except Exception as e:
-        db.rollback()
+        # 📅 Metadata
+        "completed_at": attempt.completed_at,
+        "duration_minutes": attempt.duration_minutes,
+    }
 
-        print("❌ ERROR:", str(e))
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to reset used questions: {str(e)}"
-        )
-
-@app.get("/api/question-count")
-def get_question_count(
-    topic: str,
-    class_year: int,
-    class_name: str,
-    subject: str,
-    db: Session = Depends(get_db)
-):
-    print("\n========== QUESTION COUNT DEBUG ==========")
-
-    # -------------------------------
-    # 🔧 Normalize inputs
-    # -------------------------------
-    normalized_topic = topic.strip().lower()
-    normalized_class_name = class_name.strip().lower()
-    normalized_subject = subject.replace("_", " ").strip().lower()
-
-    print(f"➡️ Raw topic: '{topic}' → normalized: '{normalized_topic}'")
-    print(f"➡️ class_year: {class_year}")
-    print(f"➡️ Raw class_name: '{class_name}' → normalized: '{normalized_class_name}'")
-    print(f"➡️ Raw subject: '{subject}' → normalized: '{normalized_subject}'")
-
-    try:
-        # -------------------------------
-        # Step 1: Topic only
-        # -------------------------------
-        total_topic = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic
-        ).count()
-        print(f"🔎 Total questions (topic only): {total_topic}")
-
-        # -------------------------------
-        # Step 2: + class_year
-        # -------------------------------
-        total_year = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year
-        ).count()
-        print(f"🔎 After class_year filter: {total_year}")
-
-        # -------------------------------
-        # Step 3: + class_name (case insensitive)
-        # -------------------------------
-        total_class = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year,
-            func.lower(Question.class_name) == normalized_class_name
-        ).count()
-        print(f"🔎 After class_name filter: {total_class}")
-
-        # -------------------------------
-        # Step 4: + subject (normalized)
-        # -------------------------------
-        total_subject = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year,
-            func.lower(Question.class_name) == normalized_class_name,
-            func.lower(Question.subject) == normalized_subject
-        ).count()
-        print(f"🔎 After subject filter: {total_subject}")
-
-        # -------------------------------
-        # Step 5: + unused only
-        # -------------------------------
-        total_unused = db.query(Question).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year,
-            func.lower(Question.class_name) == normalized_class_name,
-            func.lower(Question.subject) == normalized_subject,
-            Question.is_used == False
-        ).count()
-        print(f"🔎 After is_used filter: {total_unused}")
-
-        # -------------------------------
-        # Step 6: Grouped count by difficulty
-        # -------------------------------
-        results = db.query(
-            func.lower(Question.difficulty),
-            func.count(Question.id)
-        ).filter(
-            func.lower(Question.topic) == normalized_topic,
-            Question.class_year == class_year,
-            func.lower(Question.class_name) == normalized_class_name,
-            func.lower(Question.subject) == normalized_subject,
-            Question.is_used == False
-        ).group_by(func.lower(Question.difficulty)).all()
-
-        print("📊 Raw grouped results:", results)
-
-        # -------------------------------
-        # Step 7: Build response
-        # -------------------------------
-        counts = {
-            "easy": 0,
-            "medium": 0,
-            "hard": 0
-        }
-
-        for difficulty, count in results:
-            print(f"➡️ Found: {difficulty} = {count}")
-            if difficulty in counts:
-                counts[difficulty] = count
-
-        print("✅ Final counts:", counts)
-        print("========== END DEBUG ==========\n")
-
-        return counts
-
-    except Exception as e:
-        print("❌ ERROR in question count:", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-    
 @app.get("/api/student/homework-writing-review-by-attempt")
 def get_homework_writing_review_by_attempt(
     attempt_id: int,
@@ -7031,46 +6898,71 @@ def get_available_subjects(
     
             if completed_homework_attempt:
                 thinking_homework_enabled = False
+    
     # ==================================================
     # 📖 READING
     # ==================================================
-    reading_exam_enabled = True
+    reading_exam_enabled = False
     reading_homework_enabled = True
-    
-    # -----------------------------
-    # 1️⃣ NORMAL EXAM
-    # -----------------------------
-    reading_exam = (
+
+    print("\n========== 📖 READING AVAILABILITY DEBUG START ==========")
+
+    # Normalize student values
+    class_name = student.class_name.strip().lower()
+    class_year = student.student_year.strip().lower()
+
+    # ==================================================
+    # 1️⃣ EXAM LOGIC
+    # ==================================================
+
+    # --- Latest Exam ---
+    latest_exam = (
         db.query(GeneratedExamReading)
-        .filter(GeneratedExamReading.class_name == "selective")
+        .filter(func.lower(GeneratedExamReading.class_name) == class_name)
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
-    
-    if not reading_exam:
+
+    print("📘 Latest exam:", latest_exam)
+
+    # --- Latest Attempt ---
+    latest_attempt = (
+        db.query(StudentExamReading)
+        .filter(StudentExamReading.student_id == student.id)
+        .order_by(StudentExamReading.started_at.desc())
+        .first()
+    )
+
+    print("🔎 Latest exam attempt:", latest_attempt)
+
+    # --- Decision ---
+    if not latest_exam:
+        print("❌ No exam → disable")
         reading_exam_enabled = False
+
+    elif not latest_attempt:
+        print("🆕 No attempt → enable")
+        reading_exam_enabled = True
+
+    elif latest_attempt.exam_id != latest_exam.id:
+        print("🆕 New exam available → enable")
+        reading_exam_enabled = True
+
+    elif latest_attempt.finished is False:
+        print("🟡 Resume attempt → enable")
+        reading_exam_enabled = True
+
     else:
-        reading_attempt = (
-            db.query(StudentExamReading)
-            .filter(
-                StudentExamReading.student_id == student.id,
-                StudentExamReading.exam_id == reading_exam.id
-            )
-            .order_by(StudentExamReading.started_at.desc())
-            .first()
-        )
-    
-        if reading_attempt and reading_attempt.finished:
-            reading_exam_enabled = False
-    
-    
-    # -----------------------------
-    # 2️⃣ HOMEWORK
-    # -----------------------------
-    class_name = student.class_name.strip().lower()
-    class_year = student.student_year.strip().lower()
-    
-    homework_exam = (
+        print("⛔ Exam already completed → disable")
+        reading_exam_enabled = False
+
+
+    # ==================================================
+    # 2️⃣ HOMEWORK LOGIC (FIXED SAME WAY)
+    # ==================================================
+
+    # --- Latest Homework Exam ---
+    latest_homework_exam = (
         db.query(GeneratedHomeworkReading)
         .filter(
             func.lower(GeneratedHomeworkReading.class_name) == class_name,
@@ -7079,22 +6971,44 @@ def get_available_subjects(
         .order_by(GeneratedHomeworkReading.id.desc())
         .first()
     )
-    
-    if not homework_exam:
+
+    print("📘 Latest homework exam:", latest_homework_exam)
+
+    # --- Latest Homework Attempt ---
+    latest_homework_attempt = (
+        db.query(StudentHomeworkReading)
+        .filter(StudentHomeworkReading.student_id == student.id)
+        .order_by(StudentHomeworkReading.started_at.desc())
+        .first()
+    )
+
+    print("🔎 Latest homework attempt:", latest_homework_attempt)
+
+    # --- Decision ---
+    if not latest_homework_exam:
+        print("❌ No homework → disable")
         reading_homework_enabled = False
+
+    elif not latest_homework_attempt:
+        print("🆕 No homework attempt → enable")
+        reading_homework_enabled = True
+
+    elif latest_homework_attempt.exam_id != latest_homework_exam.id:
+        print("🆕 New homework available → enable")
+        reading_homework_enabled = True
+
+    elif latest_homework_attempt.finished is False:
+        print("🟡 Homework in progress → enable")
+        reading_homework_enabled = True
+
     else:
-        homework_attempt = (
-            db.query(StudentHomeworkReading)
-            .filter(
-                StudentHomeworkReading.student_id == student.id,
-                StudentHomeworkReading.exam_id == homework_exam.id
-            )
-            .order_by(StudentHomeworkReading.started_at.desc())
-            .first()
-        )
-    
-        if homework_attempt and homework_attempt.finished:
-            reading_homework_enabled = False
+        print("⛔ Homework already completed → disable")
+        reading_homework_enabled = False
+
+
+    print(f"🎯 Final reading_exam_enabled = {reading_exam_enabled}")
+    print(f"🎯 Final reading_homework_enabled = {reading_homework_enabled}")
+    print("========== 📖 READING AVAILABILITY DEBUG END ==========\n")
     # ==================================================
     # ✍️ WRITING
     # ==================================================
@@ -19529,7 +19443,6 @@ def generate_homework_exam(
         class_name=quiz.class_name,
         class_year=class_year,   # 👈 KEY ADDITION
         subject=quiz.subject,
-        difficulty=quiz.difficulty,
         questions=questions,
     )
 
@@ -19735,7 +19648,6 @@ def generate_exam(
         class_name=quiz.class_name,
         subject=quiz.subject,
         class_year=class_year,   # ✅ THIS FIXES YOUR SYSTEM
-        difficulty=quiz.difficulty,
         questions=questions,
     )
 
@@ -19752,7 +19664,6 @@ def generate_exam(
         "quiz_id": quiz.id,
         "class_name": quiz.class_name,
         "subject": quiz.subject,
-        "difficulty": quiz.difficulty,
         "total_questions": len(questions),
         "questions": questions,
     }
@@ -41353,7 +41264,15 @@ def start_exam(
     # 3️⃣ Load quiz (class-based) 
     # --------------------------------------------------
     quiz = (
-        db.query(Quiz)
+        db.query(
+            Quiz.id,
+            Quiz.class_name,
+            Quiz.subject,
+            Quiz.class_year,
+            Quiz.num_topics,
+            Quiz.topics,
+            Quiz.created_at
+        )
         .filter(func.lower(Quiz.class_name) == func.lower(student.class_name))
         .order_by(Quiz.id.desc())
         .first()
