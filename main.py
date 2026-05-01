@@ -14078,13 +14078,17 @@ def review_oc_reading_homework(
     # 2️⃣ Load homework exam content
     # --------------------------------------------------
     exam = (
-        db.query(GeneratedHomeworkExamReading)
-        .filter(GeneratedHomeworkExamReading.id == session.exam_id)
+        db.query(GeneratedHomeworkReading)   # ✅ FIXED
+        .filter(GeneratedHomeworkReading.id == session.exam_id)
         .first()
     )
 
-    if not exam or not exam.exam_json:
-        print("❌ Homework exam content missing")
+    if not exam:
+        print("❌ ERROR: GeneratedHomeworkReading not found")
+        raise HTTPException(status_code=404, detail="Homework exam not found")
+
+    if not exam.exam_json:
+        print("❌ ERROR: exam_json is empty")
         raise HTTPException(status_code=500, detail="Homework exam content missing")
 
     # --------------------------------------------------
@@ -28722,12 +28726,13 @@ def submit_oc_reading_homework(payload: dict, db: Session = Depends(get_db)):
         # 2️⃣ Load homework exam
         # --------------------------------------------------
         exam = (
-            db.query(GeneratedHomeworkExamReading)
-            .filter(GeneratedHomeworkExamReading.id == session.exam_id)
+            db.query(GeneratedHomeworkReading)   # ✅ FIXED
+            .filter(GeneratedHomeworkReading.id == session.exam_id)
             .first()
         )
 
         if not exam or not exam.exam_json:
+            print("❌ ERROR: GeneratedHomeworkReading not found or empty JSON")
             raise HTTPException(status_code=500, detail="Homework exam data not found")
 
         sections = exam.exam_json.get("sections", [])
@@ -30120,32 +30125,47 @@ def start_exam_oc_reading_homework(
     raw_year = str(student.student_year).strip()
 
     # Extract number (handles "Year 4", "4", etc.)
-    class_year = raw_year.split()[-1]
+    # --------------------------------------------------
+    # ✅ NORMALIZE CLASS YEAR (consistent everywhere)
+    # --------------------------------------------------
+    class_year = (
+        str(student.student_year)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
 
-    
-    
-    print("✅ Using:", {"student_id": student_id, "class_year": class_year})
+    print("🧪 Normalized class_year:", class_year)
 
     # --------------------------------------------------
-    # 1️⃣ Get latest homework exam (WITH class_year)
+    # ✅ FETCH HOMEWORK (FIXED TABLE + NORMALIZATION)
     # --------------------------------------------------
-    print("🔍 DB MATCH CHECK:", {
-        "expected_class_year": class_year,
-        "type": type(class_year)
-    })
     exam = (
-        db.query(GeneratedHomeworkExamReading)
+        db.query(GeneratedHomeworkReading)   # ✅ FIXED TABLE
         .filter(
-            func.lower(GeneratedHomeworkExamReading.class_name) == "oc",
-            GeneratedHomeworkExamReading.class_year == class_year  # ✅ IMPORTANT
+            func.lower(func.trim(GeneratedHomeworkReading.class_name)) == "oc",
+
+            func.trim(
+                func.replace(
+                    func.lower(GeneratedHomeworkReading.class_year),
+                    "year",
+                    ""
+                )
+            ) == class_year
         )
-        .order_by(GeneratedHomeworkExamReading.id.desc())
+        .order_by(GeneratedHomeworkReading.id.desc())
         .first()
     )
 
-    if not exam:
-        raise HTTPException(404, "OC reading homework exam not found")
+    print("🔎 Found exam:", exam)
 
+    if not exam:
+        rows = db.query(GeneratedHomeworkReading).all()
+        print("🧪 All homework exams in DB:")
+        for r in rows:
+            print(r.id, r.class_name, r.class_year)
+    
     # --------------------------------------------------
     # 2️⃣ Fetch existing attempt (ONE per exam)
     # --------------------------------------------------
@@ -30793,10 +30813,13 @@ def get_reading_content_homework(exam_id: int, db: Session = Depends(get_db)):
     print("➡ exam_id:", exam_id)
 
     exam = (
-        db.query(GeneratedHomeworkExamReading)   # ✅ CHANGED
-        .filter(GeneratedHomeworkExamReading.id == exam_id)
+        db.query(GeneratedHomeworkReading)   # ✅ FIXED
+        .filter(GeneratedHomeworkReading.id == exam_id)
         .first()
     )
+
+    if not exam:
+        print("❌ ERROR: GeneratedHomeworkReading not found")
 
     if not exam:
         print("❌ ERROR: GeneratedHomeworkExamReading not found")
@@ -36031,217 +36054,173 @@ def generate_exam_oc_reading_homework(
     payload: ReadingHomeworkExamRequest,
     db: Session = Depends(get_db)
 ):
-    """
-    Generate an OC Reading HOMEWORK exam.
-    Uses only unused bundles.
-    Marks selected bundles as used.
-    Includes class_year filtering.
-    """
-
-    print("\n================ GENERATE OC READING HOMEWORK ================")
-    print("Incoming payload:", payload.dict())
+    print("\n================ GENERATE OC READING HOMEWORK =================")
 
     used_bundle_ids = []
 
-    class_name = payload.class_name.strip()
-    
-    raw_year = str(payload.class_year).strip()
+    # --------------------------------------------------
+    # 0️⃣ NORMALIZATION
+    # --------------------------------------------------
+    class_name = payload.class_name.strip().lower()
+    class_year = str(payload.class_year).lower().replace("year", "").strip()
 
-    # Normalize "Year 4" -> "4"
-    class_year = raw_year.split()[-1]
+    print(f"📥 class_name={class_name}, class_year={class_year}")
 
     # --------------------------------------------------
-    # 1️⃣ LOAD HOMEWORK CONFIG
+    # 1️⃣ LOAD CONFIG
     # --------------------------------------------------
     cfg = (
         db.query(ReadingHomeworkExamConfig)
         .filter(
-            func.lower(
-                ReadingHomeworkExamConfig.class_name
-            ) == class_name.lower(),
-
-            ReadingHomeworkExamConfig.class_year
-            == class_year
+            func.lower(func.trim(ReadingHomeworkExamConfig.class_name)) == class_name,
+            func.trim(
+                func.replace(
+                    func.lower(ReadingHomeworkExamConfig.class_year),
+                    "year",
+                    ""
+                )
+            ) == class_year
         )
-        .order_by(
-            ReadingHomeworkExamConfig.id.desc()
-        )
+        .order_by(ReadingHomeworkExamConfig.id.desc())
         .first()
     )
 
     if not cfg:
-        raise HTTPException(
-            404,
-            "No OC reading homework config found"
-        )
+        raise HTTPException(404, "No OC reading homework config found")
 
-    difficulty = cfg.difficulty.strip()
     subject = cfg.subject
     topics = cfg.topics
     warnings = []
     sections = []
 
+    print("\n📦 CONFIG LOADED")
+
     # --------------------------------------------------
-    # 2️⃣ PROCESS TOPICS
+    # 2️⃣ PROCESS TOPICS (PER-TOPIC DIFFICULTY)
     # --------------------------------------------------
-    for section_index, topic_spec in enumerate(
-        topics,
-        start=1
-    ):
+    for section_index, topic_spec in enumerate(topics, start=1):
+
         topic_name = topic_spec["name"].strip()
-        required = int(
-            topic_spec["num_questions"]
-        )
-
         topic_lower = topic_name.lower()
+        required = int(topic_spec["num_questions"])
+        topic_difficulty = topic_spec.get("difficulty", "").strip().lower()
 
-        section_id = (
-            f"{topic_lower.replace(' ', '_')}"
-            f"_{section_index}"
-        )
+        print(f"\n➡️ Section {section_index}")
+        print(f"   topic       = {topic_name}")
+        print(f"   difficulty  = {topic_difficulty}")
+        print(f"   questions   = {required}")
 
-        bundles = (
+        if not topic_difficulty:
+            raise HTTPException(
+                400,
+                f"Missing difficulty for topic '{topic_name}'"
+            )
+
+        section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
+
+        # --------------------------------------------------
+        # 🔎 MATCH BUNDLE (FIXED)
+        # --------------------------------------------------
+        bundle_query = (
             db.query(QuestionReading)
             .filter(
-                func.lower(
-                    QuestionReading.class_name
-                ) == class_name.lower(),
+                func.lower(func.trim(QuestionReading.class_name)) == class_name,
 
-                func.regexp_replace(
-                    QuestionReading.class_year,
-                    '[^0-9]',
-                    '',
-                    'g'
+                func.trim(
+                    func.replace(
+                        func.lower(QuestionReading.class_year),
+                        "year",
+                        ""
+                    )
                 ) == class_year,
 
-                func.lower(
-                    func.replace(
-                        QuestionReading.subject,
-                        " ",
-                        "_"
-                    )
-                ) == subject.lower(),
+                # ✅ FIXED SUBJECT MATCH
+                func.replace(
+                    func.lower(func.trim(QuestionReading.subject)),
+                    "_",
+                    " "
+                ) == subject.lower().replace("_", " "),
 
-                func.lower(
-                    QuestionReading.difficulty
-                ) == difficulty.lower(),
+                func.lower(func.trim(QuestionReading.difficulty)) == topic_difficulty,
 
-                func.lower(
-                    QuestionReading.topic
-                ) == topic_lower,
+                func.lower(func.trim(QuestionReading.topic)) == topic_lower,
 
-                QuestionReading.is_used == False
+                QuestionReading.total_questions == required,
+
+                QuestionReading.is_used == False,
+
+                # ✅ CRITICAL FIX: prevent reuse
+                ~QuestionReading.id.in_(used_bundle_ids)
             )
-            .all()
         )
 
-        if not bundles:
-            warnings.append(
-                f"No bundles found for "
-                f"topic '{topic_name}'"
-            )
-            continue
+        bundle_count = bundle_query.count()
+        print(f"   📊 Matching bundles: {bundle_count}")
 
-        matched_bundle = next(
-            (
-                bundle
-                for bundle in bundles
-                if bundle.total_questions
-                == required
-            ),
-            None
+        matched_bundle = (
+            bundle_query
+            .order_by(QuestionReading.id.desc())
+            .first()
         )
 
         if not matched_bundle:
             raise HTTPException(
                 400,
-                f"Invalid homework config: "
-                f"'{topic_name}' requires "
-                f"{required} questions"
+                f"No matching homework bundle for "
+                f"{topic_name} ({topic_difficulty}, {required})"
             )
 
-        # Track used bundle
-        used_bundle_ids.append(
-            matched_bundle.id
-        )
+        print(f"   ✅ Bundle selected ID: {matched_bundle.id}")
 
-        bundle_json = (
-            matched_bundle.exam_bundle
-            or {}
-        )
+        used_bundle_ids.append(matched_bundle.id)
 
-        question_type = bundle_json.get(
-            "question_type"
-        )
+        bundle_json = matched_bundle.exam_bundle or {}
 
-        reading_material = bundle_json.get(
-            "reading_material"
-        )
+        question_type = bundle_json.get("question_type")
+        reading_material = bundle_json.get("reading_material")
+        answer_options = bundle_json.get("answer_options")
 
-        answer_options = bundle_json.get(
-            "answer_options"
-        )
+        # --------------------------------------------------
+        # BUILD QUESTIONS
+        # --------------------------------------------------
+        collected_questions = [
+            copy.deepcopy(q)
+            for q in bundle_json.get("questions", [])
+        ]
+
+        for idx, q in enumerate(collected_questions, start=1):
+            q["question_number"] = idx
+            q["question_id"] = f"{section_id}_Q{idx}"
 
         passage_style = (
             "literary"
-            if question_type in (
-                "main_idea",
-                "literary_analysis"
-            )
+            if question_type in ("main_idea", "literary_analysis")
             else "informational"
         )
 
         render_hint = (
             "gapped_text"
-            if question_type
-            == "gapped_text"
+            if question_type == "gapped_text"
             else "standard"
         )
 
-        options_scope = (
-            "shared"
-            if answer_options
-            else "per_question"
-        )
-
-        collected_questions = [
-            copy.deepcopy(question)
-            for question in bundle_json.get(
-                "questions",
-                []
-            )
-        ]
-
-        for idx, question in enumerate(
-            collected_questions,
-            start=1
-        ):
-            question["question_number"] = idx
-            question["question_id"] = (
-                f"{section_id}_Q{idx}"
-            )
+        options_scope = "shared" if answer_options else "per_question"
 
         section = {
             "section_id": section_id,
             "section_index": section_index,
             "question_type": question_type,
             "topic": topic_name,
-            "reading_material":
-                reading_material,
-            "passage_style":
-                passage_style,
-            "render_hint":
-                render_hint,
-            "options_scope":
-                options_scope,
-            "questions":
-                collected_questions,
+            "difficulty": topic_difficulty,
+            "reading_material": reading_material,
+            "passage_style": passage_style,
+            "render_hint": render_hint,
+            "options_scope": options_scope,
+            "questions": collected_questions,
         }
 
         if answer_options:
-            section[
-                "answer_options"
-            ] = answer_options
+            section["answer_options"] = answer_options
 
         sections.append(section)
 
@@ -36251,104 +36230,57 @@ def generate_exam_oc_reading_homework(
     if not sections:
         raise HTTPException(
             400,
-            "Not enough questions available in the database to generate the OC reading homework exam"
+            "Not enough data to generate OC reading homework"
         )
 
-    total_questions = sum(
-        len(section["questions"])
-        for section in sections
-    )
+    total_questions = sum(len(s["questions"]) for s in sections)
 
     exam_json = {
         "class_name": class_name,
-        "subject": subject,
-        "difficulty": difficulty,
         "class_year": class_year,
+        "subject": subject,
+        "difficulty": "mixed",
         "duration_minutes": 40,
-        "total_questions":
-            total_questions,
+        "total_questions": total_questions,
         "sections": sections,
     }
 
     # --------------------------------------------------
-    # 4️⃣ MARK USED BUNDLES
+    # 🏷️ MARK USED
     # --------------------------------------------------
-    used_bundle_ids = list(
-        set(used_bundle_ids)
-    )
-
-    print(
-        "Used Bundle IDs:",
-        used_bundle_ids
-    )
-
     if used_bundle_ids:
-        updated_rows = (
-            db.query(QuestionReading)
-            .filter(
-                QuestionReading.id.in_(
-                    used_bundle_ids
-                ),
-                QuestionReading.is_used
-                == False
-            )
-            .update(
-                {
-                    QuestionReading.is_used:
-                    True
-                },
-                synchronize_session=False
-            )
-        )
-
-        print(
-            "Bundles marked used:",
-            updated_rows
+        db.query(QuestionReading).filter(
+            QuestionReading.id.in_(used_bundle_ids)
+        ).update(
+            {QuestionReading.is_used: True},
+            synchronize_session=False
         )
 
     # --------------------------------------------------
-    # 5️⃣ SAVE HOMEWORK EXAM
+    # 💾 SAVE
     # --------------------------------------------------
-    saved = (
-        GeneratedHomeworkExamReading(
-            config_id=cfg.id,
-            class_name=class_name,
-            subject=subject,
-            difficulty=difficulty,
-            class_year=class_year,
-            total_questions=
-                total_questions,
-            exam_json=exam_json,
-        )
+    saved = GeneratedHomeworkReading(
+        config_id=cfg.id,
+        class_name=class_name,
+        class_year=class_year,
+        subject=subject,
+        difficulty="mixed",
+        total_questions=total_questions,
+        exam_json=exam_json,
     )
 
     db.add(saved)
     db.commit()
     db.refresh(saved)
 
-    print(
-        "✅ OC Reading HOMEWORK "
-        "generated. ID:",
-        saved.id
-    )
+    print(f"✅ OC Reading Homework generated ID: {saved.id}")
 
-    # --------------------------------------------------
-    # 6️⃣ RESPONSE
-    # --------------------------------------------------
     return {
-        "generated_exam_id":
-            saved.id,
-
-        "total_questions":
-            total_questions,
-
-        "warnings":
-            warnings,
-
-        "exam_json":
-            exam_json,
+        "generated_exam_id": saved.id,
+        "total_questions": total_questions,
+        "warnings": warnings,
+        "exam_json": exam_json,
     }
-
 
 @app.post("/api/exams/generate-oc-reading")
 def generate_exam_oc_reading(
@@ -36356,6 +36288,20 @@ def generate_exam_oc_reading(
     db: Session = Depends(get_db)
 ):
     print("\n================ GENERATE OC READING EXAM =================")
+
+    print("\n🧪 DEBUG BUNDLES FOR THIS TOPIC:")
+
+    all_bundles = db.query(QuestionReading).filter(
+        func.lower(func.trim(QuestionReading.topic)).like("%comparative%")
+    ).all()
+
+    for b in all_bundles:
+        print(
+            f"ID={b.id}, topic={b.topic}, "
+            f"difficulty={b.difficulty}, "
+            f"questions={b.total_questions}, "
+            f"used={b.is_used}"
+        )
 
     # --------------------------------------------------
     # 0️⃣ NORMALIZATION
@@ -36435,19 +36381,18 @@ def generate_exam_oc_reading(
                     )
                 ) == class_year,
 
-                func.lower(func.replace(QuestionReading.subject, " ", "_"))
-                == subject.lower(),
+                func.lower(func.trim(QuestionReading.subject)).like("%reading%"),
 
-                # ✅ FIX: PER-TOPIC DIFFICULTY
-                func.lower(func.trim(QuestionReading.difficulty))
-                == topic_difficulty,
+                func.lower(func.trim(QuestionReading.difficulty)) == topic_difficulty,
 
-                func.replace(func.lower(QuestionReading.topic), " ", "_")
-                == topic_lower.replace(" ", "_"),
+                func.lower(func.trim(QuestionReading.topic)) == topic_lower,
 
                 QuestionReading.total_questions == required,
 
-                QuestionReading.is_used == False
+                QuestionReading.is_used == False,
+
+                # ✅ THIS IS THE FIX
+                ~QuestionReading.id.in_(used_bundle_ids)
             )
         )
 
@@ -45188,34 +45133,71 @@ def get_oc_available_subjects(
     # 2️⃣ HOMEWORK
     # -----------------------------
     # extract class_year same way as your endpoint
-    raw_year = str(student.student_year).strip()
-    class_year = raw_year.split()[-1]
-    
+    # --------------------------------------------------
+    # ✅ NORMALIZE STUDENT YEAR
+    # --------------------------------------------------
+    class_year = (
+        str(student.student_year)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    # --------------------------------------------------
+    # ✅ FETCH HOMEWORK (CORRECT TABLE + NORMALIZATION)
+    # --------------------------------------------------
     homework = (
-        db.query(GeneratedHomeworkExamReading)
+        db.query(GeneratedHomeworkReading)   # ✅ FIXED TABLE
         .filter(
-            func.lower(GeneratedHomeworkExamReading.class_name) == "oc",
-            GeneratedHomeworkExamReading.class_year == class_year
+            func.lower(func.trim(GeneratedHomeworkReading.class_name)) == "oc",
+
+            func.trim(
+                func.replace(
+                    func.lower(GeneratedHomeworkReading.class_year),
+                    "year",
+                    ""
+                )
+            ) == class_year
         )
-        .order_by(GeneratedHomeworkExamReading.id.desc())
+        .order_by(GeneratedHomeworkReading.id.desc())
         .first()
     )
-    
+
+    # --------------------------------------------------
+    # 🧪 DEBUG (VERY USEFUL)
+    # --------------------------------------------------
+    print("\n🧪 HOMEWORK DEBUG")
+    print("student.class_year →", class_year)
+    print("found homework →", homework)
+
+    # --------------------------------------------------
+    # ✅ DECISION LOGIC
+    # --------------------------------------------------
     if not homework:
+        print("❌ No homework found → disable")
         reading_homework_enabled = False
     else:
         attempt = (
             db.query(StudentHomeworkReadingOC)
             .filter(
-                func.lower(StudentHomeworkReadingOC.student_id) == student.student_id.lower(),
+                func.lower(StudentHomeworkReadingOC.student_id)
+                == student.student_id.lower(),
+
                 StudentHomeworkReadingOC.exam_id == homework.id
             )
             .order_by(StudentHomeworkReadingOC.started_at.desc())
             .first()
         )
-    
+
+        print("🔎 attempt →", attempt)
+
         if attempt and attempt.finished:
+            print("⛔ Homework already completed → disable")
             reading_homework_enabled = False
+        else:
+            print("🆕 Homework available → enable")
+            reading_homework_enabled = True
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
