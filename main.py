@@ -5970,7 +5970,64 @@ def extract_year_number(year_str):
         return None
 
 from sqlalchemy import func
+@app.post("/api/admin/reset-used-questions")
+def reset_used_questions(
+    payload: ResetUsedQuestionsRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n🔁 RESET USED QUESTIONS REQUEST")
+    print("➡ class_name:", payload.class_name)
+    print("➡ subject:", payload.subject)
+    print("➡ class_year:", payload.class_year)
 
+    # 🔥 Normalize (important for your DB)
+    subject_map = {
+        "thinking_skills": "Thinking Skills",
+        "mathematical_reasoning": "Mathematical Reasoning",
+        "reading": "Reading",
+        "writing": "Writing",
+    }
+
+    class_map = {
+        "selective": "Selective"
+    }
+
+    db_subject = subject_map.get(payload.subject, payload.subject)
+    db_class = class_map.get(payload.class_name, payload.class_name)
+
+    try:
+        updated_count = (
+            db.query(Question)
+            .filter(
+                func.lower(Question.class_name) == db_class.lower(),
+                func.lower(Question.subject) == db_subject.lower(),
+                Question.class_year == payload.class_year,
+                Question.is_used == True
+            )
+            .update(
+                {Question.is_used: False},
+                synchronize_session=False
+            )
+        )
+
+        db.commit()
+
+        print(f"✅ Reset {updated_count} questions")
+
+        return {
+            "message": "Used questions reset successfully",
+            "updated_count": updated_count
+        }
+
+    except Exception as e:
+        db.rollback()
+        print("❌ ERROR:", str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reset used questions: {str(e)}"
+        )
+    
 @app.get("/api/question-count")
 def get_question_count(
     class_name: str,
