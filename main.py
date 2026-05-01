@@ -5968,6 +5968,7 @@ def extract_year_number(year_str):
         return int(year_str.strip().split()[-1])
     except:
         return None
+
 from sqlalchemy import func
 
 @app.get("/api/question-count")
@@ -5975,36 +5976,45 @@ def get_question_count(
     class_name: str,
     subject: str,
     class_year: int,
+    topic: str,
     db: Session = Depends(get_db)
 ):
-    print("\n📊 QUESTION COUNT REQUEST")
-    print("➡ class_name:", class_name)
-    print("➡ subject:", subject)
-    print("➡ class_year:", class_year)
+    subject_map = {
+        "thinking_skills": "Thinking Skills",
+        "mathematical_reasoning": "Mathematical Reasoning",
+        "reading": "Reading",
+        "writing": "Writing",
+    }
 
-    try:
-        count = (
+    class_map = {
+        "selective": "Selective"
+    }
+
+    db_subject = subject_map.get(subject, subject)
+    db_class = class_map.get(class_name, class_name)
+
+    def get_count(level):
+        return (
             db.query(func.count(Question.id))
             .filter(
-                func.lower(Question.class_name) == class_name.lower(),
-                func.lower(Question.subject) == subject.lower(),
-                Question.class_year == class_year
+                func.lower(Question.class_name) == db_class.lower(),
+                func.lower(Question.subject) == db_subject.lower(),
+                Question.class_year == class_year,
+                func.trim(func.lower(Question.topic)) == topic.strip().lower(),
+                func.lower(Question.difficulty) == level
             )
             .scalar()
         )
 
-        print("✅ Count:", count)
+    result = {
+        "easy": get_count("easy"),
+        "medium": get_count("medium"),
+        "hard": get_count("hard"),
+    }
 
-        return {
-            "count": count
-        }
+    print("✅ Result:", result)
 
-    except Exception as e:
-        print("❌ ERROR:", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching question count: {str(e)}"
-        )
+    return result 
     
 @app.get("/api/exams/writing/review-by-attempt")
 def get_writing_review_by_attempt(
