@@ -7019,31 +7019,54 @@ def get_available_subjects(
 
     print("\n========== 📖 READING AVAILABILITY DEBUG START ==========")
 
-    # Normalize student values
+    # ==================================================
+    # ✅ NORMALIZATION (MATCH GENERATION LOGIC)
+    # ==================================================
+
     class_name = student.class_name.strip().lower()
-    class_year = student.student_year.strip().lower()
+    class_year = student.student_year.strip().lower().replace("year", "").strip()
+
+    print(f"🧪 class_name = {class_name}")
+    print(f"🧪 class_year = {class_year}")
 
     # ==================================================
-    # 1️⃣ EXAM LOGIC
+    # 1️⃣ EXAM LOGIC (FIXED)
     # ==================================================
 
-    # --- Latest Exam ---
     latest_exam = (
         db.query(GeneratedExamReading)
-        .filter(func.lower(GeneratedExamReading.class_name) == class_name)
+        .filter(
+            func.lower(func.trim(GeneratedExamReading.class_name)) == class_name,
+            func.trim(
+                func.replace(
+                    func.lower(GeneratedExamReading.class_year),
+                    "year",
+                    ""
+                )
+            ) == class_year
+        )
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
 
     print("📘 Latest exam:", latest_exam)
 
-    # --- Latest Attempt ---
-    latest_attempt = (
-        db.query(StudentExamReading)
-        .filter(StudentExamReading.student_id == student.id)
-        .order_by(StudentExamReading.started_at.desc())
-        .first()
-    )
+    # ==================================================
+    # ✅ Latest Attempt (SCOPED TO THIS EXAM)
+    # ==================================================
+
+    latest_attempt = None
+
+    if latest_exam:
+        latest_attempt = (
+            db.query(StudentExamReading)
+            .filter(
+                StudentExamReading.student_id == student.id,
+                StudentExamReading.exam_id == latest_exam.id
+            )
+            .order_by(StudentExamReading.started_at.desc())
+            .first()
+        )
 
     print("🔎 Latest exam attempt:", latest_attempt)
 
@@ -7077,24 +7100,63 @@ def get_available_subjects(
     latest_homework_exam = (
         db.query(GeneratedHomeworkReading)
         .filter(
-            func.lower(GeneratedHomeworkReading.class_name) == class_name,
-            func.lower(GeneratedHomeworkReading.class_year) == class_year
+            func.lower(func.trim(GeneratedHomeworkReading.class_name)) == class_name,
+
+            func.trim(
+                func.replace(
+                    func.lower(GeneratedHomeworkReading.class_year),
+                    "year",
+                    ""
+                )
+            ) == class_year
         )
         .order_by(GeneratedHomeworkReading.id.desc())
         .first()
     )
+    all_hw = db.query(GeneratedHomeworkReading).order_by(GeneratedHomeworkReading.id.desc()).all()
+
+    print("\n🧪 ALL HOMEWORK EXAMS:")
+    for hw in all_hw:
+        print(f"ID={hw.id}, class_name='{hw.class_name}', class_year='{hw.class_year}'")
 
     print("📘 Latest homework exam:", latest_homework_exam)
-
+    if latest_homework_exam:
+        print(f"🧪 Picked homework exam ID = {latest_homework_exam.id}")
+    #hi there
     # --- Latest Homework Attempt ---
-    latest_homework_attempt = (
-        db.query(StudentHomeworkReading)
-        .filter(StudentHomeworkReading.student_id == student.id)
-        .order_by(StudentHomeworkReading.started_at.desc())
-        .first()
-    )
+    
+    latest_homework_attempt = None
 
-    print("🔎 Latest homework attempt:", latest_homework_attempt)
+    print("\n========== 🧪 HOMEWORK ATTEMPT DEBUG START ==========")
+
+    if latest_homework_exam:
+        print(f"📘 Found latest_homework_exam.id = {latest_homework_exam.id}")
+        print(f"👤 Checking attempts for student_id = {student.id}")
+
+        latest_homework_attempt = (
+            db.query(StudentHomeworkReading)
+            .filter(
+                StudentHomeworkReading.student_id == student.id,
+                StudentHomeworkReading.exam_id == latest_homework_exam.id
+            )
+            .order_by(StudentHomeworkReading.started_at.desc())
+            .first()
+        )
+
+        if latest_homework_attempt:
+            print("✅ Attempt FOUND")
+            print(f"   🆔 attempt.id = {latest_homework_attempt.id}")
+            print(f"   📘 exam_id = {latest_homework_attempt.exam_id}")
+            print(f"   ⏱ started_at = {latest_homework_attempt.started_at}")
+            print(f"   🏁 finished = {latest_homework_attempt.finished}")
+        else:
+            print("🆕 NO attempt found for this homework exam (expected case → should ENABLE)")
+
+    else:
+        print("❌ No latest_homework_exam found → cannot check attempts")
+
+    print("🔎 Final latest_homework_attempt:", latest_homework_attempt)
+    print("========== 🧪 HOMEWORK ATTEMPT DEBUG END ==========\n")
 
     # --- Decision ---
     if not latest_homework_exam:
