@@ -5968,6 +5968,44 @@ def extract_year_number(year_str):
         return int(year_str.strip().split()[-1])
     except:
         return None
+from sqlalchemy import func
+
+@app.get("/api/question-count")
+def get_question_count(
+    class_name: str,
+    subject: str,
+    class_year: int,
+    db: Session = Depends(get_db)
+):
+    print("\n📊 QUESTION COUNT REQUEST")
+    print("➡ class_name:", class_name)
+    print("➡ subject:", subject)
+    print("➡ class_year:", class_year)
+
+    try:
+        count = (
+            db.query(func.count(Question.id))
+            .filter(
+                func.lower(Question.class_name) == class_name.lower(),
+                func.lower(Question.subject) == subject.lower(),
+                Question.class_year == class_year
+            )
+            .scalar()
+        )
+
+        print("✅ Count:", count)
+
+        return {
+            "count": count
+        }
+
+    except Exception as e:
+        print("❌ ERROR:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching question count: {str(e)}"
+        )
+    
 @app.get("/api/exams/writing/review-by-attempt")
 def get_writing_review_by_attempt(
     attempt_id: int,
