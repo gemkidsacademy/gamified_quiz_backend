@@ -41493,7 +41493,7 @@ def create_reading_homework(
         num_topics=len(topics_json),
         topics=topics_json
     )
-
+    print("🔥 FINAL topics_json:", topics_json)
     db.add(new_config)
     db.commit()
     db.refresh(new_config)
@@ -41512,6 +41512,7 @@ def create_reading_homework(
 @app.post("/api/admin/create-reading-homework-config")
 def create_reading_homework_config(
     payload: ReadingHomeworkExamConfigCreate,
+    
     db: Session = Depends(get_db)
 ):
     # ---------------------------------------
