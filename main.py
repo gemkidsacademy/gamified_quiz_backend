@@ -6001,7 +6001,8 @@ def get_question_count(
                 func.lower(Question.subject) == db_subject.lower(),
                 Question.class_year == class_year,
                 func.trim(func.lower(Question.topic)) == topic.strip().lower(),
-                func.lower(Question.difficulty) == level
+                func.lower(Question.difficulty) == level,
+                Question.is_used == False
             )
             .scalar()
         )
