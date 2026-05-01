@@ -8258,7 +8258,7 @@ def generate_mr_homework_exam(
         "total_questions": len(questions),
         "questions": questions
     }
-     
+ 
 @app.get(
     "/api/student/homework-review/thinking-skills",
     response_model=ExamReviewResponse
