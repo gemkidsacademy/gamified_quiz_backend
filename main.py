@@ -5791,7 +5791,40 @@ def extract_year_number(year_str):
 
 
 
+@app.get("/api/reading-availability")
+def get_reading_availability(
+    class_year: str,
+    db: Session = Depends(get_db)
+):
+    results = (
+        db.query(
+            QuestionNaplanReading.topic,
+            func.lower(QuestionNaplanReading.difficulty),
+            func.count(QuestionNaplanReading.id)
+        )
+        .filter(
+            QuestionNaplanReading.subject == "reading",
+            QuestionNaplanReading.year == int(class_year),
+            QuestionNaplanReading.is_used == False
+        )
+        .group_by(
+            QuestionNaplanReading.topic,
+            func.lower(QuestionNaplanReading.difficulty)
+        )
+        .all()
+    )
 
+    availability = {}
+
+    for topic, difficulty, count in results:
+        topic_key = topic.lower().strip()
+
+        if topic_key not in availability:
+            availability[topic_key] = {}
+
+        availability[topic_key][difficulty] = count
+
+    return availability
 
 
 @app.get("/api/topic-question-counts")
@@ -7222,252 +7255,171 @@ def generate_naplan_reading_homework(
         )
 
     print(f"📘 Requested year: {requested_year}")
-    print(
-        "\n=== START: Generate "
-        "NAPLAN Reading Homework ==="
-    )
+    print("\n=== START: Generate NAPLAN Reading Homework ===")
 
-    # ----------------------------------
+    # ----------------------------------------
     # 1. Load latest homework config
-    # ----------------------------------
+    # ----------------------------------------
     quiz = (
-        db.query(
-            QuizNaplanReadingHomework
-        )
-        .filter(
-            QuizNaplanReadingHomework.year
-            == requested_year
-        )
-        .order_by(
-            QuizNaplanReadingHomework.id.desc()
-        )
+        db.query(QuizNaplanReadingHomework)
+        .filter(QuizNaplanReadingHomework.year == requested_year)
+        .order_by(QuizNaplanReadingHomework.id.desc())
         .first()
     )
 
     if not quiz:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "NAPLAN Reading homework "
-                "quiz not found"
-            )
+            detail="NAPLAN Reading homework quiz not found"
         )
 
-    normalized_difficulty = (
-        quiz.difficulty.strip().lower()
-    )
-
-    normalized_subject = "reading"
-
-    print(
-        f"✅ Homework quiz loaded | "
-        f"id={quiz.id}, "
-        f"year={quiz.year}"
-    )
+    print(f"✅ Homework quiz loaded | id={quiz.id}, year={quiz.year}")
+    print(f"📘 Topics config: {quiz.topics}")
+    print(f"📌 Expected total questions: {quiz.total_questions}")
 
     assembled_questions = []
 
-    # ----------------------------------
+    # ----------------------------------------
     # 2. Iterate topics
-    # ----------------------------------
-    for idx, topic_cfg in enumerate(
-        quiz.topics
-    ):
-        print(
-            f"\n--- Processing topic "
-            f"{idx + 1} ---"
-        )
+    # ----------------------------------------
+    for idx, topic_cfg in enumerate(quiz.topics):
+        print(f"\n--- Processing topic {idx + 1} ---")
 
         topic_name = topic_cfg.get("name")
+        difficulty_map = topic_cfg.get("difficulty", {})
 
-        db_count = int(
-            topic_cfg.get("db", 0)
-        )
-
-        if not topic_name or db_count <= 0:
+        if not topic_name or not difficulty_map:
+            print("⚠️ Skipping invalid topic config")
             continue
 
-        # ----------------------------------
-        # 3. Strict query
-        # ----------------------------------
-        question_rows = (
-            db.query(
-                QuestionNaplanReading
-            )
-            .filter(
-                QuestionNaplanReading.topic
-                == topic_name,
+        print(f"➡️ Topic: {topic_name}")
 
-                QuestionNaplanReading.year
-                == quiz.year,
+        # ----------------------------------------
+        # 3. Iterate difficulty levels
+        # ----------------------------------------
+        for level, counts in difficulty_map.items():
 
-                QuestionNaplanReading.is_used
-                == False,
+            db_count = counts.get("db", 0)
 
-                func.lower(
-                    func.trim(
-                        QuestionNaplanReading.subject
-                    )
-                ) == normalized_subject,
+            if db_count == 0:
+                continue
 
-                func.lower(
-                    func.trim(
-                        QuestionNaplanReading.difficulty
-                    )
-                ) == normalized_difficulty,
-            )
-            .all()
-        )
+            normalized_level = level.lower().strip()
 
-        # ----------------------------------
-        # 4. Fallback query
-        # ----------------------------------
-        if len(question_rows) < db_count:
+            print(f"  ➤ Difficulty: {level}")
+            print(f"     DB={db_count}")
 
-            fallback_rows = (
-                db.query(
-                    QuestionNaplanReading
-                )
+            # ----------------------------------------
+            # 4. Fetch DB questions (STRICT)
+            # ----------------------------------------
+            db_rows = (
+                db.query(QuestionNaplanReading)
                 .filter(
-                    QuestionNaplanReading.topic
-                    == topic_name,
-
-                    QuestionNaplanReading.year
-                    == quiz.year,
-
-                    QuestionNaplanReading.is_used
-                    == False,
-
-                    func.lower(
-                        func.trim(
-                            QuestionNaplanReading.subject
-                        )
-                    ) == normalized_subject,
+                    QuestionNaplanReading.topic == topic_name,
+                    QuestionNaplanReading.year == quiz.year,
+                    QuestionNaplanReading.is_used == False,
+                    func.lower(func.trim(QuestionNaplanReading.subject)) == "reading",
+                    func.lower(func.trim(QuestionNaplanReading.difficulty)) == normalized_level,
                 )
                 .all()
             )
 
-            if len(fallback_rows) < db_count:
+            print(f"     Found DB rows: {len(db_rows)}")
+
+            # ----------------------------------------
+            # 5. STRICT MODE — NO FALLBACK
+            # ----------------------------------------
+            if len(db_rows) < db_count:
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough unused "
-                        f"Reading questions "
-                        f"for topic "
-                        f"'{topic_name}'"
+                        f"Not enough DB questions for topic '{topic_name}' "
+                        f"({level}). Required={db_count}, Found={len(db_rows)}"
                     )
                 )
 
-            question_rows = fallback_rows
+            # ----------------------------------------
+            # 6. Random selection
+            # ----------------------------------------
+            selected_rows = random.sample(db_rows, db_count)
 
-        # ----------------------------------
-        # 5. Random sample
-        # ----------------------------------
-        selected_rows = random.sample(
-            question_rows,
-            db_count
-        )
+            print(f"     Selected {len(selected_rows)} DB questions")
 
-        for row in selected_rows:
+            # ----------------------------------------
+            # 7. Add to exam
+            # ----------------------------------------
+            for row in selected_rows:
+                row.is_used = True
 
-            row.is_used = True
+                assembled_questions.append({
+                    "question_id": str(uuid.uuid4()),
+                    "passage_id": row.passage_id,
+                    "topic": row.topic,
+                    "difficulty": row.difficulty,
+                    "question_type": row.question_type,
+                    "exam_bundle": row.exam_bundle,
+                })
 
-            assembled_questions.append({
-                "question_id":
-                    str(uuid.uuid4()),
-                "passage_id":
-                    row.passage_id,
-                "topic":
-                    row.topic,
-                "difficulty":
-                    row.difficulty,
-                "question_type":
-                    row.question_type,
-                "exam_bundle":
-                    row.exam_bundle,
-            })
+    # ----------------------------------------
+    # 8. Final validation
+    # ----------------------------------------
+    total_question_count = len(assembled_questions)
 
-    # ----------------------------------
-    # 6. Final validation
-    # ----------------------------------
-    total_question_count = len(
-        assembled_questions
-    )
+    print(f"Total assembled question items: {total_question_count}")
 
-    if (
-        total_question_count
-        != quiz.total_questions
-    ):
+    if total_question_count != quiz.total_questions:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Generated homework "
-                "question count does "
-                "not match quiz total"
+                f"Question count mismatch | "
+                f"Expected={quiz.total_questions}, "
+                f"Got={total_question_count}"
             )
         )
 
-    # ----------------------------------
-    # 7. Save homework exam
-    # ----------------------------------
-    exam = (
-        ExamNaplanReadingHomework(
-            quiz_id=quiz.id,
-            year=quiz.year,
-            class_name=quiz.class_name,
-            subject="reading",
-            difficulty=quiz.difficulty,
-            questions=assembled_questions,
-        )
+    print("✅ Question count validated")
+
+    # ----------------------------------------
+    # 9. Save homework exam
+    # ----------------------------------------
+    exam = ExamNaplanReadingHomework(
+        quiz_id=quiz.id,
+        year=quiz.year,
+        class_name=quiz.class_name,
+        subject="reading",
+        difficulty=quiz.difficulty,
+        questions=assembled_questions,
     )
 
     db.add(exam)
     db.commit()
     db.refresh(exam)
 
-    print(
-        f"🎉 SUCCESS: Reading "
-        f"homework generated | "
-        f"exam_id={exam.id}"
-    )
-
-    print(
-        "=== END: Generate "
-        "NAPLAN Reading Homework ===\n"
-    )
+    print(f"🎉 SUCCESS: Reading homework generated | exam_id={exam.id}")
+    print("=== END: Generate NAPLAN Reading Homework ===\n")
 
     return {
-        "message":
-            "NAPLAN Reading homework "
-            "generated successfully",
+        "message": "NAPLAN Reading homework generated successfully",
         "exam_id": exam.id,
-        "total_questions":
-            total_question_count,
+        "total_questions": total_question_count,
     }
+
 
 @app.put("/api/admin/reuse-used-questions-naplan-reading")
 def reuse_used_questions_naplan_reading(
     year: int = Query(...),
-    difficulty: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    print(
-        "\n=== RESET USED QUESTIONS: "
-        "NAPLAN READING ==="
-    )
+    print("\n=== RESET USED QUESTIONS: NAPLAN READING ===")
 
-    print("year:", year)
-    print("difficulty:", difficulty)
+    print(f"[INPUT] year={year}")
 
     try:
         updated_count = (
             db.query(QuestionNaplanReading)
             .filter(
-                QuestionNaplanReading.subject == "reading",
+                func.lower(QuestionNaplanReading.subject) == "reading",
                 QuestionNaplanReading.year == year,
-                func.lower(
-                    QuestionNaplanReading.difficulty
-                ) == difficulty.lower(),
                 QuestionNaplanReading.is_used == True,
             )
             .update(
@@ -7478,32 +7430,23 @@ def reuse_used_questions_naplan_reading(
 
         db.commit()
 
-        print(
-            f"✅ Reset {updated_count} "
-            f"question(s)"
-        )
-
-        print(
-            "=== RESET USED QUESTIONS COMPLETE ===\n"
-        )
+        print(f"[SUCCESS] reset_count={updated_count}")
+        print("=== RESET COMPLETE ===\n")
 
         return {
-            "message":
-                f"{updated_count} used question(s) "
-                f"are now reusable.",
+            "message": f"{updated_count} used question(s) are now reusable.",
             "updated_count": updated_count,
         }
 
     except Exception as e:
         db.rollback()
 
-        print("❌ ERROR:", str(e))
+        print("[ERROR]", str(e))
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to reset used questions."
+            detail="Failed to reset used questions.",
         )
-
 
 @app.post("/naplan/numeracy/generate-homework")
 def generate_naplan_numeracy_homework(
@@ -12524,7 +12467,7 @@ def get_available_naplan_reading_years(
 def generate_naplan_reading_exam(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
-): 
+):
     requested_year = payload.get("year")
 
     if not requested_year:
@@ -12532,11 +12475,13 @@ def generate_naplan_reading_exam(
             status_code=400,
             detail="Year is required to generate exam"
         )
-    
+
     print(f"📘 Requested year: {requested_year}")
     print("\n=== START: Generate NAPLAN Reading Exam ===")
 
+    # ----------------------------------------
     # 1. Load latest quiz config
+    # ----------------------------------------
     quiz = (
         db.query(QuizNaplanReading)
         .filter(QuizNaplanReading.year == requested_year)
@@ -12545,164 +12490,122 @@ def generate_naplan_reading_exam(
     )
 
     if not quiz:
-        print("❌ ERROR: No QuizNaplanReading found")
         raise HTTPException(
             status_code=404,
             detail="NAPLAN Reading quiz not found"
         )
 
-    normalized_difficulty = quiz.difficulty.strip().lower()
-    normalized_subject = "reading"
-
-    print(
-        f"✅ Quiz loaded | id={quiz.id}, "
-        f"year={quiz.year}, difficulty='{quiz.difficulty}' "
-        f"(normalized='{normalized_difficulty}')"
-    )
+    print(f"✅ Quiz loaded | id={quiz.id}, year={quiz.year}")
     print(f"📘 Topics config: {quiz.topics}")
     print(f"📌 Expected total questions: {quiz.total_questions}")
 
     assembled_questions = []
 
+    # ----------------------------------------
     # 2. Iterate topics
+    # ----------------------------------------
     for idx, topic_cfg in enumerate(quiz.topics):
         print(f"\n--- Processing topic {idx + 1} ---")
-        print(f"Raw topic config: {topic_cfg}")
 
         topic_name = topic_cfg.get("name")
-        db_count = topic_cfg.get("db")
+        difficulty_map = topic_cfg.get("difficulty", {})
 
-        if not topic_name or not db_count:
-            print("⚠️ Skipping topic due to missing name or db count")
+        if not topic_name or not difficulty_map:
+            print("⚠️ Skipping invalid topic config")
             continue
 
         print(f"➡️ Topic: {topic_name}")
-        print(f"➡️ Required DB questions: {db_count}")
 
-        # 3. Diagnostic: topic + subject + year existence
-        topic_only_count = (
-            db.query(QuestionNaplanReading)
-            .filter(
-                QuestionNaplanReading.topic == topic_name,
-                QuestionNaplanReading.year == quiz.year,
-                QuestionNaplanReading.is_used == False,
-                func.lower(
-                    func.trim(
-                        QuestionNaplanReading.subject
-                    )
-                ) == normalized_subject
-            )
-            .count()
-        )
+        # ----------------------------------------
+        # 3. Iterate difficulty levels
+        # ----------------------------------------
+        for level, counts in difficulty_map.items():
 
-        print(f"🔍 Topic+subject+year match count: {topic_only_count}")
+            db_count = counts.get("db", 0)
 
-        if topic_only_count == 0:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"No Reading questions found for topic "
-                    f"'{topic_name}' (Year {quiz.year})"
-                )
-            )
+            if db_count == 0:
+                continue
 
-        # 4. Strict difficulty + subject + year
-        question_rows = (
-            db.query(QuestionNaplanReading)
-            .filter(
-                QuestionNaplanReading.topic == topic_name,
-                QuestionNaplanReading.year == quiz.year,
-                QuestionNaplanReading.is_used == False,
-                func.lower(func.trim(QuestionNaplanReading.subject)) == normalized_subject,
-                func.lower(func.trim(QuestionNaplanReading.difficulty)) == normalized_difficulty,
-            )
-            .all()
-        )
+            normalized_level = level.lower().strip()
 
-        print(
-            f"🔎 Rows after strict difficulty filter "
-            f"('{normalized_difficulty}'): {len(question_rows)}"
-        )
+            print(f"  ➤ Difficulty: {level}")
+            print(f"     DB={db_count}")
 
-        # 5. Fallback (subject + year)
-        if len(question_rows) < db_count:
-            print(
-                "⚠️ WARNING: Not enough rows after difficulty filter. "
-                "Attempting subject+year fallback."
-            )
-
-            fallback_rows = (
+            # ----------------------------------------
+            # 4. Fetch DB questions (STRICT)
+            # ----------------------------------------
+            db_rows = (
                 db.query(QuestionNaplanReading)
                 .filter(
                     QuestionNaplanReading.topic == topic_name,
                     QuestionNaplanReading.year == quiz.year,
                     QuestionNaplanReading.is_used == False,
-                    func.lower(func.trim(QuestionNaplanReading.subject)) == normalized_subject,
+                    func.lower(func.trim(QuestionNaplanReading.subject)) == "reading",
+                    func.lower(func.trim(QuestionNaplanReading.difficulty)) == normalized_level,
                 )
                 .all()
             )
 
-            print(
-                f"🔎 Rows after fallback (subject+year): "
-                f"{len(fallback_rows)}"
-            )
+            print(f"     Found DB rows: {len(db_rows)}")
 
-            if len(fallback_rows) < db_count:
+            # ----------------------------------------
+            # 5. STRICT MODE — NO AI, NO FALLBACK
+            # ----------------------------------------
+            if len(db_rows) < db_count:
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough Reading passages for topic "
-                        f"'{topic_name}' (Year {quiz.year}). "
-                        f"Required={db_count}, Found={len(fallback_rows)}"
+                        f"Not enough DB questions for topic '{topic_name}' "
+                        f"({level}). Required={db_count}, Found={len(db_rows)}"
                     )
                 )
 
-            question_rows = fallback_rows
+            # ----------------------------------------
+            # 6. Random selection
+            # ----------------------------------------
+            selected_rows = random.sample(db_rows, db_count)
 
-        # 6. Random sampling of passages
-        selected_rows = random.sample(question_rows, db_count)
-        print(f"🎯 Selected {len(selected_rows)} passages for topic '{topic_name}'")
+            print(f"     Selected {len(selected_rows)} DB questions")
 
-        # 7. Expand exam_bundle into exam questions
-        for row in selected_rows:
-            row.is_used = True
-            bundle = row.exam_bundle
+            # ----------------------------------------
+            # 7. Add to exam
+            # ----------------------------------------
+            for row in selected_rows:
+                row.is_used = True
 
-            assembled_questions.append({
-                "question_id": str(uuid.uuid4()),  # ✅ NEW
-                "passage_id": row.passage_id,
-                "topic": row.topic,
-                "difficulty": row.difficulty,
-                "question_type": row.question_type,
-                "exam_bundle": bundle,
-            })
+                assembled_questions.append({
+                    "question_id": str(uuid.uuid4()),
+                    "passage_id": row.passage_id,
+                    "topic": row.topic,
+                    "difficulty": row.difficulty,
+                    "question_type": row.question_type,
+                    "exam_bundle": row.exam_bundle,
+                })
 
-    # 8. Final validation (count individual questions)
-    # 8. Final validation (count questions — 1 row = 1 question)
+    # ----------------------------------------
+    # 8. Final validation
+    # ----------------------------------------
     print("\n=== FINAL CHECK ===")
-    
+
     total_question_count = len(assembled_questions)
-    
+
     print(f"Total assembled question items: {total_question_count}")
-    
+
     if total_question_count != quiz.total_questions:
-        print(
-            f"❌ ERROR: Question count mismatch | "
-            f"Expected={quiz.total_questions}, "
-            f"Got={total_question_count}"
-        )
         raise HTTPException(
             status_code=400,
-            detail="Generated question count does not match quiz total"
+            detail=(
+                f"Question count mismatch | "
+                f"Expected={quiz.total_questions}, "
+                f"Got={total_question_count}"
+            )
         )
-    
+
     print("✅ Question count validated")
-    # 9. Keep previous exam history
-    print("📚 Keeping previous exam history")
 
-    # 10. Persist exam
-    print("💾 Saving exam to exam_naplan_reading table...")
-
+    # ----------------------------------------
+    # 9. Save exam
+    # ----------------------------------------
     exam = ExamNaplanReading(
         quiz_id=quiz.id,
         class_name=quiz.class_name,
@@ -12716,10 +12619,7 @@ def generate_naplan_reading_exam(
     db.commit()
     db.refresh(exam)
 
-    print(
-        f"🎉 SUCCESS: Reading exam generated | "
-        f"exam_id={exam.id}"
-    )
+    print(f"🎉 SUCCESS: Reading exam generated | exam_id={exam.id}")
     print("=== END: Generate NAPLAN Reading Exam ===\n")
 
     return {
@@ -12727,8 +12627,6 @@ def generate_naplan_reading_exam(
         "exam_id": exam.id,
         "total_questions": total_question_count,
     }
-
-
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
@@ -13158,15 +13056,14 @@ def get_naplan_question_bank(
         for r in results
     ]
 
-@app.put("/api/admin/reuse-used-questions-naplan-numeracy")
+@app.put("/api/admin/reuse-used-questions-naplan-numeracy") 
 def reuse_used_questions_naplan_numeracy(
     year: int = Query(...),
-    difficulty: str = Query(...),   # easy | medium | hard
     db: Session = Depends(get_db),
 ):
-    print("\n=== REUSE USED QUESTIONS START ===")
-    print("year:", year)
-    print("difficulty:", difficulty)
+    print("\n=== RESET USED QUESTIONS: NAPLAN NUMERACY ===")
+
+    print(f"[INPUT] year={year}")
 
     try:
         updated_count = (
@@ -13175,7 +13072,6 @@ def reuse_used_questions_naplan_numeracy(
                 func.lower(QuestionNumeracyLC.class_name) == "naplan",
                 QuestionNumeracyLC.subject == "Numeracy",
                 QuestionNumeracyLC.year == year,
-                func.lower(QuestionNumeracyLC.difficulty) == difficulty.lower(),
                 QuestionNumeracyLC.is_used == True,
             )
             .update(
@@ -13186,8 +13082,8 @@ def reuse_used_questions_naplan_numeracy(
 
         db.commit()
 
-        print(f"✅ Reset {updated_count} question(s)")
-        print("=== REUSE USED QUESTIONS COMPLETE ===\n")
+        print(f"[SUCCESS] reset_count={updated_count}")
+        print("=== RESET COMPLETE ===\n")
 
         return {
             "message": f"{updated_count} used question(s) are now reusable.",
@@ -13196,15 +13092,13 @@ def reuse_used_questions_naplan_numeracy(
 
     except Exception as e:
         db.rollback()
-        print("❌ ERROR:", str(e))
+
+        print("[ERROR]", str(e))
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to reset used questions."
+            detail="Failed to reset used questions.",
         )
-
-
-
 
 @app.get("/api/student/homework-review-by-session/reading")
 def review_homework_reading_by_session(
@@ -19245,40 +19139,32 @@ def fetch_classes(db: Session = Depends(get_db)):
 def get_naplan_reading_topics(
     subject: str = Query(...),
     year: int = Query(...),
-    difficulty: str = Query(...),
     db: Session = Depends(get_db)
 ):
     """
-    Returns distinct Reading topics for the given year & difficulty.
-    Used by exam creation UI.
+    Returns ALL distinct Reading skills (topics) for a given year.
+    Difficulty is NOT used — handled later during exam generation.
     """
 
-    # -----------------------------
-    # Debug input values
-    # -----------------------------
-    print("🔍 FILTER VALUES")
-    print("subject:", subject)
-    print("year:", year)
-    print("difficulty:", difficulty)
+    print("\n=== TOPICS-NAPLAN-READING DEBUG START ===")
+    print(f"[INPUT] subject={subject}, year={year}")
 
-    # -----------------------------
-    # Case-insensitive, safe query
-    # -----------------------------
     topics = (
         db.query(distinct(QuestionNaplanReading.topic))
         .filter(
             func.lower(QuestionNaplanReading.subject) == subject.lower(),
             QuestionNaplanReading.year == year,
-            func.lower(QuestionNaplanReading.difficulty) == difficulty.lower(),
         )
         .order_by(QuestionNaplanReading.topic.asc())
         .all()
     )
 
-    print("🧮 Topics found:", len(topics))
+    topic_list = [t[0] for t in topics]
 
-    # SQLAlchemy returns tuples like: [("Topic A",), ("Topic B",)]
-    return [t[0] for t in topics]
+    print(f"[RESULT] topics_found={len(topic_list)}")
+    print("=== TOPICS-NAPLAN-READING DEBUG END ===\n")
+
+    return topic_list
 
 @app.get("/api/topic-question-counts-lc")
 def get_topic_counts_lc(
@@ -22122,28 +22008,22 @@ def create_naplan_reading_quiz(
     quiz: NaplanQuizCreate,
     db: Session = Depends(get_db),
 ):
-    print("\n========== NAPLAN READING QUIZ CREATION START ==========")
+    print("\n========== NAPLAN READING CONFIG SAVE START ==========")
 
-    print("🔍 Incoming payload:", quiz)
-
+    # --------------------------------------------------
+    # 1. Validate payload
+    # --------------------------------------------------
     try:
         quiz_dict = quiz.dict()
-        print("📦 Parsed quiz payload:", quiz_dict)
+        print("📦 Parsed payload:", quiz_dict)
     except Exception as e:
-        print("❌ Failed to parse payload:", e)
+        print("❌ Payload parsing failed:", e)
         traceback.print_exc()
         raise HTTPException(status_code=400, detail="Invalid quiz payload")
 
-    print("➡️ class_name:", quiz.class_name)
-    print("➡️ subject:", quiz.subject)
-    print("➡️ year:", quiz.year)
-    print("➡️ difficulty:", quiz.difficulty)
-    print("➡️ num_topics:", quiz.num_topics)
-    print("➡️ total_questions:", quiz.total_questions)
-
-    # -----------------------------
-    # Basic validation
-    # -----------------------------
+    # --------------------------------------------------
+    # 2. Basic validation
+    # --------------------------------------------------
     if quiz.subject.lower() != "reading":
         raise HTTPException(
             status_code=400,
@@ -22153,30 +22033,48 @@ def create_naplan_reading_quiz(
     if not isinstance(quiz.topics, list):
         raise HTTPException(status_code=400, detail="topics must be a list")
 
-    print("📝 Topics:")
+    print(f"➡️ class_name: {quiz.class_name}")
+    print(f"➡️ subject: {quiz.subject}")
+    print(f"➡️ year: {quiz.year}")
+    print(f"➡️ difficulty: {quiz.difficulty}")
+    print(f"➡️ num_topics: {quiz.num_topics}")
+    print(f"➡️ total_questions: {quiz.total_questions}")
+
+    print("\n📝 Topics received:")
     for i, t in enumerate(quiz.topics):
         print(f"   └─ Topic {i + 1}: {t}")
 
     try:
-        # 🔥 DELETE PREVIOUS QUIZ CONFIG(S)
-        print("\n🧹 Deleting existing NAPLAN Reading quiz configs...")
+        # --------------------------------------------------
+        # 3. Delete previous configs (correct scope)
+        # --------------------------------------------------
+        print("\n🧹 Deleting existing Reading configs for same year + subject...")
 
         deleted_count = (
             db.query(QuizNaplanReading)
-            .filter(QuizNaplanReading.year == quiz.year)
-            .delete()
+            .filter(
+                QuizNaplanReading.year == quiz.year,
+                func.lower(QuizNaplanReading.subject) == "reading",
+            )
+            .delete(synchronize_session=False)
         )
 
-        print(f"🗑️ Deleted {deleted_count} existing quiz config(s)")
-        print("\n--- Creating quiz_naplan_reading row ---")
+        print(f"🗑️ Deleted {deleted_count} existing config(s)")
+
+        # --------------------------------------------------
+        # 4. Create new config
+        # --------------------------------------------------
+        print("\n--- Creating new quiz_naplan_reading row ---")
 
         new_quiz = QuizNaplanReading(
-            class_name=quiz.class_name,        # e.g. "year 3"
+            class_name=quiz.class_name,
             subject="reading",
             year=quiz.year,
-            difficulty=quiz.difficulty,
+            difficulty=quiz.difficulty,  # informational
             num_topics=quiz.num_topics,
             total_questions=quiz.total_questions,
+
+            # 🔥 IMPORTANT: Save structured topics (difficulty-based)
             topics=[t.dict() for t in quiz.topics],
         )
 
@@ -22184,196 +22082,135 @@ def create_naplan_reading_quiz(
         db.commit()
         db.refresh(new_quiz)
 
-        print("✅ NAPLAN READING QUIZ CREATED:", new_quiz)
-        print("========== NAPLAN READING QUIZ CREATION COMPLETE ==========\n")
+        print(f"✅ READING CONFIG SAVED (ID={new_quiz.id})")
+        print("========== NAPLAN READING CONFIG SAVE COMPLETE ==========\n")
 
         return {
-            "message": "NAPLAN Reading quiz created successfully",
+            "message": "NAPLAN Reading config saved successfully",
             "quiz_id": new_quiz.id,
+            "year": quiz.year,
+            "total_questions": quiz.total_questions,
         }
 
     except Exception as e:
-        print("\n❌ EXCEPTION DURING QUIZ CREATION ❌")
+        print("\n❌ EXCEPTION DURING CONFIG SAVE ❌")
         print("Error:", str(e))
         traceback.print_exc()
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/quizzes-naplan-reading-homework")
 def create_naplan_reading_homework_quiz(
     quiz: NaplanQuizCreate,
     db: Session = Depends(get_db),
 ):
-    print(
-        "\n========== NAPLAN READING "
-        "HOMEWORK QUIZ CREATION START =========="
-    )
+    print("\n========== NAPLAN READING HOMEWORK CONFIG SAVE START ==========")
 
-    print("🔍 Incoming payload:", quiz)
-
+    # --------------------------------------------------
+    # 1. Validate payload
+    # --------------------------------------------------
     try:
         quiz_dict = quiz.dict()
-        print("📦 Parsed quiz payload:", quiz_dict)
-
+        print("📦 Parsed payload:", quiz_dict)
     except Exception as e:
-        print("❌ Failed to parse payload:", e)
+        print("❌ Payload parsing failed:", e)
         traceback.print_exc()
+        raise HTTPException(status_code=400, detail="Invalid quiz payload")
 
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid quiz payload"
-        )
-
-    print("➡️ class_name:", quiz.class_name)
-    print("➡️ subject:", quiz.subject)
-    print("➡️ year:", quiz.year)
-    print("➡️ difficulty:", quiz.difficulty)
-    print("➡️ num_topics:", quiz.num_topics)
-    print("➡️ total_questions:", quiz.total_questions)
-
-    # ----------------------------------
-    # Basic validation
-    # ----------------------------------
+    # --------------------------------------------------
+    # 2. Basic validation
+    # --------------------------------------------------
     if quiz.subject.lower() != "reading":
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Invalid subject for "
-                f"reading homework: "
-                f"{quiz.subject}"
-            ),
+            detail=f"Invalid subject for reading homework: {quiz.subject}",
         )
 
     if not isinstance(quiz.topics, list):
-        raise HTTPException(
-            status_code=400,
-            detail="topics must be a list"
-        )
+        raise HTTPException(status_code=400, detail="topics must be a list")
 
-    print("📝 Topics:")
+    print(f"➡️ class_name: {quiz.class_name}")
+    print(f"➡️ subject: {quiz.subject}")
+    print(f"➡️ year: {quiz.year}")
+    print(f"➡️ difficulty: {quiz.difficulty}")
+    print(f"➡️ num_topics: {quiz.num_topics}")
+    print(f"➡️ total_questions: {quiz.total_questions}")
 
+    print("\n📝 Topics received:")
     for i, t in enumerate(quiz.topics):
         print(f"   └─ Topic {i + 1}: {t}")
 
     try:
-        # ----------------------------------
-        # Delete previous homework config(s)
-        # ----------------------------------
-        print(
-            "\n🧹 Deleting existing "
-            "NAPLAN Reading homework "
-            "configs..."
-        )
+        # --------------------------------------------------
+        # 3. Delete previous configs (correct scope)
+        # --------------------------------------------------
+        print("\n🧹 Deleting existing Reading homework configs for same year + subject...")
 
         deleted_count = (
-            db.query(
-                QuizNaplanReadingHomework
-            )
+            db.query(QuizNaplanReadingHomework)
             .filter(
-                QuizNaplanReadingHomework.year
-                == quiz.year
+                QuizNaplanReadingHomework.year == quiz.year,
+                func.lower(QuizNaplanReadingHomework.subject) == "reading",
             )
-            .delete(
-                synchronize_session=False
-            )
+            .delete(synchronize_session=False)
         )
 
-        print(
-            f"🗑️ Deleted {deleted_count} "
-            f"existing homework config(s)"
-        )
+        print(f"🗑️ Deleted {deleted_count} existing homework config(s)")
 
-        # ----------------------------------
-        # Create homework config row
-        # ----------------------------------
-        print(
-            "\n--- Creating "
-            "quiz_naplan_reading_homework row ---"
-        )
+        # --------------------------------------------------
+        # 4. Create new config
+        # --------------------------------------------------
+        print("\n--- Creating new quiz_naplan_reading_homework row ---")
 
-        new_quiz = (
-            QuizNaplanReadingHomework(
-                class_name=quiz.class_name,
-                subject="reading",
-                year=quiz.year,
-                difficulty=quiz.difficulty,
-                num_topics=quiz.num_topics,
-                total_questions=quiz.total_questions,
-                topics=[
-                    t.dict()
-                    for t in quiz.topics
-                ],
-            )
+        new_quiz = QuizNaplanReadingHomework(
+            class_name=quiz.class_name,
+            subject="reading",
+            year=quiz.year,
+            difficulty=quiz.difficulty,  # informational
+            num_topics=quiz.num_topics,
+            total_questions=quiz.total_questions,
+
+            # 🔥 IMPORTANT: Save structured topics (difficulty-based)
+            topics=[t.dict() for t in quiz.topics],
         )
 
         db.add(new_quiz)
         db.commit()
         db.refresh(new_quiz)
 
-        print(
-            "✅ NAPLAN READING HOMEWORK "
-            "QUIZ CREATED:",
-            new_quiz
-        )
-
-        print(
-            "========== NAPLAN READING "
-            "HOMEWORK QUIZ CREATION "
-            "COMPLETE ==========\n"
-        )
+        print(f"✅ READING HOMEWORK CONFIG SAVED (ID={new_quiz.id})")
+        print("========== NAPLAN READING HOMEWORK CONFIG SAVE COMPLETE ==========\n")
 
         return {
-            "message":
-                "NAPLAN Reading homework "
-                "quiz created successfully",
+            "message": "NAPLAN Reading homework config saved successfully",
             "quiz_id": new_quiz.id,
+            "year": quiz.year,
+            "total_questions": quiz.total_questions,
         }
 
     except Exception as e:
-        print(
-            "\n❌ EXCEPTION DURING "
-            "HOMEWORK QUIZ CREATION ❌"
-        )
-
+        print("\n❌ EXCEPTION DURING HOMEWORK CONFIG SAVE ❌")
         print("Error:", str(e))
         traceback.print_exc()
-
         db.rollback()
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @app.put("/api/admin/reuse-used-questions-naplan-language-conventions")
 def reuse_used_questions_naplan_language_conventions(
     year: int = Query(...),
-    difficulty: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    print(
-        "\n=== RESET USED QUESTIONS: "
-        "NAPLAN LANGUAGE CONVENTIONS ==="
-    )
+    print("\n=== RESET USED QUESTIONS: NAPLAN LANGUAGE CONVENTIONS ===")
 
-    print("year:", year)
-    print("difficulty:", difficulty)
+    print(f"[INPUT] year={year}")
 
     try:
         updated_count = (
             db.query(QuestionNumeracyLC)
             .filter(
-                func.lower(
-                    QuestionNumeracyLC.class_name
-                ) == "naplan",
-
-                QuestionNumeracyLC.subject
-                == "Language Conventions",
-
+                func.lower(QuestionNumeracyLC.class_name) == "naplan",
+                QuestionNumeracyLC.subject == "Language Conventions",
                 QuestionNumeracyLC.year == year,
-
-                func.lower(
-                    QuestionNumeracyLC.difficulty
-                ) == difficulty.lower(),
-
                 QuestionNumeracyLC.is_used == True,
             )
             .update(
@@ -22384,32 +22221,23 @@ def reuse_used_questions_naplan_language_conventions(
 
         db.commit()
 
-        print(
-            f"✅ Reset {updated_count} "
-            f"question(s)"
-        )
-
-        print(
-            "=== RESET USED QUESTIONS COMPLETE ===\n"
-        )
+        print(f"[SUCCESS] reset_count={updated_count}")
+        print("=== RESET COMPLETE ===\n")
 
         return {
-            "message":
-                f"{updated_count} used question(s) "
-                f"are now reusable.",
+            "message": f"{updated_count} used question(s) are now reusable.",
             "updated_count": updated_count,
         }
 
     except Exception as e:
         db.rollback()
 
-        print("❌ ERROR:", str(e))
+        print("[ERROR]", str(e))
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to reset used questions."
+            detail="Failed to reset used questions.",
         )
-
 @app.post("/api/quizzes-naplan-language-conventions-homework")
 def create_naplan_language_conventions_homework_quiz(
     quiz: NaplanQuizCreate,
