@@ -3410,6 +3410,7 @@ class QuestionReading(Base):
     # Explicit for admin sanity & validation
     total_questions = Column(Integer, nullable=False)
     is_used = Column(Boolean, nullable=False, default=False, server_default="false")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
     # --------------------------------------------------
@@ -7129,7 +7130,7 @@ def get_available_subjects(
     print("\n========== 📖 READING AVAILABILITY DEBUG START ==========")
 
     # ==================================================
-    # ✅ NORMALIZATION (MATCH GENERATION LOGIC)
+    # ✅ NORMALIZATION
     # ==================================================
 
     class_name = student.class_name.strip().lower()
@@ -7139,30 +7140,20 @@ def get_available_subjects(
     print(f"🧪 class_year = {class_year}")
 
     # ==================================================
-    # 1️⃣ EXAM LOGIC (FIXED)
+    # 1️⃣ EXAM LOGIC (SIMPLIFIED & FIXED)
     # ==================================================
 
     latest_exam = (
         db.query(GeneratedExamReading)
         .filter(
-            func.lower(func.trim(GeneratedExamReading.class_name)) == class_name,
-            func.trim(
-                func.replace(
-                    func.lower(GeneratedExamReading.class_year),
-                    "year",
-                    ""
-                )
-            ) == class_year
+            func.lower(GeneratedExamReading.class_name) == class_name,
+            GeneratedExamReading.class_year == class_year
         )
         .order_by(GeneratedExamReading.id.desc())
         .first()
     )
 
     print("📘 Latest exam:", latest_exam)
-
-    # ==================================================
-    # ✅ Latest Attempt (SCOPED TO THIS EXAM)
-    # ==================================================
 
     latest_attempt = None
 
@@ -7188,10 +7179,6 @@ def get_available_subjects(
         print("🆕 No attempt → enable")
         reading_exam_enabled = True
 
-    elif latest_attempt.exam_id != latest_exam.id:
-        print("🆕 New exam available → enable")
-        reading_exam_enabled = True
-
     elif latest_attempt.finished is False:
         print("🟡 Resume attempt → enable")
         reading_exam_enabled = True
@@ -7202,46 +7189,24 @@ def get_available_subjects(
 
 
     # ==================================================
-    # 2️⃣ HOMEWORK LOGIC (FIXED SAME WAY)
+    # 2️⃣ HOMEWORK LOGIC (SIMPLIFIED & FIXED)
     # ==================================================
 
-    # --- Latest Homework Exam ---
     latest_homework_exam = (
         db.query(GeneratedHomeworkReading)
         .filter(
-            func.lower(func.trim(GeneratedHomeworkReading.class_name)) == class_name,
-
-            func.trim(
-                func.replace(
-                    func.lower(GeneratedHomeworkReading.class_year),
-                    "year",
-                    ""
-                )
-            ) == class_year
+            func.lower(GeneratedHomeworkReading.class_name) == class_name,
+            GeneratedHomeworkReading.class_year == class_year
         )
         .order_by(GeneratedHomeworkReading.id.desc())
         .first()
     )
-    all_hw = db.query(GeneratedHomeworkReading).order_by(GeneratedHomeworkReading.id.desc()).all()
-
-    print("\n🧪 ALL HOMEWORK EXAMS:")
-    for hw in all_hw:
-        print(f"ID={hw.id}, class_name='{hw.class_name}', class_year='{hw.class_year}'")
 
     print("📘 Latest homework exam:", latest_homework_exam)
-    if latest_homework_exam:
-        print(f"🧪 Picked homework exam ID = {latest_homework_exam.id}")
-    #hi there
-    # --- Latest Homework Attempt ---
-    
+
     latest_homework_attempt = None
 
-    print("\n========== 🧪 HOMEWORK ATTEMPT DEBUG START ==========")
-
     if latest_homework_exam:
-        print(f"📘 Found latest_homework_exam.id = {latest_homework_exam.id}")
-        print(f"👤 Checking attempts for student_id = {student.id}")
-
         latest_homework_attempt = (
             db.query(StudentHomeworkReading)
             .filter(
@@ -7252,20 +7217,7 @@ def get_available_subjects(
             .first()
         )
 
-        if latest_homework_attempt:
-            print("✅ Attempt FOUND")
-            print(f"   🆔 attempt.id = {latest_homework_attempt.id}")
-            print(f"   📘 exam_id = {latest_homework_attempt.exam_id}")
-            print(f"   ⏱ started_at = {latest_homework_attempt.started_at}")
-            print(f"   🏁 finished = {latest_homework_attempt.finished}")
-        else:
-            print("🆕 NO attempt found for this homework exam (expected case → should ENABLE)")
-
-    else:
-        print("❌ No latest_homework_exam found → cannot check attempts")
-
-    print("🔎 Final latest_homework_attempt:", latest_homework_attempt)
-    print("========== 🧪 HOMEWORK ATTEMPT DEBUG END ==========\n")
+    print("🔎 Latest homework attempt:", latest_homework_attempt)
 
     # --- Decision ---
     if not latest_homework_exam:
@@ -7274,10 +7226,6 @@ def get_available_subjects(
 
     elif not latest_homework_attempt:
         print("🆕 No homework attempt → enable")
-        reading_homework_enabled = True
-
-    elif latest_homework_attempt.exam_id != latest_homework_exam.id:
-        print("🆕 New homework available → enable")
         reading_homework_enabled = True
 
     elif latest_homework_attempt.finished is False:
@@ -7378,6 +7326,7 @@ def get_available_subjects(
     print("✅ Availability response:", response)
 
     return response
+
 @app.post("/naplan/reading/generate-homework")
 def generate_naplan_reading_homework(
     payload: dict = Body(...),
@@ -8133,8 +8082,134 @@ def start_homework_mr(
         "remaining_time": 40 * 60
     }
 
-from typing import Optional, Dict
-from fastapi import Body, HTTPException, Depends
+@app.post("/generate-new-mr-homework-latest")
+def generate_exam_homework_latest(
+    payload: Optional[Dict] = Body(default=None),
+    db: Session = Depends(get_db)
+):
+    print("\n========== MR HOMEWORK LATEST EXAM GENERATION START ==========")
+
+    # --------------------------------------------------
+    # 1️⃣ INPUT
+    # --------------------------------------------------
+    payload = payload or {}
+    class_year = payload.get("class_year")
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    print(f"📘 Generating MR HOMEWORK LATEST exam for class_year={class_year}")
+
+    QUESTION_COUNT = 35
+
+    # --------------------------------------------------
+    # 2️⃣ FETCH LATEST UNUSED QUESTIONS
+    # --------------------------------------------------
+    rows = (
+        db.query(Question)
+        .filter(
+            func.lower(func.trim(Question.class_name)) == "selective",
+            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            Question.class_year == class_year,
+            Question.is_used == False
+        )
+        .order_by(Question.created_at.desc(), Question.id.desc())
+        .limit(QUESTION_COUNT)
+        .all()
+    )
+
+    if len(rows) < QUESTION_COUNT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not enough unused latest questions. Required {QUESTION_COUNT}, found {len(rows)}"
+        )
+
+    print(f"✅ Fetched {len(rows)} latest unused MR questions")
+
+    # --------------------------------------------------
+    # 3️⃣ BUILD QUESTIONS
+    # --------------------------------------------------
+    questions = []
+    q_id = 1
+
+    for row in rows:
+        if not row.question_blocks:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Question {row.id} has no question_blocks"
+            )
+
+        sanitized_blocks = sanitize_question_blocks(row.question_blocks)
+
+        questions.append({
+            "id": row.id,
+            "q_id": q_id,
+            "topic": row.topic,
+            "question_blocks": sanitized_blocks,
+            "options": normalize_options(row.options),
+            "correct": row.correct_answer
+        })
+
+        q_id += 1
+
+    # --------------------------------------------------
+    # 4️⃣ VALIDATION
+    # --------------------------------------------------
+    if len(questions) != QUESTION_COUNT:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Expected {QUESTION_COUNT}, got {len(questions)}"
+        )
+
+    # --------------------------------------------------
+    # 5️⃣ MARK USED
+    # --------------------------------------------------
+    used_ids = [q["id"] for q in questions]
+
+    db.query(Question).filter(
+        Question.id.in_(used_ids),
+        Question.is_used == False
+    ).update(
+        {Question.is_used: True},
+        synchronize_session=False
+    )
+
+    print(f"🔒 Marked {len(used_ids)} homework latest questions as used")
+
+    # --------------------------------------------------
+    # 6️⃣ SAVE EXAM
+    # --------------------------------------------------
+    new_exam = Exam(
+        quiz_id=None,  # ✅ correct: no quiz dependency
+        class_name="selective",
+        subject="mathematical reasoning",
+        class_year=int(class_year),
+        questions=questions,
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 MR homework latest exam saved with ID: {new_exam.id}")
+    print("========== COMPLETE ==========\n")
+
+    # --------------------------------------------------
+    # 7️⃣ RESPONSE
+    # --------------------------------------------------
+    return {
+        "message": "MR homework latest exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": None,
+        "class_name": "selective",
+        "subject": "mathematical reasoning",
+        "class_year": int(class_year),
+        "total_questions": len(questions),
+        "questions": questions,
+    }
 
 @app.post("/generate-new-mr-homework")
 def generate_mr_homework_exam(
@@ -19849,6 +19924,140 @@ def generate_exam(
         "questions": questions,
     }
 
+
+
+@app.post("/generate-new-mr-latest")
+def generate_exam_latest(
+    req: GenerateExamRequest,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # 1️⃣ INPUT
+    # --------------------------------------------------
+    class_year = req.class_year
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    print(f"🆕 Generating MR LATEST exam for class_year={class_year}")
+
+    QUESTION_COUNT = 35
+
+    # --------------------------------------------------
+    # 2️⃣ FETCH LATEST UNUSED QUESTIONS
+    # --------------------------------------------------
+    rows = (
+        db.query(Question)
+        .filter(
+            func.lower(func.trim(Question.class_name)) == "selective",
+            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            Question.class_year == class_year,
+            Question.is_used == False
+        )
+        .order_by(Question.created_at.desc(), Question.id.desc())
+        .limit(QUESTION_COUNT)
+        .all()
+    )
+
+    if len(rows) < QUESTION_COUNT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not enough latest questions. Required {QUESTION_COUNT}, found {len(rows)}"
+        )
+
+    print(f"✅ Fetched {len(rows)} latest MR questions")
+
+    # --------------------------------------------------
+    # 3️⃣ BUILD QUESTIONS
+    # --------------------------------------------------
+    questions = []
+    q_id = 1
+
+    for row in rows:
+        if not row.question_blocks:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Question {row.id} has no question_blocks"
+            )
+
+        sanitized_blocks = sanitize_question_blocks(row.question_blocks)
+
+        questions.append({
+            "id": row.id,
+            "q_id": q_id,
+            "topic": row.topic,
+            "question_blocks": sanitized_blocks,
+            "options": normalize_options(row.options),
+            "correct": row.correct_answer
+        })
+
+        q_id += 1
+
+    # --------------------------------------------------
+    # 4️⃣ FINAL VALIDATION
+    # --------------------------------------------------
+    if len(questions) != QUESTION_COUNT:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Expected {QUESTION_COUNT}, got {len(questions)}"
+        )
+
+    # --------------------------------------------------
+    # 5️⃣ MARK USED
+    # --------------------------------------------------
+    used_ids = [q.get("id") for q in questions if q.get("id") is not None]
+
+    print("USED IDS:", used_ids)
+
+    updated = (
+        db.query(Question)
+        .filter(Question.id.in_(used_ids))
+        .update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
+    )
+
+    print("UPDATED ROWS:", updated)
+
+    if updated != len(used_ids):
+        print("⚠ WARNING: Not all questions were marked as used")
+
+    print(f"🔒 Marked {len(used_ids)} questions as used")
+
+    # --------------------------------------------------
+    # 6️⃣ SAVE EXAM
+    # --------------------------------------------------
+    new_exam = Exam(
+        quiz_id=None,  # 🔥 important: no quiz config
+        class_name="selective",
+        subject="mathematical reasoning",
+        class_year=class_year,
+        questions=questions,
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 MR latest exam saved with ID: {new_exam.id}")
+
+    # --------------------------------------------------
+    # 7️⃣ RESPONSE
+    # --------------------------------------------------
+    return {
+        "message": "MR latest exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": None,
+        "class_name": "selective",
+        "subject": "mathematical reasoning",
+        "class_year": class_year,
+        "total_questions": len(questions),
+        "questions": questions,
+    }
 
 @app.post("/api/admin/bulk-users-exam-module")
 async def bulk_users_exam_module(
@@ -36061,7 +36270,177 @@ def generate_exam_oc_reading(
         "warnings": warnings,
         "exam_json": exam_json,
     }
+@app.post("/api/exams/generate-reading-homework-latest")
+def generate_exam_reading_homework_latest(
+    payload: ReadingHomeworkExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ GENERATE READING HOMEWORK LATEST =================")
 
+    try:
+        print("📥 RAW PAYLOAD:", payload.dict())
+
+        # --------------------------------------------------
+        # 0️⃣ NORMALIZE INPUT
+        # --------------------------------------------------
+        class_name = payload.class_name.strip().lower()
+        class_year = payload.class_year.lower().replace("year", "").strip()
+        subject = "reading_comprehension"
+
+        if not class_year:
+            raise HTTPException(400, "class_year is required")
+
+        print(f"🔧 class_name={class_name}, class_year={class_year}")
+
+        sections = []
+        used_bundle_ids = []
+
+        # --------------------------------------------------
+        # 1️⃣ FIND LATEST BATCH (NO is_used FILTER HERE)
+        # --------------------------------------------------
+        latest_created_at = (
+            db.query(func.max(QuestionReading.created_at))
+            .filter(
+                func.lower(func.trim(QuestionReading.class_name)) == class_name,
+                func.trim(
+                    func.replace(func.lower(QuestionReading.class_year), "year", "")
+                ) == class_year
+            )
+            .scalar()
+        )
+
+        if not latest_created_at:
+            raise HTTPException(
+                400,
+                "No reading questions found for this class/year"
+            )
+
+        print(f"🕒 Latest batch timestamp: {latest_created_at}")
+
+        # --------------------------------------------------
+        # 2️⃣ FETCH UNUSED QUESTIONS FROM THIS BATCH
+        # --------------------------------------------------
+        rows = (
+            db.query(QuestionReading)
+            .filter(
+                func.lower(func.trim(QuestionReading.class_name)) == class_name,
+                func.trim(
+                    func.replace(func.lower(QuestionReading.class_year), "year", "")
+                ) == class_year,
+                func.date(QuestionReading.created_at) == func.date(latest_created_at),
+                QuestionReading.is_used.is_(False)
+            )
+            .order_by(QuestionReading.id.asc())
+            .all()
+        )
+
+        if not rows:
+            raise HTTPException(
+                400,
+                "Latest batch already used — no unused questions remaining"
+            )
+
+        print(f"✅ Fetched {len(rows)} bundles from latest batch")
+
+        # --------------------------------------------------
+        # 3️⃣ BUILD SECTIONS
+        # --------------------------------------------------
+        for idx, row in enumerate(rows, start=1):
+            bundle_json = row.exam_bundle or {}
+
+            question_type = bundle_json.get("question_type")
+            reading_material = bundle_json.get("reading_material")
+            answer_options = bundle_json.get("answer_options")
+
+            questions = [
+                copy.deepcopy(q)
+                for q in bundle_json.get("questions", [])
+            ]
+
+            for q_index, q in enumerate(questions, start=1):
+                q["question_number"] = q_index
+                q["question_id"] = f"hw_latest_{idx}_Q{q_index}"
+
+            section = {
+                "section_id": f"hw_latest_section_{idx}",
+                "section_index": idx,
+                "topic": row.topic,
+                "difficulty": row.difficulty,
+                "question_type": question_type,
+                "reading_material": reading_material,
+                "questions": questions,
+            }
+
+            if answer_options:
+                section["answer_options"] = answer_options
+
+            sections.append(section)
+            used_bundle_ids.append(row.id)
+
+        # --------------------------------------------------
+        # 4️⃣ FINALIZE
+        # --------------------------------------------------
+        total_questions = sum(len(s["questions"]) for s in sections)
+
+        homework_json = {
+            "class_name": class_name,
+            "class_year": class_year,
+            "subject": subject,
+            "difficulty": "mixed",
+            "total_questions": total_questions,
+            "sections": sections,
+        }
+
+        print(f"📊 Sections: {len(sections)}")
+        print(f"📊 Total questions: {total_questions}")
+
+        # --------------------------------------------------
+        # 5️⃣ MARK USED
+        # --------------------------------------------------
+        updated = (
+            db.query(QuestionReading)
+            .filter(
+                QuestionReading.id.in_(used_bundle_ids),
+                QuestionReading.is_used.is_(False)
+            )
+            .update(
+                {QuestionReading.is_used: True},
+                synchronize_session=False
+            )
+        )
+
+        print(f"🔒 Marked {updated} bundles as used")
+
+        # --------------------------------------------------
+        # 6️⃣ SAVE
+        # --------------------------------------------------
+        saved = GeneratedHomeworkReading(
+            config_id=None,
+            class_name=class_name,
+            class_year=class_year,
+            subject=subject,
+            difficulty="mixed",
+            total_questions=total_questions,
+            exam_json=homework_json,
+        )
+
+        db.add(saved)
+        db.commit()
+        db.refresh(saved)
+
+        print(f"💾 Homework latest saved ID={saved.id}")
+        print("================ END =================\n")
+
+        return {
+            "generated_exam_id": saved.id,
+            "total_questions": total_questions,
+            "exam_json": homework_json,
+        }
+
+    except Exception as e:
+        print("\n💥 ERROR IN READING HOMEWORK LATEST")
+        print(str(e))
+        raise
 
 @app.post("/api/exams/generate-reading-homework")
 def generate_exam_reading_homework(
@@ -36300,6 +36679,174 @@ def generate_exam_reading_homework(
     except Exception as error:
         print("\n💥 ERROR IN READING HOMEWORK")
         print(str(error))
+        raise
+
+
+@app.post("/api/exams/generate-reading-latest")
+def generate_exam_reading_latest(
+    payload: ReadingExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ GENERATE READING LATEST =================")
+
+    try:
+        # --------------------------------------------------
+        # 0️⃣ INPUT NORMALIZATION
+        # --------------------------------------------------
+        print("📥 RAW PAYLOAD:", payload.dict())
+
+        class_name = payload.class_name.strip().lower()
+        class_year = payload.class_year.lower().replace("year", "").strip()
+        subject = "reading_comprehension"
+
+        if not class_year:
+            raise HTTPException(400, "class_year is required")
+
+        print("\n🔧 NORMALIZED INPUTS:")
+        print(f"class_name = '{class_name}'")
+        print(f"class_year = '{class_year}'")
+
+        # --------------------------------------------------
+        # 1️⃣ FIND LATEST TIMESTAMP
+        # --------------------------------------------------
+        latest_created_at = (
+            db.query(func.max(QuestionReading.created_at))
+            .filter(
+                func.lower(func.trim(QuestionReading.class_name)) == class_name,
+                func.trim(
+                    func.replace(func.lower(QuestionReading.class_year), "year", "")
+                ) == class_year,
+                QuestionReading.is_used == False
+            )
+            .scalar()
+        )
+
+        if not latest_created_at:
+            raise HTTPException(
+                400,
+                "No unused reading questions available"
+            )
+
+        print(f"🕒 Latest created_at: {latest_created_at}")
+
+        # --------------------------------------------------
+        # 2️⃣ FETCH ALL FROM THIS BATCH
+        # --------------------------------------------------
+        rows = (
+            db.query(QuestionReading)
+            .filter(
+                func.lower(func.trim(QuestionReading.class_name)) == class_name,
+                QuestionReading.class_year == class_year,
+                QuestionReading.is_used.is_(False)
+            )
+            .order_by(QuestionReading.id.desc())
+            .all()
+        )
+
+        if not rows:
+            raise HTTPException(
+                400,
+                "No questions found for latest batch"
+            )
+
+        print(f"✅ Fetched {len(rows)} bundles from latest batch")
+
+        # --------------------------------------------------
+        # 3️⃣ BUILD SECTIONS
+        # --------------------------------------------------
+        sections = []
+        used_bundle_ids = []
+
+        for idx, row in enumerate(rows, start=1):
+            bundle_json = row.exam_bundle or {}
+
+            question_type = bundle_json.get("question_type")
+            reading_material = bundle_json.get("reading_material")
+            answer_options = bundle_json.get("answer_options")
+
+            questions = bundle_json.get("questions", [])
+
+            for q_index, q in enumerate(questions, start=1):
+                q["question_number"] = q_index
+                q["question_id"] = f"latest_{idx}_Q{q_index}"
+
+            section = {
+                "section_id": f"latest_section_{idx}",
+                "section_index": idx,
+                "question_type": question_type,
+                "topic": row.topic,
+                "difficulty": row.difficulty,
+                "reading_material": reading_material,
+                "questions": questions,
+            }
+
+            if answer_options:
+                section["answer_options"] = answer_options
+
+            sections.append(section)
+            used_bundle_ids.append(row.id)
+
+        # --------------------------------------------------
+        # 4️⃣ FINALIZE EXAM
+        # --------------------------------------------------
+        total_questions = sum(len(s["questions"]) for s in sections)
+
+        exam_json = {
+            "class_name": class_name,
+            "class_year": class_year,
+            "subject": subject,
+            "difficulty": "mixed",
+            "duration_minutes": 40,
+            "total_questions": total_questions,
+            "sections": sections,
+        }
+
+        print(f"📊 Sections: {len(sections)}")
+        print(f"📊 Total questions: {total_questions}")
+
+        # --------------------------------------------------
+        # 5️⃣ MARK USED
+        # --------------------------------------------------
+        updated = (
+            db.query(QuestionReading)
+            .filter(QuestionReading.id.in_(used_bundle_ids))
+            .update(
+                {QuestionReading.is_used: True},
+                synchronize_session=False
+            )
+        )
+
+        print(f"🔒 Marked {updated} bundles as used")
+
+        # --------------------------------------------------
+        # 6️⃣ SAVE EXAM
+        # --------------------------------------------------
+        saved = GeneratedExamReading(
+            config_id=None,
+            class_name=class_name,
+            class_year=class_year,
+            subject=subject,
+            difficulty="mixed",
+            total_questions=total_questions,
+            exam_json=exam_json,
+        )
+
+        db.add(saved)
+        db.commit()
+        db.refresh(saved)
+
+        print(f"💾 Saved exam ID: {saved.id}")
+        print("================ END =================\n")
+
+        return {
+            "generated_exam_id": saved.id,
+            "total_questions": total_questions,
+            "exam_json": exam_json,
+        }
+
+    except Exception as e:
+        print("\n💥 ERROR IN GENERATE READING LATEST")
+        print(f"❗ Exception: {str(e)}")
         raise
 
 @app.post("/api/exams/generate-reading")
