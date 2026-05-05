@@ -5791,6 +5791,143 @@ def extract_year_number(year_str):
 
 
 
+@app.post("/api/exams/generate-thinking-skills-latest")
+def generate_thinking_skills_exam_latest(
+    payload: Optional[Dict] = Body(default=None),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate exam using latest uploaded questions (by ID DESC).
+    No Quiz config, no randomness.
+    """
+
+    payload = payload or {}
+
+    # ==================================================
+    # 0️⃣ Extract Input
+    # ==================================================
+    class_year = payload.get("class_year")
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    print(f"\n📘 Generating LATEST Thinking Skills exam for class_year: {class_year}")
+
+    # ==================================================
+    # 1️⃣ Fetch Latest Questions (IMPORTANT LOGIC)
+    # ==================================================
+    latest_questions = (
+        db.query(Question)
+        .filter(
+            func.lower(Question.class_name) == "selective",
+            func.lower(Question.subject) == "thinking skills",
+            Question.class_year == class_year
+        )
+        .order_by(Question.id.desc())   # 🔥 KEY: latest first
+        .limit(40)                      # 🔥 fixed for now
+        .all()
+    )
+
+    if len(latest_questions) < 40:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not enough latest questions. Required 40, found {len(latest_questions)}"
+        )
+
+    print(f"✅ Fetched {len(latest_questions)} latest questions")
+
+    # ==================================================
+    # 2️⃣ Build Output (reuse your format)
+    # ==================================================
+    generated_questions = []
+    q_id = 1
+
+    for question_row in latest_questions:
+
+        blocks = question_row.question_blocks or []
+
+        if not blocks and question_row.question_text:
+            blocks = [{
+                "type": "text",
+                "content": question_row.question_text
+            }]
+
+        existing_image_srcs = {
+            block.get("src")
+            for block in blocks
+            if block.get("type") == "image"
+        }
+
+        for image_src in question_row.images or []:
+            if image_src not in existing_image_srcs:
+                blocks.append({
+                    "type": "image",
+                    "src": image_src
+                })
+
+        generated_questions.append({
+            "id": question_row.id,
+            "q_id": q_id,
+            "topic": question_row.topic,
+            "blocks": blocks,
+            "options": question_row.options,
+            "correct": question_row.correct_answer
+        })
+
+        q_id += 1
+
+    # ⚠️ DO NOT SHUFFLE (this is "latest", keep order meaningful)
+    # ==================================================
+    # 3️⃣ Mark Used Questions 
+    # ==================================================
+    used_question_ids = [q["id"] for q in generated_questions]
+
+    if used_question_ids:
+        db.query(Question).filter(
+            Question.id.in_(used_question_ids),
+            Question.is_used == False
+        ).update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
+
+        print(f"🔒 Marked {len(used_question_ids)} latest questions as used")
+
+    # ==================================================
+    # 3️⃣ Save Exam (NO QUIZ)
+    # ==================================================
+    new_exam = Exam(
+        quiz_id=None,  # 🔥 important difference
+        class_name="selective",
+        subject="thinking skills",
+        class_year=class_year,
+        questions=generated_questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 Latest exam saved with ID: {new_exam.id}")
+
+    # ==================================================
+    # 4️⃣ Response
+    # ==================================================
+    return {
+        "message": "Latest Thinking Skills exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": None,
+        "class_name": "selective",
+        "class_year": class_year,
+        "subject": "thinking skills",
+        "total_questions": len(generated_questions),
+        "questions": generated_questions
+    }
+
+
 @app.get("/api/reading-availability")
 def get_reading_availability(
     class_year: str,
@@ -21678,6 +21815,141 @@ def generate_oc_mathematical_reasoning_homework(
 
 
 
+@app.post("/api/exams/generate-thinking-skills-homework-latest")
+def generate_thinking_skills_homework_latest(
+    payload: Optional[Dict] = Body(default=None),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate HOMEWORK exam using latest uploaded questions.
+    Uses latest questions and marks them as used.
+    """
+
+    payload = payload or {}
+
+    # ==================================================
+    # 0️⃣ Extract Input
+    # ==================================================
+    class_year = payload.get("class_year")
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    print(f"\n📘 Generating HOMEWORK LATEST Thinking Skills exam for class_year: {class_year}")
+
+    # ==================================================
+    # 1️⃣ Fetch Latest Questions (ONLY UNUSED)
+    # ==================================================
+    latest_questions = (
+        db.query(Question)
+        .filter(
+            func.lower(Question.class_name) == "selective",
+            func.lower(Question.subject) == "thinking skills",
+            Question.class_year == class_year,
+            Question.is_used == False   # 🔥 IMPORTANT
+        )
+        .order_by(Question.created_at.desc(), Question.id.desc())
+        .limit(40)
+        .all()
+    )
+
+    if len(latest_questions) < 40:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not enough unused latest questions. Required 40, found {len(latest_questions)}"
+        )
+
+    print(f"✅ Fetched {len(latest_questions)} latest unused questions for homework")
+
+    # ==================================================
+    # 2️⃣ Build Output
+    # ==================================================
+    generated_questions = []
+    q_id = 1
+
+    for question_row in latest_questions:
+
+        blocks = question_row.question_blocks or []
+
+        if not blocks and question_row.question_text:
+            blocks = [{
+                "type": "text",
+                "content": question_row.question_text
+            }]
+
+        existing_image_srcs = {
+            block.get("src")
+            for block in blocks
+            if block.get("type") == "image"
+        }
+
+        for image_src in question_row.images or []:
+            if image_src not in existing_image_srcs:
+                blocks.append({
+                    "type": "image",
+                    "src": image_src
+                })
+
+        generated_questions.append({
+            "id": question_row.id,
+            "q_id": q_id,
+            "topic": question_row.topic,
+            "blocks": blocks,
+            "options": question_row.options,
+            "correct": question_row.correct_answer
+        })
+
+        q_id += 1
+
+    # ==================================================
+    # 3️⃣ Mark Questions as Used
+    # ==================================================
+    used_question_ids = [q["id"] for q in generated_questions]
+
+    if used_question_ids:
+        db.query(Question).filter(
+            Question.id.in_(used_question_ids),
+            Question.is_used == False
+        ).update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
+
+        print(f"🔒 Marked {len(used_question_ids)} homework latest questions as used")
+
+    # ==================================================
+    # 4️⃣ Save Exam
+    # ==================================================
+    new_exam = Exam(
+        quiz_id=None,
+        class_name="selective",
+        subject="thinking skills",
+        class_year=class_year,
+        questions=generated_questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 Homework latest exam saved with ID: {new_exam.id}")
+
+    # ==================================================
+    # 5️⃣ Response
+    # ==================================================
+    return {
+        "message": "Homework latest Thinking Skills exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": None,
+        "class_name": "selective",
+        "class_year": class_year,
+        "subject": "thinking skills",
+        "total_questions": len(generated_questions),
+        "questions": generated_questions
+    }
 
 @app.post("/api/exams/generate-thinking-skills-homework")
 def generate_thinking_skills_homework_exam(
@@ -21910,6 +22182,7 @@ def generate_thinking_skills_exam(
         "total_questions": len(generated_questions),
         "questions": generated_questions
     } 
+
 @app.post("/api/generate-exam-mathematical-reasoning")
 def generate_exam_mathematical_reasoning(
     db: Session = Depends(get_db)
