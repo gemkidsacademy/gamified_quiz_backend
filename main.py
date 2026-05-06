@@ -427,7 +427,7 @@ class HomeworkExamOCMathematicalReasoning(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    homework_quiz_id = Column(Integer, nullable=False)
+    homework_quiz_id = Column(Integer, nullable=True)
 
     class_name = Column(String, nullable=False)
     class_year = Column(String, nullable=False)
@@ -480,7 +480,7 @@ class HomeworkExamOCThinkingSkills(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    quiz_id = Column(Integer, nullable=False)
+    quiz_id = Column(Integer, nullable=True)
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
@@ -650,7 +650,8 @@ class GeneratedHomeworkWriting(Base):
  
 class ReadingHomeworkExamRequest(BaseModel):
     class_name: str
-    class_year: str   # ✅ REQUIRED
+    class_year: str
+    selected_date: Optional[date] = None
     
 
 class HomeworkReadingConfig(Base):
@@ -885,7 +886,7 @@ class HomeWorkExam(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    quiz_id = Column(Integer, nullable=False)
+    quiz_id = Column(Integer, nullable=True)
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
@@ -3324,9 +3325,9 @@ class QuizSetupFoundationalSchema(BaseModel):
  
 class ReadingExamRequest(BaseModel):
     class_name: str
-    
     class_year: str
- 
+    selected_date: Optional[date] = None
+
 class AddStudentExamModuleRequest(BaseModel):
     id: str                 # Backend-suggested ID (e.g. "1" or UUID)
     student_id: str         # "Gem001"
@@ -3411,7 +3412,7 @@ class QuestionReading(Base):
     total_questions = Column(Integer, nullable=False)
     is_used = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
+    
 
     # --------------------------------------------------
     # OPTIONAL EXAM LINK (ADMIN-CREATED EXAMS)
@@ -4831,7 +4832,429 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
 
         return parsed
 
+from datetime import datetime
 
+def generate_exam_questions_latest(
+    db,
+    class_year,
+    selected_date,
+    class_name,
+    subject
+):
+    print("\n" + "=" * 70)
+    print("🚀 GENERATE EXAM QUESTIONS (LATEST)")
+    print("=" * 70)
+
+    print(f"🎓 class_year={class_year}")
+    print(f"🏫 class_name={class_name}")
+    print(f"📘 subject={subject}")
+    print(f"📅 selected_date(raw)={selected_date}")
+
+    # --------------------------------------------------
+    # 1️⃣ Convert incoming string to date object
+    # --------------------------------------------------
+    try:
+        parsed_date = datetime.strptime(
+            selected_date,
+            "%Y-%m-%d"
+        ).date()
+
+        print(f"✅ parsed_date={parsed_date}")
+
+    except Exception as e:
+        print(f"❌ DATE PARSE FAILED: {e}")
+        return []
+
+    # --------------------------------------------------
+    # 2️⃣ Debug matching rows BEFORE date filter
+    # --------------------------------------------------
+    debug_rows = (
+        db.query(
+            Question.id,
+            Question.class_name,
+            Question.subject,
+            Question.class_year,
+            Question.created_at
+        )
+        .filter(
+            func.lower(func.trim(Question.class_name)) == class_name.lower(),
+            func.lower(func.trim(Question.subject)) == subject.lower(),
+            Question.class_year == class_year
+        )
+        .all()
+    )
+
+    print(f"\n📦 ROWS BEFORE DATE FILTER: {len(debug_rows)}")
+
+    for row in debug_rows[:5]:
+        print(
+            f"""
+🧩 ID={row.id}
+   class_name={row.class_name}
+   subject={row.subject}
+   class_year={row.class_year}
+   created_at={row.created_at}
+            """.strip()
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Main query
+    # --------------------------------------------------
+    query = (
+        db.query(Question)
+        .filter(
+            func.lower(func.trim(Question.class_name)) == class_name.lower(),
+            func.lower(func.trim(Question.subject)) == subject.lower(),
+            Question.class_year == class_year,
+            func.date(Question.created_at) == parsed_date
+        )
+        .order_by(Question.created_at.asc())
+    )
+
+    questions_from_db = query.all()
+
+    print(f"\n📦 FOUND AFTER DATE FILTER: {len(questions_from_db)}")
+
+    if not questions_from_db:
+        print("⚠️ NO QUESTIONS FOUND")
+        print("=" * 70 + "\n")
+        return []
+
+    # --------------------------------------------------
+    # 4️⃣ Build final structure
+    # --------------------------------------------------
+    all_questions = []
+
+    for index, q in enumerate(questions_from_db, start=1):
+
+        blocks = q.question_blocks or []
+
+        all_questions.append({
+            "id": q.id,
+            "q_id": index,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "blocks": blocks,
+            "options": q.options,
+            "correct": q.correct_answer
+        })
+
+    print(f"\n✅ TOTAL QUESTIONS GENERATED: {len(all_questions)}")
+    print("=" * 70 + "\n")
+
+    return all_questions
+@app.get("/api/exams/oc-reading-dates/{class_year}")
+def get_oc_reading_dates(
+    class_year: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return unique upload dates for OC Reading questions.
+    """
+
+    print("\n" + "=" * 70)
+    print("🚀 FETCH OC READING DATES")
+    print("=" * 70)
+
+    print(f"📥 RAW class_year: {class_year}")
+
+    # --------------------------------------------------
+    # 1️⃣ Parse class year
+    # --------------------------------------------------
+    try:
+
+        if isinstance(class_year, str):
+
+            parsed_year = (
+                class_year
+                .strip()
+                .split()[-1]
+            )
+
+        else:
+
+            parsed_year = str(class_year)
+
+    except Exception as e:
+
+        print("❌ Failed parsing class year:", e)
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid class_year"
+        )
+
+    print(f"🎓 PARSED class_year: {parsed_year}")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch unique dates
+    # --------------------------------------------------
+    dates = (
+        db.query(
+            func.date(
+                QuestionReading.created_at
+            ).label("date")
+        )
+        .filter(
+            func.lower(
+                func.trim(QuestionReading.class_name)
+            ) == "oc",
+
+            func.lower(
+                func.trim(QuestionReading.subject)
+            ) == "reading comprehension",
+
+            func.trim(
+                QuestionReading.class_year
+            ) == parsed_year
+        )
+        .distinct()
+        .order_by(
+            func.date(
+                QuestionReading.created_at
+            ).desc()
+        )
+        .all()
+    )
+
+    formatted_dates = [
+        str(date[0]) for date in dates
+    ]
+
+    print("\n📅 AVAILABLE DATES:")
+    print(formatted_dates)
+
+    print("=" * 70 + "\n")
+
+    return {
+        "dates": formatted_dates
+    }
+
+@app.get("/api/exams/oc-mathematical-reasoning-dates/{class_year}")
+def get_oc_mathematical_reasoning_dates(
+    class_year: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return all unique upload dates from Question table
+    for OC Mathematical Reasoning questions.
+    """
+
+    print("\n" + "=" * 70)
+    print("🚀 FETCH OC MATHEMATICAL REASONING DATES")
+    print("=" * 70)
+
+    print(f"📥 RAW class_year: {class_year}")
+
+    # --------------------------------------------------
+    # 1️⃣ Parse class year safely
+    # --------------------------------------------------
+    try:
+        if isinstance(class_year, str):
+            parsed_year = int(
+                class_year.strip().split()[-1]
+            )
+        else:
+            parsed_year = int(class_year)
+
+    except Exception as e:
+        print(f"❌ FAILED TO PARSE YEAR: {e}")
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid class_year: {class_year}"
+        )
+
+    print(f"🎓 PARSED YEAR: {parsed_year}")
+
+    # --------------------------------------------------
+    # 2️⃣ Debug matching rows
+    # --------------------------------------------------
+    matching_rows = (
+        db.query(
+            Question.id,
+            Question.class_name,
+            Question.subject,
+            Question.class_year,
+            Question.created_at
+        )
+        .filter(
+            func.lower(func.trim(Question.class_name)) == "oc",
+            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            Question.class_year == parsed_year
+        )
+        .order_by(Question.created_at.desc())
+        .all()
+    )
+
+    print(f"\n📦 MATCHING QUESTIONS: {len(matching_rows)}")
+
+    for row in matching_rows[:5]:
+        print(
+            f"""
+🧩 ID={row.id}
+   class_name={row.class_name}
+   subject={row.subject}
+   class_year={row.class_year}
+   created_at={row.created_at}
+            """.strip()
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Extract unique dates
+    # --------------------------------------------------
+    dates = (
+        db.query(func.date(Question.created_at))
+        .filter(
+            func.lower(func.trim(Question.class_name)) == "oc",
+            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            Question.class_year == parsed_year
+        )
+        .distinct()
+        .order_by(func.date(Question.created_at).desc())
+        .all()
+    )
+
+    formatted_dates = [
+        str(date[0]) for date in dates
+    ]
+
+    print("\n📅 AVAILABLE DATES:")
+    print(formatted_dates)
+
+    print("=" * 70 + "\n")
+
+    return {
+        "dates": formatted_dates
+    }
+
+@app.post("/api/exams/generate-oc-thinking-skills-homework-latest")
+def generate_oc_thinking_skills_homework_exam_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate OC Thinking Skills Homework Exam
+    using ALL questions uploaded on selected date.
+    """
+
+    print("\n🚀 GENERATE OC THINKING SKILLS HOMEWORK (LATEST)\n")
+
+    # --------------------------------------------------
+    # 1️⃣ Constants
+    # --------------------------------------------------
+    CLASS_DB = "oc"
+    SUBJECT_DB = "thinking skills"
+
+    CLASS_EXAM = "oc"
+    SUBJECT_EXAM = "thinking_skills"
+
+    # --------------------------------------------------
+    # 2️⃣ Validate payload
+    # --------------------------------------------------
+    class_year = payload.get("class_year")
+    selected_date = payload.get("selected_date")
+
+    if not class_year:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    if not selected_date:
+        raise HTTPException(
+            status_code=400,
+            detail="selected_date is required"
+        )
+
+    try:
+        class_year_int = int(class_year)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid class_year"
+        )
+
+    print(f"🎓 Class Year: {class_year_int}")
+    print(f"📅 Selected Date: {selected_date}")
+
+    # --------------------------------------------------
+    # 3️⃣ Generate questions from selected upload date
+    # --------------------------------------------------
+    try:
+        questions = generate_exam_questions_latest(
+            db=db,
+            class_year=class_year_int,
+            selected_date=selected_date,
+            class_name=CLASS_DB,
+            subject=SUBJECT_DB
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate latest homework exam: {str(e)}"
+        )
+
+    if not questions:
+        raise HTTPException(
+            status_code=404,
+            detail="No questions found for selected date"
+        )
+
+    print(f"🧠 Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 4️⃣ Mark questions as used
+    # --------------------------------------------------
+    used_ids = [
+        q.get("id") for q in questions if q.get("id")
+    ]
+
+    if used_ids:
+        db.query(Question).filter(
+            Question.id.in_(used_ids),
+            Question.is_used == False
+        ).update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
+
+        print(f"🏷️ Marked {len(used_ids)} questions as used")
+
+    # --------------------------------------------------
+    # 5️⃣ Save exam
+    # --------------------------------------------------
+    new_exam = HomeworkExamOCThinkingSkills(
+        quiz_id=None,   # 🔥 no quiz table used
+        class_name=CLASS_EXAM,
+        subject=SUBJECT_EXAM,
+        difficulty="mixed",
+        class_year=class_year_int,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 Saved homework exam ID={new_exam.id}")
+
+    # --------------------------------------------------
+    # 6️⃣ Response
+    # --------------------------------------------------
+    return {
+        "message": "OC Thinking Skills latest homework exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": None,
+        "class_name": CLASS_EXAM,
+        "class_year": class_year_int,
+        "subject": SUBJECT_EXAM,
+        "difficulty": "mixed",
+        "selected_date": selected_date,
+        "total_questions": len(questions),
+        "questions": questions
+    }
 # ai_engine.py (for example)
 def generate_exam_questions(
     quiz,
@@ -5791,6 +6214,195 @@ def extract_year_number(year_str):
         return None
 
 
+@app.get("/api/exams/oc-thinking-skills-dates/{class_year}")
+def get_oc_thinking_skills_dates(
+    class_year: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Return all unique upload dates from Question table
+    for OC Thinking Skills questions.
+    """
+
+    print("\n" + "=" * 70)
+    print("🚀 FETCH OC THINKING SKILLS AVAILABLE DATES")
+    print("=" * 70)
+
+    print(f"🎓 Requested Class Year: {class_year}")
+
+    matching_rows = (
+        db.query(
+            Question.id,
+            Question.class_name,
+            Question.subject,
+            Question.class_year,
+            Question.created_at
+        )
+        .filter(
+            func.lower(func.trim(Question.class_name)) == "oc",
+            func.lower(func.trim(Question.subject)) == "thinking skills",
+            Question.class_year == class_year
+        )
+        .all()
+    )
+
+    print(f"\n📦 TOTAL MATCHING QUESTIONS: {len(matching_rows)}")
+
+    dates = (
+        db.query(func.date(Question.created_at))
+        .filter(
+            func.lower(func.trim(Question.class_name)) == "oc",
+            func.lower(func.trim(Question.subject)) == "thinking skills",
+            Question.class_year == class_year
+        )
+        .distinct()
+        .order_by(func.date(Question.created_at).desc())
+        .all()
+    )
+
+    print("\n📅 FILTERED UNIQUE DATES:")
+
+    for d in dates:
+        print(f"   ✅ {d[0]}")
+
+    formatted_dates = [str(date[0]) for date in dates]
+
+    print("\n✅ FINAL RESPONSE:", formatted_dates)
+    print("=" * 70 + "\n")
+
+    return {
+        "dates": formatted_dates
+    }
+@app.get("/api/available-MR-dates")
+def get_available_mr_dates(
+    class_year: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print("\n================ FETCH MR DATES =================")
+        print(f"📥 Raw class_year: {class_year}")
+
+        # --------------------------------------------------
+        # 1️⃣ NORMALIZE YEAR ("Year 5" → 5)
+        # --------------------------------------------------
+        parsed_year = int(class_year.replace("Year", "").strip())
+
+        print(f"✅ Parsed class_year: {parsed_year}")
+
+        # --------------------------------------------------
+        # 2️⃣ QUERY DISTINCT DATES
+        # --------------------------------------------------
+        dates_query = (
+            db.query(func.date(Question.created_at).label("date"))
+            .filter(
+                func.lower(func.trim(Question.class_name)) == "selective",
+                func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+                Question.class_year == parsed_year
+            )
+            .distinct()
+            .order_by(func.date(Question.created_at).desc())
+        )
+
+        results = dates_query.all()
+
+        # --------------------------------------------------
+        # 3️⃣ FORMAT RESPONSE
+        # --------------------------------------------------
+        dates = [str(row.date) for row in results]
+
+        print(f"📦 Dates found: {dates}")
+        print("================ FETCH COMPLETE =================\n")
+
+        return dates
+
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid class_year format")
+
+    except Exception as e:
+        print("\n💥 ERROR IN FETCH MR DATES")
+        print(str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/api/available-thinking-dates")
+def get_available_thinking_dates(
+    class_year: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print("\n================ FETCH THINKING DATES =================")
+        print(f"📥 Raw class_year: {class_year}")
+
+        # --------------------------------------------------
+        # 1️⃣ NORMALIZE INPUT ("Year 5" → 5)
+        # --------------------------------------------------
+        parsed_year = int(class_year.replace("Year", "").strip())
+
+        print(f"✅ Parsed class_year: {parsed_year}")
+
+        # --------------------------------------------------
+        # 2️⃣ FETCH DISTINCT DATES (WITH CLASS + SUBJECT FILTER)
+        # --------------------------------------------------
+        dates_query = (
+            db.query(func.date(Question.created_at).label("date"))
+            .filter(
+                func.lower(func.trim(Question.class_name)) == "selective",
+                func.lower(func.trim(Question.subject)) == "thinking skills",  # ✅ NEW
+                Question.class_year == parsed_year
+            )
+            .distinct()
+            .order_by(func.date(Question.created_at).desc())
+        )
+
+        results = dates_query.all()
+
+        # --------------------------------------------------
+        # 3️⃣ FORMAT RESPONSE
+        # --------------------------------------------------
+        dates = [str(row.date) for row in results]
+
+        print(f"📦 Dates found: {dates}")
+        print("================ FETCH COMPLETE =================\n")
+
+        return dates
+
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid class_year format")
+
+    except Exception as e:
+        print("\n💥 ERROR IN FETCH THINKING DATES")
+        print(str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+@app.get("/api/available-reading-dates")
+def get_available_reading_dates(
+    class_year: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"📥 Raw class_year: {class_year}")
+
+        # ✅ Extract number from "Year 4"
+        parsed_year = class_year.replace("Year", "").strip()
+
+        print(f"✅ Parsed class_year: {parsed_year}")
+
+        dates_query = (
+            db.query(func.date(QuestionReading.created_at).label("date"))
+            .filter(QuestionReading.class_year == parsed_year)
+            .distinct()
+            .order_by(func.date(QuestionReading.created_at).desc())
+        )
+
+        results = dates_query.all()
+
+        dates = [str(row.date) for row in results]
+
+        print(f"📦 Dates found: {dates}")
+
+        return dates
+
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.post("/api/exams/generate-thinking-skills-latest")
 def generate_thinking_skills_exam_latest(
@@ -5798,8 +6410,9 @@ def generate_thinking_skills_exam_latest(
     db: Session = Depends(get_db)
 ):
     """
-    Generate exam using latest uploaded questions (by ID DESC).
-    No Quiz config, no randomness.
+    Generate Thinking Skills exam using ALL questions from a selected date.
+    - Does NOT filter by is_used
+    - Marks included questions as used (tracking only)
     """
 
     payload = payload or {}
@@ -5808,61 +6421,65 @@ def generate_thinking_skills_exam_latest(
     # 0️⃣ Extract Input
     # ==================================================
     class_year = payload.get("class_year")
+    selected_date = payload.get("date")
 
     if not class_year:
-        raise HTTPException(
-            status_code=400,
-            detail="class_year is required"
-        )
+        raise HTTPException(status_code=400, detail="class_year is required")
 
-    print(f"\n📘 Generating LATEST Thinking Skills exam for class_year: {class_year}")
+    if not selected_date:
+        raise HTTPException(status_code=400, detail="date is required")
+
+    print("\n================ GENERATE THINKING SKILLS (DATE MODE) =================")
+    print(f"📥 class_year={class_year}, date={selected_date}")
 
     # ==================================================
-    # 1️⃣ Fetch Latest Questions (IMPORTANT LOGIC)
+    # 1️⃣ Fetch Questions (IGNORE is_used)
     # ==================================================
-    latest_questions = (
+    questions = (
         db.query(Question)
         .filter(
-            func.lower(Question.class_name) == "selective",
-            func.lower(Question.subject) == "thinking skills",
-            Question.class_year == class_year
+            func.lower(func.trim(Question.class_name)) == "selective",
+            func.lower(func.trim(Question.subject)) == "thinking skills",
+            Question.class_year == class_year,
+            func.date(Question.created_at) == selected_date
         )
-        .order_by(Question.id.desc())   # 🔥 KEY: latest first
-        .limit(40)                      # 🔥 fixed for now
+        .order_by(Question.id.asc())  # stable ordering
         .all()
     )
 
-    if len(latest_questions) < 40:
+    if not questions:
         raise HTTPException(
             status_code=400,
-            detail=f"Not enough latest questions. Required 40, found {len(latest_questions)}"
+            detail="No questions found for the selected date"
         )
 
-    print(f"✅ Fetched {len(latest_questions)} latest questions")
+    print(f"✅ Fetched {len(questions)} questions")
 
     # ==================================================
-    # 2️⃣ Build Output (reuse your format)
+    # 2️⃣ Build Output
     # ==================================================
     generated_questions = []
     q_id = 1
 
-    for question_row in latest_questions:
+    for row in questions:
 
-        blocks = question_row.question_blocks or []
+        blocks = row.question_blocks or []
 
-        if not blocks and question_row.question_text:
+        # fallback to text if blocks missing
+        if not blocks and row.question_text:
             blocks = [{
                 "type": "text",
-                "content": question_row.question_text
+                "content": row.question_text
             }]
 
+        # ensure images included
         existing_image_srcs = {
             block.get("src")
             for block in blocks
             if block.get("type") == "image"
         }
 
-        for image_src in question_row.images or []:
+        for image_src in row.images or []:
             if image_src not in existing_image_srcs:
                 blocks.append({
                     "type": "image",
@@ -5870,40 +6487,45 @@ def generate_thinking_skills_exam_latest(
                 })
 
         generated_questions.append({
-            "id": question_row.id,
+            "id": row.id,
             "q_id": q_id,
-            "topic": question_row.topic,
+            "topic": row.topic,
             "blocks": blocks,
-            "options": question_row.options,
-            "correct": question_row.correct_answer
+            "options": row.options,
+            "correct": row.correct_answer
         })
 
         q_id += 1
 
-    # ⚠️ DO NOT SHUFFLE (this is "latest", keep order meaningful)
+    print(f"📦 Built {len(generated_questions)} questions")
+
     # ==================================================
-    # 3️⃣ Mark Used Questions 
+    # 3️⃣ MARK QUESTIONS AS USED (TRACKING ONLY)
     # ==================================================
     used_question_ids = [q["id"] for q in generated_questions]
 
     if used_question_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_question_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
+        updated = (
+            db.query(Question)
+            .filter(
+                Question.id.in_(used_question_ids),
+                Question.is_used.is_(False)
+            )
+            .update(
+                {Question.is_used: True},
+                synchronize_session=False
+            )
         )
 
-        print(f"🔒 Marked {len(used_question_ids)} latest questions as used")
+        print(f"🔒 Marked {updated} questions as used")
 
     # ==================================================
-    # 3️⃣ Save Exam (NO QUIZ)
+    # 4️⃣ SAVE EXAM
     # ==================================================
     new_exam = Exam(
-        quiz_id=None,  # 🔥 important difference
+        quiz_id=None,
         class_name="selective",
-        subject="thinking skills",
+        subject="thinking_skills",
         class_year=class_year,
         questions=generated_questions
     )
@@ -5912,22 +6534,22 @@ def generate_thinking_skills_exam_latest(
     db.commit()
     db.refresh(new_exam)
 
-    print(f"💾 Latest exam saved with ID: {new_exam.id}")
+    print(f"💾 Exam saved with ID: {new_exam.id}")
+    print("================ END =================\n")
 
     # ==================================================
-    # 4️⃣ Response
+    # 5️⃣ RESPONSE
     # ==================================================
     return {
-        "message": "Latest Thinking Skills exam generated successfully",
+        "message": "Thinking Skills exam generated (date-based)",
         "exam_id": new_exam.id,
         "quiz_id": None,
         "class_name": "selective",
         "class_year": class_year,
-        "subject": "thinking skills",
+        "subject": "thinking_skills",
         "total_questions": len(generated_questions),
         "questions": generated_questions
     }
-
 
 @app.get("/api/reading-availability")
 def get_reading_availability(
@@ -7020,33 +7642,72 @@ def get_available_subjects(
     # -----------------------------
     # 2️⃣ HOMEWORK
     # -----------------------------
+    # ==================================================
+    # 🧮 MATHEMATICAL REASONING HOMEWORK
+    # ==================================================
+    math_homework_enabled = True
+
     homework_exam = (
         db.query(HomeworkExamMathematicalReasoning)
         .filter(
-            func.lower(HomeworkExamMathematicalReasoning.class_name) ==
-            func.lower(student.class_name),
-            HomeworkExamMathematicalReasoning.class_year == student.student_year,
-            HomeworkExamMathematicalReasoning.subject == "mathematical_reasoning"
+            func.lower(
+                func.trim(HomeworkExamMathematicalReasoning.class_name)
+            ) == func.lower(student.class_name),
+
+            HomeworkExamMathematicalReasoning.class_year ==
+            str(student.student_year).replace("Year", "").strip(),
+
+            func.lower(
+                func.trim(HomeworkExamMathematicalReasoning.subject)
+            ) == "mathematical_reasoning"
         )
         .order_by(HomeworkExamMathematicalReasoning.id.desc())
         .first()
     )
-    
+
+    print("\n========== MR HOMEWORK DEBUG START ==========")
+    print("🧪 Student year:", student.student_year)
+    print("🧪 Selected homework exam:", homework_exam)
+
     if not homework_exam:
+        print("❌ No MR homework found")
         math_homework_enabled = False
+
     else:
+        print("✅ Homework ID:", homework_exam.id)
+
         homework_attempt = (
             db.query(StudentHomeworkMathematicalReasoning)
             .filter(
                 StudentHomeworkMathematicalReasoning.student_id == student.id,
-                StudentHomeworkMathematicalReasoning.homework_id == homework_exam.id
+
+                StudentHomeworkMathematicalReasoning.homework_id ==
+                homework_exam.id
             )
-            .order_by(StudentHomeworkMathematicalReasoning.started_at.desc())
+            .order_by(
+                StudentHomeworkMathematicalReasoning.started_at.desc()
+            )
             .first()
         )
-    
-        if homework_attempt and homework_attempt.completed_at is not None:
+
+        print("🔎 Homework attempt:", homework_attempt)
+
+        if (
+            homework_attempt and
+            homework_attempt.completed_at is not None
+        ):
+            print("⛔ Homework already completed → disable")
             math_homework_enabled = False
+        else:
+            print("🆕 No completed attempt → enable")
+
+    print(
+        "🎯 Final math_homework_enabled =",
+        math_homework_enabled
+    )
+    print("========== MR HOMEWORK DEBUG END ==========\n")
+    print("🎯 Final math_homework_enabled =", math_homework_enabled)
+    print("========== MR HOMEWORK DEBUG END ==========\n")
     # ==================================================
     # 🧠 THINKING SKILLS
     # ==================================================
@@ -7975,8 +8636,12 @@ def start_homework_mr(
         .filter(
             func.lower(HomeworkExamMathematicalReasoning.class_name) ==
             func.lower(student.class_name),
-            HomeworkExamMathematicalReasoning.class_year == student.student_year,  # ✅ FIXED
-            HomeworkExamMathematicalReasoning.subject == "mathematical_reasoning"
+
+            HomeworkExamMathematicalReasoning.class_year ==
+            str(student.student_year).replace("Year", "").strip(),
+
+            HomeworkExamMathematicalReasoning.subject ==
+            "mathematical_reasoning"
         )
         .order_by(HomeworkExamMathematicalReasoning.id.desc())
         .first()
@@ -8087,26 +8752,26 @@ def generate_exam_homework_latest(
     payload: Optional[Dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
-    print("\n========== MR HOMEWORK LATEST EXAM GENERATION START ==========")
+    print("\n========== MR HOMEWORK (DATE MODE) GENERATION START ==========")
 
     # --------------------------------------------------
     # 1️⃣ INPUT
     # --------------------------------------------------
     payload = payload or {}
+
     class_year = payload.get("class_year")
+    selected_date = payload.get("date")  # ✅ NEW
 
     if not class_year:
-        raise HTTPException(
-            status_code=400,
-            detail="class_year is required"
-        )
+        raise HTTPException(status_code=400, detail="class_year is required")
 
-    print(f"📘 Generating MR HOMEWORK LATEST exam for class_year={class_year}")
+    if not selected_date:
+        raise HTTPException(status_code=400, detail="date is required")
 
-    QUESTION_COUNT = 35
+    print(f"📘 Generating MR HOMEWORK (DATE MODE) for class_year={class_year}, date={selected_date}")
 
     # --------------------------------------------------
-    # 2️⃣ FETCH LATEST UNUSED QUESTIONS
+    # 2️⃣ FETCH QUESTIONS (IGNORE is_used)
     # --------------------------------------------------
     rows = (
         db.query(Question)
@@ -8114,20 +8779,19 @@ def generate_exam_homework_latest(
             func.lower(func.trim(Question.class_name)) == "selective",
             func.lower(func.trim(Question.subject)) == "mathematical reasoning",
             Question.class_year == class_year,
-            Question.is_used == False
+            func.date(Question.created_at) == selected_date
         )
-        .order_by(Question.created_at.desc(), Question.id.desc())
-        .limit(QUESTION_COUNT)
+        .order_by(Question.id.asc())  # stable ordering
         .all()
     )
 
-    if len(rows) < QUESTION_COUNT:
+    if not rows:
         raise HTTPException(
             status_code=400,
-            detail=f"Not enough unused latest questions. Required {QUESTION_COUNT}, found {len(rows)}"
+            detail="No questions found for selected date"
         )
 
-    print(f"✅ Fetched {len(rows)} latest unused MR questions")
+    print(f"✅ Fetched {len(rows)} MR questions")
 
     # --------------------------------------------------
     # 3️⃣ BUILD QUESTIONS
@@ -8155,57 +8819,53 @@ def generate_exam_homework_latest(
 
         q_id += 1
 
-    # --------------------------------------------------
-    # 4️⃣ VALIDATION
-    # --------------------------------------------------
-    if len(questions) != QUESTION_COUNT:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Expected {QUESTION_COUNT}, got {len(questions)}"
-        )
+    print(f"📦 Built {len(questions)} questions")
 
     # --------------------------------------------------
-    # 5️⃣ MARK USED
+    # 4️⃣ MARK USED (TRACKING ONLY)
     # --------------------------------------------------
     used_ids = [q["id"] for q in questions]
 
-    db.query(Question).filter(
-        Question.id.in_(used_ids),
-        Question.is_used == False
-    ).update(
-        {Question.is_used: True},
-        synchronize_session=False
-    )
+    if used_ids:
+        updated = (
+            db.query(Question)
+            .filter(
+                Question.id.in_(used_ids),
+                Question.is_used.is_(False)
+            )
+            .update(
+                {Question.is_used: True},
+                synchronize_session=False
+            )
+        )
 
-    print(f"🔒 Marked {len(used_ids)} homework latest questions as used")
+        print(f"🔒 Marked {updated} questions as used")
 
     # --------------------------------------------------
-    # 6️⃣ SAVE EXAM
+    # 5️⃣ SAVE HOMEWORK (NOT Exam if you want separation)
     # --------------------------------------------------
-    new_exam = Exam(
-        quiz_id=None,  # ✅ correct: no quiz dependency
+    new_homework = HomeworkExamMathematicalReasoning(
+        quiz_id=None,
         class_name="selective",
-        subject="mathematical reasoning",
-        class_year=int(class_year),
-        questions=questions,
+        subject="mathematical_reasoning",
+        class_year=str(class_year),
+        questions=questions
     )
 
-    db.add(new_exam)
+    db.add(new_homework)
     db.commit()
-    db.refresh(new_exam)
+    db.refresh(new_homework)
 
-    print(f"💾 MR homework latest exam saved with ID: {new_exam.id}")
+    print(f"💾 MR homework saved with ID: {new_homework.id}")
     print("========== COMPLETE ==========\n")
-
     # --------------------------------------------------
-    # 7️⃣ RESPONSE
+    # 6️⃣ RESPONSE
     # --------------------------------------------------
     return {
-        "message": "MR homework latest exam generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": None,
+        "message": "MR homework generated (date-based)",
+        "homework_id": new_homework.id,
         "class_name": "selective",
-        "subject": "mathematical reasoning",
+        "subject": "mathematical_reasoning",
         "class_year": int(class_year),
         "total_questions": len(questions),
         "questions": questions,
@@ -19927,56 +20587,66 @@ def generate_exam(
 
 
 @app.post("/generate-new-mr-latest")
-def generate_exam_latest(
-    req: GenerateExamRequest,
+def generate_exam_mr_latest(
+    payload: Optional[Dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
-    # --------------------------------------------------
-    # 1️⃣ INPUT
-    # --------------------------------------------------
-    class_year = req.class_year
+    """
+    Generate Mathematical Reasoning exam using ALL questions from a selected date.
+    - No quiz dependency
+    - No topic config
+    - Ignores is_used during fetch
+    - Marks questions as used after generation
+    """
+
+    payload = payload or {}
+
+    # ==================================================
+    # 0️⃣ Extract Input
+    # ==================================================
+    class_year = payload.get("class_year")
+    selected_date = payload.get("date")
 
     if not class_year:
-        raise HTTPException(
-            status_code=400,
-            detail="class_year is required"
-        )
+        raise HTTPException(status_code=400, detail="class_year is required")
 
-    print(f"🆕 Generating MR LATEST exam for class_year={class_year}")
+    if not selected_date:
+        raise HTTPException(status_code=400, detail="date is required")
 
-    QUESTION_COUNT = 35
+    print("\n================ GENERATE MR (DATE MODE) =================")
+    print(f"📥 class_year={class_year}, date={selected_date}")
 
-    # --------------------------------------------------
-    # 2️⃣ FETCH LATEST UNUSED QUESTIONS
-    # --------------------------------------------------
+    # ==================================================
+    # 1️⃣ Fetch Questions (IGNORE is_used)
+    # ==================================================
     rows = (
         db.query(Question)
         .filter(
             func.lower(func.trim(Question.class_name)) == "selective",
             func.lower(func.trim(Question.subject)) == "mathematical reasoning",
             Question.class_year == class_year,
-            Question.is_used == False
+            func.date(Question.created_at) == selected_date
         )
-        .order_by(Question.created_at.desc(), Question.id.desc())
-        .limit(QUESTION_COUNT)
+        .order_by(Question.id.asc())
         .all()
     )
 
-    if len(rows) < QUESTION_COUNT:
+    if not rows:
         raise HTTPException(
             status_code=400,
-            detail=f"Not enough latest questions. Required {QUESTION_COUNT}, found {len(rows)}"
+            detail="No questions found for selected date"
         )
 
-    print(f"✅ Fetched {len(rows)} latest MR questions")
+    print(f"✅ Fetched {len(rows)} MR questions")
 
-    # --------------------------------------------------
-    # 3️⃣ BUILD QUESTIONS
-    # --------------------------------------------------
+    # ==================================================
+    # 2️⃣ Build Questions (clean + safe)
+    # ==================================================
     questions = []
     q_id = 1
 
     for row in rows:
+
         if not row.question_blocks:
             raise HTTPException(
                 status_code=500,
@@ -19996,67 +20666,58 @@ def generate_exam_latest(
 
         q_id += 1
 
-    # --------------------------------------------------
-    # 4️⃣ FINAL VALIDATION
-    # --------------------------------------------------
-    if len(questions) != QUESTION_COUNT:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Expected {QUESTION_COUNT}, got {len(questions)}"
+    print(f"📦 Built {len(questions)} questions")
+
+    # ==================================================
+    # 3️⃣ MARK QUESTIONS AS USED (TRACKING ONLY)
+    # ==================================================
+    used_ids = [q["id"] for q in questions]
+
+    if used_ids:
+        updated = (
+            db.query(Question)
+            .filter(
+                Question.id.in_(used_ids),
+                Question.is_used.is_(False)
+            )
+            .update(
+                {Question.is_used: True},
+                synchronize_session=False
+            )
         )
 
-    # --------------------------------------------------
-    # 5️⃣ MARK USED
-    # --------------------------------------------------
-    used_ids = [q.get("id") for q in questions if q.get("id") is not None]
+        print(f"🔒 Marked {updated} questions as used")
 
-    print("USED IDS:", used_ids)
-
-    updated = (
-        db.query(Question)
-        .filter(Question.id.in_(used_ids))
-        .update(
-            {Question.is_used: True},
-            synchronize_session=False
-        )
-    )
-
-    print("UPDATED ROWS:", updated)
-
-    if updated != len(used_ids):
-        print("⚠ WARNING: Not all questions were marked as used")
-
-    print(f"🔒 Marked {len(used_ids)} questions as used")
-
-    # --------------------------------------------------
-    # 6️⃣ SAVE EXAM
-    # --------------------------------------------------
+    # ==================================================
+    # 4️⃣ SAVE EXAM (NO QUIZ)
+    # ==================================================
     new_exam = Exam(
-        quiz_id=None,  # 🔥 important: no quiz config
+        quiz_id=None,  # ✅ no dependency anymore
         class_name="selective",
-        subject="mathematical reasoning",
+        subject="mathematical_reasoning",
         class_year=class_year,
-        questions=questions,
+        questions=questions
     )
 
     db.add(new_exam)
     db.commit()
     db.refresh(new_exam)
 
-    print(f"💾 MR latest exam saved with ID: {new_exam.id}")
+    print(f"💾 MR Exam saved with ID: {new_exam.id}")
+    print("================ END =================\n")
 
-    # --------------------------------------------------
-    # 7️⃣ RESPONSE
-    # --------------------------------------------------
+    # ==================================================
+    # 5️⃣ RESPONSE
+    # ==================================================
     return {
-        "message": "MR latest exam generated successfully",
+        "message": "MR exam generated (date-based)",
         "exam_id": new_exam.id,
         "quiz_id": None,
         "class_name": "selective",
-        "subject": "mathematical reasoning",
+        "subject": "mathematical_reasoning",
         "class_year": class_year,
         "total_questions": len(questions),
-        "questions": questions,
+        "questions": questions
     }
 
 @app.post("/api/admin/bulk-users-exam-module")
@@ -21500,8 +22161,278 @@ def sanitize_question_blocks(blocks):
 
 
 
+@app.post("/api/exams/generate-oc-thinking-skills-homework-latest")
+def generate_oc_thinking_skills_homework_exam_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate OC Thinking Skills Homework Exam
+    using ALL questions uploaded on selected date.
+    """
 
+    print("\n🚀 GENERATE OC HOMEWORK THINKING SKILLS EXAM (LATEST)")
 
+    # 🔹 Constants
+    CLASS_DB = "oc"
+    SUBJECT_DB = "thinking skills"
+
+    CLASS_EXAM = "oc"
+    SUBJECT_EXAM = "thinking_skills"
+
+    # --------------------------------------------------
+    # 1️⃣ Validate input
+    # --------------------------------------------------
+    class_year = payload.get("class_year")
+    selected_date = payload.get("selected_date")
+
+    if class_year is None:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    if not selected_date:
+        raise HTTPException(
+            status_code=400,
+            detail="selected_date is required"
+        )
+
+    try:
+        class_year_int = int(class_year)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid class_year"
+        )
+
+    print(f"🎓 Generating latest homework exam for class_year={class_year_int}")
+    print(f"📅 Selected Date: {selected_date}")
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch ALL questions uploaded on selected date
+    # --------------------------------------------------
+    questions_from_db = (
+        db.query(Question)
+        .filter(
+            func.lower(Question.class_name) == CLASS_DB,
+            func.lower(Question.subject) == SUBJECT_DB,
+            Question.class_year == class_year_int,
+            func.date(Question.created_at) == selected_date
+        )
+        .order_by(Question.created_at.asc())
+        .all()
+    )
+
+    print(f"📦 Found {len(questions_from_db)} questions")
+
+    if not questions_from_db:
+        raise HTTPException(
+            status_code=404,
+            detail="No questions found for selected date"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Build exam question structure
+    # --------------------------------------------------
+    questions = []
+
+    for index, q in enumerate(questions_from_db, start=1):
+
+        blocks = q.question_blocks or []
+
+        questions.append({
+            "id": q.id,
+            "q_id": index,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "blocks": blocks,
+            "options": q.options,
+            "correct": q.correct_answer
+        })
+
+    print(f"🧠 Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 4️⃣ Mark DB questions as used
+    # --------------------------------------------------
+    used_ids = [
+        q.get("id") for q in questions if q.get("id")
+    ]
+
+    if used_ids:
+        db.query(Question).filter(
+            Question.id.in_(used_ids),
+            Question.is_used == False
+        ).update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
+
+        print(f"🏷️ Marked {len(used_ids)} questions as used")
+
+    else:
+        print("⚠️ No DB question IDs found")
+
+    # --------------------------------------------------
+    # 5️⃣ Save homework exam
+    # --------------------------------------------------
+    new_exam = HomeworkExamOCThinkingSkills(
+        quiz_id=None,   # 🔥 no quiz config used
+        class_name=CLASS_EXAM,
+        subject=SUBJECT_EXAM,
+        difficulty="mixed",
+        class_year=class_year_int,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 Homework exam saved ID={new_exam.id}")
+
+    # --------------------------------------------------
+    # 6️⃣ Response
+    # --------------------------------------------------
+    return {
+        "message": "OC Thinking Skills latest homework exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": None,
+        "class_name": CLASS_DB,
+        "class_year": class_year_int,
+        "subject": SUBJECT_DB,
+        "difficulty": "mixed",
+        "selected_date": selected_date,
+        "total_questions": len(questions),
+        "questions": questions
+    }
+@app.post("/api/exams/generate-oc-thinking-skills-latest")
+def generate_oc_thinking_skills_exam_latest(
+    payload: Optional[dict] = Body(default=None),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate OC Thinking Skills exam
+    using ALL questions uploaded on selected date.
+    """
+
+    print("\n🚀 GENERATE OC THINKING SKILLS EXAM (LATEST)")
+
+    payload = payload or {}
+
+    # 🔹 Constants
+    CLASS_DB = "oc"
+    SUBJECT_DB = "thinking skills"
+
+    CLASS_EXAM = "OC"
+    SUBJECT_EXAM = "thinking_skills"
+
+    # --------------------------------------------------
+    # 1️⃣ Validate input
+    # --------------------------------------------------
+    class_year = payload.get("class_year")
+    selected_date = payload.get("selected_date")
+
+    if class_year is None:
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    if not selected_date:
+        raise HTTPException(
+            status_code=400,
+            detail="selected_date is required"
+        )
+
+    try:
+        class_year_int = int(class_year)
+    except:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid class_year"
+        )
+
+    print(f"🎓 Class Year: {class_year_int}")
+    print(f"📅 Selected Date: {selected_date}")
+
+    # --------------------------------------------------
+    # 2️⃣ Generate questions from selected upload date
+    # --------------------------------------------------
+    try:
+        questions = generate_exam_questions_latest(
+            db=db,
+            class_year=class_year_int,
+            selected_date=selected_date,
+            class_name=CLASS_DB,
+            subject=SUBJECT_DB
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate latest exam: {str(e)}"
+        )
+
+    if not questions:
+        raise HTTPException(
+            status_code=404,
+            detail="No questions found for selected date"
+        )
+
+    print(f"🧠 Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 3️⃣ Mark DB questions as used
+    # --------------------------------------------------
+    used_ids = [
+        q.get("id") for q in questions if q.get("id")
+    ]
+
+    if used_ids:
+        db.query(Question).filter(
+            Question.id.in_(used_ids),
+            Question.is_used == False
+        ).update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
+
+        print(f"🏷️ Marked {len(used_ids)} questions as used")
+
+    # --------------------------------------------------
+    # 4️⃣ Save generated exam
+    # --------------------------------------------------
+    new_exam = Exam(
+        quiz_id=0,   # 🔥 latest mode has no quiz config
+        class_name=CLASS_EXAM,
+        subject=SUBJECT_EXAM,
+        class_year=class_year_int,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 Exam saved ID={new_exam.id}")
+
+    # --------------------------------------------------
+    # 5️⃣ Response
+    # --------------------------------------------------
+    return {
+        "message": "OC Thinking Skills latest exam generated successfully",
+        "exam_id": new_exam.id,
+        "quiz_id": 0,
+        "class_name": CLASS_EXAM,
+        "class_year": class_year_int,
+        "subject": SUBJECT_EXAM,
+        "difficulty": "mixed",
+        "selected_date": selected_date,
+        "total_questions": len(questions),
+        "questions": questions
+    }
 @app.post("/api/exams/generate-oc-thinking-skills-homework")
 def generate_oc_thinking_skills_homework_exam(
     payload: dict = Body(...),
@@ -21765,6 +22696,170 @@ def generate_oc_thinking_skills_exam(
         "questions": questions
     }
 
+@app.post("/api/exams/generate-oc-mathematical-reasoning-latest")
+def generate_oc_mathematical_reasoning_exam_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    import random
+    from datetime import datetime
+
+    print("\n" + "=" * 70)
+    print("🚀 OC MR LATEST EXAM GENERATION START")
+    print("=" * 70)
+
+    # --------------------------------------------------
+    # 0️⃣ Parse payload
+    # --------------------------------------------------
+    raw_class_year = payload.get("class_year")
+    selected_date = payload.get("selected_date")
+
+    if not raw_class_year:
+        raise HTTPException(
+            400,
+            "class_year is required"
+        )
+
+    if not selected_date:
+        raise HTTPException(
+            400,
+            "selected_date is required"
+        )
+
+    # --------------------------------------------------
+    # 1️⃣ Parse class year
+    # --------------------------------------------------
+    try:
+        if isinstance(raw_class_year, str):
+            class_year = int(
+                raw_class_year.strip().split()[-1]
+            )
+        else:
+            class_year = int(raw_class_year)
+
+    except:
+        raise HTTPException(
+            400,
+            f"Invalid class_year: {raw_class_year}"
+        )
+
+    print(f"🎓 Parsed class_year: {class_year}")
+
+    # --------------------------------------------------
+    # 2️⃣ Parse selected date
+    # --------------------------------------------------
+    try:
+        parsed_date = datetime.strptime(
+            selected_date,
+            "%Y-%m-%d"
+        ).date()
+
+    except:
+        raise HTTPException(
+            400,
+            f"Invalid selected_date: {selected_date}"
+        )
+
+    print(f"📅 Parsed selected_date: {parsed_date}")
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch ALL questions for selected date
+    # --------------------------------------------------
+    questions_from_db = (
+        db.query(Question)
+        .filter(
+            func.lower(func.trim(Question.class_name)) == "oc",
+            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            Question.class_year == class_year,
+            func.date(Question.created_at) == parsed_date
+        )
+        .order_by(Question.created_at.asc())
+        .all()
+    )
+
+    print(f"\n📦 Questions Found: {len(questions_from_db)}")
+
+    if not questions_from_db:
+        raise HTTPException(
+            404,
+            "No questions found for selected date"
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ Build exam question structure
+    # --------------------------------------------------
+    questions = []
+
+    for index, q in enumerate(questions_from_db, start=1):
+
+        questions.append({
+            "id": q.id,
+            "q_id": index,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "blocks": q.question_blocks or [],
+            "options": q.options,
+            "correct": q.correct_answer
+        })
+
+    print(f"✅ Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 5️⃣ Mark questions as used
+    # (tracking only, NOT filtering)
+    # --------------------------------------------------
+    used_ids = [
+        q["id"] for q in questions if q.get("id")
+    ]
+
+    if used_ids:
+
+        db.query(Question).filter(
+            Question.id.in_(used_ids),
+            Question.is_used == False
+        ).update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
+
+        db.commit()
+
+        print(f"🏷️ Marked {len(used_ids)} questions as used")
+
+    # --------------------------------------------------
+    # 6️⃣ Shuffle questions
+    # --------------------------------------------------
+    random.shuffle(questions)
+
+    # --------------------------------------------------
+    # 7️⃣ Save exam
+    # --------------------------------------------------
+    new_exam = Exam(
+        quiz_id=None,   # ✅ latest mode has no quiz
+        class_name="oc",
+        subject="mathematical_reasoning",
+        class_year=class_year,
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 Exam saved: {new_exam.id}")
+
+    print("=" * 70 + "\n")
+
+    # --------------------------------------------------
+    # 8️⃣ Response
+    # --------------------------------------------------
+    return {
+        "message": "OC Mathematical Reasoning latest exam generated successfully",
+        "exam_id": new_exam.id,
+        "selected_date": selected_date,
+        "total_questions": len(questions),
+        "questions": questions
+    }
 @app.post("/api/exams/generate-oc-mathematical-reasoning")
 def generate_oc_mathematical_reasoning_exam(
     payload: dict = Body(...),
@@ -22022,7 +23117,170 @@ def generate_oc_mathematical_reasoning_homework(
         "questions": questions
     }
 
+@app.post("/api/exams/generate-oc-mathematical-reasoning-homework-latest")
+def generate_oc_mathematical_reasoning_homework_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    import random
+    from datetime import datetime
 
+    print("\n" + "=" * 70)
+    print("🚀 OC MR HOMEWORK LATEST GENERATION START")
+    print("=" * 70)
+
+    # --------------------------------------------------
+    # 0️⃣ Parse payload
+    # --------------------------------------------------
+    raw_class_year = payload.get("class_year")
+    selected_date = payload.get("selected_date")
+
+    if not raw_class_year:
+        raise HTTPException(
+            400,
+            "class_year is required"
+        )
+
+    if not selected_date:
+        raise HTTPException(
+            400,
+            "selected_date is required"
+        )
+
+    # --------------------------------------------------
+    # 1️⃣ Parse class year
+    # --------------------------------------------------
+    try:
+        if isinstance(raw_class_year, str):
+            class_year = int(
+                raw_class_year.strip().split()[-1]
+            )
+        else:
+            class_year = int(raw_class_year)
+
+    except:
+        raise HTTPException(
+            400,
+            f"Invalid class_year: {raw_class_year}"
+        )
+
+    print(f"🎓 Parsed class_year: {class_year}")
+
+    # --------------------------------------------------
+    # 2️⃣ Parse selected date
+    # --------------------------------------------------
+    try:
+        parsed_date = datetime.strptime(
+            selected_date,
+            "%Y-%m-%d"
+        ).date()
+
+    except:
+        raise HTTPException(
+            400,
+            f"Invalid selected_date: {selected_date}"
+        )
+
+    print(f"📅 Parsed selected_date: {parsed_date}")
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch ALL questions from selected upload date
+    # --------------------------------------------------
+    questions_from_db = (
+        db.query(Question)
+        .filter(
+            func.lower(func.trim(Question.class_name)) == "oc",
+            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            Question.class_year == class_year,
+            func.date(Question.created_at) == parsed_date
+        )
+        .order_by(Question.created_at.asc())
+        .all()
+    )
+
+    print(f"\n📦 Questions Found: {len(questions_from_db)}")
+
+    if not questions_from_db:
+        raise HTTPException(
+            404,
+            "No questions found for selected date"
+        )
+
+    # --------------------------------------------------
+    # 4️⃣ Build question structure
+    # --------------------------------------------------
+    questions = []
+
+    for index, q in enumerate(questions_from_db, start=1):
+
+        questions.append({
+            "id": q.id,
+            "q_id": index,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "blocks": q.question_blocks or [],
+            "options": q.options,
+            "correct": q.correct_answer
+        })
+
+    print(f"✅ Generated {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 5️⃣ Mark DB questions as used
+    # (tracking only)
+    # --------------------------------------------------
+    used_ids = [
+        q["id"] for q in questions if q.get("id")
+    ]
+
+    if used_ids:
+
+        db.query(Question).filter(
+            Question.id.in_(used_ids),
+            Question.is_used == False
+        ).update(
+            {Question.is_used: True},
+            synchronize_session=False
+        )
+
+        db.commit()
+
+        print(f"🏷️ Marked {len(used_ids)} questions as used")
+
+    # --------------------------------------------------
+    # 6️⃣ Shuffle questions
+    # --------------------------------------------------
+    random.shuffle(questions)
+
+    # --------------------------------------------------
+    # 7️⃣ Save homework exam
+    # --------------------------------------------------
+    new_exam = HomeworkExamOCMathematicalReasoning(
+        homework_quiz_id=None,   # ✅ latest mode
+        class_name="oc",
+        class_year=str(class_year),
+        subject="mathematical_reasoning",
+        questions=questions
+    )
+
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+
+    print(f"💾 Homework saved: {new_exam.id}")
+
+    print("=" * 70 + "\n")
+
+    # --------------------------------------------------
+    # 8️⃣ Response
+    # --------------------------------------------------
+    return {
+        "message": "OC Mathematical Reasoning latest homework generated successfully",
+        "exam_id": new_exam.id,
+        "selected_date": selected_date,
+        "total_questions": len(questions),
+        "questions": questions
+    }
 
 @app.post("/api/exams/generate-thinking-skills-homework-latest")
 def generate_thinking_skills_homework_latest(
@@ -22030,8 +23288,10 @@ def generate_thinking_skills_homework_latest(
     db: Session = Depends(get_db)
 ):
     """
-    Generate HOMEWORK exam using latest uploaded questions.
-    Uses latest questions and marks them as used.
+    Generate HOMEWORK exam using ALL questions from a selected date.
+    - Does NOT filter by is_used
+    - Marks included questions as used (tracking only)
+    - Saves into HomeWorkExam table
     """
 
     payload = payload or {}
@@ -22040,38 +23300,39 @@ def generate_thinking_skills_homework_latest(
     # 0️⃣ Extract Input
     # ==================================================
     class_year = payload.get("class_year")
+    selected_date = payload.get("date")
 
     if not class_year:
-        raise HTTPException(
-            status_code=400,
-            detail="class_year is required"
-        )
+        raise HTTPException(status_code=400, detail="class_year is required")
 
-    print(f"\n📘 Generating HOMEWORK LATEST Thinking Skills exam for class_year: {class_year}")
+    if not selected_date:
+        raise HTTPException(status_code=400, detail="date is required")
+
+    print("\n================ GENERATE HOMEWORK (DATE MODE) =================")
+    print(f"📥 class_year={class_year}, date={selected_date}")
 
     # ==================================================
-    # 1️⃣ Fetch Latest Questions (ONLY UNUSED)
+    # 1️⃣ Fetch Questions
     # ==================================================
-    latest_questions = (
+    questions = (
         db.query(Question)
         .filter(
-            func.lower(Question.class_name) == "selective",
-            func.lower(Question.subject) == "thinking skills",
+            func.lower(func.trim(Question.class_name)) == "selective",
+            func.lower(func.trim(Question.subject)) == "thinking skills",
             Question.class_year == class_year,
-            Question.is_used == False   # 🔥 IMPORTANT
+            func.date(Question.created_at) == selected_date
         )
-        .order_by(Question.created_at.desc(), Question.id.desc())
-        .limit(40)
+        .order_by(Question.id.asc())
         .all()
     )
 
-    if len(latest_questions) < 40:
+    if not questions:
         raise HTTPException(
             status_code=400,
-            detail=f"Not enough unused latest questions. Required 40, found {len(latest_questions)}"
+            detail="No questions found for the selected date"
         )
 
-    print(f"✅ Fetched {len(latest_questions)} latest unused questions for homework")
+    print(f"✅ Fetched {len(questions)} questions")
 
     # ==================================================
     # 2️⃣ Build Output
@@ -22079,14 +23340,14 @@ def generate_thinking_skills_homework_latest(
     generated_questions = []
     q_id = 1
 
-    for question_row in latest_questions:
+    for row in questions:
 
-        blocks = question_row.question_blocks or []
+        blocks = row.question_blocks or []
 
-        if not blocks and question_row.question_text:
+        if not blocks and row.question_text:
             blocks = [{
                 "type": "text",
-                "content": question_row.question_text
+                "content": row.question_text
             }]
 
         existing_image_srcs = {
@@ -22095,7 +23356,7 @@ def generate_thinking_skills_homework_latest(
             if block.get("type") == "image"
         }
 
-        for image_src in question_row.images or []:
+        for image_src in row.images or []:
             if image_src not in existing_image_srcs:
                 blocks.append({
                     "type": "image",
@@ -22103,63 +23364,67 @@ def generate_thinking_skills_homework_latest(
                 })
 
         generated_questions.append({
-            "id": question_row.id,
+            "id": row.id,
             "q_id": q_id,
-            "topic": question_row.topic,
+            "topic": row.topic,
             "blocks": blocks,
-            "options": question_row.options,
-            "correct": question_row.correct_answer
+            "options": row.options,
+            "correct": row.correct_answer
         })
 
         q_id += 1
 
+    print(f"📦 Built {len(generated_questions)} questions")
+
     # ==================================================
-    # 3️⃣ Mark Questions as Used
+    # 3️⃣ MARK QUESTIONS AS USED
     # ==================================================
     used_question_ids = [q["id"] for q in generated_questions]
 
     if used_question_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_question_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
+        updated = (
+            db.query(Question)
+            .filter(
+                Question.id.in_(used_question_ids),
+                Question.is_used.is_(False)
+            )
+            .update(
+                {Question.is_used: True},
+                synchronize_session=False
+            )
         )
 
-        print(f"🔒 Marked {len(used_question_ids)} homework latest questions as used")
+        print(f"🔒 Marked {updated} questions as used")
 
     # ==================================================
-    # 4️⃣ Save Exam
+    # 4️⃣ SAVE INTO HomeWorkExam (FIXED)
     # ==================================================
-    new_exam = Exam(
-        quiz_id=None,
+    new_homework = HomeWorkExam(
         class_name="selective",
-        subject="thinking skills",
+        subject="thinking_skills",
         class_year=class_year,
         questions=generated_questions
     )
 
-    db.add(new_exam)
+    db.add(new_homework)
     db.commit()
-    db.refresh(new_exam)
+    db.refresh(new_homework)
 
-    print(f"💾 Homework latest exam saved with ID: {new_exam.id}")
+    print(f"💾 Homework saved with ID: {new_homework.id}")
+    print("================ END =================\n")
 
     # ==================================================
-    # 5️⃣ Response
+    # 5️⃣ RESPONSE
     # ==================================================
     return {
-        "message": "Homework latest Thinking Skills exam generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": None,
+        "message": "Homework Thinking Skills generated successfully",
+        "homework_id": new_homework.id,  # ✅ updated key
         "class_name": "selective",
         "class_year": class_year,
-        "subject": "thinking skills",
+        "subject": "thinking_skills",
         "total_questions": len(generated_questions),
         "questions": generated_questions
     }
-
 @app.post("/api/exams/generate-thinking-skills-homework")
 def generate_thinking_skills_homework_exam(
     payload: Optional[Dict] = Body(default=None),
@@ -34252,6 +35517,7 @@ def finish_exam(
         "wrong": wrong,
         "accuracy": accuracy
     }
+
 def copy_to_admin_snapshot_oc_mathematical_reasoning(
     db: Session,
     attempt_id: int
@@ -34307,12 +35573,19 @@ def finish_homework_oc_mathematical_reasoning(
     print("📥 Incoming payload:", req)
 
     student_id = req.get("student_id")
-    
     answers = req.get("answers", {})
 
-    
     # --------------------------------------------------
-    # 1️⃣ Resolve student
+    # 1️⃣ Validate payload
+    # --------------------------------------------------
+    if not student_id:
+        raise HTTPException(
+            status_code=400,
+            detail="student_id is required"
+        )
+
+    # --------------------------------------------------
+    # 2️⃣ Resolve student
     # --------------------------------------------------
     student = (
         db.query(Student)
@@ -34325,49 +35598,89 @@ def finish_homework_oc_mathematical_reasoning(
 
     if not student:
         print("❌ Student NOT FOUND:", student_id)
-        raise HTTPException(status_code=404, detail="Student not found")
-    class_year = student.student_year
-    print("🎯 Resolved class_year from student:", class_year)
 
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    class_year = student.student_year
+
+    print("🎯 Resolved class_year:", class_year)
     print("✅ Student resolved → id:", student.id)
 
     # --------------------------------------------------
-    # 2️⃣ Get active homework attempt
+    # 3️⃣ Get latest attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentHomeworkOCMathematicalReasoning)
         .filter(
-            StudentHomeworkOCMathematicalReasoning.student_id == student.id,
-            StudentHomeworkOCMathematicalReasoning.completed_at.is_(None)
+            StudentHomeworkOCMathematicalReasoning.student_id == student.id
         )
-        .order_by(StudentHomeworkOCMathematicalReasoning.started_at.desc())
+        .order_by(
+            StudentHomeworkOCMathematicalReasoning.started_at.desc()
+        )
         .first()
     )
 
+    # --------------------------------------------------
+    # 4️⃣ No attempt found
+    # --------------------------------------------------
     if not attempt:
-        print("⚠️ No active homework attempt found")
-        return {"status": "completed"}
+        print("⚠️ No homework attempt found")
 
-    print("✅ Active homework attempt found → id:", attempt.id)
+        raise HTTPException(
+            status_code=404,
+            detail="No homework attempt found"
+        )
+
+    print("✅ Attempt found → id:", attempt.id)
 
     # --------------------------------------------------
-    # 3️⃣ Load homework exam (STRICT guard)
+    # 5️⃣ HARD SUBMISSION LOCK
+    # --------------------------------------------------
+    if attempt.completed_at is not None:
+
+        print("🚫 Homework already submitted")
+        print("🕒 completed_at:", attempt.completed_at)
+
+        raise HTTPException(
+            status_code=400,
+            detail="Homework already submitted"
+        )
+
+    print("✅ Attempt is active")
+
+    # --------------------------------------------------
+    # 6️⃣ Load homework exam
     # --------------------------------------------------
     homework_exam = (
         db.query(HomeworkExamOCMathematicalReasoning)
         .filter(
             HomeworkExamOCMathematicalReasoning.id == attempt.homework_exam_id,
-            func.lower(HomeworkExamOCMathematicalReasoning.subject) == "mathematical_reasoning",
-            func.lower(HomeworkExamOCMathematicalReasoning.class_name) == "oc",
-            func.lower(HomeworkExamOCMathematicalReasoning.class_year) == class_year.lower()
+
+            func.lower(
+                HomeworkExamOCMathematicalReasoning.subject
+            ) == "mathematical_reasoning",
+
+            func.lower(
+                HomeworkExamOCMathematicalReasoning.class_name
+            ) == "oc",
+
+            HomeworkExamOCMathematicalReasoning.class_year == str(
+                int(class_year.strip().split()[-1])
+            )
         )
         .first()
     )
 
     if not homework_exam:
+
+        print("❌ Invalid homework exam")
+
         raise HTTPException(
             status_code=400,
-            detail="Finish endpoint called for invalid OC MR homework"
+            detail="Invalid OC MR homework"
         )
 
     questions = homework_exam.questions or []
@@ -34375,38 +35688,46 @@ def finish_homework_oc_mathematical_reasoning(
 
     print("📘 Homework loaded → questions:", total_questions)
 
-    question_map = {q["q_id"]: q for q in questions}
+    question_map = {
+        q["q_id"]: q for q in questions
+    }
 
     # --------------------------------------------------
-    # 4️⃣ Update responses (NO inserts)
+    # 7️⃣ Evaluate responses
     # --------------------------------------------------
     correct = 0
     saved_responses = 0
 
     for q_id_str, selected in answers.items():
+
         try:
             q_id = int(q_id_str)
         except ValueError:
             continue
 
         q = question_map.get(q_id)
+
         if not q:
             continue
 
         correct_answer = q.get("correct")
 
-        print("🧪 EVALUATING QUESTION")
+        print("\n🧪 EVALUATING QUESTION")
         print("Question ID:", q_id)
         print("Student Answer:", selected)
         print("Correct Answer:", correct_answer)
 
-        is_correct = selected == correct_answer
+        is_correct = (
+            selected == correct_answer
+        )
 
         if is_correct:
             correct += 1
 
         response = (
-            db.query(StudentHomeworkResponseOCMathematicalReasoning)
+            db.query(
+                StudentHomeworkResponseOCMathematicalReasoning
+            )
             .filter(
                 StudentHomeworkResponseOCMathematicalReasoning.homework_attempt_id == attempt.id,
                 StudentHomeworkResponseOCMathematicalReasoning.q_id == q_id
@@ -34415,7 +35736,9 @@ def finish_homework_oc_mathematical_reasoning(
         )
 
         if not response:
+
             print(f"⚠️ Missing response row for q_id={q_id}")
+
             continue
 
         response.selected_option = selected
@@ -34424,23 +35747,40 @@ def finish_homework_oc_mathematical_reasoning(
 
         saved_responses += 1
 
+    # --------------------------------------------------
+    # 8️⃣ Final stats
+    # --------------------------------------------------
     wrong = saved_responses - correct
-    accuracy = round((correct / total_questions) * 100, 2) if total_questions else 0
 
-    print("📊 Result → correct:", correct, "wrong:", wrong)
+    accuracy = (
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    print("\n📊 FINAL RESULT")
+    print("Correct:", correct)
+    print("Wrong:", wrong)
+    print("Accuracy:", accuracy)
 
     # --------------------------------------------------
-    # 5️⃣ Mark attempt completed
+    # 9️⃣ Mark completed
     # --------------------------------------------------
     attempt.completed_at = datetime.now(timezone.utc)
 
+    print("✅ Attempt marked completed")
+
     # --------------------------------------------------
-    # 6️⃣ Commit
+    # 🔟 Commit
     # --------------------------------------------------
     db.commit()
 
+    print("💾 Changes committed")
+
     print("================ FINISH OC MATHEMATICAL REASONING HOMEWORK END =================\n")
 
+    # --------------------------------------------------
+    # 1️⃣1️⃣ Response
+    # --------------------------------------------------
     return {
         "status": "completed",
         "attempt_id": attempt.id,
@@ -34449,8 +35789,7 @@ def finish_homework_oc_mathematical_reasoning(
         "correct": correct,
         "wrong": wrong,
         "accuracy": accuracy
-    }
- 
+    } 
 
 @app.post("/api/student/finish-exam-oc-mathematical-reasoning")
 def finish_exam_oc_mathematical_reasoning(
@@ -36030,6 +37369,237 @@ def generate_exam_oc_reading_homework(
         "exam_json": exam_json,
     }
 
+
+@app.post("/api/exams/generate-oc-reading-homework-latest")
+def generate_exam_oc_reading_homework_latest(
+    payload: ReadingHomeworkExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ GENERATE OC READING HOMEWORK (LATEST) =================")
+
+    # --------------------------------------------------
+    # 0️⃣ VALIDATE DATE
+    # --------------------------------------------------
+    selected_date = getattr(payload, "selected_date", None)
+
+    if not selected_date:
+        raise HTTPException(
+            status_code=400,
+            detail="selected_date is required"
+        )
+
+    print(f"📅 selected_date={selected_date}")
+
+    # --------------------------------------------------
+    # 1️⃣ NORMALIZATION
+    # --------------------------------------------------
+    class_name = payload.class_name.strip().lower()
+
+    class_year = (
+        str(payload.class_year)
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(f"📥 class_name={class_name}")
+    print(f"📥 class_year={class_year}")
+
+    warnings = []
+    sections = []
+
+    # --------------------------------------------------
+    # 2️⃣ FETCH ALL BUNDLES FROM DATE
+    # --------------------------------------------------
+    bundles = (
+        db.query(QuestionReading)
+        .filter(
+            func.lower(
+                func.trim(QuestionReading.class_name)
+            ) == class_name,
+
+            func.trim(
+                func.replace(
+                    func.lower(QuestionReading.class_year),
+                    "year",
+                    ""
+                )
+            ) == class_year,
+
+            func.lower(
+                func.trim(QuestionReading.subject)
+            ).like("%reading comprehension%"),
+
+            func.date(
+                QuestionReading.created_at
+            ) == selected_date
+        )
+        .order_by(
+            QuestionReading.created_at.asc()
+        )
+        .all()
+    )
+
+    print(f"\n📦 FOUND BUNDLES: {len(bundles)}")
+
+    if not bundles:
+        raise HTTPException(
+            status_code=404,
+            detail="No reading homework bundles found for selected date"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ BUILD SECTIONS
+    # --------------------------------------------------
+    for section_index, matched_bundle in enumerate(bundles, start=1):
+
+        print(f"\n➡️ Processing bundle ID={matched_bundle.id}")
+
+        bundle_json = matched_bundle.exam_bundle or {}
+
+        question_type = bundle_json.get("question_type")
+
+        reading_material = bundle_json.get("reading_material")
+
+        answer_options = bundle_json.get("answer_options")
+
+        topic_name = matched_bundle.topic
+        topic_difficulty = matched_bundle.difficulty
+
+        section_id = (
+            f"{topic_name.lower().replace(' ', '_')}"
+            f"_{section_index}"
+        )
+
+        # --------------------------------------------------
+        # BUILD QUESTIONS
+        # --------------------------------------------------
+        collected_questions = [
+            copy.deepcopy(q)
+            for q in bundle_json.get("questions", [])
+        ]
+
+        for idx, q in enumerate(collected_questions, start=1):
+
+            q["question_number"] = idx
+
+            q["question_id"] = (
+                f"{section_id}_Q{idx}"
+            )
+
+        # --------------------------------------------------
+        # RENDER META
+        # --------------------------------------------------
+        passage_style = (
+            "literary"
+            if question_type in (
+                "main_idea",
+                "literary_analysis"
+            )
+            else "informational"
+        )
+
+        render_hint = (
+            "gapped_text"
+            if question_type == "gapped_text"
+            else "standard"
+        )
+
+        options_scope = (
+            "shared"
+            if answer_options
+            else "per_question"
+        )
+
+        section = {
+            "section_id": section_id,
+            "section_index": section_index,
+            "question_type": question_type,
+            "topic": topic_name,
+            "difficulty": topic_difficulty,
+            "reading_material": reading_material,
+            "passage_style": passage_style,
+            "render_hint": render_hint,
+            "options_scope": options_scope,
+            "questions": collected_questions,
+        }
+
+        if answer_options:
+            section["answer_options"] = answer_options
+
+        sections.append(section)
+
+    # --------------------------------------------------
+    # 4️⃣ FINALIZE
+    # --------------------------------------------------
+    if not sections:
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough data to generate OC reading homework"
+        )
+
+    total_questions = sum(
+        len(s["questions"])
+        for s in sections
+    )
+
+    exam_json = {
+        "class_name": class_name,
+        "class_year": class_year,
+        "subject": "Reading Comprehension",
+        "difficulty": "mixed",
+        "duration_minutes": 40,
+        "selected_date": str(selected_date),
+        "total_questions": total_questions,
+        "sections": sections,
+    }
+
+    print(f"\n🧠 TOTAL QUESTIONS: {total_questions}")
+
+    # --------------------------------------------------
+    # 🏷️ MARK USED (TRACKING ONLY)
+    # --------------------------------------------------
+    used_bundle_ids = [b.id for b in bundles]
+
+    if used_bundle_ids:
+
+        db.query(QuestionReading).filter(
+            QuestionReading.id.in_(used_bundle_ids)
+        ).update(
+            {QuestionReading.is_used: True},
+            synchronize_session=False
+        )
+
+    # --------------------------------------------------
+    # 💾 SAVE
+    # --------------------------------------------------
+    saved = GeneratedHomeworkReading(
+        config_id=None,   # ✅ latest mode
+        class_name=class_name,
+        class_year=class_year,
+        subject="Reading Comprehension",
+        difficulty="mixed",
+        total_questions=total_questions,
+        exam_json=exam_json,
+    )
+
+    db.add(saved)
+    db.commit()
+    db.refresh(saved)
+
+    print(f"✅ OC Reading Homework Latest generated ID: {saved.id}")
+
+    # --------------------------------------------------
+    # 5️⃣ RESPONSE
+    # --------------------------------------------------
+    return {
+        "generated_exam_id": saved.id,
+        "selected_date": selected_date,
+        "total_questions": total_questions,
+        "warnings": warnings,
+        "exam_json": exam_json,
+    }
+
 @app.post("/api/exams/generate-oc-reading")
 def generate_exam_oc_reading(
     payload: ReadingExamRequest,
@@ -36270,12 +37840,238 @@ def generate_exam_oc_reading(
         "warnings": warnings,
         "exam_json": exam_json,
     }
+
+
+@app.post("/api/exams/generate-oc-reading-latest")
+def generate_exam_oc_reading_latest(
+    payload: ReadingExamRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n================ GENERATE OC READING EXAM (LATEST) =================")
+
+    # --------------------------------------------------
+    # 0️⃣ VALIDATE DATE
+    # --------------------------------------------------
+    selected_date = getattr(payload, "selected_date", None)
+
+    if not selected_date:
+        raise HTTPException(
+            status_code=400,
+            detail="selected_date is required"
+        )
+
+    print(f"📅 selected_date={selected_date}")
+
+    # --------------------------------------------------
+    # 1️⃣ NORMALIZATION
+    # --------------------------------------------------
+    class_name = payload.class_name.strip().lower()
+
+    class_year = (
+        payload.class_year
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(f"📥 class_name={class_name}")
+    print(f"📥 class_year={class_year}")
+
+    sections = []
+    warnings = []
+
+    # --------------------------------------------------
+    # 2️⃣ FETCH ALL BUNDLES FROM DATE
+    # --------------------------------------------------
+    bundles = (
+        db.query(QuestionReading)
+        .filter(
+            func.lower(
+                func.trim(QuestionReading.class_name)
+            ) == class_name,
+
+            func.trim(
+                func.replace(
+                    func.lower(QuestionReading.class_year),
+                    "year",
+                    ""
+                )
+            ) == class_year,
+
+            func.lower(
+                func.trim(QuestionReading.subject)
+            ).like("%reading comprehension%"),
+
+            func.date(
+                QuestionReading.created_at
+            ) == selected_date
+        )
+        .order_by(
+            QuestionReading.created_at.asc()
+        )
+        .all()
+    )
+
+    print(f"\n📦 FOUND BUNDLES: {len(bundles)}")
+
+    if not bundles:
+        raise HTTPException(
+            status_code=404,
+            detail="No reading bundles found for selected date"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ BUILD SECTIONS
+    # --------------------------------------------------
+    for section_index, matched_bundle in enumerate(bundles, start=1):
+
+        print(f"\n➡️ Processing bundle ID={matched_bundle.id}")
+
+        bundle_json = matched_bundle.exam_bundle or {}
+
+        question_type = bundle_json.get("question_type")
+
+        reading_material = bundle_json.get("reading_material")
+
+        answer_options = bundle_json.get("answer_options")
+
+        topic_name = matched_bundle.topic
+        topic_difficulty = matched_bundle.difficulty
+
+        section_id = (
+            f"{topic_name.lower().replace(' ', '_')}"
+            f"_{section_index}"
+        )
+
+        # --------------------------------------------------
+        # BUILD QUESTIONS
+        # --------------------------------------------------
+        collected_questions = [
+            copy.deepcopy(q)
+            for q in bundle_json.get("questions", [])
+        ]
+
+        for idx, q in enumerate(collected_questions, start=1):
+
+            q["question_number"] = idx
+
+            q["question_id"] = (
+                f"{section_id}_Q{idx}"
+            )
+
+        # --------------------------------------------------
+        # RENDER META
+        # --------------------------------------------------
+        passage_style = (
+            "literary"
+            if question_type in (
+                "main_idea",
+                "literary_analysis"
+            )
+            else "informational"
+        )
+
+        render_hint = (
+            "gapped_text"
+            if question_type == "gapped_text"
+            else "standard"
+        )
+
+        options_scope = (
+            "shared"
+            if answer_options
+            else "per_question"
+        )
+
+        section = {
+            "section_id": section_id,
+            "section_index": section_index,
+            "question_type": question_type,
+            "topic": topic_name,
+            "difficulty": topic_difficulty,
+            "reading_material": reading_material,
+            "passage_style": passage_style,
+            "render_hint": render_hint,
+            "options_scope": options_scope,
+            "questions": collected_questions,
+        }
+
+        if answer_options:
+            section["answer_options"] = answer_options
+
+        sections.append(section)
+
+    # --------------------------------------------------
+    # 4️⃣ FINALIZE
+    # --------------------------------------------------
+    total_questions = sum(
+        len(s["questions"])
+        for s in sections
+    )
+
+    exam_json = {
+        "class_name": class_name,
+        "class_year": class_year,
+        "subject": "Reading Comprehension",
+        "difficulty": "mixed",
+        "duration_minutes": 40,
+        "selected_date": str(selected_date),
+        "total_questions": total_questions,
+        "sections": sections,
+    }
+
+    print(f"\n🧠 TOTAL QUESTIONS: {total_questions}")
+
+    # --------------------------------------------------
+    # 5️⃣ MARK USED (TRACKING ONLY)
+    # --------------------------------------------------
+    used_bundle_ids = [b.id for b in bundles]
+
+    if used_bundle_ids:
+
+        db.query(QuestionReading).filter(
+            QuestionReading.id.in_(used_bundle_ids)
+        ).update(
+            {QuestionReading.is_used: True},
+            synchronize_session=False
+        )
+
+    # --------------------------------------------------
+    # 6️⃣ SAVE GENERATED EXAM
+    # --------------------------------------------------
+    saved = GeneratedExamReading(
+        config_id=None,   # ✅ latest mode
+        class_name=class_name,
+        class_year=class_year,
+        subject="Reading Comprehension",
+        difficulty="mixed",
+        total_questions=total_questions,
+        exam_json=exam_json,
+    )
+
+    db.add(saved)
+    db.commit()
+    db.refresh(saved)
+
+    print(f"✅ OC Reading Latest Exam generated ID: {saved.id}")
+
+    # --------------------------------------------------
+    # 7️⃣ RESPONSE
+    # --------------------------------------------------
+    return {
+        "generated_exam_id": saved.id,
+        "selected_date": selected_date,
+        "total_questions": total_questions,
+        "warnings": warnings,
+        "exam_json": exam_json,
+    }
+
 @app.post("/api/exams/generate-reading-homework-latest")
 def generate_exam_reading_homework_latest(
     payload: ReadingHomeworkExamRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n================ GENERATE READING HOMEWORK LATEST =================")
+    print("\n================ GENERATE READING HOMEWORK (DATE MODE) =================")
 
     try:
         print("📥 RAW PAYLOAD:", payload.dict())
@@ -36287,38 +38083,21 @@ def generate_exam_reading_homework_latest(
         class_year = payload.class_year.lower().replace("year", "").strip()
         subject = "reading_comprehension"
 
+        selected_date = payload.date  # ✅ NEW
+
         if not class_year:
             raise HTTPException(400, "class_year is required")
 
-        print(f"🔧 class_name={class_name}, class_year={class_year}")
+        if not selected_date:
+            raise HTTPException(400, "date is required for latest mode")
+
+        print(f"🔧 class_name={class_name}, class_year={class_year}, date={selected_date}")
 
         sections = []
         used_bundle_ids = []
 
         # --------------------------------------------------
-        # 1️⃣ FIND LATEST BATCH (NO is_used FILTER HERE)
-        # --------------------------------------------------
-        latest_created_at = (
-            db.query(func.max(QuestionReading.created_at))
-            .filter(
-                func.lower(func.trim(QuestionReading.class_name)) == class_name,
-                func.trim(
-                    func.replace(func.lower(QuestionReading.class_year), "year", "")
-                ) == class_year
-            )
-            .scalar()
-        )
-
-        if not latest_created_at:
-            raise HTTPException(
-                400,
-                "No reading questions found for this class/year"
-            )
-
-        print(f"🕒 Latest batch timestamp: {latest_created_at}")
-
-        # --------------------------------------------------
-        # 2️⃣ FETCH UNUSED QUESTIONS FROM THIS BATCH
+        # 1️⃣ FETCH UNUSED QUESTIONS FOR SELECTED DATE
         # --------------------------------------------------
         rows = (
             db.query(QuestionReading)
@@ -36327,8 +38106,8 @@ def generate_exam_reading_homework_latest(
                 func.trim(
                     func.replace(func.lower(QuestionReading.class_year), "year", "")
                 ) == class_year,
-                func.date(QuestionReading.created_at) == func.date(latest_created_at),
-                QuestionReading.is_used.is_(False)
+                func.date(QuestionReading.created_at) == selected_date,  # ✅ KEY CHANGE
+                QuestionReading.is_used.is_(False)  # ✅ ensure unused
             )
             .order_by(QuestionReading.id.asc())
             .all()
@@ -36337,13 +38116,13 @@ def generate_exam_reading_homework_latest(
         if not rows:
             raise HTTPException(
                 400,
-                "Latest batch already used — no unused questions remaining"
+                "No unused questions found for the selected date"
             )
 
-        print(f"✅ Fetched {len(rows)} bundles from latest batch")
+        print(f"✅ Fetched {len(rows)} bundles for date {selected_date}")
 
         # --------------------------------------------------
-        # 3️⃣ BUILD SECTIONS
+        # 2️⃣ BUILD SECTIONS
         # --------------------------------------------------
         for idx, row in enumerate(rows, start=1):
             bundle_json = row.exam_bundle or {}
@@ -36359,10 +38138,10 @@ def generate_exam_reading_homework_latest(
 
             for q_index, q in enumerate(questions, start=1):
                 q["question_number"] = q_index
-                q["question_id"] = f"hw_latest_{idx}_Q{q_index}"
+                q["question_id"] = f"hw_date_{idx}_Q{q_index}"
 
             section = {
-                "section_id": f"hw_latest_section_{idx}",
+                "section_id": f"hw_date_section_{idx}",
                 "section_index": idx,
                 "topic": row.topic,
                 "difficulty": row.difficulty,
@@ -36378,7 +38157,7 @@ def generate_exam_reading_homework_latest(
             used_bundle_ids.append(row.id)
 
         # --------------------------------------------------
-        # 4️⃣ FINALIZE
+        # 3️⃣ FINALIZE
         # --------------------------------------------------
         total_questions = sum(len(s["questions"]) for s in sections)
 
@@ -36395,7 +38174,7 @@ def generate_exam_reading_homework_latest(
         print(f"📊 Total questions: {total_questions}")
 
         # --------------------------------------------------
-        # 5️⃣ MARK USED
+        # 4️⃣ MARK USED (SAFE UPDATE)
         # --------------------------------------------------
         updated = (
             db.query(QuestionReading)
@@ -36412,7 +38191,7 @@ def generate_exam_reading_homework_latest(
         print(f"🔒 Marked {updated} bundles as used")
 
         # --------------------------------------------------
-        # 6️⃣ SAVE
+        # 5️⃣ SAVE
         # --------------------------------------------------
         saved = GeneratedHomeworkReading(
             config_id=None,
@@ -36428,7 +38207,7 @@ def generate_exam_reading_homework_latest(
         db.commit()
         db.refresh(saved)
 
-        print(f"💾 Homework latest saved ID={saved.id}")
+        print(f"💾 Homework saved ID={saved.id}")
         print("================ END =================\n")
 
         return {
@@ -36438,7 +38217,7 @@ def generate_exam_reading_homework_latest(
         }
 
     except Exception as e:
-        print("\n💥 ERROR IN READING HOMEWORK LATEST")
+        print("\n💥 ERROR IN READING HOMEWORK (DATE MODE)")
         print(str(e))
         raise
 
@@ -36687,7 +38466,7 @@ def generate_exam_reading_latest(
     payload: ReadingExamRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n================ GENERATE READING LATEST =================")
+    print("\n================ GENERATE READING (DATE MODE) =================")
 
     try:
         # --------------------------------------------------
@@ -36699,60 +38478,46 @@ def generate_exam_reading_latest(
         class_year = payload.class_year.lower().replace("year", "").strip()
         subject = "reading_comprehension"
 
+        selected_date = payload.date  # ✅ NEW
+
         if not class_year:
             raise HTTPException(400, "class_year is required")
+
+        if not selected_date:
+            raise HTTPException(400, "date is required")
 
         print("\n🔧 NORMALIZED INPUTS:")
         print(f"class_name = '{class_name}'")
         print(f"class_year = '{class_year}'")
+        print(f"date = '{selected_date}'")
 
         # --------------------------------------------------
-        # 1️⃣ FIND LATEST TIMESTAMP
-        # --------------------------------------------------
-        latest_created_at = (
-            db.query(func.max(QuestionReading.created_at))
-            .filter(
-                func.lower(func.trim(QuestionReading.class_name)) == class_name,
-                func.trim(
-                    func.replace(func.lower(QuestionReading.class_year), "year", "")
-                ) == class_year,
-                QuestionReading.is_used == False
-            )
-            .scalar()
-        )
-
-        if not latest_created_at:
-            raise HTTPException(
-                400,
-                "No unused reading questions available"
-            )
-
-        print(f"🕒 Latest created_at: {latest_created_at}")
-
-        # --------------------------------------------------
-        # 2️⃣ FETCH ALL FROM THIS BATCH
+        # 1️⃣ FETCH UNUSED QUESTIONS FOR SELECTED DATE
         # --------------------------------------------------
         rows = (
             db.query(QuestionReading)
             .filter(
                 func.lower(func.trim(QuestionReading.class_name)) == class_name,
-                QuestionReading.class_year == class_year,
-                QuestionReading.is_used.is_(False)
+                func.trim(
+                    func.replace(func.lower(QuestionReading.class_year), "year", "")
+                ) == class_year,
+                func.date(QuestionReading.created_at) == selected_date,  # ✅ KEY
+                QuestionReading.is_used.is_(False)  # ✅ IMPORTANT
             )
-            .order_by(QuestionReading.id.desc())
+            .order_by(QuestionReading.id.asc())
             .all()
         )
 
         if not rows:
             raise HTTPException(
                 400,
-                "No questions found for latest batch"
+                "No unused questions found for the selected date"
             )
 
-        print(f"✅ Fetched {len(rows)} bundles from latest batch")
+        print(f"✅ Fetched {len(rows)} bundles for date {selected_date}")
 
         # --------------------------------------------------
-        # 3️⃣ BUILD SECTIONS
+        # 2️⃣ BUILD SECTIONS
         # --------------------------------------------------
         sections = []
         used_bundle_ids = []
@@ -36764,14 +38529,18 @@ def generate_exam_reading_latest(
             reading_material = bundle_json.get("reading_material")
             answer_options = bundle_json.get("answer_options")
 
-            questions = bundle_json.get("questions", [])
+            # ✅ SAFE COPY (important)
+            questions = [
+                copy.deepcopy(q)
+                for q in bundle_json.get("questions", [])
+            ]
 
             for q_index, q in enumerate(questions, start=1):
                 q["question_number"] = q_index
-                q["question_id"] = f"latest_{idx}_Q{q_index}"
+                q["question_id"] = f"date_{idx}_Q{q_index}"
 
             section = {
-                "section_id": f"latest_section_{idx}",
+                "section_id": f"date_section_{idx}",
                 "section_index": idx,
                 "question_type": question_type,
                 "topic": row.topic,
@@ -36787,7 +38556,7 @@ def generate_exam_reading_latest(
             used_bundle_ids.append(row.id)
 
         # --------------------------------------------------
-        # 4️⃣ FINALIZE EXAM
+        # 3️⃣ FINALIZE EXAM
         # --------------------------------------------------
         total_questions = sum(len(s["questions"]) for s in sections)
 
@@ -36805,11 +38574,14 @@ def generate_exam_reading_latest(
         print(f"📊 Total questions: {total_questions}")
 
         # --------------------------------------------------
-        # 5️⃣ MARK USED
+        # 4️⃣ MARK USED (SAFE UPDATE)
         # --------------------------------------------------
         updated = (
             db.query(QuestionReading)
-            .filter(QuestionReading.id.in_(used_bundle_ids))
+            .filter(
+                QuestionReading.id.in_(used_bundle_ids),
+                QuestionReading.is_used.is_(False)
+            )
             .update(
                 {QuestionReading.is_used: True},
                 synchronize_session=False
@@ -36819,7 +38591,7 @@ def generate_exam_reading_latest(
         print(f"🔒 Marked {updated} bundles as used")
 
         # --------------------------------------------------
-        # 6️⃣ SAVE EXAM
+        # 5️⃣ SAVE EXAM
         # --------------------------------------------------
         saved = GeneratedExamReading(
             config_id=None,
@@ -36845,9 +38617,9 @@ def generate_exam_reading_latest(
         }
 
     except Exception as e:
-        print("\n💥 ERROR IN GENERATE READING LATEST")
+        print("\n💥 ERROR IN GENERATE READING (DATE MODE)")
         print(f"❗ Exception: {str(e)}")
-        raise
+        raise    
 
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(
