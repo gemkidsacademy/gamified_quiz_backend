@@ -257,6 +257,30 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+
+
+class GenerateNaplanReadingHomeworkLatestRequest(BaseModel):
+    year: int
+    selected_date: date
+
+
+class GenerateNaplanReadingLatestRequest(BaseModel):
+    year: int
+    selected_date: date
+
+class GenerateNaplanLCHomeworkLatestRequest(BaseModel):
+    year: int
+    selected_date: date
+
+class GenerateNaplanNumeracyHomeworkLatestRequest(BaseModel):
+    class_year: int
+    selected_date: date
+
+
+class GenerateNaplanNumeracyLatestRequest(BaseModel):
+    class_year: int
+    selected_date: date
+
 class ResetUsedQuestionsRequest(BaseModel):
     class_name: str
     subject: str
@@ -4903,10 +4927,21 @@ def generate_exam_questions_latest(
     query = (
         db.query(Question)
         .filter(
-            func.lower(func.trim(Question.class_name)) == class_name.lower(),
-            func.lower(func.trim(Question.subject)) == subject.lower(),
+            func.lower(
+                func.trim(Question.class_name)
+            ) == class_name.lower(),
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == subject.lower(),
+
             Question.class_year == class_year,
-            func.date(Question.created_at) == parsed_date
+
+            func.date(
+                Question.created_at
+            ) == parsed_date,
+
+            Question.is_used == False
         )
         .order_by(Question.created_at.asc())
     )
@@ -4943,6 +4978,105 @@ def generate_exam_questions_latest(
     print("=" * 70 + "\n")
 
     return all_questions
+
+
+# --------------------------------------------------
+# Get available upload dates
+# --------------------------------------------------
+from sqlalchemy import func
+
+# --------------------------------------------------
+# Get available Reading upload dates
+# --------------------------------------------------
+
+
+@app.get("/naplan/language-conventions/dates/{year}")
+def get_language_conventions_dates(
+    year: int,
+    db: Session = Depends(get_db)
+):
+    print("\n=== FETCH LANGUAGE CONVENTIONS DATES ===")
+
+    print(f"📅 Requested Year: {year}")
+
+    normalized_subject = "language conventions"
+
+    # --------------------------------------------------
+    # Fetch unique dates
+    # --------------------------------------------------
+
+    results = (
+        db.query(
+            func.date(
+                QuestionNumeracyLC.created_at
+            ).label("upload_date")
+        )
+        .filter(
+            QuestionNumeracyLC.year == year,
+
+            func.lower(
+                func.trim(
+                    QuestionNumeracyLC.subject
+                )
+            ) == normalized_subject
+        )
+        .distinct()
+        .order_by(
+            func.date(
+                QuestionNumeracyLC.created_at
+            ).desc()
+        )
+        .all()
+    )
+
+    dates = [
+        str(row.upload_date)
+        for row in results
+        if row.upload_date
+    ]
+
+    print(f"✅ Found {len(dates)} unique dates")
+
+    return {
+        "dates": dates
+    }
+
+@app.get("/naplan/numeracy/dates/{class_year}")
+def get_naplan_numeracy_dates(
+    class_year: int,
+    db: Session = Depends(get_db)
+):
+    try:
+        dates = (
+            db.query(func.date(QuestionNumeracyLC.created_at))
+            .filter(
+                func.lower(QuestionNumeracyLC.subject) == "numeracy",
+                QuestionNumeracyLC.year == class_year
+            )
+            .distinct()
+            .order_by(
+                func.date(QuestionNumeracyLC.created_at).desc()
+            )
+            .all()
+        )
+
+        unique_dates = [
+            str(row[0])
+            for row in dates
+            if row[0] is not None
+        ]
+
+        return {
+            "dates": unique_dates
+        }
+
+    except Exception as e:
+        print("Error fetching numeracy dates:", str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch available dates"
+        )
 @app.get("/api/exams/oc-reading-dates/{class_year}")
 def get_oc_reading_dates(
     class_year: str,
@@ -5255,6 +5389,7 @@ def generate_oc_thinking_skills_homework_exam_latest(
         "total_questions": len(questions),
         "questions": questions
     }
+
 # ai_engine.py (for example)
 def generate_exam_questions(
     quiz,
@@ -6438,10 +6573,21 @@ def generate_thinking_skills_exam_latest(
     questions = (
         db.query(Question)
         .filter(
-            func.lower(func.trim(Question.class_name)) == "selective",
-            func.lower(func.trim(Question.subject)) == "thinking skills",
+            func.lower(
+                func.trim(Question.class_name)
+            ) == "selective",
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == "thinking skills",
+
             Question.class_year == class_year,
-            func.date(Question.created_at) == selected_date
+
+            func.date(
+                Question.created_at
+            ) == selected_date,
+
+            Question.is_used == False
         )
         .order_by(Question.id.asc())  # stable ordering
         .all()
@@ -7988,6 +8134,120 @@ def get_available_subjects(
 
     return response
 
+
+
+# --------------------------------------------------
+# Generate Reading Homework Latest
+# --------------------------------------------------
+
+@app.post("/naplan/reading/generate-homework-latest")
+def generate_naplan_reading_homework_latest(
+    payload: GenerateNaplanReadingHomeworkLatestRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n=== START: Generate NAPLAN Reading Homework Latest ===")
+
+    requested_year = payload.year
+    selected_date = payload.selected_date
+
+    print(f"📘 Requested year: {requested_year}")
+    print(f"📅 Selected date: {selected_date}")
+
+    normalized_subject = "reading"
+
+    # --------------------------------------------------
+    # Fetch questions directly from Question table
+    # --------------------------------------------------
+
+    db_rows = (
+        db.query(QuestionNaplanReading)
+        .filter(
+            QuestionNaplanReading.year == requested_year,
+
+            QuestionNaplanReading.is_used == False,
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading.subject
+                )
+            ) == normalized_subject,
+
+            func.date(
+                QuestionNaplanReading.created_at
+            ) == selected_date
+        )
+        .order_by(
+            QuestionNaplanReading.id.asc()
+        )
+        .all()
+    )
+
+    print(f"🔎 Found {len(db_rows)} unused reading rows")
+
+    if not db_rows:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No unused Reading homework questions found "
+                f"for year {requested_year} "
+                f"on {selected_date}"
+            )
+        )
+
+    # --------------------------------------------------
+    # Build assembled questions
+    # --------------------------------------------------
+
+    assembled_questions = []
+
+    for row in db_rows:
+
+        row.is_used = True
+
+        assembled_questions.append({
+            "question_id": str(uuid.uuid4()),
+            "passage_id": row.passage_id,
+            "topic": row.topic,
+            "difficulty": row.difficulty,
+            "question_type": row.question_type,
+            "exam_bundle": row.exam_bundle,
+        })
+
+    print(f"✅ Assembled {len(assembled_questions)} questions")
+
+    # --------------------------------------------------
+    # Save generated homework
+    # --------------------------------------------------
+
+    exam = ExamNaplanReadingHomework(
+        quiz_id=None,   # IMPORTANT
+        year=requested_year,
+        class_name="NAPLAN",
+        subject="reading",
+        difficulty="latest",
+        questions=assembled_questions,
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print(
+        f"🎉 SUCCESS: Reading latest homework generated | "
+        f"exam_id={exam.id}"
+    )
+
+    print("=== END: Generate Reading Homework Latest ===\n")
+
+    return {
+        "message": "NAPLAN Reading latest homework generated successfully",
+        "exam_id": exam.id,
+        "year": requested_year,
+        "selected_date": str(selected_date),
+        "total_questions": len(assembled_questions),
+        "questions": assembled_questions
+    }
+
 @app.post("/naplan/reading/generate-homework")
 def generate_naplan_reading_homework(
     payload: dict = Body(...),
@@ -8194,6 +8454,114 @@ def reuse_used_questions_naplan_reading(
             status_code=500,
             detail="Failed to reset used questions.",
         )
+
+
+
+# --------------------------------------------------
+# Generate Homework Latest
+# --------------------------------------------------
+
+@app.post("/naplan/numeracy/generate-homework-latest")
+def generate_naplan_numeracy_homework_latest(
+    payload: GenerateNaplanNumeracyHomeworkLatestRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n=== START: Generate NAPLAN Numeracy Homework Latest ===")
+
+    class_year = payload.class_year
+    selected_date = payload.selected_date
+
+    print(f"📅 Class Year: {class_year}")
+    print(f"📅 Selected Date: {selected_date}")
+
+    normalized_subject = "numeracy"
+
+    # --------------------------------------------------
+    # Fetch ALL questions from selected upload date
+    # --------------------------------------------------
+
+    questions = (
+        db.query(QuestionNumeracyLC)
+        .filter(
+            QuestionNumeracyLC.year == class_year,
+
+            func.lower(
+                func.trim(QuestionNumeracyLC.subject)
+            ) == normalized_subject,
+
+            func.date(
+                QuestionNumeracyLC.created_at
+            ) == selected_date,
+
+            QuestionNumeracyLC.is_used == False
+        )
+        .order_by(QuestionNumeracyLC.id.asc())
+        .all()
+    )
+
+    print(f"🔎 Found {len(questions)} questions")
+
+    if not questions:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No Numeracy homework questions found "
+                f"for Year {class_year} on {selected_date}"
+            )
+        )
+
+    # --------------------------------------------------
+    # Build assembled questions
+    # --------------------------------------------------
+
+    assembled_questions = []
+
+    for q in questions:
+
+        assembled_questions.append({
+            "id": q.id,
+            "question_type": q.question_type,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "question_text": q.question_text,
+            "question_blocks": build_question_blocks(q, db),
+            "options": q.options,
+            "correct_answer": q.correct_answer,
+        })
+
+        # Tracking only
+        q.is_used = True
+
+    print(f"✅ Assembled {len(assembled_questions)} questions")
+
+    # --------------------------------------------------
+    # Save homework exam
+    # --------------------------------------------------
+
+    exam = ExamNaplanNumeracyHomework(
+        quiz_id=None,   # IMPORTANT
+        class_name="NAPLAN",
+        subject="Numeracy",
+        difficulty="latest",
+        year=class_year,
+        questions=assembled_questions,
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print(f"🎉 SUCCESS exam_id={exam.id}")
+    print("=== END ===\n")
+
+    return {
+        "message": "NAPLAN Numeracy homework latest generated successfully",
+        "exam_id": exam.id,
+        "year": class_year,
+        "selected_date": str(selected_date),
+        "total_questions": len(assembled_questions),
+        "questions": assembled_questions
+    }
 
 @app.post("/naplan/numeracy/generate-homework")
 def generate_naplan_numeracy_homework(
@@ -8774,12 +9142,23 @@ def generate_exam_homework_latest(
     # 2️⃣ FETCH QUESTIONS (IGNORE is_used)
     # --------------------------------------------------
     rows = (
-        db.query(Question)
+    db.query(Question)
         .filter(
-            func.lower(func.trim(Question.class_name)) == "selective",
-            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            func.lower(
+                func.trim(Question.class_name)
+            ) == "selective",
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == "mathematical reasoning",
+
             Question.class_year == class_year,
-            func.date(Question.created_at) == selected_date
+
+            func.date(
+                Question.created_at
+            ) == selected_date,
+
+            Question.is_used == False
         )
         .order_by(Question.id.asc())  # stable ordering
         .all()
@@ -12587,6 +12966,116 @@ def delete_all_reading_questions_selective(db: Session = Depends(get_db)):
             detail=f"Error deleting Selective reading questions: {str(e)}"
         )
 
+
+
+# --------------------------------------------------
+# Generate LC Homework Latest
+# --------------------------------------------------
+
+@app.post("/naplan/language-conventions/generate-homework-latest")
+def generate_naplan_language_conventions_homework_latest(
+    payload: GenerateNaplanLCHomeworkLatestRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n=== START: Generate NAPLAN LC Homework Latest ===")
+
+    year = payload.year
+    selected_date = payload.selected_date
+
+    print(f"📅 Requested year: {year}")
+    print(f"📅 Selected date: {selected_date}")
+
+    normalized_subject = "language conventions"
+
+    # --------------------------------------------------
+    # Fetch questions directly from Question table
+    # --------------------------------------------------
+
+    questions = (
+        db.query(QuestionNumeracyLC)
+        .filter(
+            QuestionNumeracyLC.year == year,
+
+            func.lower(
+                func.trim(
+                    QuestionNumeracyLC.subject
+                )
+            ) == normalized_subject,
+
+            func.date(
+                QuestionNumeracyLC.created_at
+            ) == selected_date,
+
+            QuestionNumeracyLC.is_used == False
+        )
+        .order_by(QuestionNumeracyLC.id.asc())
+        .all()
+    )
+
+    print(f"🔎 Found {len(questions)} unused questions")
+
+    if not questions:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No unused Language Conventions questions found "
+                f"for year {year} on {selected_date}"
+            )
+        )
+
+    # --------------------------------------------------
+    # Build assembled questions
+    # --------------------------------------------------
+
+    assembled_questions = []
+
+    for q in questions:
+
+        assembled_questions.append({
+            "id": q.id,
+            "question_type": q.question_type,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "question_text": q.question_text,
+            "question_blocks": build_question_blocks(q, db),
+            "options": q.options,
+            "correct_answer": q.correct_answer,
+        })
+
+        # mark used
+        q.is_used = True
+
+    print(f"✅ Assembled {len(assembled_questions)} questions")
+
+    # --------------------------------------------------
+    # Save generated homework exam
+    # --------------------------------------------------
+
+    exam = ExamNaplanLanguageConventionsHomework(
+        quiz_id=None,   # IMPORTANT
+        class_name="NAPLAN",
+        subject="Language Conventions",
+        difficulty="latest",
+        year=year,
+        questions=assembled_questions,
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print(f"🎉 SUCCESS homework_exam_id={exam.id}")
+    print("=== END ===\n")
+
+    return {
+        "message": "LC homework latest generated successfully",
+        "exam_id": exam.id,
+        "year": year,
+        "selected_date": str(selected_date),
+        "total_questions": len(assembled_questions),
+        "questions": assembled_questions
+    }
+
 @app.post("/naplan/language-conventions/generate-homework")
 async def generate_naplan_language_conventions_homework(
     request: Request,
@@ -12760,6 +13249,127 @@ async def generate_naplan_language_conventions_homework(
         "total_questions": len(assembled_questions),
     }
 
+
+from datetime import date
+from pydantic import BaseModel
+from sqlalchemy import func
+
+# --------------------------------------------------
+# Request Schema
+# --------------------------------------------------
+
+class GenerateNaplanLCExamLatestRequest(BaseModel):
+    year: int
+    selected_date: date
+
+
+# --------------------------------------------------
+# Generate LC Exam Latest
+# --------------------------------------------------
+
+@app.post("/naplan/language-conventions/generate-exam-latest")
+def generate_naplan_language_conventions_exam_latest(
+    payload: GenerateNaplanLCExamLatestRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n=== START: Generate NAPLAN LC Exam Latest ===")
+
+    year = payload.year
+    selected_date = payload.selected_date
+
+    print(f"📅 Requested year: {year}")
+    print(f"📅 Selected date: {selected_date}")
+
+    normalized_subject = "language conventions"
+
+    # --------------------------------------------------
+    # Fetch questions directly from Question table
+    # --------------------------------------------------
+
+    questions = (
+        db.query(QuestionNumeracyLC)
+        .filter(
+            QuestionNumeracyLC.year == year,
+
+            func.lower(
+                func.trim(
+                    QuestionNumeracyLC.subject
+                )
+            ) == normalized_subject,
+
+            func.date(
+                QuestionNumeracyLC.created_at
+            ) == selected_date,
+
+            QuestionNumeracyLC.is_used == False
+        )
+        .order_by(QuestionNumeracyLC.id.asc())
+        .all()
+    )
+
+    print(f"🔎 Found {len(questions)} unused questions")
+
+    if not questions:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No unused Language Conventions questions found "
+                f"for year {year} on {selected_date}"
+            )
+        )
+
+    # --------------------------------------------------
+    # Build assembled questions
+    # --------------------------------------------------
+
+    assembled_questions = []
+
+    for q in questions:
+
+        assembled_questions.append({
+            "id": q.id,
+            "question_type": q.question_type,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "question_text": q.question_text,
+            "question_blocks": build_question_blocks(q, db),
+            "options": q.options,
+            "correct_answer": q.correct_answer,
+        })
+
+        # mark used
+        q.is_used = True
+
+    print(f"✅ Assembled {len(assembled_questions)} questions")
+
+    # --------------------------------------------------
+    # Save generated exam
+    # --------------------------------------------------
+
+    exam = ExamNaplanLanguageConventions(
+        quiz_id=None,   # IMPORTANT
+        class_name="NAPLAN",
+        subject="Language Conventions",
+        difficulty="latest",
+        year=year,
+        questions=assembled_questions,
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print(f"🎉 SUCCESS exam_id={exam.id}")
+    print("=== END ===\n")
+
+    return {
+        "message": "LC exam latest generated successfully",
+        "exam_id": exam.id,
+        "year": year,
+        "selected_date": str(selected_date),
+        "total_questions": len(assembled_questions),
+        "questions": assembled_questions
+    }
 
 @app.post("/naplan/language-conventions/generate-exam")
 async def generate_naplan_language_conventions_exam(
@@ -13333,7 +13943,170 @@ def get_available_naplan_reading_years(
         print("❌ Failed to fetch available years:", str(e))
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+@app.get("/naplan/reading/upload-dates/{year}")
+def get_naplan_reading_upload_dates(
+    year: int,
+    db: Session = Depends(get_db)
+):
+    print("\n=== FETCH NAPLAN READING DATES ===")
+
+    print(f"📅 Requested Year: {year}")
+
+    normalized_subject = "reading"
+
+    # --------------------------------------------------
+    # Fetch unique upload dates
+    # --------------------------------------------------
+
+    results = (
+        db.query(
+            func.date(
+                QuestionNaplanReading.created_at
+            ).label("upload_date")
+        )
+        .filter(
+            QuestionNaplanReading.year == year,
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading.subject
+                )
+            ) == normalized_subject
+        )
+        .distinct()
+        .order_by(
+            func.date(
+                QuestionNaplanReading.created_at
+            ).desc()
+        )
+        .all()
+    )
+
+    dates = [
+        str(row.upload_date)
+        for row in results
+        if row.upload_date
+    ]
+
+    print(f"✅ Found {len(dates)} unique dates")
+
+    return {
+        "dates": dates
+    }
      
+
+
+# --------------------------------------------------
+# Generate Reading Exam Latest
+# --------------------------------------------------
+
+@app.post("/naplan/reading/generate-exam-latest")
+def generate_naplan_reading_exam_latest(
+    payload: GenerateNaplanReadingLatestRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n=== START: Generate NAPLAN Reading Latest Exam ===")
+
+    requested_year = payload.year
+    selected_date = payload.selected_date
+
+    print(f"📘 Requested year: {requested_year}")
+    print(f"📅 Selected date: {selected_date}")
+
+    normalized_subject = "reading"
+
+    # --------------------------------------------------
+    # Fetch questions directly from Question table
+    # --------------------------------------------------
+
+    db_rows = (
+        db.query(QuestionNaplanReading)
+        .filter(
+            QuestionNaplanReading.year == requested_year,
+
+            QuestionNaplanReading.is_used == False,
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading.subject
+                )
+            ) == normalized_subject,
+
+            func.date(
+                QuestionNaplanReading.created_at
+            ) == selected_date
+        )
+        .order_by(
+            QuestionNaplanReading.id.asc()
+        )
+        .all()
+    )
+
+    print(f"🔎 Found {len(db_rows)} unused reading rows")
+
+    if not db_rows:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No unused Reading questions found "
+                f"for year {requested_year} "
+                f"on {selected_date}"
+            )
+        )
+
+    # --------------------------------------------------
+    # Build assembled questions
+    # --------------------------------------------------
+
+    assembled_questions = []
+
+    for row in db_rows:
+
+        row.is_used = True
+
+        assembled_questions.append({
+            "question_id": str(uuid.uuid4()),
+            "passage_id": row.passage_id,
+            "topic": row.topic,
+            "difficulty": row.difficulty,
+            "question_type": row.question_type,
+            "exam_bundle": row.exam_bundle,
+        })
+
+    print(f"✅ Assembled {len(assembled_questions)} questions")
+
+    # --------------------------------------------------
+    # Save generated exam
+    # --------------------------------------------------
+
+    exam = ExamNaplanReading(
+        quiz_id=None,   # IMPORTANT
+        class_name="NAPLAN",
+        subject="reading",
+        year=requested_year,
+        difficulty="latest",
+        questions=assembled_questions,
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print(
+        f"🎉 SUCCESS: Reading latest exam generated | "
+        f"exam_id={exam.id}"
+    )
+
+    print("=== END: Generate Reading Latest Exam ===\n")
+
+    return {
+        "message": "NAPLAN Reading latest exam generated successfully",
+        "exam_id": exam.id,
+        "year": requested_year,
+        "selected_date": str(selected_date),
+        "total_questions": len(assembled_questions),
+        "questions": assembled_questions
+    }
 
 @app.post("/naplan/reading/generate-exam")
 def generate_naplan_reading_exam(
@@ -13498,6 +14271,114 @@ def generate_naplan_reading_exam(
         "message": "NAPLAN Reading exam generated successfully",
         "exam_id": exam.id,
         "total_questions": total_question_count,
+    }
+
+
+
+# --------------------------------------------------
+# Generate Latest Exam
+# --------------------------------------------------
+
+@app.post("/naplan/numeracy/generate-exam-latest")
+def generate_naplan_numeracy_exam_latest(
+    payload: GenerateNaplanNumeracyLatestRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n=== START: Generate NAPLAN Numeracy Latest Exam ===")
+
+    class_year = payload.class_year
+    selected_date = payload.selected_date
+
+    print(f"📅 Class Year: {class_year}")
+    print(f"📅 Selected Date: {selected_date}")
+
+    normalized_subject = "numeracy"
+
+    # --------------------------------------------------
+    # Fetch questions directly from Question table
+    # --------------------------------------------------
+
+    questions = (
+        db.query(QuestionNumeracyLC)
+        .filter(
+            QuestionNumeracyLC.year == class_year,
+
+            func.lower(
+                func.trim(QuestionNumeracyLC.subject)
+            ) == normalized_subject,
+
+            func.date(
+                QuestionNumeracyLC.created_at
+            ) == selected_date,
+
+            QuestionNumeracyLC.is_used == False
+        )
+        .order_by(QuestionNumeracyLC.id.asc())
+        .all()
+    )
+
+    print(f"🔎 Found {len(questions)} questions")
+
+    if not questions:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No Numeracy questions found for "
+                f"Year {class_year} on {selected_date}"
+            )
+        )
+
+    # --------------------------------------------------
+    # Build exam questions
+    # --------------------------------------------------
+
+    assembled_questions = []
+
+    for q in questions:
+
+        assembled_questions.append({
+            "id": q.id,
+            "question_type": q.question_type,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "question_text": q.question_text,
+            "question_blocks": build_question_blocks(q, db),
+            "options": q.options,
+            "correct_answer": q.correct_answer,
+        })
+
+        # Optional tracking only
+        q.is_used = True
+
+    print(f"✅ Assembled {len(assembled_questions)} questions")
+
+    # --------------------------------------------------
+    # Save exam
+    # --------------------------------------------------
+
+    exam = ExamNaplanNumeracy(
+        quiz_id=None,   # IMPORTANT
+        class_name="NAPLAN",
+        subject="Numeracy",
+        difficulty="latest",
+        year=class_year,
+        questions=assembled_questions,
+    )
+
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+
+    print(f"🎉 SUCCESS exam_id={exam.id}")
+    print("=== END ===\n")
+
+    return {
+        "message": "NAPLAN Numeracy latest exam generated successfully",
+        "exam_id": exam.id,
+        "year": class_year,
+        "selected_date": str(selected_date),
+        "total_questions": len(assembled_questions),
+        "questions": assembled_questions
     }
 
 @app.post("/naplan/numeracy/generate-exam")
@@ -20622,15 +21503,25 @@ def generate_exam_mr_latest(
     rows = (
         db.query(Question)
         .filter(
-            func.lower(func.trim(Question.class_name)) == "selective",
-            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            func.lower(
+                func.trim(Question.class_name)
+            ) == "selective",
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == "mathematical reasoning",
+
             Question.class_year == class_year,
-            func.date(Question.created_at) == selected_date
+
+            func.date(
+                Question.created_at
+            ) == selected_date,
+
+            Question.is_used == False
         )
         .order_by(Question.id.asc())
         .all()
     )
-
     if not rows:
         raise HTTPException(
             status_code=400,
@@ -22433,6 +23324,7 @@ def generate_oc_thinking_skills_exam_latest(
         "total_questions": len(questions),
         "questions": questions
     }
+
 @app.post("/api/exams/generate-oc-thinking-skills-homework")
 def generate_oc_thinking_skills_homework_exam(
     payload: dict = Body(...),
@@ -22768,10 +23660,21 @@ def generate_oc_mathematical_reasoning_exam_latest(
     questions_from_db = (
         db.query(Question)
         .filter(
-            func.lower(func.trim(Question.class_name)) == "oc",
-            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            func.lower(
+                func.trim(Question.class_name)
+            ) == "oc",
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == "mathematical reasoning",
+
             Question.class_year == class_year,
-            func.date(Question.created_at) == parsed_date
+
+            func.date(
+                Question.created_at
+            ) == parsed_date,
+
+            Question.is_used == False
         )
         .order_by(Question.created_at.asc())
         .all()
@@ -22860,6 +23763,7 @@ def generate_oc_mathematical_reasoning_exam_latest(
         "total_questions": len(questions),
         "questions": questions
     }
+
 @app.post("/api/exams/generate-oc-mathematical-reasoning")
 def generate_oc_mathematical_reasoning_exam(
     payload: dict = Body(...),
@@ -23187,12 +24091,23 @@ def generate_oc_mathematical_reasoning_homework_latest(
     # 3️⃣ Fetch ALL questions from selected upload date
     # --------------------------------------------------
     questions_from_db = (
-        db.query(Question)
+    db.query(Question)
         .filter(
-            func.lower(func.trim(Question.class_name)) == "oc",
-            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
+            func.lower(
+                func.trim(Question.class_name)
+            ) == "oc",
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == "mathematical reasoning",
+
             Question.class_year == class_year,
-            func.date(Question.created_at) == parsed_date
+
+            func.date(
+                Question.created_at
+            ) == parsed_date,
+
+            Question.is_used == False
         )
         .order_by(Question.created_at.asc())
         .all()
@@ -23315,12 +24230,23 @@ def generate_thinking_skills_homework_latest(
     # 1️⃣ Fetch Questions
     # ==================================================
     questions = (
-        db.query(Question)
+    db.query(Question)
         .filter(
-            func.lower(func.trim(Question.class_name)) == "selective",
-            func.lower(func.trim(Question.subject)) == "thinking skills",
+            func.lower(
+                func.trim(Question.class_name)
+            ) == "selective",
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == "thinking skills",
+
             Question.class_year == class_year,
-            func.date(Question.created_at) == selected_date
+
+            func.date(
+                Question.created_at
+            ) == selected_date,
+
+            Question.is_used == False
         )
         .order_by(Question.id.asc())
         .all()
@@ -23425,6 +24351,7 @@ def generate_thinking_skills_homework_latest(
         "total_questions": len(generated_questions),
         "questions": generated_questions
     }
+
 @app.post("/api/exams/generate-thinking-skills-homework")
 def generate_thinking_skills_homework_exam(
     payload: Optional[Dict] = Body(default=None),
@@ -37432,7 +38359,9 @@ def generate_exam_oc_reading_homework_latest(
 
             func.date(
                 QuestionReading.created_at
-            ) == selected_date
+            ) == selected_date,
+
+            QuestionReading.is_used == False
         )
         .order_by(
             QuestionReading.created_at.asc()
@@ -37892,19 +38821,25 @@ def generate_exam_oc_reading_latest(
 
             func.trim(
                 func.replace(
-                    func.lower(QuestionReading.class_year),
+                    func.lower(
+                        QuestionReading.class_year
+                    ),
                     "year",
                     ""
                 )
             ) == class_year,
 
             func.lower(
-                func.trim(QuestionReading.subject)
+                func.trim(
+                    QuestionReading.subject
+                )
             ).like("%reading comprehension%"),
 
             func.date(
                 QuestionReading.created_at
-            ) == selected_date
+            ) == selected_date,
+
+            QuestionReading.is_used == False
         )
         .order_by(
             QuestionReading.created_at.asc()
@@ -38102,12 +39037,25 @@ def generate_exam_reading_homework_latest(
         rows = (
             db.query(QuestionReading)
             .filter(
-                func.lower(func.trim(QuestionReading.class_name)) == class_name,
+                func.lower(
+                    func.trim(QuestionReading.class_name)
+                ) == class_name,
+
                 func.trim(
-                    func.replace(func.lower(QuestionReading.class_year), "year", "")
+                    func.replace(
+                        func.lower(
+                            QuestionReading.class_year
+                        ),
+                        "year",
+                        ""
+                    )
                 ) == class_year,
-                func.date(QuestionReading.created_at) == selected_date,  # ✅ KEY CHANGE
-                QuestionReading.is_used.is_(False)  # ✅ ensure unused
+
+                func.date(
+                    QuestionReading.created_at
+                ) == selected_date,
+
+                QuestionReading.is_used == False
             )
             .order_by(QuestionReading.id.asc())
             .all()
@@ -38497,12 +39445,27 @@ def generate_exam_reading_latest(
         rows = (
             db.query(QuestionReading)
             .filter(
-                func.lower(func.trim(QuestionReading.class_name)) == class_name,
+                func.lower(
+                    func.trim(
+                        QuestionReading.class_name
+                    )
+                ) == class_name,
+
                 func.trim(
-                    func.replace(func.lower(QuestionReading.class_year), "year", "")
+                    func.replace(
+                        func.lower(
+                            QuestionReading.class_year
+                        ),
+                        "year",
+                        ""
+                    )
                 ) == class_year,
-                func.date(QuestionReading.created_at) == selected_date,  # ✅ KEY
-                QuestionReading.is_used.is_(False)  # ✅ IMPORTANT
+
+                func.date(
+                    QuestionReading.created_at
+                ) == selected_date,
+
+                QuestionReading.is_used == False
             )
             .order_by(QuestionReading.id.asc())
             .all()
