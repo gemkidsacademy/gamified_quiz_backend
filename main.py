@@ -4988,7 +4988,1231 @@ from sqlalchemy import func
 # --------------------------------------------------
 # Get available Reading upload dates
 # --------------------------------------------------
+from sqlalchemy import or_
 
+
+
+@app.get("/api/writing/upload-dates/{class_year}")
+def get_writing_upload_dates(
+    class_year: str,
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 70)
+    print("📚 FETCH WRITING UPLOAD DATES")
+    print("=" * 70)
+
+    print(f"📥 RAW class_year FROM FRONTEND: [{class_year}]")
+    print(f"📦 TYPE: {type(class_year)}")
+
+    # --------------------------------------------------
+    # Normalize incoming year
+    # --------------------------------------------------
+    normalized_year = (
+        class_year
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(f"✅ NORMALIZED YEAR: [{normalized_year}]")
+
+    # --------------------------------------------------
+    # Debug all rows first
+    # --------------------------------------------------
+    all_rows = (
+        db.query(
+            WritingQuestionBank.id,
+            WritingQuestionBank.class_year,
+            WritingQuestionBank.subject,
+            WritingQuestionBank.created_at
+        )
+        .all()
+    )
+
+    print(f"\n📦 TOTAL ROWS IN writing_question_bank: {len(all_rows)}")
+
+    for row in all_rows:
+        print(
+            f"""
+🧩 ROW
+   id={row.id}
+   class_year=[{row.class_year}]
+   subject=[{row.subject}]
+   created_at={row.created_at}
+            """.strip()
+        )
+
+    # --------------------------------------------------
+    # Main query
+    # --------------------------------------------------
+    results = (
+        db.query(
+            func.date(
+                WritingQuestionBank.created_at
+            ).label("upload_date")
+        )
+        .filter(
+            func.trim(
+                func.lower(
+                    WritingQuestionBank.class_year
+                )
+            ) == normalized_year
+        )
+        .distinct()
+        .order_by(
+            func.date(
+                WritingQuestionBank.created_at
+            ).desc()
+        )
+        .all()
+    )
+
+    print(f"\n📅 RAW QUERY RESULTS COUNT: {len(results)}")
+
+    for row in results:
+        print(f"📅 upload_date={row.upload_date}")
+
+    dates = [
+        str(row.upload_date)
+        for row in results
+        if row.upload_date
+    ]
+
+    print(f"\n✅ FINAL DATES SENT TO FRONTEND: {dates}")
+
+    print("=" * 70 + "\n")
+
+    return {
+        "dates": dates
+    }
+
+@app.get("/api/admin/search-questions-naplan-reading")
+def search_questions_naplan_reading(
+    query: str,
+    class_year: int,
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 80)
+    print("🚀 NAPLAN READING QUESTION SEARCH STARTED")
+    print("=" * 80)
+
+    print(f"📥 Incoming query       : {query}")
+    print(f"📥 Incoming class_year  : {class_year}")
+
+    try:
+        questions = (
+            db.query(QuestionNaplanReading)
+            .filter(
+                QuestionNaplanReading.subject.ilike("reading"),
+
+                QuestionNaplanReading.year == class_year,
+
+                or_(
+                    QuestionNaplanReading.topic.ilike(
+                        f"%{query}%"
+                    ),
+
+                    cast(
+                        QuestionNaplanReading.exam_bundle,
+                        String
+                    ).ilike(f"%{query}%")
+                )
+            )
+            .order_by(
+                QuestionNaplanReading.id.desc()
+            )
+            .limit(20)
+            .all()
+        )
+
+        print(f"📊 Questions found: {len(questions)}")
+
+        results = []
+
+        for idx, q in enumerate(questions):
+
+            print("\n" + "-" * 60)
+            print(f"RESULT #{idx + 1}")
+
+            print(f"ID          : {q.id}")
+            print(f"Topic       : {q.topic}")
+            print(f"Difficulty  : {q.difficulty}")
+            print(f"Year        : {q.year}")
+
+            preview = ""
+
+            try:
+                if (
+                    q.exam_bundle
+                    and isinstance(q.exam_bundle, dict)
+                ):
+
+                    # Try reading material first
+                    if q.exam_bundle.get("reading_material"):
+
+                        preview = (
+                            q.exam_bundle["reading_material"][:250]
+                        )
+
+                    # Otherwise first question
+                    elif (
+                        q.exam_bundle.get("questions")
+                        and len(q.exam_bundle["questions"]) > 0
+                    ):
+
+                        preview = (
+                            q.exam_bundle["questions"][0]
+                            .get("question_text", "")[:250]
+                        )
+
+                    else:
+                        preview = str(q.exam_bundle)[:250]
+
+                else:
+                    preview = str(q.exam_bundle)[:250]
+
+            except Exception as preview_error:
+                print(
+                    f"⚠️ Preview extraction failed: {preview_error}"
+                )
+
+                preview = "Preview unavailable"
+
+            print(f"Preview     : {preview}")
+
+            results.append({
+                "id": q.id,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+                "preview": preview + "..."
+            })
+
+        print("\n✅ RESPONSE READY")
+        print(f"📦 Returning {len(results)} questions")
+
+        print("=" * 80)
+        print("🏁 NAPLAN READING QUESTION SEARCH FINISHED")
+        print("=" * 80 + "\n")
+
+        return results
+
+    except Exception as e:
+        print("\n❌ ERROR INSIDE search_questions_naplan_reading")
+        print(str(e))
+        print("=" * 80 + "\n")
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+
+@app.get("/api/admin/search-writing-questions")
+def search_writing_questions(
+    query: str,
+    class_year: str,
+    difficulty: str = "",
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 80)
+    print("🚀 WRITING QUESTION SEARCH STARTED")
+    print("=" * 80)
+
+    print(f"📥 Incoming query        : {query}")
+    print(f"📥 Incoming class_year   : {class_year}")
+    print(f"📥 Incoming difficulty   : {difficulty}")
+
+    try:
+
+        # ---------------------------------------------------
+        # Base query
+        # ---------------------------------------------------
+        query_obj = (
+            db.query(WritingQuestionBank)
+            .filter(
+                WritingQuestionBank.subject.ilike("writing"),
+
+                WritingQuestionBank.class_year.ilike(
+                    class_year.replace("Year ", "").strip()
+                ),
+
+                or_(
+                    WritingQuestionBank.topic.ilike(
+                        f"%{query}%"
+                    ),
+
+                    WritingQuestionBank.question_text.ilike(
+                        f"%{query}%"
+                    ),
+
+                    WritingQuestionBank.question_prompt.ilike(
+                        f"%{query}%"
+                    ),
+
+                    WritingQuestionBank.title.ilike(
+                        f"%{query}%"
+                    )
+                )
+            )
+        )
+
+        # ---------------------------------------------------
+        # Optional difficulty filter
+        # ---------------------------------------------------
+        if difficulty.strip():
+
+            query_obj = query_obj.filter(
+                WritingQuestionBank.difficulty.ilike(
+                    difficulty
+                )
+            )
+
+            print(
+                f"✅ Applied difficulty filter: {difficulty}"
+            )
+
+        # ---------------------------------------------------
+        # Execute query
+        # ---------------------------------------------------
+        questions = (
+            query_obj
+            .order_by(WritingQuestionBank.id.desc())
+            .limit(20)
+            .all()
+        )
+
+        print(f"📊 Questions found: {len(questions)}")
+
+        results = []
+
+        # ---------------------------------------------------
+        # Debug results
+        # ---------------------------------------------------
+        for idx, q in enumerate(questions):
+
+            print("\n" + "-" * 60)
+            print(f"RESULT #{idx + 1}")
+
+            print(f"ID            : {q.id}")
+            print(f"Topic         : {q.topic}")
+            print(f"Difficulty    : {q.difficulty}")
+            print(f"Class Year    : {q.class_year}")
+            print(f"Title         : {q.title}")
+
+            preview = (
+                q.question_text[:250]
+                if q.question_text
+                else "NO QUESTION TEXT"
+            )
+
+            print(f"Preview       : {preview}")
+
+            results.append({
+                "id": q.id,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+
+                "preview": (
+                    preview + "..."
+                )
+            })
+
+        print("\n✅ RESPONSE READY")
+        print(f"📦 Returning {len(results)} questions")
+
+        print("=" * 80)
+        print("🏁 WRITING QUESTION SEARCH FINISHED")
+        print("=" * 80 + "\n")
+
+        return results
+
+    except Exception as e:
+
+        print("\n❌ ERROR INSIDE search_writing_questions")
+        print(str(e))
+        print("=" * 80 + "\n")
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+@app.delete("/api/admin/delete-writing-question/{question_id}")
+def delete_writing_question(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 80)
+    print("🗑 DELETE WRITING QUESTION STARTED")
+    print("=" * 80)
+
+    print(f"📥 Question ID: {question_id}")
+
+    try:
+
+        question = (
+            db.query(WritingQuestionBank)
+            .filter(
+                WritingQuestionBank.id == question_id
+            )
+            .first()
+        )
+
+        if not question:
+
+            print("❌ Question not found")
+
+            raise HTTPException(
+                status_code=404,
+                detail="Question not found"
+            )
+
+        print("✅ Question found")
+
+        print(f"ID            : {question.id}")
+        print(f"Topic         : {question.topic}")
+        print(f"Difficulty    : {question.difficulty}")
+        print(f"Class Year    : {question.class_year}")
+        print(f"Title         : {question.title}")
+
+        preview = (
+            question.question_text[:250]
+            if question.question_text
+            else "NO QUESTION TEXT"
+        )
+
+        print(f"Preview       : {preview}")
+
+        # ---------------------------------------------------
+        # Delete question
+        # ---------------------------------------------------
+        db.delete(question)
+        db.commit()
+
+        print("✅ Question deleted successfully")
+
+        print("=" * 80)
+        print("🏁 DELETE WRITING QUESTION FINISHED")
+        print("=" * 80 + "\n")
+
+        return {
+            "message": (
+                f"Writing question "
+                f"{question_id} deleted successfully"
+            )
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        print("\n❌ ERROR INSIDE delete_writing_question")
+        print(str(e))
+        print("=" * 80 + "\n")
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+    
+@app.delete("/api/admin/delete-question-naplan-reading/{question_id}")
+def delete_question_naplan_reading(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 80)
+    print("🗑 DELETE NAPLAN READING QUESTION STARTED")
+    print("=" * 80)
+
+    print(f"📥 Question ID: {question_id}")
+
+    try:
+        question = (
+            db.query(QuestionNaplanReading)
+            .filter(
+                QuestionNaplanReading.id == question_id,
+                QuestionNaplanReading.subject.ilike("reading")
+            )
+            .first()
+        )
+
+        if not question:
+            print("❌ Question not found")
+
+            raise HTTPException(
+                status_code=404,
+                detail="Question not found"
+            )
+
+        print("✅ Question found")
+        print(f"ID          : {question.id}")
+        print(f"Topic       : {question.topic}")
+        print(f"Difficulty  : {question.difficulty}")
+        print(f"Year        : {question.year}")
+
+        preview = ""
+
+        try:
+            if (
+                question.exam_bundle
+                and isinstance(question.exam_bundle, dict)
+            ):
+
+                if question.exam_bundle.get("reading_material"):
+
+                    preview = (
+                        question.exam_bundle["reading_material"][:200]
+                    )
+
+                elif (
+                    question.exam_bundle.get("questions")
+                    and len(question.exam_bundle["questions"]) > 0
+                ):
+
+                    preview = (
+                        question.exam_bundle["questions"][0]
+                        .get("question_text", "")[:200]
+                    )
+
+                else:
+                    preview = str(question.exam_bundle)[:200]
+
+            else:
+                preview = str(question.exam_bundle)[:200]
+
+        except Exception:
+            preview = "Preview unavailable"
+
+        print(f"Preview     : {preview}")
+
+        db.delete(question)
+        db.commit()
+
+        print("✅ Question deleted successfully")
+
+        print("=" * 80)
+        print("🏁 DELETE NAPLAN READING QUESTION FINISHED")
+        print("=" * 80 + "\n")
+
+        return {
+            "message": (
+                f"NAPLAN Reading question "
+                f"{question_id} deleted successfully"
+            )
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("\n❌ ERROR INSIDE delete_question_naplan_reading")
+        print(str(e))
+        print("=" * 80 + "\n")
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@app.get("/api/admin/search-questions-naplan")
+def search_questions_naplan(
+    query: str,
+    year: int,
+    subject: str,
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 80)
+    print("🚀 NAPLAN QUESTION SEARCH STARTED")
+    print("=" * 80)
+
+    print(f"📥 Incoming query      : {query}")
+    print(f"📥 Incoming year       : {year}")
+    print(f"📥 Incoming subject    : {subject}")
+
+    try:
+        # ---------------------------------------------------
+        # Normalize subject
+        # ---------------------------------------------------
+        normalized_subject = (
+            subject
+            .replace("_", " ")
+            .strip()
+        )
+
+        print(f"🛠 Normalized subject  : {normalized_subject}")
+
+        # ---------------------------------------------------
+        # Build query
+        # ---------------------------------------------------
+        query_obj = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.class_name.ilike("naplan"),
+
+                QuestionNumeracyLC.year == year,
+
+                QuestionNumeracyLC.subject.ilike(
+                    normalized_subject
+                ),
+
+                or_(
+                    QuestionNumeracyLC.question_text.ilike(
+                        f"%{query}%"
+                    ),
+
+                    QuestionNumeracyLC.topic.ilike(
+                        f"%{query}%"
+                    )
+                )
+            )
+            .order_by(QuestionNumeracyLC.id.desc())
+            .limit(20)
+        )
+
+        print("✅ SQLAlchemy query object built")
+
+        # ---------------------------------------------------
+        # Execute query
+        # ---------------------------------------------------
+        questions = query_obj.all()
+
+        print(f"📊 Questions found: {len(questions)}")
+
+        # ---------------------------------------------------
+        # Debug each result
+        # ---------------------------------------------------
+        for idx, q in enumerate(questions):
+            print("\n" + "-" * 60)
+            print(f"RESULT #{idx + 1}")
+
+            print(f"ID          : {q.id}")
+            print(f"Subject     : {q.subject}")
+            print(f"Topic       : {q.topic}")
+            print(f"Difficulty  : {q.difficulty}")
+            print(f"Year        : {q.year}")
+
+            preview = (
+                q.question_text[:200]
+                if q.question_text
+                else "NO QUESTION TEXT"
+            )
+
+            print(f"Preview     : {preview}")
+
+        # ---------------------------------------------------
+        # Build response
+        # ---------------------------------------------------
+        response = [
+            {
+                "id": q.id,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+
+                "preview": (
+                    q.question_text[:250] + "..."
+                    if q.question_text
+                    else ""
+                )
+            }
+            for q in questions
+        ]
+
+        print("\n✅ RESPONSE READY")
+        print(f"📦 Returning {len(response)} questions")
+
+        print("=" * 80)
+        print("🏁 NAPLAN QUESTION SEARCH FINISHED")
+        print("=" * 80 + "\n")
+
+        return response
+
+    except Exception as e:
+        print("\n❌ ERROR INSIDE search_questions_naplan")
+        print(str(e))
+        print("=" * 80 + "\n")
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@app.delete("/api/admin/delete-question-naplan/{question_id}")
+def delete_question_naplan(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    question = (
+        db.query(QuestionNumeracyLC)
+        .filter(
+            QuestionNumeracyLC.id == question_id,
+            QuestionNumeracyLC.class_name.ilike("naplan")
+        )
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found"
+        )
+
+    db.delete(question)
+    db.commit()
+
+    return {
+        "message": f"NAPLAN question {question_id} deleted successfully"
+    }
+
+@app.get("/api/admin/search-questions-oc-reading")
+def search_questions_oc_reading(
+    query: str,
+    class_year: str,
+    db: Session = Depends(get_db)
+):
+    questions = (
+        db.query(QuestionReading)
+        .filter(
+            QuestionReading.class_name.ilike("oc"),
+            QuestionReading.subject.ilike("reading_comprehension"),
+            QuestionReading.class_year == class_year,
+
+            or_(
+                QuestionReading.topic.ilike(f"%{query}%"),
+
+                cast(
+                    QuestionReading.exam_bundle,
+                    String
+                ).ilike(f"%{query}%")
+            )
+        )
+        .order_by(QuestionReading.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    results = []
+
+    for q in questions:
+
+        preview = ""
+
+        try:
+            # Try extracting readable text
+            if (
+                q.exam_bundle
+                and isinstance(q.exam_bundle, dict)
+                and "passage" in q.exam_bundle
+            ):
+                preview = q.exam_bundle["passage"][:250]
+
+            elif (
+                q.exam_bundle
+                and isinstance(q.exam_bundle, dict)
+                and "questions" in q.exam_bundle
+                and len(q.exam_bundle["questions"]) > 0
+            ):
+                preview = (
+                    q.exam_bundle["questions"][0]
+                    .get("question_text", "")[:250]
+                )
+
+            else:
+                preview = str(q.exam_bundle)[:250]
+
+        except Exception:
+            preview = "Preview unavailable"
+
+        results.append({
+            "id": q.id,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "preview": preview + "..."
+        })
+
+    return results
+
+
+@app.delete("/api/admin/delete-question-oc-reading/{question_id}")
+def delete_question_oc_reading(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    question = (
+        db.query(QuestionReading)
+        .filter(
+            QuestionReading.id == question_id,
+            QuestionReading.class_name.ilike("oc"),
+            QuestionReading.subject.ilike("reading_comprehension")
+        )
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found"
+        )
+
+    db.delete(question)
+    db.commit()
+
+    return {
+        "message": f"OC Reading question {question_id} deleted successfully"
+    }
+
+
+@app.get("/api/admin/search-questions-selective-reading")
+def search_questions_selective_reading(
+    query: str,
+    class_year: str,
+    db: Session = Depends(get_db)
+):
+    questions = (
+        db.query(QuestionReading)
+        .filter(
+            QuestionReading.class_name.ilike("selective"),
+            QuestionReading.subject.ilike("reading_comprehension"),
+            QuestionReading.class_year == class_year,
+
+            or_(
+                QuestionReading.topic.ilike(f"%{query}%"),
+                QuestionReading.exam_bundle.cast(String).ilike(f"%{query}%")
+            )
+        )
+        .order_by(QuestionReading.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    results = []
+
+    for q in questions:
+
+        preview = ""
+
+        try:
+            # ✅ Try extracting readable text from bundle
+            if (
+                q.exam_bundle
+                and isinstance(q.exam_bundle, dict)
+                and "passage" in q.exam_bundle
+            ):
+                preview = q.exam_bundle["passage"][:250]
+
+            elif (
+                q.exam_bundle
+                and isinstance(q.exam_bundle, dict)
+                and "questions" in q.exam_bundle
+                and len(q.exam_bundle["questions"]) > 0
+            ):
+                preview = (
+                    q.exam_bundle["questions"][0]
+                    .get("question_text", "")[:250]
+                )
+
+            else:
+                preview = str(q.exam_bundle)[:250]
+
+        except Exception:
+            preview = "Preview unavailable"
+
+        results.append({
+            "id": q.id,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+            "preview": preview + "..."
+        })
+
+    return results
+
+
+@app.get("/api/admin/search-questions-oc-mr")
+def search_questions_oc_mr(
+    query: str,
+    class_year: int,
+    db: Session = Depends(get_db)
+):
+    questions = (
+        db.query(Question)
+        .filter(
+            Question.class_name.ilike("oc"),
+            Question.subject.ilike("mathematical_reasoning"),
+            Question.class_year == class_year,
+
+            or_(
+                Question.question_text.ilike(f"%{query}%"),
+                Question.topic.ilike(f"%{query}%")
+            )
+        )
+        .order_by(Question.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    return [
+        {
+            "id": q.id,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+
+            "preview": (
+                q.question_text
+                .split("QUESTION_TEXT:")[-1]
+                .split("OPTIONS:")[0]
+                .strip()[:250] + "..."
+                if q.question_text
+                else ""
+            )
+        }
+        for q in questions
+    ]
+
+
+@app.delete("/api/admin/delete-question-oc-mr/{question_id}")
+def delete_question_oc_mr(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    question = (
+        db.query(Question)
+        .filter(
+            Question.id == question_id,
+            Question.class_name.ilike("oc"),
+            Question.subject.ilike("mathematical_reasoning")
+        )
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found"
+        )
+
+    db.delete(question)
+    db.commit()
+
+    return {
+        "message": f"OC Mathematical Reasoning question {question_id} deleted successfully"
+    }
+
+@app.get("/api/admin/search-questions-oc-ts")
+def search_questions_oc_ts(
+    query: str,
+    class_year: int,
+    db: Session = Depends(get_db)
+):
+    questions = (
+        db.query(Question)
+        .filter(
+            Question.class_name.ilike("oc"),
+            Question.subject.ilike("thinking_skills"),
+            Question.class_year == class_year,
+
+            or_(
+                Question.question_text.ilike(f"%{query}%"),
+                Question.topic.ilike(f"%{query}%")
+            )
+        )
+        .order_by(Question.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    return [
+        {
+            "id": q.id,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+
+            "preview": (
+                q.question_text
+                .split("QUESTION_TEXT:")[-1]
+                .split("OPTIONS:")[0]
+                .strip()[:250] + "..."
+                if q.question_text
+                else ""
+            )
+        }
+        for q in questions
+    ]
+
+
+@app.delete("/api/admin/delete-question-oc-ts/{question_id}")
+def delete_question_oc_ts(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    question = (
+        db.query(Question)
+        .filter(
+            Question.id == question_id,
+            Question.class_name.ilike("oc"),
+            Question.subject.ilike("thinking_skills")
+        )
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found"
+        )
+
+    db.delete(question)
+    db.commit()
+
+    return {
+        "message": f"OC Thinking Skills question {question_id} deleted successfully"
+    }
+@app.get("/api/admin/search-questions-oc-ts")
+def search_questions_oc_ts(
+    query: str,
+    class_year: str,
+    db: Session = Depends(get_db)
+):
+    questions = (
+        db.query(QuizOCThinkingSkills)
+        .filter(
+            QuizOCThinkingSkills.class_name.ilike("oc"),
+            QuizOCThinkingSkills.subject.ilike("thinking_skills"),
+
+            # search inside topics JSON
+            cast(
+                QuizOCThinkingSkills.topics,
+                String
+            ).ilike(f"%{query}%")
+        )
+        .order_by(QuizOCThinkingSkills.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    results = []
+
+    for q in questions:
+
+        preview = ""
+
+        try:
+            if q.topics and len(q.topics) > 0:
+
+                topic_names = [
+                    t.get("name", "")
+                    for t in q.topics
+                ]
+
+                preview = ", ".join(topic_names)
+
+            else:
+                preview = "No topics found"
+
+        except Exception:
+            preview = "Preview unavailable"
+
+        results.append({
+            "id": q.id,
+            "difficulty": q.difficulty,
+            "preview": preview
+        })
+
+    return results
+
+
+@app.delete("/api/admin/delete-question-oc-ts/{question_id}")
+def delete_question_oc_ts(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    question = (
+        db.query(QuizOCThinkingSkills)
+        .filter(
+            QuizOCThinkingSkills.id == question_id,
+            QuizOCThinkingSkills.class_name.ilike("oc"),
+            QuizOCThinkingSkills.subject.ilike("thinking_skills")
+        )
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found"
+        )
+
+    db.delete(question)
+    db.commit()
+
+    return {
+        "message": f"OC Thinking Skills question {question_id} deleted successfully"
+    }
+
+@app.delete("/api/admin/delete-question-selective-reading/{question_id}")
+def delete_question_selective_reading(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    question = (
+        db.query(QuestionReading)
+        .filter(
+            QuestionReading.id == question_id,
+            QuestionReading.class_name.ilike("selective"),
+            QuestionReading.subject.ilike("reading_comprehension")
+        )
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found"
+        )
+
+    db.delete(question)
+    db.commit()
+
+    return {
+        "message": f"Reading question {question_id} deleted successfully"
+    }
+
+@app.get("/api/admin/search-questions-selective-ts")
+def search_questions(
+    query: str,
+    class_year: int,
+    db: Session = Depends(get_db)
+):
+    questions = (
+        db.query(Question)
+        .filter(
+            Question.class_name.ilike("selective"),
+            Question.subject.ilike("thinking skills"),
+            Question.class_year == class_year,
+
+            or_(
+                Question.question_text.ilike(f"%{query}%"),
+                Question.topic.ilike(f"%{query}%")
+            )
+        )
+        .order_by(Question.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    return [
+        {
+            "id": q.id,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+
+            "preview": (
+                q.question_text.split("QUESTION_TEXT:")[-1]
+                .split("OPTIONS:")[0]
+                .strip()[:250]
+                + "..."
+                if q.question_text
+                else ""
+            )
+        }
+        for q in questions
+    ]
+
+
+@app.get("/api/admin/search-questions-selective-mr")
+def search_questions_selective_mr(
+    query: str,
+    class_year: int,
+    db: Session = Depends(get_db)
+):
+    questions = (
+        db.query(Question)
+        .filter(
+            Question.class_name.ilike("selective"),
+            Question.subject.ilike("mathematical_reasoning"),
+            Question.class_year == class_year,
+
+            or_(
+                Question.question_text.ilike(f"%{query}%"),
+                Question.topic.ilike(f"%{query}%")
+            )
+        )
+        .order_by(Question.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    return [
+        {
+            "id": q.id,
+            "topic": q.topic,
+            "difficulty": q.difficulty,
+
+            "preview": (
+                q.question_text
+                .split("QUESTION_TEXT:")[-1]
+                .split("OPTIONS:")[0]
+                .strip()[:250] + "..."
+                if q.question_text
+                else ""
+            )
+        }
+        for q in questions
+    ]
+
+
+@app.delete("/api/admin/delete-question-selective-mr/{question_id}")
+def delete_question_selective_mr(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    question = (
+        db.query(Question)
+        .filter(
+            Question.id == question_id,
+            Question.class_name.ilike("selective"),
+            Question.subject.ilike("mathematical_reasoning")
+        )
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found"
+        )
+
+    db.delete(question)
+    db.commit()
+
+    return {
+        "message": f"Question {question_id} deleted successfully"
+    }
+
+@app.delete("/api/admin/delete-question-selective-ts/{question_id}")
+def delete_question(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    question = (
+        db.query(Question)
+        .filter(Question.id == question_id)
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found"
+        )
+
+    db.delete(question)
+    db.commit()
+
+    return {
+        "message": f"Question {question_id} deleted successfully"
+    }
 
 @app.get("/naplan/language-conventions/dates/{year}")
 def get_language_conventions_dates(
@@ -8926,6 +10150,245 @@ def generate_writing_homework(
         db.rollback()
         raise e
 
+
+@app.post("/api/exams/generate-writing-homework-latest")
+def generate_writing_homework_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print("\n" + "=" * 70)
+        print("🚀 GENERATE WRITING HOMEWORK (LATEST MODE)")
+        print("=" * 70)
+
+        # ----------------------------------
+        # Helpers
+        # ----------------------------------
+        def normalize_text(value: str) -> str:
+            return value.strip().lower()
+
+        def normalize_year_digits(value: str) -> str:
+            return "".join(
+                ch for ch in value if ch.isdigit()
+            )
+
+        # ----------------------------------
+        # Inputs
+        # ----------------------------------
+        class_name = "selective"
+
+        class_year_raw = payload.get("class_year")
+        selected_date = payload.get("selected_date")
+
+        if not class_year_raw:
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
+            )
+
+        if not selected_date:
+            raise HTTPException(
+                status_code=400,
+                detail="selected_date is required"
+            )
+
+        class_name_norm = normalize_text(class_name)
+
+        class_year_digits = normalize_year_digits(
+            class_year_raw
+        )
+
+        print("\n📥 INPUTS:")
+        print(f"   class_name     = '{class_name}'")
+        print(f"   class_year_raw = '{class_year_raw}'")
+        print(f"   selected_date  = '{selected_date}'")
+        print(f"   year_digits    = '{class_year_digits}'")
+
+        # ----------------------------------
+        # Debug question pool
+        # ----------------------------------
+        all_questions = (
+            db.query(WritingQuestionBank)
+            .all()
+        )
+
+        print(
+            f"\n📊 TOTAL QUESTIONS: {len(all_questions)}"
+        )
+
+        for q in all_questions[:10]:
+            print(
+                f"""
+🧩 QUESTION
+   id={q.id}
+   class_year={q.class_year}
+   topic={q.topic}
+   difficulty={q.difficulty}
+   created_at={q.created_at}
+                """.strip()
+            )
+
+        # ----------------------------------
+        # Fetch UNUSED question by upload date
+        # ----------------------------------
+        question = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits,
+
+                func.date(
+                    WritingQuestionBank.created_at
+                ) == selected_date,
+
+                WritingQuestionBank.is_used == False
+            )
+            .order_by(func.random())
+            .first()
+        )
+
+        print(f"\n🔍 MATCHED QUESTION: {question}")
+
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No unused writing homework question found for "
+                    f"class_year='{class_year_raw}' "
+                    f"and selected_date='{selected_date}'"
+                )
+            )
+
+        # ----------------------------------
+        # Build homework text
+        # ----------------------------------
+        print("\n📝 Building homework text...")
+
+        exam_text_parts = []
+
+        if question.title:
+            exam_text_parts.append(
+                f"TITLE:\n{question.title}\n"
+            )
+
+        exam_text_parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
+
+        if question.statement:
+            exam_text_parts.append(
+                f"STATEMENT:\n{question.statement}\n"
+            )
+
+        exam_text_parts.append(
+            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+            exam_text_parts.append(
+                f"OPENING SENTENCE:\n"
+                f"{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+
+            formatted_guidelines = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            exam_text_parts.append(
+                f"GUIDELINES:\n"
+                f"{formatted_guidelines}\n"
+            )
+
+        full_exam_text = (
+            "\n".join(exam_text_parts).strip()
+        )
+
+        print("✅ Homework text built successfully")
+
+        # ----------------------------------
+        # Mark question as used
+        # ----------------------------------
+        question.is_used = True
+
+        print(
+            f"🏷️ Marked question "
+            f"{question.id} as used"
+        )
+
+        # ----------------------------------
+        # Save homework exam
+        # ----------------------------------
+        print("\n💾 Saving homework exam...")
+
+        exam = GeneratedHomeworkWriting(
+            class_name=class_name,
+            class_year=class_year_raw,
+            subject="writing",
+            topic=question.topic,
+            difficulty=question.difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            is_current=True
+        )
+
+        db.add(exam)
+
+        db.commit()
+
+        db.refresh(exam)
+
+        print(
+            f"✅ Homework saved with ID: {exam.id}"
+        )
+
+        print("=" * 70 + "\n")
+
+        # ----------------------------------
+        # Response
+        # ----------------------------------
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "selected_date": selected_date,
+            "exam_text": full_exam_text,
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as e:
+
+        db.rollback()
+
+        print("\n🔥 FULL ERROR TRACE:")
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+    
 def normalize_questions_for_homework(raw_questions, db: Session):
     normalized = []
 
@@ -34594,7 +36057,243 @@ def generate_exam_writing(
         print("\n🔥 FULL ERROR TRACE:")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-     
+
+@app.post("/api/exams/generate-writing-latest")
+def generate_exam_writing_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print("\n" + "=" * 70)
+        print("🚀 GENERATE WRITING EXAM (LATEST MODE)")
+        print("=" * 70)
+
+        # ----------------------------------
+        # Helpers
+        # ----------------------------------
+        def normalize_text(value: str) -> str:
+            return value.strip().lower()
+
+        def normalize_year_digits(value: str) -> str:
+            return "".join(
+                ch for ch in value if ch.isdigit()
+            )
+
+        # ----------------------------------
+        # Inputs
+        # ----------------------------------
+        class_name = "selective"
+
+        class_year_raw = payload.get("class_year")
+        selected_date = payload.get("selected_date")
+
+        if not class_year_raw:
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
+            )
+
+        if not selected_date:
+            raise HTTPException(
+                status_code=400,
+                detail="selected_date is required"
+            )
+
+        class_name_norm = normalize_text(class_name)
+
+        class_year_digits = normalize_year_digits(
+            class_year_raw
+        )
+
+        print("\n📥 INPUTS:")
+        print(f"   class_name     = '{class_name}'")
+        print(f"   class_year_raw = '{class_year_raw}'")
+        print(f"   selected_date  = '{selected_date}'")
+        print(f"   year_digits    = '{class_year_digits}'")
+
+        # ----------------------------------
+        # Debug question pool
+        # ----------------------------------
+        all_questions = (
+            db.query(WritingQuestionBank)
+            .all()
+        )
+
+        print(
+            f"\n📊 TOTAL QUESTIONS: {len(all_questions)}"
+        )
+
+        for q in all_questions[:10]:
+            print(
+                f"""
+🧩 QUESTION
+   id={q.id}
+   class_year={q.class_year}
+   topic={q.topic}
+   difficulty={q.difficulty}
+   created_at={q.created_at}
+                """.strip()
+            )
+
+        # ----------------------------------
+        # Fetch UNUSED question by upload date
+        # ----------------------------------
+        question = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits,
+
+                func.date(
+                    WritingQuestionBank.created_at
+                ) == selected_date,
+
+                WritingQuestionBank.is_used == False
+            )
+            .order_by(func.random())
+            .first()
+        )
+
+        print(f"\n🔍 MATCHED QUESTION: {question}")
+
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No unused writing question found for "
+                    f"class_year='{class_year_raw}' "
+                    f"and selected_date='{selected_date}'"
+                )
+            )
+
+        # ----------------------------------
+        # Build exam text
+        # ----------------------------------
+        print("\n📝 Building exam text...")
+
+        parts = []
+
+        if question.title:
+            parts.append(
+                f"TITLE:\n{question.title}\n"
+            )
+
+        parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
+
+        if question.statement:
+            parts.append(
+                f"STATEMENT:\n{question.statement}\n"
+            )
+
+        parts.append(
+            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+            parts.append(
+                f"OPENING SENTENCE:\n"
+                f"{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+
+            formatted_guidelines = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            parts.append(
+                f"GUIDELINES:\n"
+                f"{formatted_guidelines}\n"
+            )
+
+        full_exam_text = "\n".join(parts).strip()
+
+        print("✅ Exam text built successfully")
+
+        # ----------------------------------
+        # Mark question as used
+        # ----------------------------------
+        question.is_used = True
+
+        print(
+            f"🏷️ Marked question "
+            f"{question.id} as used"
+        )
+
+        # ----------------------------------
+        # Save generated exam
+        # ----------------------------------
+        print("\n💾 Saving exam...")
+
+        exam = GeneratedExamWriting(
+            class_name=class_name.capitalize(),
+            class_year=class_year_raw,
+            subject="writing",
+            topic=question.topic,
+            difficulty=question.difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+        )
+
+        db.add(exam)
+
+        db.commit()
+
+        db.refresh(exam)
+
+        print(
+            f"✅ Exam saved with ID: {exam.id}"
+        )
+
+        print("=" * 70 + "\n")
+
+        # ----------------------------------
+        # Response
+        # ----------------------------------
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "selected_date": selected_date,
+            "exam_text": full_exam_text,
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as e:
+
+        db.rollback()
+
+        print("\n🔥 FULL ERROR TRACE:")
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
 def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
     """
     Normalize loosely formatted writing questions into structured JSON.
