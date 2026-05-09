@@ -262,25 +262,28 @@ otp_store = {}
 class GenerateNaplanReadingHomeworkLatestRequest(BaseModel):
     year: int
     selected_date: date
+    batch_id: int
 
 
 class GenerateNaplanReadingLatestRequest(BaseModel):
     year: int
     selected_date: date
+    batch_id: int
 
 class GenerateNaplanLCHomeworkLatestRequest(BaseModel):
     year: int
     selected_date: date
+    batch_id: int
 
 class GenerateNaplanNumeracyHomeworkLatestRequest(BaseModel):
     class_year: int
     selected_date: date
-
+    batch_id: int
 
 class GenerateNaplanNumeracyLatestRequest(BaseModel):
     class_year: int
     selected_date: date
-
+    batch_id: int
 class ResetUsedQuestionsRequest(BaseModel):
     class_name: str
     subject: str
@@ -676,6 +679,7 @@ class ReadingHomeworkExamRequest(BaseModel):
     class_name: str
     class_year: str
     selected_date: Optional[date] = None
+    batch_id: Optional[int] = None
     
 
 class HomeworkReadingConfig(Base):
@@ -3348,9 +3352,14 @@ class QuizSetupFoundationalSchema(BaseModel):
     sections: List[SectionSchema]
  
 class ReadingExamRequest(BaseModel):
+
     class_name: str
+
     class_year: str
-    selected_date: Optional[date] = None
+
+    selected_date: Optional[str] = None
+
+    batch_id: Optional[int] = None
 
 class AddStudentExamModuleRequest(BaseModel):
     id: str                 # Backend-suggested ID (e.g. "1" or UUID)
@@ -3431,7 +3440,14 @@ class QuestionReading(Base):
     subject = Column(String, index=True, nullable=False)
     difficulty = Column(String, index=True, nullable=False)
     topic = Column(String, index=True, nullable=False)
-
+     # --------------------------------------------------
+    # BATCH TRACKING
+    # --------------------------------------------------
+    batch_id = Column(
+        Integer,
+        nullable=True,
+        index=True
+    )
     # Explicit for admin sanity & validation
     total_questions = Column(Integer, nullable=False)
     is_used = Column(Boolean, nullable=False, default=False, server_default="false")
@@ -3674,7 +3690,7 @@ class QuestionNumeracyLC(Base):
     class_name = Column(String(50), nullable=False)
  
     year = Column(Integer, nullable=False)
-
+    batch_id = Column(Integer, nullable=True, index=True)
 
     # Must be either 'Numeracy' or 'Language Conventions'
     subject = Column(String(50), nullable=False)
@@ -3706,6 +3722,7 @@ class Question(Base):
     __tablename__ = "questions"
 
     id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, nullable=True, index=True)
 
     class_name = Column(String(50), nullable=False)
     subject = Column(String(50), nullable=False)
@@ -3781,7 +3798,11 @@ class QuestionNaplanReading(Base):
     # 3 = multiple_texts
     # 4 = visual_literacy
 
-    
+    batch_id = Column(
+        Integer,
+        nullable=True,
+        index=True
+    )
     # -----------------------------
     # Render-safe bundle
     # -----------------------------
@@ -4990,8 +5011,351 @@ from sqlalchemy import func
 # --------------------------------------------------
 from sqlalchemy import or_
 
+@app.get("/naplan/language-conventions/available-batches")
+def get_available_language_convention_batches(
+    year: int,
+    date: str,
+    db: Session = Depends(get_db),
+):
+    print("\n" + "=" * 80)
+    print("📦 AVAILABLE LANGUAGE CONVENTIONS BATCHES START")
+    print("=" * 80)
 
+    print(f"📥 Incoming request:")
+    print(f"   year = {year}")
+    print(f"   date = {date}")
 
+    normalized_subject = "language conventions"
+
+    print(
+        f"📚 Normalized subject = "
+        f"{normalized_subject}"
+    )
+
+    try:
+
+        # --------------------------------------------------
+        # STEP 1: Check matching rows BEFORE batch filter
+        # --------------------------------------------------
+        print("\n🔍 STEP 1: Checking rows matching date")
+
+        matching_rows = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == date,
+            )
+            .all()
+        )
+
+        print(
+            f"✅ Matching rows found = "
+            f"{len(matching_rows)}"
+        )
+
+        for idx, row in enumerate(matching_rows[:10], start=1):
+            print(
+                f"   ROW {idx} | "
+                f"id={row.id} | "
+                f"subject={row.subject} | "
+                f"batch_id={row.batch_id} | "
+                f"is_used={row.is_used} | "
+                f"created_at={row.created_at}"
+            )
+
+        # --------------------------------------------------
+        # STEP 2: Filter rows WITH batch_id
+        # --------------------------------------------------
+        print("\n🔍 STEP 2: Filtering rows with batch_id")
+
+        rows_with_batch = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == date,
+
+                QuestionNumeracyLC.batch_id.isnot(None)
+            )
+            .all()
+        )
+
+        print(
+            f"✅ Rows with batch_id found = "
+            f"{len(rows_with_batch)}"
+        )
+
+        for idx, row in enumerate(rows_with_batch[:10], start=1):
+            print(
+                f"   BATCH ROW {idx} | "
+                f"id={row.id} | "
+                f"batch_id={row.batch_id}"
+            )
+
+        # --------------------------------------------------
+        # STEP 3: Fetch distinct batch IDs
+        # --------------------------------------------------
+        print("\n🔍 STEP 3: Fetching distinct batch IDs")
+
+        batches = (
+            db.query(QuestionNumeracyLC.batch_id)
+            .filter(
+                QuestionNumeracyLC.year == year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == date,
+
+                QuestionNumeracyLC.batch_id.isnot(None)
+            )
+            .distinct()
+            .order_by(
+                QuestionNumeracyLC.batch_id.desc()
+            )
+            .all()
+        )
+
+        print("✅ Raw batch query result:")
+        print(batches)
+
+        batch_ids = [
+            b[0]
+            for b in batches
+            if b[0] is not None
+        ]
+
+        print(
+            f"\n✅ Final extracted batch IDs = "
+            f"{batch_ids}"
+        )
+
+        response_payload = {
+            "batches": batch_ids
+        }
+
+        print("\n📤 RESPONSE PAYLOAD")
+        print(response_payload)
+
+        print("\n" + "=" * 80)
+        print("🏁 AVAILABLE LANGUAGE CONVENTIONS BATCHES END")
+        print("=" * 80)
+
+        return response_payload
+
+    except Exception as e:
+
+        print("\n" + "=" * 80)
+        print("❌ AVAILABLE LANGUAGE CONVENTIONS BATCHES FAILED")
+        print("=" * 80)
+
+        print(f"❌ Exception type: {type(e)}")
+        print(f"❌ Exception: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        print("=" * 80)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch available batches"
+        )
+@app.get("/naplan/reading/available-batches")
+def get_available_naplan_reading_batches(
+    year: int,
+    date: str,
+    db: Session = Depends(get_db),
+):
+    print("\n" + "=" * 80)
+    print("📦 AVAILABLE NAPLAN READING BATCHES START")
+    print("=" * 80)
+
+    print(f"📥 Incoming request:")
+    print(f"   year = {year}")
+    print(f"   date = {date}")
+
+    normalized_subject = "reading"
+
+    print(
+        f"📚 Normalized subject = "
+        f"{normalized_subject}"
+    )
+
+    try:
+
+        # --------------------------------------------------
+        # STEP 1: Debug matching rows BEFORE batch filter
+        # --------------------------------------------------
+        print("\n🔍 STEP 1: Checking rows matching date")
+
+        matching_rows = (
+            db.query(QuestionNaplanReading)
+            .filter(
+                QuestionNaplanReading.year == year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNaplanReading.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNaplanReading.created_at
+                ) == date,
+            )
+            .all()
+        )
+
+        print(
+            f"✅ Matching rows found = "
+            f"{len(matching_rows)}"
+        )
+
+        for idx, row in enumerate(matching_rows[:10], start=1):
+            print(
+                f"   ROW {idx} | "
+                f"id={row.id} | "
+                f"subject={row.subject} | "
+                f"batch_id={row.batch_id} | "
+                f"is_used={row.is_used} | "
+                f"created_at={row.created_at}"
+            )
+
+        # --------------------------------------------------
+        # STEP 2: Filter rows WITH batch_id
+        # --------------------------------------------------
+        print("\n🔍 STEP 2: Filtering rows with batch_id")
+
+        rows_with_batch = (
+            db.query(QuestionNaplanReading)
+            .filter(
+                QuestionNaplanReading.year == year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNaplanReading.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNaplanReading.created_at
+                ) == date,
+
+                QuestionNaplanReading.batch_id.isnot(None)
+            )
+            .all()
+        )
+
+        print(
+            f"✅ Rows with batch_id found = "
+            f"{len(rows_with_batch)}"
+        )
+
+        for idx, row in enumerate(rows_with_batch[:10], start=1):
+            print(
+                f"   BATCH ROW {idx} | "
+                f"id={row.id} | "
+                f"batch_id={row.batch_id}"
+            )
+
+        # --------------------------------------------------
+        # STEP 3: Fetch distinct batch IDs
+        # --------------------------------------------------
+        print("\n🔍 STEP 3: Fetching distinct batch IDs")
+
+        batches = (
+            db.query(QuestionNaplanReading.batch_id)
+            .filter(
+                QuestionNaplanReading.year == year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNaplanReading.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNaplanReading.created_at
+                ) == date,
+
+                QuestionNaplanReading.batch_id.isnot(None)
+            )
+            .distinct()
+            .order_by(
+                QuestionNaplanReading.batch_id.desc()
+            )
+            .all()
+        )
+
+        print("✅ Raw batch query result:")
+        print(batches)
+
+        batch_ids = [
+            b[0]
+            for b in batches
+            if b[0] is not None
+        ]
+
+        print(
+            f"\n✅ Final extracted batch IDs = "
+            f"{batch_ids}"
+        )
+
+        response_payload = {
+            "batches": batch_ids
+        }
+
+        print("\n📤 RESPONSE PAYLOAD")
+        print(response_payload)
+
+        print("\n" + "=" * 80)
+        print("🏁 AVAILABLE NAPLAN READING BATCHES END")
+        print("=" * 80)
+
+        return response_payload
+
+    except Exception as e:
+
+        print("\n" + "=" * 80)
+        print("❌ AVAILABLE NAPLAN READING BATCHES FAILED")
+        print("=" * 80)
+
+        print(f"❌ Exception type: {type(e)}")
+        print(f"❌ Exception: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        print("=" * 80)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch available batches"
+        )
+    
 @app.get("/api/writing/upload-dates/{class_year}")
 def get_writing_upload_dates(
     class_year: str,
@@ -5085,7 +5449,168 @@ def get_writing_upload_dates(
     return {
         "dates": dates
     }
+from sqlalchemy import String
 
+
+@app.get("/api/available-reading-batches")
+def get_available_reading_batches(
+    class_year: str,
+    date: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return distinct batch IDs for
+    Selective Reading uploads created
+    on a selected date.
+    """
+
+    try:
+
+        print("\n" + "=" * 70)
+        print("🚀 FETCH AVAILABLE READING BATCHES")
+        print("=" * 70)
+
+        print(f"📥 RAW class_year: {class_year}")
+        print(f"📥 RAW date: {date}")
+
+        # --------------------------------------------------
+        # Normalize year
+        # "Year 4" -> "4"
+        # --------------------------------------------------
+        normalized_year = "".join(
+            filter(str.isdigit, class_year)
+        )
+
+        print(
+            f"🎓 NORMALIZED class_year: "
+            f"{normalized_year}"
+        )
+
+        # --------------------------------------------------
+        # DEBUG: show matching rows BEFORE distinct
+        # --------------------------------------------------
+        matching_rows = (
+            db.query(QuestionReading)
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        QuestionReading.class_name
+                    )
+                ) == "selective",
+
+                func.lower(
+                    func.trim(
+                        QuestionReading.subject
+                    )
+                ) == "reading comprehension",
+
+                func.cast(
+                    QuestionReading.class_year,
+                    String
+                ) == normalized_year,
+
+                QuestionReading.batch_id.isnot(None),
+
+                func.date(
+                    QuestionReading.created_at
+                ) == date
+
+            )
+            .all()
+        )
+
+        print(
+            f"📦 MATCHING ROWS COUNT: "
+            f"{len(matching_rows)}"
+        )
+
+        for row in matching_rows:
+
+            print(
+                f"   ID={row.id} | "
+                f"class_name={row.class_name} | "
+                f"class_year={row.class_year} | "
+                f"subject={row.subject} | "
+                f"batch_id={row.batch_id} | "
+                f"created_at={row.created_at}"
+            )
+
+        # --------------------------------------------------
+        # Fetch distinct batch ids
+        # --------------------------------------------------
+        batches = (
+            db.query(QuestionReading.batch_id)
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        QuestionReading.class_name
+                    )
+                ) == "selective",
+
+                func.lower(
+                    func.trim(
+                        QuestionReading.subject
+                    )
+                ) == "reading comprehension",
+
+                func.cast(
+                    QuestionReading.class_year,
+                    String
+                ) == normalized_year,
+
+                QuestionReading.batch_id.isnot(None),
+
+                func.date(
+                    QuestionReading.created_at
+                ) == date
+
+            )
+            .distinct()
+            .order_by(
+                QuestionReading.batch_id.desc()
+            )
+            .all()
+        )
+
+        print(f"📦 RAW BATCH QUERY RESULT: {batches}")
+
+        # --------------------------------------------------
+        # Flatten tuples
+        # [(12,), (11,), (10,)] -> [12,11,10]
+        # --------------------------------------------------
+        batch_ids = [
+            row[0]
+            for row in batches
+            if row[0] is not None
+        ]
+
+        print(
+            f"✅ FINAL BATCH IDS: "
+            f"{batch_ids}"
+        )
+
+        print("=" * 70)
+        print("✅ END FETCH AVAILABLE READING BATCHES")
+        print("=" * 70 + "\n")
+
+        return batch_ids
+
+    except Exception as e:
+
+        print("\n" + "❌ " * 10)
+        print(
+            "AVAILABLE READING BATCHES ERROR:"
+        )
+        print(str(e))
+        print("❌ " * 10 + "\n")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch batch ids"
+        )
+    
 @app.get("/api/admin/search-questions-naplan-reading")
 def search_questions_naplan_reading(
     query: str,
@@ -6486,6 +7011,101 @@ def get_oc_mathematical_reasoning_dates(
         "dates": formatted_dates
     }
 
+@app.get("/api/available-oc-reading-batches")
+def get_available_oc_reading_batches(
+    class_year: str,
+    date: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return distinct batch IDs for
+    OC Reading uploads created
+    on a selected date.
+    """
+
+    try:
+
+        # -----------------------------------------
+        # Normalize year
+        # "Year 4" -> "4"
+        # -----------------------------------------
+        normalized_year = "".join(
+            filter(str.isdigit, class_year)
+        )
+
+        print(
+            f"📦 FETCH OC READING BATCHES -> "
+            f"class_year={normalized_year}, "
+            f"date={date}"
+        )
+
+        # -----------------------------------------
+        # Fetch distinct batch ids
+        # -----------------------------------------
+        batches = (
+            db.query(QuestionReading.batch_id)
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        QuestionReading.class_name
+                    )
+                ) == "oc",
+
+                func.lower(
+                    func.trim(
+                        QuestionReading.subject
+                    )
+                ) == "reading comprehension",
+
+                func.trim(
+                    QuestionReading.class_year
+                ) == normalized_year,
+
+                QuestionReading.batch_id.isnot(None),
+
+                # uploaded on selected date
+                func.date(
+                    QuestionReading.created_at
+                ) == date
+
+            )
+            .distinct()
+            .order_by(
+                QuestionReading.batch_id.desc()
+            )
+            .all()
+        )
+
+        # -----------------------------------------
+        # Flatten tuples
+        # [(12,), (11,), (10,)] -> [12,11,10]
+        # -----------------------------------------
+        batch_ids = [
+            row[0]
+            for row in batches
+            if row[0] is not None
+        ]
+
+        print(
+            f"✅ FOUND OC READING BATCHES: "
+            f"{batch_ids}"
+        )
+
+        return batch_ids
+
+    except Exception as e:
+
+        print(
+            "AVAILABLE OC READING BATCHES ERROR:",
+            e
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch batch ids"
+        )
+        
 @app.post("/api/exams/generate-oc-thinking-skills-homework-latest")
 def generate_oc_thinking_skills_homework_exam_latest(
     payload: dict = Body(...),
@@ -6493,10 +7113,16 @@ def generate_oc_thinking_skills_homework_exam_latest(
 ):
     """
     Generate OC Thinking Skills Homework Exam
-    using ALL questions uploaded on selected date.
+    using ALL questions uploaded on
+    selected date + batch id.
     """
 
-    print("\n🚀 GENERATE OC THINKING SKILLS HOMEWORK (LATEST)\n")
+    print(
+        "\n🚀 GENERATE OC THINKING "
+        "SKILLS HOMEWORK (BATCH MODE)\n"
+    )
+
+    payload = payload or {}
 
     # --------------------------------------------------
     # 1️⃣ Constants
@@ -6511,7 +7137,10 @@ def generate_oc_thinking_skills_homework_exam_latest(
     # 2️⃣ Validate payload
     # --------------------------------------------------
     class_year = payload.get("class_year")
+
     selected_date = payload.get("selected_date")
+
+    batch_id = payload.get("batch_id")
 
     if not class_year:
         raise HTTPException(
@@ -6525,8 +7154,15 @@ def generate_oc_thinking_skills_homework_exam_latest(
             detail="selected_date is required"
         )
 
+    if not batch_id:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
+
     try:
         class_year_int = int(class_year)
+
     except:
         raise HTTPException(
             status_code=400,
@@ -6534,42 +7170,121 @@ def generate_oc_thinking_skills_homework_exam_latest(
         )
 
     print(f"🎓 Class Year: {class_year_int}")
+
     print(f"📅 Selected Date: {selected_date}")
 
-    # --------------------------------------------------
-    # 3️⃣ Generate questions from selected upload date
-    # --------------------------------------------------
-    try:
-        questions = generate_exam_questions_latest(
-            db=db,
-            class_year=class_year_int,
-            selected_date=selected_date,
-            class_name=CLASS_DB,
-            subject=SUBJECT_DB
-        )
+    print(f"📦 Batch ID: {batch_id}")
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate latest homework exam: {str(e)}"
-        )
+    # --------------------------------------------------
+    # 3️⃣ Fetch Questions
+    # --------------------------------------------------
+    rows = (
+        db.query(Question)
+        .filter(
 
-    if not questions:
+            func.lower(
+                func.trim(Question.class_name)
+            ) == CLASS_DB,
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == SUBJECT_DB,
+
+            Question.class_year == class_year_int,
+
+            # selected upload date
+            func.date(
+                Question.created_at
+            ) == selected_date,
+
+            # selected upload batch
+            Question.batch_id == batch_id,
+
+            # only unused questions
+            Question.is_used == False
+
+        )
+        .order_by(Question.id.asc())
+        .all()
+    )
+
+    if not rows:
         raise HTTPException(
             status_code=404,
-            detail="No questions found for selected date"
+            detail=(
+                "No questions found for selected "
+                "date and batch"
+            )
         )
 
-    print(f"🧠 Generated {len(questions)} questions")
+    print(f"🧠 Fetched {len(rows)} questions")
 
     # --------------------------------------------------
-    # 4️⃣ Mark questions as used
+    # 4️⃣ Build Questions
+    # --------------------------------------------------
+    questions = []
+
+    q_id = 1
+
+    for row in rows:
+
+        blocks = row.question_blocks or []
+
+        # fallback text
+        if not blocks and row.question_text:
+
+            blocks = [{
+                "type": "text",
+                "content": row.question_text
+            }]
+
+        # safely include images
+        existing_image_srcs = {
+            block.get("src")
+            for block in blocks
+            if block.get("type") == "image"
+        }
+
+        for image_src in row.images or []:
+
+            if image_src not in existing_image_srcs:
+
+                blocks.append({
+                    "type": "image",
+                    "src": image_src
+                })
+
+        questions.append({
+            "id": row.id,
+
+            "q_id": q_id,
+
+            "topic": row.topic,
+
+            "batch_id": row.batch_id,
+
+            "blocks": blocks,
+
+            "options": row.options,
+
+            "correct": row.correct_answer
+        })
+
+        q_id += 1
+
+    print(f"📦 Built {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 5️⃣ Mark questions as used
     # --------------------------------------------------
     used_ids = [
-        q.get("id") for q in questions if q.get("id")
+        q.get("id")
+        for q in questions
+        if q.get("id")
     ]
 
     if used_ids:
+
         db.query(Question).filter(
             Question.id.in_(used_ids),
             Question.is_used == False
@@ -6578,41 +7293,69 @@ def generate_oc_thinking_skills_homework_exam_latest(
             synchronize_session=False
         )
 
-        print(f"🏷️ Marked {len(used_ids)} questions as used")
+        print(
+            f"🏷️ Marked {len(used_ids)} "
+            f"questions as used"
+        )
 
     # --------------------------------------------------
-    # 5️⃣ Save exam
+    # 6️⃣ Save exam
     # --------------------------------------------------
     new_exam = HomeworkExamOCThinkingSkills(
-        quiz_id=None,   # 🔥 no quiz table used
+        quiz_id=None,
+
         class_name=CLASS_EXAM,
+
         subject=SUBJECT_EXAM,
+
         difficulty="mixed",
+
         class_year=class_year_int,
+
         questions=questions
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"💾 Saved homework exam ID={new_exam.id}")
+    print(
+        f"💾 Saved homework exam "
+        f"ID={new_exam.id}"
+    )
 
     # --------------------------------------------------
-    # 6️⃣ Response
+    # 7️⃣ Response
     # --------------------------------------------------
     return {
-        "message": "OC Thinking Skills latest homework exam generated successfully",
+        "message": (
+            "OC Thinking Skills latest "
+            "homework exam generated successfully"
+        ),
+
         "exam_id": new_exam.id,
+
         "quiz_id": None,
+
+        "batch_id": batch_id,
+
         "class_name": CLASS_EXAM,
+
         "class_year": class_year_int,
+
         "subject": SUBJECT_EXAM,
+
         "difficulty": "mixed",
+
         "selected_date": selected_date,
+
         "total_questions": len(questions),
+
         "questions": questions
     }
+
 
 # ai_engine.py (for example)
 def generate_exam_questions(
@@ -7572,6 +8315,95 @@ def extract_year_number(year_str):
     except:
         return None
 
+@app.get("/api/available-oc-mr-batches")
+def get_available_oc_mr_batches(
+    class_year: str,
+    date: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return distinct batch IDs for
+    OC Mathematical Reasoning questions
+    uploaded on a selected date.
+    """
+
+    try:
+
+        # -----------------------------------------
+        # Normalize year
+        # "Year 3" -> 3
+        # -----------------------------------------
+        parsed_year = int(
+            "".join(filter(str.isdigit, class_year))
+        )
+
+        print(
+            f"📦 FETCH OC MR BATCHES -> "
+            f"class_year={parsed_year}, "
+            f"date={date}"
+        )
+
+        # -----------------------------------------
+        # Fetch distinct batch ids
+        # -----------------------------------------
+        batches = (
+            db.query(Question.batch_id)
+            .filter(
+
+                func.lower(
+                    func.trim(Question.class_name)
+                ) == "oc",
+
+                func.lower(
+                    func.trim(Question.subject)
+                ) == "mathematical reasoning",
+
+                Question.class_year == parsed_year,
+
+                Question.batch_id.isnot(None),
+
+                # uploaded on selected date
+                func.date(
+                    Question.created_at
+                ) == date
+
+            )
+            .distinct()
+            .order_by(
+                Question.batch_id.desc()
+            )
+            .all()
+        )
+
+        # -----------------------------------------
+        # Flatten tuples
+        # [(12,), (11,), (10,)] -> [12,11,10]
+        # -----------------------------------------
+        batch_ids = [
+            row[0]
+            for row in batches
+            if row[0] is not None
+        ]
+
+        print(
+            f"✅ FOUND OC MR BATCHES: "
+            f"{batch_ids}"
+        )
+
+        return batch_ids
+
+    except Exception as e:
+
+        print(
+            "AVAILABLE OC MR BATCHES ERROR:",
+            e
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch batch ids"
+        )
+    
 
 @app.get("/api/exams/oc-thinking-skills-dates/{class_year}")
 def get_oc_thinking_skills_dates(
@@ -7632,6 +8464,61 @@ def get_oc_thinking_skills_dates(
     return {
         "dates": formatted_dates
     }
+
+@app.get("/api/available-mr-batches")
+def get_available_mr_batches(
+    class_year: str,
+    date: str,
+    db: Session = Depends(get_db)
+):
+    try:
+
+        # -----------------------------------------
+        # Normalize year
+        # "Year 5" -> 5
+        # -----------------------------------------
+        parsed_year = int(
+            "".join(filter(str.isdigit, class_year))
+        )
+
+        # -----------------------------------------
+        # Query distinct batch ids
+        # -----------------------------------------
+        batches = (
+            db.query(Question.batch_id)
+            .filter(
+                Question.subject.ilike("mathematical reasoning"),
+                Question.class_year == parsed_year,
+                Question.batch_id.isnot(None),
+
+                # created on selected date
+                func.date(Question.created_at) == date
+            )
+            .distinct()
+            .order_by(Question.batch_id.desc())
+            .all()
+        )
+
+        # -----------------------------------------
+        # Flatten tuples
+        # [(12,), (11,), (10,)] -> [12,11,10]
+        # -----------------------------------------
+        batch_ids = [
+            row[0]
+            for row in batches
+            if row[0] is not None
+        ]
+
+        return batch_ids
+
+    except Exception as e:
+        print("AVAILABLE MR BATCHES ERROR:", e)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch batch ids"
+        )
+    
 @app.get("/api/available-MR-dates")
 def get_available_mr_dates(
     class_year: str = Query(...),
@@ -7769,9 +8656,11 @@ def generate_thinking_skills_exam_latest(
     db: Session = Depends(get_db)
 ):
     """
-    Generate Thinking Skills exam using ALL questions from a selected date.
-    - Does NOT filter by is_used
-    - Marks included questions as used (tracking only)
+    Generate Thinking Skills exam using ALL questions
+    from a selected date + batch id.
+
+    - Uses only unused questions
+    - Marks included questions as used
     """
 
     payload = payload or {}
@@ -7780,23 +8669,47 @@ def generate_thinking_skills_exam_latest(
     # 0️⃣ Extract Input
     # ==================================================
     class_year = payload.get("class_year")
+
     selected_date = payload.get("date")
 
+    batch_id = payload.get("batch_id")
+
     if not class_year:
-        raise HTTPException(status_code=400, detail="class_year is required")
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
 
     if not selected_date:
-        raise HTTPException(status_code=400, detail="date is required")
+        raise HTTPException(
+            status_code=400,
+            detail="date is required"
+        )
 
-    print("\n================ GENERATE THINKING SKILLS (DATE MODE) =================")
-    print(f"📥 class_year={class_year}, date={selected_date}")
+    if not batch_id:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
+
+    print(
+        "\n================ GENERATE THINKING "
+        "SKILLS (BATCH MODE) ================="
+    )
+
+    print(
+        f"📥 class_year={class_year}, "
+        f"date={selected_date}, "
+        f"batch_id={batch_id}"
+    )
 
     # ==================================================
-    # 1️⃣ Fetch Questions (IGNORE is_used)
+    # 1️⃣ Fetch Questions
     # ==================================================
     questions = (
         db.query(Question)
         .filter(
+
             func.lower(
                 func.trim(Question.class_name)
             ) == "selective",
@@ -7807,20 +8720,29 @@ def generate_thinking_skills_exam_latest(
 
             Question.class_year == class_year,
 
+            # selected upload date
             func.date(
                 Question.created_at
             ) == selected_date,
 
+            # selected upload batch
+            Question.batch_id == batch_id,
+
+            # only unused questions
             Question.is_used == False
+
         )
-        .order_by(Question.id.asc())  # stable ordering
+        .order_by(Question.id.asc())
         .all()
     )
 
     if not questions:
         raise HTTPException(
             status_code=400,
-            detail="No questions found for the selected date"
+            detail=(
+                "No questions found for selected "
+                "date and batch"
+            )
         )
 
     print(f"✅ Fetched {len(questions)} questions")
@@ -7829,6 +8751,7 @@ def generate_thinking_skills_exam_latest(
     # 2️⃣ Build Output
     # ==================================================
     generated_questions = []
+
     q_id = 1
 
     for row in questions:
@@ -7837,6 +8760,7 @@ def generate_thinking_skills_exam_latest(
 
         # fallback to text if blocks missing
         if not blocks and row.question_text:
+
             blocks = [{
                 "type": "text",
                 "content": row.question_text
@@ -7850,7 +8774,9 @@ def generate_thinking_skills_exam_latest(
         }
 
         for image_src in row.images or []:
+
             if image_src not in existing_image_srcs:
+
                 blocks.append({
                     "type": "image",
                     "src": image_src
@@ -7858,23 +8784,36 @@ def generate_thinking_skills_exam_latest(
 
         generated_questions.append({
             "id": row.id,
+
             "q_id": q_id,
+
             "topic": row.topic,
+
+            "batch_id": row.batch_id,
+
             "blocks": blocks,
+
             "options": row.options,
+
             "correct": row.correct_answer
         })
 
         q_id += 1
 
-    print(f"📦 Built {len(generated_questions)} questions")
+    print(
+        f"📦 Built {len(generated_questions)} questions"
+    )
 
     # ==================================================
-    # 3️⃣ MARK QUESTIONS AS USED (TRACKING ONLY)
+    # 3️⃣ MARK QUESTIONS AS USED
     # ==================================================
-    used_question_ids = [q["id"] for q in generated_questions]
+    used_question_ids = [
+        q["id"]
+        for q in generated_questions
+    ]
 
     if used_question_ids:
+
         updated = (
             db.query(Question)
             .filter(
@@ -7887,37 +8826,63 @@ def generate_thinking_skills_exam_latest(
             )
         )
 
-        print(f"🔒 Marked {updated} questions as used")
+        print(
+            f"🔒 Marked {updated} questions as used"
+        )
 
     # ==================================================
     # 4️⃣ SAVE EXAM
     # ==================================================
     new_exam = Exam(
         quiz_id=None,
+
         class_name="selective",
+
         subject="thinking_skills",
+
         class_year=class_year,
+
         questions=generated_questions
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"💾 Exam saved with ID: {new_exam.id}")
+    print(
+        f"💾 Exam saved with ID: "
+        f"{new_exam.id}"
+    )
+
     print("================ END =================\n")
 
     # ==================================================
     # 5️⃣ RESPONSE
     # ==================================================
     return {
-        "message": "Thinking Skills exam generated (date-based)",
+        "message": (
+            "Thinking Skills exam generated "
+            "(batch-based)"
+        ),
+
         "exam_id": new_exam.id,
+
         "quiz_id": None,
+
+        "batch_id": batch_id,
+
         "class_name": "selective",
+
         "class_year": class_year,
+
+        "selected_date": selected_date,
+
         "subject": "thinking_skills",
+
         "total_questions": len(generated_questions),
+
         "questions": generated_questions
     }
 
@@ -7988,6 +8953,94 @@ def get_topic_question_counts(
         response[row.difficulty] = row.count
 
     return response
+@app.get("/api/available-oc-thinking-batches")
+def get_available_oc_thinking_batches(
+    class_year: str,
+    date: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return distinct batch IDs for OC Thinking Skills
+    questions uploaded on a selected date.
+    """
+
+    try:
+
+        # -----------------------------------------
+        # Normalize year
+        # "Year 3" -> 3
+        # -----------------------------------------
+        parsed_year = int(
+            "".join(filter(str.isdigit, class_year))
+        )
+
+        print(
+            f"📦 FETCH OC THINKING BATCHES -> "
+            f"class_year={parsed_year}, "
+            f"date={date}"
+        )
+
+        # -----------------------------------------
+        # Fetch distinct batch ids
+        # -----------------------------------------
+        batches = (
+            db.query(Question.batch_id)
+            .filter(
+
+                func.lower(
+                    func.trim(Question.class_name)
+                ) == "oc",
+
+                func.lower(
+                    func.trim(Question.subject)
+                ) == "thinking skills",
+
+                Question.class_year == parsed_year,
+
+                Question.batch_id.isnot(None),
+
+                # uploaded on selected date
+                func.date(
+                    Question.created_at
+                ) == date
+
+            )
+            .distinct()
+            .order_by(
+                Question.batch_id.desc()
+            )
+            .all()
+        )
+
+        # -----------------------------------------
+        # Flatten tuples
+        # [(12,), (11,), (10,)] -> [12,11,10]
+        # -----------------------------------------
+        batch_ids = [
+            row[0]
+            for row in batches
+            if row[0] is not None
+        ]
+
+        print(
+            f"✅ FOUND OC THINKING BATCHES: "
+            f"{batch_ids}"
+        )
+
+        return batch_ids
+
+    except Exception as e:
+
+        print(
+            "AVAILABLE OC THINKING BATCHES ERROR:",
+            e
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch batch ids"
+        )
+    
 
 @app.post("/api/admin/reset-used-questions-oc-mr")
 def reset_used_questions_oc_mr(
@@ -8442,19 +9495,26 @@ def get_available_subjects_naplan(
     # ==================================================
     reading_exam_enabled = False
     reading_homework_enabled = False
+    print("\n📘 STUDENT DEBUG")
+    print(f"class_name={class_name}")
+    print(f"student_year={student_year}")
+    print(f"student_id={student.id}")
 
     reading_exam = (
         db.query(ExamNaplanReading)
         .filter(
-            func.lower(ExamNaplanReading.class_name) == func.lower(class_name),
             ExamNaplanReading.year == student_year,
             func.lower(ExamNaplanReading.subject) == "reading"
         )
         .order_by(ExamNaplanReading.created_at.desc())
         .first()
     )
-
+    print(
+        f"📘 reading_exam found = "
+        f"{reading_exam.id if reading_exam else None}"
+    )
     if reading_exam:
+        
         attempt = (
             db.query(StudentExamNaplanReading)
             .filter(
@@ -8471,7 +9531,6 @@ def get_available_subjects_naplan(
     reading_homework_exam = (
         db.query(ExamNaplanReadingHomework)
         .filter(
-            func.lower(ExamNaplanReadingHomework.class_name) == func.lower(class_name),
             ExamNaplanReadingHomework.year == student_year,
             func.lower(ExamNaplanReadingHomework.subject) == "reading"
         )
@@ -8496,6 +9555,8 @@ def get_available_subjects_naplan(
     # ==================================================
     # 🧾 LANGUAGE CONVENTIONS
     # ==================================================
+    language_exam_enabled = False
+    language_homework_enabled = False
     latest_language_exam = (
         db.query(ExamNaplanLanguageConventions)
         .filter(
@@ -9690,103 +10751,237 @@ def generate_naplan_numeracy_homework_latest(
     payload: GenerateNaplanNumeracyHomeworkLatestRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n=== START: Generate NAPLAN Numeracy Homework Latest ===")
+    print("\n" + "=" * 80)
+    print("🚀 START: Generate NAPLAN Numeracy Homework Latest")
+    print("=" * 80)
 
     class_year = payload.class_year
     selected_date = payload.selected_date
+    batch_id = payload.batch_id
 
-    print(f"📅 Class Year: {class_year}")
-    print(f"📅 Selected Date: {selected_date}")
+    print(f"📥 Incoming payload:")
+    print(f"   class_year    = {class_year}")
+    print(f"   selected_date = {selected_date}")
+    print(f"   batch_id      = {batch_id}")
 
     normalized_subject = "numeracy"
 
-    # --------------------------------------------------
-    # Fetch ALL questions from selected upload date
-    # --------------------------------------------------
+    print(f"📚 Normalized subject = {normalized_subject}")
 
-    questions = (
-        db.query(QuestionNumeracyLC)
-        .filter(
-            QuestionNumeracyLC.year == class_year,
+    try:
 
-            func.lower(
-                func.trim(QuestionNumeracyLC.subject)
-            ) == normalized_subject,
+        # --------------------------------------------------
+        # STEP 1: Debug rows matching selected date
+        # --------------------------------------------------
+        print("\n🔍 STEP 1: Checking rows matching date")
 
-            func.date(
-                QuestionNumeracyLC.created_at
-            ) == selected_date,
+        rows_matching_date = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == class_year,
 
-            QuestionNumeracyLC.is_used == False
-        )
-        .order_by(QuestionNumeracyLC.id.asc())
-        .all()
-    )
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
 
-    print(f"🔎 Found {len(questions)} questions")
-
-    if not questions:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"No Numeracy homework questions found "
-                f"for Year {class_year} on {selected_date}"
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == selected_date,
             )
+            .all()
         )
 
-    # --------------------------------------------------
-    # Build assembled questions
-    # --------------------------------------------------
+        print(
+            f"✅ Rows matching date found = "
+            f"{len(rows_matching_date)}"
+        )
 
-    assembled_questions = []
+        for idx, row in enumerate(rows_matching_date[:10], start=1):
+            print(
+                f"   ROW {idx} | "
+                f"id={row.id} | "
+                f"batch_id={row.batch_id} | "
+                f"is_used={row.is_used} | "
+                f"created_at={row.created_at}"
+            )
 
-    for q in questions:
+        # --------------------------------------------------
+        # STEP 2: Fetch homework questions using batch_id
+        # --------------------------------------------------
+        print("\n🔍 STEP 2: Fetching questions using batch_id")
 
-        assembled_questions.append({
-            "id": q.id,
-            "question_type": q.question_type,
-            "topic": q.topic,
-            "difficulty": q.difficulty,
-            "question_text": q.question_text,
-            "question_blocks": build_question_blocks(q, db),
-            "options": q.options,
-            "correct_answer": q.correct_answer,
-        })
+        questions = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == class_year,
 
-        # Tracking only
-        q.is_used = True
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
 
-    print(f"✅ Assembled {len(assembled_questions)} questions")
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == selected_date,
 
-    # --------------------------------------------------
-    # Save homework exam
-    # --------------------------------------------------
+                QuestionNumeracyLC.batch_id == batch_id,
 
-    exam = ExamNaplanNumeracyHomework(
-        quiz_id=None,   # IMPORTANT
-        class_name="NAPLAN",
-        subject="Numeracy",
-        difficulty="latest",
-        year=class_year,
-        questions=assembled_questions,
-    )
+                QuestionNumeracyLC.is_used == False
+            )
+            .order_by(
+                QuestionNumeracyLC.id.asc()
+            )
+            .all()
+        )
 
-    db.add(exam)
-    db.commit()
-    db.refresh(exam)
+        print(
+            f"✅ Questions fetched after batch filter = "
+            f"{len(questions)}"
+        )
 
-    print(f"🎉 SUCCESS exam_id={exam.id}")
-    print("=== END ===\n")
+        for idx, q in enumerate(questions[:10], start=1):
+            print(
+                f"   QUESTION {idx} | "
+                f"id={q.id} | "
+                f"batch_id={q.batch_id} | "
+                f"is_used={q.is_used}"
+            )
 
-    return {
-        "message": "NAPLAN Numeracy homework latest generated successfully",
-        "exam_id": exam.id,
-        "year": class_year,
-        "selected_date": str(selected_date),
-        "total_questions": len(assembled_questions),
-        "questions": assembled_questions
-    }
+        # --------------------------------------------------
+        # STEP 3: Validation
+        # --------------------------------------------------
+        if not questions:
 
+            print("❌ No homework questions found after filtering")
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No Numeracy homework questions found "
+                    f"for Year {class_year}, "
+                    f"date={selected_date}, "
+                    f"batch_id={batch_id}"
+                )
+            )
+
+        # --------------------------------------------------
+        # STEP 4: Assemble homework questions
+        # --------------------------------------------------
+        print("\n🧩 STEP 4: Assembling homework questions")
+
+        assembled_questions = []
+
+        for q in questions:
+
+            assembled_questions.append({
+                "id": q.id,
+                "question_type": q.question_type,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+                "question_text": q.question_text,
+                "question_blocks": build_question_blocks(q, db),
+                "options": q.options,
+                "correct_answer": q.correct_answer,
+            })
+
+            # --------------------------------------------------
+            # Mark question as used
+            # --------------------------------------------------
+            q.is_used = True
+
+            print(
+                f"✅ Marked question used | "
+                f"id={q.id}"
+            )
+
+        print(
+            f"✅ Total assembled homework questions = "
+            f"{len(assembled_questions)}"
+        )
+
+        # --------------------------------------------------
+        # STEP 5: Save generated homework exam
+        # --------------------------------------------------
+        print("\n💾 STEP 5: Saving homework exam")
+
+        exam = ExamNaplanNumeracyHomework(
+            quiz_id=None,
+            class_name="NAPLAN",
+            subject="Numeracy",
+            difficulty="latest",
+            year=class_year,
+            questions=assembled_questions,
+        )
+
+        db.add(exam)
+
+        print("💾 Homework exam added to session")
+
+        db.commit()
+
+        print("✅ Database commit successful")
+
+        db.refresh(exam)
+
+        print(
+            f"🎉 SUCCESS homework exam created | "
+            f"exam_id={exam.id}"
+        )
+
+        response_payload = {
+            "message": (
+                "NAPLAN Numeracy homework latest "
+                "generated successfully"
+            ),
+            "exam_id": exam.id,
+            "year": class_year,
+            "selected_date": str(selected_date),
+            "batch_id": batch_id,
+            "total_questions": len(assembled_questions),
+            "questions": assembled_questions
+        }
+
+        print("\n📤 RESPONSE PAYLOAD PREVIEW")
+        print(
+            {
+                "exam_id": exam.id,
+                "total_questions": len(assembled_questions),
+                "batch_id": batch_id,
+            }
+        )
+
+        print("\n" + "=" * 80)
+        print("🏁 END: Generate NAPLAN Numeracy Homework Latest")
+        print("=" * 80)
+
+        return response_payload
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        print("\n" + "=" * 80)
+        print("❌ FAILED: Generate NAPLAN Numeracy Homework Latest")
+        print("=" * 80)
+
+        print(f"❌ Exception type: {type(e)}")
+        print(f"❌ Exception: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        print("=" * 80)
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate latest Numeracy homework"
+        )
 @app.post("/naplan/numeracy/generate-homework")
 def generate_naplan_numeracy_homework(
     payload: dict = Body(...),
@@ -10583,7 +11778,18 @@ def generate_exam_homework_latest(
     payload: Optional[Dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
-    print("\n========== MR HOMEWORK (DATE MODE) GENERATION START ==========")
+    """
+    Generate Mathematical Reasoning HOMEWORK exam
+    using ALL questions from a selected date + batch id.
+
+    - No quiz dependency
+    - Uses only unused questions
+    - Marks questions as used after generation
+    """
+
+    print(
+        "\n========== MR HOMEWORK (BATCH MODE) GENERATION START =========="
+    )
 
     # --------------------------------------------------
     # 1️⃣ INPUT
@@ -10591,22 +11797,44 @@ def generate_exam_homework_latest(
     payload = payload or {}
 
     class_year = payload.get("class_year")
-    selected_date = payload.get("date")  # ✅ NEW
+
+    selected_date = payload.get("date")
+
+    batch_id = payload.get("batch_id")
 
     if not class_year:
-        raise HTTPException(status_code=400, detail="class_year is required")
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
 
     if not selected_date:
-        raise HTTPException(status_code=400, detail="date is required")
+        raise HTTPException(
+            status_code=400,
+            detail="date is required"
+        )
 
-    print(f"📘 Generating MR HOMEWORK (DATE MODE) for class_year={class_year}, date={selected_date}")
+    if not batch_id:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
+
+    print(
+        f"📘 Generating MR HOMEWORK "
+        f"(BATCH MODE) for "
+        f"class_year={class_year}, "
+        f"date={selected_date}, "
+        f"batch_id={batch_id}"
+    )
 
     # --------------------------------------------------
-    # 2️⃣ FETCH QUESTIONS (IGNORE is_used)
+    # 2️⃣ FETCH QUESTIONS
     # --------------------------------------------------
     rows = (
-    db.query(Question)
+        db.query(Question)
         .filter(
+
             func.lower(
                 func.trim(Question.class_name)
             ) == "selective",
@@ -10617,20 +11845,28 @@ def generate_exam_homework_latest(
 
             Question.class_year == class_year,
 
+            # selected upload date
             func.date(
                 Question.created_at
             ) == selected_date,
 
+            # selected upload batch
+            Question.batch_id == batch_id,
+
+            # only unused questions
             Question.is_used == False
         )
-        .order_by(Question.id.asc())  # stable ordering
+        .order_by(Question.id.asc())
         .all()
     )
 
     if not rows:
         raise HTTPException(
             status_code=400,
-            detail="No questions found for selected date"
+            detail=(
+                "No questions found for selected "
+                "date and batch"
+            )
         )
 
     print(f"✅ Fetched {len(rows)} MR questions")
@@ -10639,23 +11875,39 @@ def generate_exam_homework_latest(
     # 3️⃣ BUILD QUESTIONS
     # --------------------------------------------------
     questions = []
+
     q_id = 1
 
     for row in rows:
+
         if not row.question_blocks:
             raise HTTPException(
                 status_code=500,
-                detail=f"Question {row.id} has no question_blocks"
+                detail=(
+                    f"Question {row.id} "
+                    f"has no question_blocks"
+                )
             )
 
-        sanitized_blocks = sanitize_question_blocks(row.question_blocks)
+        sanitized_blocks = sanitize_question_blocks(
+            row.question_blocks
+        )
 
         questions.append({
             "id": row.id,
+
             "q_id": q_id,
+
             "topic": row.topic,
+
+            "batch_id": row.batch_id,
+
             "question_blocks": sanitized_blocks,
-            "options": normalize_options(row.options),
+
+            "options": normalize_options(
+                row.options
+            ),
+
             "correct": row.correct_answer
         })
 
@@ -10664,11 +11916,12 @@ def generate_exam_homework_latest(
     print(f"📦 Built {len(questions)} questions")
 
     # --------------------------------------------------
-    # 4️⃣ MARK USED (TRACKING ONLY)
+    # 4️⃣ MARK USED
     # --------------------------------------------------
     used_ids = [q["id"] for q in questions]
 
     if used_ids:
+
         updated = (
             db.query(Question)
             .filter(
@@ -10681,38 +11934,147 @@ def generate_exam_homework_latest(
             )
         )
 
-        print(f"🔒 Marked {updated} questions as used")
+        print(
+            f"🔒 Marked {updated} questions as used"
+        )
 
     # --------------------------------------------------
-    # 5️⃣ SAVE HOMEWORK (NOT Exam if you want separation)
+    # 5️⃣ SAVE HOMEWORK
     # --------------------------------------------------
     new_homework = HomeworkExamMathematicalReasoning(
         quiz_id=None,
+
         class_name="selective",
+
         subject="mathematical_reasoning",
+
         class_year=str(class_year),
+
         questions=questions
     )
 
     db.add(new_homework)
+
     db.commit()
+
     db.refresh(new_homework)
 
-    print(f"💾 MR homework saved with ID: {new_homework.id}")
+    print(
+        f"💾 MR homework saved with ID: "
+        f"{new_homework.id}"
+    )
+
     print("========== COMPLETE ==========\n")
+
     # --------------------------------------------------
     # 6️⃣ RESPONSE
     # --------------------------------------------------
     return {
-        "message": "MR homework generated (date-based)",
-        "homework_id": new_homework.id,
-        "class_name": "selective",
-        "subject": "mathematical_reasoning",
-        "class_year": int(class_year),
-        "total_questions": len(questions),
-        "questions": questions,
-    }
+        "message": "MR homework generated (batch-based)",
 
+        "homework_id": new_homework.id,
+
+        "batch_id": batch_id,
+
+        "class_name": "selective",
+
+        "subject": "mathematical_reasoning",
+
+        "class_year": int(class_year),
+
+        "selected_date": selected_date,
+
+        "total_questions": len(questions),
+
+        "questions": questions
+    }
+@app.get("/api/available-thinking-batches")
+def get_available_thinking_batches(
+    class_year: str,
+    date: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return distinct batch IDs for Thinking Skills
+    questions uploaded on a selected date.
+    """
+
+    try:
+
+        # -----------------------------------------
+        # Normalize year
+        # "Year 5" -> 5
+        # -----------------------------------------
+        parsed_year = int(
+            "".join(filter(str.isdigit, class_year))
+        )
+
+        print(
+            f"📦 FETCH THINKING BATCHES -> "
+            f"class_year={parsed_year}, "
+            f"date={date}"
+        )
+
+        # -----------------------------------------
+        # Fetch distinct batch ids
+        # -----------------------------------------
+        batches = (
+            db.query(Question.batch_id)
+            .filter(
+
+                func.lower(
+                    func.trim(Question.class_name)
+                ) == "selective",
+
+                func.lower(
+                    func.trim(Question.subject)
+                ) == "thinking skills",
+
+                Question.class_year == parsed_year,
+
+                Question.batch_id.isnot(None),
+
+                # uploaded on selected date
+                func.date(
+                    Question.created_at
+                ) == date
+
+            )
+            .distinct()
+            .order_by(
+                Question.batch_id.desc()
+            )
+            .all()
+        )
+
+        # -----------------------------------------
+        # Flatten tuples
+        # [(12,), (11,), (10,)] -> [12,11,10]
+        # -----------------------------------------
+        batch_ids = [
+            row[0]
+            for row in batches
+            if row[0] is not None
+        ]
+
+        print(
+            f"✅ FOUND THINKING BATCHES: "
+            f"{batch_ids}"
+        )
+
+        return batch_ids
+
+    except Exception as e:
+
+        print(
+            "AVAILABLE THINKING BATCHES ERROR:",
+            e
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch batch ids"
+        )
 @app.post("/generate-new-mr-homework")
 def generate_mr_homework_exam(
     payload: Optional[Dict] = Body(default=None),
@@ -14440,105 +15802,242 @@ def generate_naplan_language_conventions_homework_latest(
     payload: GenerateNaplanLCHomeworkLatestRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n=== START: Generate NAPLAN LC Homework Latest ===")
+    print("\n" + "=" * 80)
+    print("🚀 START: Generate NAPLAN Language Conventions Homework Latest")
+    print("=" * 80)
 
     year = payload.year
     selected_date = payload.selected_date
+    batch_id = payload.batch_id
 
-    print(f"📅 Requested year: {year}")
-    print(f"📅 Selected date: {selected_date}")
+    print(f"📥 Incoming payload:")
+    print(f"   year          = {year}")
+    print(f"   selected_date = {selected_date}")
+    print(f"   batch_id      = {batch_id}")
 
     normalized_subject = "language conventions"
 
-    # --------------------------------------------------
-    # Fetch questions directly from Question table
-    # --------------------------------------------------
-
-    questions = (
-        db.query(QuestionNumeracyLC)
-        .filter(
-            QuestionNumeracyLC.year == year,
-
-            func.lower(
-                func.trim(
-                    QuestionNumeracyLC.subject
-                )
-            ) == normalized_subject,
-
-            func.date(
-                QuestionNumeracyLC.created_at
-            ) == selected_date,
-
-            QuestionNumeracyLC.is_used == False
-        )
-        .order_by(QuestionNumeracyLC.id.asc())
-        .all()
+    print(
+        f"📚 Normalized subject = "
+        f"{normalized_subject}"
     )
 
-    print(f"🔎 Found {len(questions)} unused questions")
+    try:
 
-    if not questions:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"No unused Language Conventions questions found "
-                f"for year {year} on {selected_date}"
+        # --------------------------------------------------
+        # STEP 1: Debug rows matching selected date
+        # --------------------------------------------------
+        print("\n🔍 STEP 1: Checking rows matching date")
+
+        rows_matching_date = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == selected_date,
             )
+            .all()
         )
 
-    # --------------------------------------------------
-    # Build assembled questions
-    # --------------------------------------------------
+        print(
+            f"✅ Rows matching date found = "
+            f"{len(rows_matching_date)}"
+        )
 
-    assembled_questions = []
+        for idx, row in enumerate(rows_matching_date[:10], start=1):
+            print(
+                f"   ROW {idx} | "
+                f"id={row.id} | "
+                f"batch_id={row.batch_id} | "
+                f"is_used={row.is_used} | "
+                f"created_at={row.created_at}"
+            )
 
-    for q in questions:
+        # --------------------------------------------------
+        # STEP 2: Fetch homework questions using batch_id
+        # --------------------------------------------------
+        print("\n🔍 STEP 2: Fetching questions using batch_id")
 
-        assembled_questions.append({
-            "id": q.id,
-            "question_type": q.question_type,
-            "topic": q.topic,
-            "difficulty": q.difficulty,
-            "question_text": q.question_text,
-            "question_blocks": build_question_blocks(q, db),
-            "options": q.options,
-            "correct_answer": q.correct_answer,
-        })
+        questions = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == year,
 
-        # mark used
-        q.is_used = True
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
 
-    print(f"✅ Assembled {len(assembled_questions)} questions")
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == selected_date,
 
-    # --------------------------------------------------
-    # Save generated homework exam
-    # --------------------------------------------------
+                QuestionNumeracyLC.batch_id == batch_id,
 
-    exam = ExamNaplanLanguageConventionsHomework(
-        quiz_id=None,   # IMPORTANT
-        class_name="NAPLAN",
-        subject="Language Conventions",
-        difficulty="latest",
-        year=year,
-        questions=assembled_questions,
-    )
+                QuestionNumeracyLC.is_used == False
+            )
+            .order_by(
+                QuestionNumeracyLC.id.asc()
+            )
+            .all()
+        )
 
-    db.add(exam)
-    db.commit()
-    db.refresh(exam)
+        print(
+            f"✅ Questions fetched after batch filter = "
+            f"{len(questions)}"
+        )
 
-    print(f"🎉 SUCCESS homework_exam_id={exam.id}")
-    print("=== END ===\n")
+        for idx, q in enumerate(questions[:10], start=1):
+            print(
+                f"   QUESTION {idx} | "
+                f"id={q.id} | "
+                f"batch_id={q.batch_id} | "
+                f"is_used={q.is_used}"
+            )
 
-    return {
-        "message": "LC homework latest generated successfully",
-        "exam_id": exam.id,
-        "year": year,
-        "selected_date": str(selected_date),
-        "total_questions": len(assembled_questions),
-        "questions": assembled_questions
-    }
+        # --------------------------------------------------
+        # STEP 3: Validation
+        # --------------------------------------------------
+        if not questions:
 
+            print("❌ No homework questions found after filtering")
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No unused Language Conventions "
+                    f"homework questions found for "
+                    f"year={year}, "
+                    f"date={selected_date}, "
+                    f"batch_id={batch_id}"
+                )
+            )
+
+        # --------------------------------------------------
+        # STEP 4: Assemble homework questions
+        # --------------------------------------------------
+        print("\n🧩 STEP 4: Assembling homework questions")
+
+        assembled_questions = []
+
+        for q in questions:
+
+            assembled_questions.append({
+                "id": q.id,
+                "question_type": q.question_type,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+                "question_text": q.question_text,
+                "question_blocks": build_question_blocks(q, db),
+                "options": q.options,
+                "correct_answer": q.correct_answer,
+            })
+
+            # --------------------------------------------------
+            # Mark question used
+            # --------------------------------------------------
+            q.is_used = True
+
+            print(
+                f"✅ Marked question used | "
+                f"id={q.id}"
+            )
+
+        print(
+            f"✅ Total assembled homework questions = "
+            f"{len(assembled_questions)}"
+        )
+
+        # --------------------------------------------------
+        # STEP 5: Save generated homework exam
+        # --------------------------------------------------
+        print("\n💾 STEP 5: Saving generated homework exam")
+
+        exam = ExamNaplanLanguageConventionsHomework(
+            quiz_id=None,
+            class_name="NAPLAN",
+            subject="Language Conventions",
+            difficulty="latest",
+            year=year,
+            questions=assembled_questions,
+        )
+
+        db.add(exam)
+
+        print("💾 Homework exam added to session")
+
+        db.commit()
+
+        print("✅ Database commit successful")
+
+        db.refresh(exam)
+
+        print(
+            f"🎉 SUCCESS homework exam created | "
+            f"exam_id={exam.id}"
+        )
+
+        response_payload = {
+            "message": (
+                "LC homework latest generated successfully"
+            ),
+            "exam_id": exam.id,
+            "year": year,
+            "selected_date": str(selected_date),
+            "batch_id": batch_id,
+            "total_questions": len(assembled_questions),
+            "questions": assembled_questions
+        }
+
+        print("\n📤 RESPONSE PAYLOAD PREVIEW")
+
+        print(
+            {
+                "exam_id": exam.id,
+                "total_questions": len(assembled_questions),
+                "batch_id": batch_id,
+            }
+        )
+
+        print("\n" + "=" * 80)
+        print("🏁 END: Generate NAPLAN Language Conventions Homework Latest")
+        print("=" * 80)
+
+        return response_payload
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        print("\n" + "=" * 80)
+        print("❌ FAILED: Generate NAPLAN Language Conventions Homework Latest")
+        print("=" * 80)
+
+        print(f"❌ Exception type: {type(e)}")
+        print(f"❌ Exception: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        print("=" * 80)
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate latest LC homework exam"
+        )
+    
 @app.post("/naplan/language-conventions/generate-homework")
 async def generate_naplan_language_conventions_homework(
     request: Request,
@@ -14724,7 +16223,7 @@ from sqlalchemy import func
 class GenerateNaplanLCExamLatestRequest(BaseModel):
     year: int
     selected_date: date
-
+    batch_id: int
 
 # --------------------------------------------------
 # Generate LC Exam Latest
@@ -14735,104 +16234,242 @@ def generate_naplan_language_conventions_exam_latest(
     payload: GenerateNaplanLCExamLatestRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n=== START: Generate NAPLAN LC Exam Latest ===")
+    print("\n" + "=" * 80)
+    print("🚀 START: Generate NAPLAN Language Conventions Latest Exam")
+    print("=" * 80)
 
     year = payload.year
     selected_date = payload.selected_date
+    batch_id = payload.batch_id
 
-    print(f"📅 Requested year: {year}")
-    print(f"📅 Selected date: {selected_date}")
+    print(f"📥 Incoming payload:")
+    print(f"   year          = {year}")
+    print(f"   selected_date = {selected_date}")
+    print(f"   batch_id      = {batch_id}")
 
     normalized_subject = "language conventions"
 
-    # --------------------------------------------------
-    # Fetch questions directly from Question table
-    # --------------------------------------------------
-
-    questions = (
-        db.query(QuestionNumeracyLC)
-        .filter(
-            QuestionNumeracyLC.year == year,
-
-            func.lower(
-                func.trim(
-                    QuestionNumeracyLC.subject
-                )
-            ) == normalized_subject,
-
-            func.date(
-                QuestionNumeracyLC.created_at
-            ) == selected_date,
-
-            QuestionNumeracyLC.is_used == False
-        )
-        .order_by(QuestionNumeracyLC.id.asc())
-        .all()
+    print(
+        f"📚 Normalized subject = "
+        f"{normalized_subject}"
     )
 
-    print(f"🔎 Found {len(questions)} unused questions")
+    try:
 
-    if not questions:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"No unused Language Conventions questions found "
-                f"for year {year} on {selected_date}"
+        # --------------------------------------------------
+        # STEP 1: Debug rows matching selected date
+        # --------------------------------------------------
+        print("\n🔍 STEP 1: Checking rows matching date")
+
+        rows_matching_date = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == selected_date,
             )
+            .all()
         )
 
-    # --------------------------------------------------
-    # Build assembled questions
-    # --------------------------------------------------
+        print(
+            f"✅ Rows matching date found = "
+            f"{len(rows_matching_date)}"
+        )
 
-    assembled_questions = []
+        for idx, row in enumerate(rows_matching_date[:10], start=1):
+            print(
+                f"   ROW {idx} | "
+                f"id={row.id} | "
+                f"batch_id={row.batch_id} | "
+                f"is_used={row.is_used} | "
+                f"created_at={row.created_at}"
+            )
 
-    for q in questions:
+        # --------------------------------------------------
+        # STEP 2: Fetch questions using batch_id
+        # --------------------------------------------------
+        print("\n🔍 STEP 2: Fetching questions using batch_id")
 
-        assembled_questions.append({
-            "id": q.id,
-            "question_type": q.question_type,
-            "topic": q.topic,
-            "difficulty": q.difficulty,
-            "question_text": q.question_text,
-            "question_blocks": build_question_blocks(q, db),
-            "options": q.options,
-            "correct_answer": q.correct_answer,
-        })
+        questions = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == year,
 
-        # mark used
-        q.is_used = True
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
 
-    print(f"✅ Assembled {len(assembled_questions)} questions")
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == selected_date,
 
-    # --------------------------------------------------
-    # Save generated exam
-    # --------------------------------------------------
+                QuestionNumeracyLC.batch_id == batch_id,
 
-    exam = ExamNaplanLanguageConventions(
-        quiz_id=None,   # IMPORTANT
-        class_name="NAPLAN",
-        subject="Language Conventions",
-        difficulty="latest",
-        year=year,
-        questions=assembled_questions,
-    )
+                QuestionNumeracyLC.is_used == False
+            )
+            .order_by(
+                QuestionNumeracyLC.id.asc()
+            )
+            .all()
+        )
 
-    db.add(exam)
-    db.commit()
-    db.refresh(exam)
+        print(
+            f"✅ Questions fetched after batch filter = "
+            f"{len(questions)}"
+        )
 
-    print(f"🎉 SUCCESS exam_id={exam.id}")
-    print("=== END ===\n")
+        for idx, q in enumerate(questions[:10], start=1):
+            print(
+                f"   QUESTION {idx} | "
+                f"id={q.id} | "
+                f"batch_id={q.batch_id} | "
+                f"is_used={q.is_used}"
+            )
 
-    return {
-        "message": "LC exam latest generated successfully",
-        "exam_id": exam.id,
-        "year": year,
-        "selected_date": str(selected_date),
-        "total_questions": len(assembled_questions),
-        "questions": assembled_questions
-    }
+        # --------------------------------------------------
+        # STEP 3: Validation
+        # --------------------------------------------------
+        if not questions:
+
+            print("❌ No questions found after filtering")
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No unused Language Conventions "
+                    f"questions found for "
+                    f"year={year}, "
+                    f"date={selected_date}, "
+                    f"batch_id={batch_id}"
+                )
+            )
+
+        # --------------------------------------------------
+        # STEP 4: Assemble questions
+        # --------------------------------------------------
+        print("\n🧩 STEP 4: Assembling questions")
+
+        assembled_questions = []
+
+        for q in questions:
+
+            assembled_questions.append({
+                "id": q.id,
+                "question_type": q.question_type,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+                "question_text": q.question_text,
+                "question_blocks": build_question_blocks(q, db),
+                "options": q.options,
+                "correct_answer": q.correct_answer,
+            })
+
+            # --------------------------------------------------
+            # Mark question used
+            # --------------------------------------------------
+            q.is_used = True
+
+            print(
+                f"✅ Marked question used | "
+                f"id={q.id}"
+            )
+
+        print(
+            f"✅ Total assembled questions = "
+            f"{len(assembled_questions)}"
+        )
+
+        # --------------------------------------------------
+        # STEP 5: Save generated exam
+        # --------------------------------------------------
+        print("\n💾 STEP 5: Saving generated exam")
+
+        exam = ExamNaplanLanguageConventions(
+            quiz_id=None,
+            class_name="NAPLAN",
+            subject="Language Conventions",
+            difficulty="latest",
+            year=year,
+            questions=assembled_questions,
+        )
+
+        db.add(exam)
+
+        print("💾 Exam added to session")
+
+        db.commit()
+
+        print("✅ Database commit successful")
+
+        db.refresh(exam)
+
+        print(
+            f"🎉 SUCCESS exam created | "
+            f"exam_id={exam.id}"
+        )
+
+        response_payload = {
+            "message": (
+                "LC exam latest generated successfully"
+            ),
+            "exam_id": exam.id,
+            "year": year,
+            "selected_date": str(selected_date),
+            "batch_id": batch_id,
+            "total_questions": len(assembled_questions),
+            "questions": assembled_questions
+        }
+
+        print("\n📤 RESPONSE PAYLOAD PREVIEW")
+
+        print(
+            {
+                "exam_id": exam.id,
+                "total_questions": len(assembled_questions),
+                "batch_id": batch_id,
+            }
+        )
+
+        print("\n" + "=" * 80)
+        print("🏁 END: Generate NAPLAN Language Conventions Latest Exam")
+        print("=" * 80)
+
+        return response_payload
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        print("\n" + "=" * 80)
+        print("❌ FAILED: Generate NAPLAN Language Conventions Latest Exam")
+        print("=" * 80)
+
+        print(f"❌ Exception type: {type(e)}")
+        print(f"❌ Exception: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        print("=" * 80)
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate latest LC exam"
+        )
+    
 
 @app.post("/naplan/language-conventions/generate-exam")
 async def generate_naplan_language_conventions_exam(
@@ -15468,109 +17105,252 @@ def generate_naplan_reading_exam_latest(
     payload: GenerateNaplanReadingLatestRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n=== START: Generate NAPLAN Reading Latest Exam ===")
+    print("\n" + "=" * 80)
+    print("📘 GENERATE NAPLAN READING LATEST EXAM START")
+    print("=" * 80)
 
-    requested_year = payload.year
-    selected_date = payload.selected_date
+    try:
 
-    print(f"📘 Requested year: {requested_year}")
-    print(f"📅 Selected date: {selected_date}")
+        # --------------------------------------------------
+        # 0️⃣ VALIDATE INPUT
+        # --------------------------------------------------
+        requested_year = payload.year
+        selected_date = payload.selected_date
+        batch_id = payload.batch_id
 
-    normalized_subject = "reading"
+        print("\n📥 INCOMING REQUEST")
+        print(f"   requested_year = {requested_year}")
+        print(f"   selected_date = {selected_date}")
+        print(f"   batch_id      = {batch_id}")
 
-    # --------------------------------------------------
-    # Fetch questions directly from Question table
-    # --------------------------------------------------
-
-    db_rows = (
-        db.query(QuestionNaplanReading)
-        .filter(
-            QuestionNaplanReading.year == requested_year,
-
-            QuestionNaplanReading.is_used == False,
-
-            func.lower(
-                func.trim(
-                    QuestionNaplanReading.subject
-                )
-            ) == normalized_subject,
-
-            func.date(
-                QuestionNaplanReading.created_at
-            ) == selected_date
-        )
-        .order_by(
-            QuestionNaplanReading.id.asc()
-        )
-        .all()
-    )
-
-    print(f"🔎 Found {len(db_rows)} unused reading rows")
-
-    if not db_rows:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"No unused Reading questions found "
-                f"for year {requested_year} "
-                f"on {selected_date}"
+        if not requested_year:
+            raise HTTPException(
+                status_code=400,
+                detail="year is required"
             )
+
+        if not selected_date:
+            raise HTTPException(
+                status_code=400,
+                detail="selected_date is required"
+            )
+
+        if batch_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="batch_id is required"
+            )
+
+        normalized_subject = "reading"
+
+        print("\n🔧 NORMALIZED VALUES")
+        print(f"   normalized_subject = {normalized_subject}")
+
+        # --------------------------------------------------
+        # 1️⃣ DEBUG MATCHING ROWS
+        # --------------------------------------------------
+        print("\n🔍 STEP 1: DEBUG MATCHING QUESTIONS")
+
+        debug_rows = (
+            db.query(QuestionNaplanReading)
+            .filter(
+                QuestionNaplanReading.year == requested_year,
+
+                func.lower(
+                    func.trim(
+                        QuestionNaplanReading.subject
+                    )
+                ) == normalized_subject,
+
+                func.date(
+                    QuestionNaplanReading.created_at
+                ) == selected_date,
+
+                QuestionNaplanReading.batch_id == batch_id
+            )
+            .order_by(
+                QuestionNaplanReading.id.asc()
+            )
+            .all()
         )
 
-    # --------------------------------------------------
-    # Build assembled questions
-    # --------------------------------------------------
+        print(
+            f"✅ Matching rows before is_used filter = "
+            f"{len(debug_rows)}"
+        )
 
-    assembled_questions = []
+        for idx, row in enumerate(debug_rows[:10], start=1):
 
-    for row in db_rows:
+            print(
+                f"   ROW {idx} | "
+                f"id={row.id} | "
+                f"topic={row.topic} | "
+                f"difficulty={row.difficulty} | "
+                f"batch_id={row.batch_id} | "
+                f"is_used={row.is_used} | "
+                f"created_at={row.created_at}"
+            )
 
-        row.is_used = True
+        # --------------------------------------------------
+        # 2️⃣ FETCH UNUSED QUESTIONS
+        # --------------------------------------------------
+        print("\n🔍 STEP 2: FETCH UNUSED QUESTIONS")
 
-        assembled_questions.append({
-            "question_id": str(uuid.uuid4()),
-            "passage_id": row.passage_id,
-            "topic": row.topic,
-            "difficulty": row.difficulty,
-            "question_type": row.question_type,
-            "exam_bundle": row.exam_bundle,
-        })
+        db_rows = (
+            db.query(QuestionNaplanReading)
+            .filter(
+                QuestionNaplanReading.year == requested_year,
 
-    print(f"✅ Assembled {len(assembled_questions)} questions")
+                QuestionNaplanReading.is_used == False,
 
-    # --------------------------------------------------
-    # Save generated exam
-    # --------------------------------------------------
+                func.lower(
+                    func.trim(
+                        QuestionNaplanReading.subject
+                    )
+                ) == normalized_subject,
 
-    exam = ExamNaplanReading(
-        quiz_id=None,   # IMPORTANT
-        class_name="NAPLAN",
-        subject="reading",
-        year=requested_year,
-        difficulty="latest",
-        questions=assembled_questions,
-    )
+                func.date(
+                    QuestionNaplanReading.created_at
+                ) == selected_date,
 
-    db.add(exam)
-    db.commit()
-    db.refresh(exam)
+                QuestionNaplanReading.batch_id == batch_id
+            )
+            .order_by(
+                QuestionNaplanReading.id.asc()
+            )
+            .all()
+        )
 
-    print(
-        f"🎉 SUCCESS: Reading latest exam generated | "
-        f"exam_id={exam.id}"
-    )
+        print(
+            f"✅ Found unused reading rows = "
+            f"{len(db_rows)}"
+        )
 
-    print("=== END: Generate Reading Latest Exam ===\n")
+        if not db_rows:
 
-    return {
-        "message": "NAPLAN Reading latest exam generated successfully",
-        "exam_id": exam.id,
-        "year": requested_year,
-        "selected_date": str(selected_date),
-        "total_questions": len(assembled_questions),
-        "questions": assembled_questions
-    }
+            print("\n❌ NO UNUSED QUESTIONS FOUND")
 
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No unused Reading questions found "
+                    f"for year {requested_year}, "
+                    f"date {selected_date}, "
+                    f"batch {batch_id}"
+                )
+            )
+
+        # --------------------------------------------------
+        # 3️⃣ BUILD EXAM QUESTIONS
+        # --------------------------------------------------
+        print("\n🧠 STEP 3: BUILD ASSEMBLED QUESTIONS")
+
+        assembled_questions = []
+
+        for idx, row in enumerate(db_rows, start=1):
+
+            print(
+                f"   ➕ Adding question {idx} | "
+                f"id={row.id} | "
+                f"topic={row.topic}"
+            )
+
+            assembled_questions.append({
+                "question_id": str(uuid.uuid4()),
+                "passage_id": row.passage_id,
+                "topic": row.topic,
+                "difficulty": row.difficulty,
+                "question_type": row.question_type,
+                "exam_bundle": row.exam_bundle,
+            })
+
+            # --------------------------------------------------
+            # MARK USED
+            # --------------------------------------------------
+            row.is_used = True
+
+        print(
+            f"\n✅ Assembled total questions = "
+            f"{len(assembled_questions)}"
+        )
+
+        # --------------------------------------------------
+        # 4️⃣ SAVE EXAM
+        # --------------------------------------------------
+        print("\n💾 STEP 4: SAVE EXAM")
+
+        exam = ExamNaplanReading(
+            quiz_id=None,
+
+            class_name="NAPLAN",
+
+            subject="reading",
+
+            year=requested_year,
+
+            difficulty="latest",
+
+            questions=assembled_questions,
+        )
+
+        db.add(exam)
+
+        db.commit()
+
+        db.refresh(exam)
+
+        print("\n✅ EXAM SAVED SUCCESSFULLY")
+        print(f"   exam.id         = {exam.id}")
+        print(f"   exam.subject    = {exam.subject}")
+        print(f"   exam.year       = {exam.year}")
+        print(f"   exam.class_name = {exam.class_name}")
+        print(f"   total_questions = {len(assembled_questions)}")
+
+        print("\n" + "=" * 80)
+        print("🎉 GENERATE NAPLAN READING LATEST EXAM SUCCESS")
+        print("=" * 80)
+
+        # --------------------------------------------------
+        # 5️⃣ RESPONSE
+        # --------------------------------------------------
+        return {
+            "message":
+                "NAPLAN Reading latest exam generated successfully",
+
+            "exam_id":
+                exam.id,
+
+            "year":
+                requested_year,
+
+            "selected_date":
+                str(selected_date),
+
+            "batch_id":
+                batch_id,
+
+            "total_questions":
+                len(assembled_questions),
+
+            "questions":
+                assembled_questions
+        }
+
+    except Exception as e:
+
+        print("\n" + "=" * 80)
+        print("❌ GENERATE NAPLAN READING LATEST EXAM FAILED")
+        print("=" * 80)
+
+        print(f"❌ Exception type: {type(e)}")
+        print(f"❌ Exception: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        print("=" * 80)
+
+        raise
 @app.post("/naplan/reading/generate-exam")
 def generate_naplan_reading_exam(
     payload: dict = Body(...),
@@ -15747,102 +17527,241 @@ def generate_naplan_numeracy_exam_latest(
     payload: GenerateNaplanNumeracyLatestRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n=== START: Generate NAPLAN Numeracy Latest Exam ===")
+    print("\n" + "=" * 80)
+    print("🚀 START: Generate NAPLAN Numeracy Latest Exam")
+    print("=" * 80)
 
     class_year = payload.class_year
     selected_date = payload.selected_date
+    batch_id = payload.batch_id
 
-    print(f"📅 Class Year: {class_year}")
-    print(f"📅 Selected Date: {selected_date}")
+    print(f"📥 Incoming payload:")
+    print(f"   class_year   = {class_year}")
+    print(f"   selected_date= {selected_date}")
+    print(f"   batch_id     = {batch_id}")
 
     normalized_subject = "numeracy"
 
-    # --------------------------------------------------
-    # Fetch questions directly from Question table
-    # --------------------------------------------------
+    print(f"📚 Normalized subject = {normalized_subject}")
 
-    questions = (
-        db.query(QuestionNumeracyLC)
-        .filter(
-            QuestionNumeracyLC.year == class_year,
+    try:
 
-            func.lower(
-                func.trim(QuestionNumeracyLC.subject)
-            ) == normalized_subject,
+        # --------------------------------------------------
+        # STEP 1: Debug all matching rows BEFORE batch filter
+        # --------------------------------------------------
+        print("\n🔍 STEP 1: Checking rows matching date")
 
-            func.date(
-                QuestionNumeracyLC.created_at
-            ) == selected_date,
+        rows_matching_date = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == class_year,
 
-            QuestionNumeracyLC.is_used == False
-        )
-        .order_by(QuestionNumeracyLC.id.asc())
-        .all()
-    )
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
 
-    print(f"🔎 Found {len(questions)} questions")
-
-    if not questions:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"No Numeracy questions found for "
-                f"Year {class_year} on {selected_date}"
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == selected_date,
             )
+            .all()
         )
 
-    # --------------------------------------------------
-    # Build exam questions
-    # --------------------------------------------------
+        print(
+            f"✅ Rows matching date found = "
+            f"{len(rows_matching_date)}"
+        )
 
-    assembled_questions = []
+        for idx, row in enumerate(rows_matching_date[:10], start=1):
+            print(
+                f"   ROW {idx} | "
+                f"id={row.id} | "
+                f"batch_id={row.batch_id} | "
+                f"is_used={row.is_used} | "
+                f"created_at={row.created_at}"
+            )
 
-    for q in questions:
+        # --------------------------------------------------
+        # STEP 2: Fetch questions WITH batch_id filter
+        # --------------------------------------------------
+        print("\n🔍 STEP 2: Fetching questions using batch_id")
 
-        assembled_questions.append({
-            "id": q.id,
-            "question_type": q.question_type,
-            "topic": q.topic,
-            "difficulty": q.difficulty,
-            "question_text": q.question_text,
-            "question_blocks": build_question_blocks(q, db),
-            "options": q.options,
-            "correct_answer": q.correct_answer,
-        })
+        questions = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == class_year,
 
-        # Optional tracking only
-        q.is_used = True
+                func.lower(
+                    func.trim(
+                        QuestionNumeracyLC.subject
+                    )
+                ) == normalized_subject,
 
-    print(f"✅ Assembled {len(assembled_questions)} questions")
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == selected_date,
 
-    # --------------------------------------------------
-    # Save exam
-    # --------------------------------------------------
+                QuestionNumeracyLC.batch_id == batch_id,
 
-    exam = ExamNaplanNumeracy(
-        quiz_id=None,   # IMPORTANT
-        class_name="NAPLAN",
-        subject="Numeracy",
-        difficulty="latest",
-        year=class_year,
-        questions=assembled_questions,
-    )
+                QuestionNumeracyLC.is_used == False
+            )
+            .order_by(
+                QuestionNumeracyLC.id.asc()
+            )
+            .all()
+        )
 
-    db.add(exam)
-    db.commit()
-    db.refresh(exam)
+        print(
+            f"✅ Questions fetched after batch filter = "
+            f"{len(questions)}"
+        )
 
-    print(f"🎉 SUCCESS exam_id={exam.id}")
-    print("=== END ===\n")
+        for idx, q in enumerate(questions[:10], start=1):
+            print(
+                f"   QUESTION {idx} | "
+                f"id={q.id} | "
+                f"batch_id={q.batch_id} | "
+                f"is_used={q.is_used}"
+            )
 
-    return {
-        "message": "NAPLAN Numeracy latest exam generated successfully",
-        "exam_id": exam.id,
-        "year": class_year,
-        "selected_date": str(selected_date),
-        "total_questions": len(assembled_questions),
-        "questions": assembled_questions
-    }
+        # --------------------------------------------------
+        # STEP 3: Validation
+        # --------------------------------------------------
+        if not questions:
+
+            print("❌ No questions found after filtering")
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No Numeracy questions found for "
+                    f"Year {class_year}, "
+                    f"date={selected_date}, "
+                    f"batch_id={batch_id}"
+                )
+            )
+
+        # --------------------------------------------------
+        # STEP 4: Assemble exam questions
+        # --------------------------------------------------
+        print("\n🧩 STEP 4: Assembling questions")
+
+        assembled_questions = []
+
+        for q in questions:
+
+            assembled_questions.append({
+                "id": q.id,
+                "question_type": q.question_type,
+                "topic": q.topic,
+                "difficulty": q.difficulty,
+                "question_text": q.question_text,
+                "question_blocks": build_question_blocks(q, db),
+                "options": q.options,
+                "correct_answer": q.correct_answer,
+            })
+
+            # --------------------------------------------------
+            # Mark question used
+            # --------------------------------------------------
+            q.is_used = True
+
+            print(
+                f"✅ Marked question used | "
+                f"id={q.id}"
+            )
+
+        print(
+            f"✅ Total assembled questions = "
+            f"{len(assembled_questions)}"
+        )
+
+        # --------------------------------------------------
+        # STEP 5: Save generated exam
+        # --------------------------------------------------
+        print("\n💾 STEP 5: Saving generated exam")
+
+        exam = ExamNaplanNumeracy(
+            quiz_id=None,
+            class_name="NAPLAN",
+            subject="Numeracy",
+            difficulty="latest",
+            year=class_year,
+            questions=assembled_questions,
+        )
+
+        db.add(exam)
+
+        print("💾 Exam added to session")
+
+        db.commit()
+
+        print("✅ Database commit successful")
+
+        db.refresh(exam)
+
+        print(
+            f"🎉 SUCCESS exam created | "
+            f"exam_id={exam.id}"
+        )
+
+        response_payload = {
+            "message": (
+                "NAPLAN Numeracy latest exam "
+                "generated successfully"
+            ),
+            "exam_id": exam.id,
+            "year": class_year,
+            "selected_date": str(selected_date),
+            "batch_id": batch_id,
+            "total_questions": len(assembled_questions),
+            "questions": assembled_questions
+        }
+
+        print("\n📤 RESPONSE PAYLOAD PREVIEW")
+        print(
+            {
+                "exam_id": exam.id,
+                "total_questions": len(assembled_questions),
+                "batch_id": batch_id,
+            }
+        )
+
+        print("\n" + "=" * 80)
+        print("🏁 END: Generate NAPLAN Numeracy Latest Exam")
+        print("=" * 80)
+
+        return response_payload
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        print("\n" + "=" * 80)
+        print("❌ FAILED: Generate NAPLAN Numeracy Latest Exam")
+        print("=" * 80)
+
+        print(f"❌ Exception type: {type(e)}")
+        print(f"❌ Exception: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        print("=" * 80)
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate latest Numeracy exam"
+        )
+
+
+
+
 
 @app.post("/naplan/numeracy/generate-exam")
 def generate_naplan_numeracy_exam(
@@ -22928,15 +24847,15 @@ def generate_exam(
         "questions": questions,
     }
 
-
-
 @app.post("/generate-new-mr-latest")
 def generate_exam_mr_latest(
     payload: Optional[Dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
     """
-    Generate Mathematical Reasoning exam using ALL questions from a selected date.
+    Generate Mathematical Reasoning exam using ALL questions
+    from a selected date + batch id.
+
     - No quiz dependency
     - No topic config
     - Ignores is_used during fetch
@@ -22950,22 +24869,41 @@ def generate_exam_mr_latest(
     # ==================================================
     class_year = payload.get("class_year")
     selected_date = payload.get("date")
+    batch_id = payload.get("batch_id")
 
     if not class_year:
-        raise HTTPException(status_code=400, detail="class_year is required")
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
 
     if not selected_date:
-        raise HTTPException(status_code=400, detail="date is required")
+        raise HTTPException(
+            status_code=400,
+            detail="date is required"
+        )
 
-    print("\n================ GENERATE MR (DATE MODE) =================")
-    print(f"📥 class_year={class_year}, date={selected_date}")
+    if not batch_id:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
+
+    print("\n================ GENERATE MR (BATCH MODE) =================")
+
+    print(
+        f"📥 class_year={class_year}, "
+        f"date={selected_date}, "
+        f"batch_id={batch_id}"
+    )
 
     # ==================================================
-    # 1️⃣ Fetch Questions (IGNORE is_used)
+    # 1️⃣ Fetch Questions
     # ==================================================
     rows = (
         db.query(Question)
         .filter(
+
             func.lower(
                 func.trim(Question.class_name)
             ) == "selective",
@@ -22976,27 +24914,37 @@ def generate_exam_mr_latest(
 
             Question.class_year == class_year,
 
+            # selected upload date
             func.date(
                 Question.created_at
             ) == selected_date,
 
+            # selected upload batch
+            Question.batch_id == batch_id,
+
+            # tracking only
             Question.is_used == False
         )
         .order_by(Question.id.asc())
         .all()
     )
+
     if not rows:
         raise HTTPException(
             status_code=400,
-            detail="No questions found for selected date"
+            detail=(
+                "No questions found for selected "
+                "date and batch"
+            )
         )
 
     print(f"✅ Fetched {len(rows)} MR questions")
 
     # ==================================================
-    # 2️⃣ Build Questions (clean + safe)
+    # 2️⃣ Build Questions
     # ==================================================
     questions = []
+
     q_id = 1
 
     for row in rows:
@@ -23004,17 +24952,28 @@ def generate_exam_mr_latest(
         if not row.question_blocks:
             raise HTTPException(
                 status_code=500,
-                detail=f"Question {row.id} has no question_blocks"
+                detail=(
+                    f"Question {row.id} "
+                    f"has no question_blocks"
+                )
             )
 
-        sanitized_blocks = sanitize_question_blocks(row.question_blocks)
+        sanitized_blocks = sanitize_question_blocks(
+            row.question_blocks
+        )
 
         questions.append({
             "id": row.id,
             "q_id": q_id,
             "topic": row.topic,
+            "batch_id": row.batch_id,
+
             "question_blocks": sanitized_blocks,
-            "options": normalize_options(row.options),
+
+            "options": normalize_options(
+                row.options
+            ),
+
             "correct": row.correct_answer
         })
 
@@ -23023,11 +24982,12 @@ def generate_exam_mr_latest(
     print(f"📦 Built {len(questions)} questions")
 
     # ==================================================
-    # 3️⃣ MARK QUESTIONS AS USED (TRACKING ONLY)
+    # 3️⃣ MARK QUESTIONS AS USED
     # ==================================================
     used_ids = [q["id"] for q in questions]
 
     if used_ids:
+
         updated = (
             db.query(Question)
             .filter(
@@ -23040,39 +25000,61 @@ def generate_exam_mr_latest(
             )
         )
 
-        print(f"🔒 Marked {updated} questions as used")
+        print(
+            f"🔒 Marked {updated} questions as used"
+        )
 
     # ==================================================
-    # 4️⃣ SAVE EXAM (NO QUIZ)
+    # 4️⃣ SAVE EXAM
     # ==================================================
     new_exam = Exam(
-        quiz_id=None,  # ✅ no dependency anymore
+        quiz_id=None,
+
         class_name="selective",
+
         subject="mathematical_reasoning",
+
         class_year=class_year,
+
         questions=questions
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
     print(f"💾 MR Exam saved with ID: {new_exam.id}")
+
     print("================ END =================\n")
 
     # ==================================================
     # 5️⃣ RESPONSE
     # ==================================================
     return {
-        "message": "MR exam generated (date-based)",
+        "message": "MR exam generated (batch-based)",
+
         "exam_id": new_exam.id,
+
         "quiz_id": None,
+
+        "batch_id": batch_id,
+
         "class_name": "selective",
+
         "subject": "mathematical_reasoning",
+
         "class_year": class_year,
+
+        "selected_date": selected_date,
+
         "total_questions": len(questions),
+
         "questions": questions
     }
+
+
 
 @app.post("/api/admin/bulk-users-exam-module")
 async def bulk_users_exam_module(
@@ -24661,6 +26643,7 @@ def generate_oc_thinking_skills_homework_exam_latest(
         "total_questions": len(questions),
         "questions": questions
     }
+
 @app.post("/api/exams/generate-oc-thinking-skills-latest")
 def generate_oc_thinking_skills_exam_latest(
     payload: Optional[dict] = Body(default=None),
@@ -24668,10 +26651,14 @@ def generate_oc_thinking_skills_exam_latest(
 ):
     """
     Generate OC Thinking Skills exam
-    using ALL questions uploaded on selected date.
+    using ALL questions uploaded on
+    selected date + batch id.
     """
 
-    print("\n🚀 GENERATE OC THINKING SKILLS EXAM (LATEST)")
+    print(
+        "\n🚀 GENERATE OC THINKING "
+        "SKILLS EXAM (BATCH MODE)"
+    )
 
     payload = payload or {}
 
@@ -24686,7 +26673,10 @@ def generate_oc_thinking_skills_exam_latest(
     # 1️⃣ Validate input
     # --------------------------------------------------
     class_year = payload.get("class_year")
+
     selected_date = payload.get("selected_date")
+
+    batch_id = payload.get("batch_id")
 
     if class_year is None:
         raise HTTPException(
@@ -24700,8 +26690,15 @@ def generate_oc_thinking_skills_exam_latest(
             detail="selected_date is required"
         )
 
+    if not batch_id:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
+
     try:
         class_year_int = int(class_year)
+
     except:
         raise HTTPException(
             status_code=400,
@@ -24709,42 +26706,121 @@ def generate_oc_thinking_skills_exam_latest(
         )
 
     print(f"🎓 Class Year: {class_year_int}")
+
     print(f"📅 Selected Date: {selected_date}")
 
-    # --------------------------------------------------
-    # 2️⃣ Generate questions from selected upload date
-    # --------------------------------------------------
-    try:
-        questions = generate_exam_questions_latest(
-            db=db,
-            class_year=class_year_int,
-            selected_date=selected_date,
-            class_name=CLASS_DB,
-            subject=SUBJECT_DB
-        )
+    print(f"📦 Batch ID: {batch_id}")
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate latest exam: {str(e)}"
-        )
+    # --------------------------------------------------
+    # 2️⃣ Fetch Questions
+    # --------------------------------------------------
+    rows = (
+        db.query(Question)
+        .filter(
 
-    if not questions:
+            func.lower(
+                func.trim(Question.class_name)
+            ) == CLASS_DB,
+
+            func.lower(
+                func.trim(Question.subject)
+            ) == SUBJECT_DB,
+
+            Question.class_year == class_year_int,
+
+            # selected upload date
+            func.date(
+                Question.created_at
+            ) == selected_date,
+
+            # selected upload batch
+            Question.batch_id == batch_id,
+
+            # only unused questions
+            Question.is_used == False
+
+        )
+        .order_by(Question.id.asc())
+        .all()
+    )
+
+    if not rows:
         raise HTTPException(
             status_code=404,
-            detail="No questions found for selected date"
+            detail=(
+                "No questions found for selected "
+                "date and batch"
+            )
         )
 
-    print(f"🧠 Generated {len(questions)} questions")
+    print(f"🧠 Fetched {len(rows)} questions")
 
     # --------------------------------------------------
-    # 3️⃣ Mark DB questions as used
+    # 3️⃣ Build Questions
+    # --------------------------------------------------
+    questions = []
+
+    q_id = 1
+
+    for row in rows:
+
+        blocks = row.question_blocks or []
+
+        # fallback text
+        if not blocks and row.question_text:
+
+            blocks = [{
+                "type": "text",
+                "content": row.question_text
+            }]
+
+        # include images safely
+        existing_image_srcs = {
+            block.get("src")
+            for block in blocks
+            if block.get("type") == "image"
+        }
+
+        for image_src in row.images or []:
+
+            if image_src not in existing_image_srcs:
+
+                blocks.append({
+                    "type": "image",
+                    "src": image_src
+                })
+
+        questions.append({
+            "id": row.id,
+
+            "q_id": q_id,
+
+            "topic": row.topic,
+
+            "batch_id": row.batch_id,
+
+            "blocks": blocks,
+
+            "options": row.options,
+
+            "correct": row.correct_answer
+        })
+
+        q_id += 1
+
+    print(f"📦 Built {len(questions)} questions")
+
+    # --------------------------------------------------
+    # 4️⃣ Mark DB questions as used
     # --------------------------------------------------
     used_ids = [
-        q.get("id") for q in questions if q.get("id")
+        q.get("id")
+        for q in questions
+        if q.get("id")
     ]
 
     if used_ids:
+
         db.query(Question).filter(
             Question.id.in_(used_ids),
             Question.is_used == False
@@ -24753,38 +26829,61 @@ def generate_oc_thinking_skills_exam_latest(
             synchronize_session=False
         )
 
-        print(f"🏷️ Marked {len(used_ids)} questions as used")
+        print(
+            f"🏷️ Marked {len(used_ids)} "
+            f"questions as used"
+        )
 
     # --------------------------------------------------
-    # 4️⃣ Save generated exam
+    # 5️⃣ Save generated exam
     # --------------------------------------------------
     new_exam = Exam(
-        quiz_id=0,   # 🔥 latest mode has no quiz config
+        quiz_id=0,
+
         class_name=CLASS_EXAM,
+
         subject=SUBJECT_EXAM,
+
         class_year=class_year_int,
+
         questions=questions
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
     print(f"💾 Exam saved ID={new_exam.id}")
 
     # --------------------------------------------------
-    # 5️⃣ Response
+    # 6️⃣ Response
     # --------------------------------------------------
     return {
-        "message": "OC Thinking Skills latest exam generated successfully",
+        "message": (
+            "OC Thinking Skills latest exam "
+            "generated successfully"
+        ),
+
         "exam_id": new_exam.id,
+
         "quiz_id": 0,
+
+        "batch_id": batch_id,
+
         "class_name": CLASS_EXAM,
+
         "class_year": class_year_int,
+
         "subject": SUBJECT_EXAM,
+
         "difficulty": "mixed",
+
         "selected_date": selected_date,
+
         "total_questions": len(questions),
+
         "questions": questions
     }
 
@@ -25067,7 +27166,10 @@ def generate_oc_mathematical_reasoning_exam_latest(
     # 0️⃣ Parse payload
     # --------------------------------------------------
     raw_class_year = payload.get("class_year")
+
     selected_date = payload.get("selected_date")
+
+    batch_id = payload.get("batch_id")
 
     if not raw_class_year:
         raise HTTPException(
@@ -25081,18 +27183,29 @@ def generate_oc_mathematical_reasoning_exam_latest(
             "selected_date is required"
         )
 
+    if not batch_id:
+        raise HTTPException(
+            400,
+            "batch_id is required"
+        )
+
     # --------------------------------------------------
     # 1️⃣ Parse class year
     # --------------------------------------------------
     try:
+
         if isinstance(raw_class_year, str):
+
             class_year = int(
                 raw_class_year.strip().split()[-1]
             )
+
         else:
+
             class_year = int(raw_class_year)
 
     except:
+
         raise HTTPException(
             400,
             f"Invalid class_year: {raw_class_year}"
@@ -25104,12 +27217,14 @@ def generate_oc_mathematical_reasoning_exam_latest(
     # 2️⃣ Parse selected date
     # --------------------------------------------------
     try:
+
         parsed_date = datetime.strptime(
             selected_date,
             "%Y-%m-%d"
         ).date()
 
     except:
+
         raise HTTPException(
             400,
             f"Invalid selected_date: {selected_date}"
@@ -25117,12 +27232,16 @@ def generate_oc_mathematical_reasoning_exam_latest(
 
     print(f"📅 Parsed selected_date: {parsed_date}")
 
+    print(f"📦 Batch ID: {batch_id}")
+
     # --------------------------------------------------
-    # 3️⃣ Fetch ALL questions for selected date
+    # 3️⃣ Fetch ALL questions
+    # using date + batch id
     # --------------------------------------------------
     questions_from_db = (
         db.query(Question)
         .filter(
+
             func.lower(
                 func.trim(Question.class_name)
             ) == "oc",
@@ -25133,22 +27252,33 @@ def generate_oc_mathematical_reasoning_exam_latest(
 
             Question.class_year == class_year,
 
+            # selected upload date
             func.date(
                 Question.created_at
             ) == parsed_date,
 
+            # selected upload batch
+            Question.batch_id == batch_id,
+
+            # only unused questions
             Question.is_used == False
+
         )
         .order_by(Question.created_at.asc())
         .all()
     )
 
-    print(f"\n📦 Questions Found: {len(questions_from_db)}")
+    print(
+        f"\n📦 Questions Found: "
+        f"{len(questions_from_db)}"
+    )
 
     if not questions_from_db:
+
         raise HTTPException(
             404,
-            "No questions found for selected date"
+            "No questions found for selected "
+            "date and batch"
         )
 
     # --------------------------------------------------
@@ -25156,15 +27286,26 @@ def generate_oc_mathematical_reasoning_exam_latest(
     # --------------------------------------------------
     questions = []
 
-    for index, q in enumerate(questions_from_db, start=1):
+    for index, q in enumerate(
+        questions_from_db,
+        start=1
+    ):
 
         questions.append({
             "id": q.id,
+
             "q_id": index,
+
             "topic": q.topic,
+
             "difficulty": q.difficulty,
+
+            "batch_id": q.batch_id,
+
             "blocks": q.question_blocks or [],
+
             "options": q.options,
+
             "correct": q.correct_answer
         })
 
@@ -25172,10 +27313,11 @@ def generate_oc_mathematical_reasoning_exam_latest(
 
     # --------------------------------------------------
     # 5️⃣ Mark questions as used
-    # (tracking only, NOT filtering)
     # --------------------------------------------------
     used_ids = [
-        q["id"] for q in questions if q.get("id")
+        q["id"]
+        for q in questions
+        if q.get("id")
     ]
 
     if used_ids:
@@ -25190,7 +27332,10 @@ def generate_oc_mathematical_reasoning_exam_latest(
 
         db.commit()
 
-        print(f"🏷️ Marked {len(used_ids)} questions as used")
+        print(
+            f"🏷️ Marked {len(used_ids)} "
+            f"questions as used"
+        )
 
     # --------------------------------------------------
     # 6️⃣ Shuffle questions
@@ -25201,15 +27346,21 @@ def generate_oc_mathematical_reasoning_exam_latest(
     # 7️⃣ Save exam
     # --------------------------------------------------
     new_exam = Exam(
-        quiz_id=None,   # ✅ latest mode has no quiz
+        quiz_id=None,
+
         class_name="oc",
+
         subject="mathematical_reasoning",
+
         class_year=class_year,
+
         questions=questions
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
     print(f"💾 Exam saved: {new_exam.id}")
@@ -25220,10 +27371,19 @@ def generate_oc_mathematical_reasoning_exam_latest(
     # 8️⃣ Response
     # --------------------------------------------------
     return {
-        "message": "OC Mathematical Reasoning latest exam generated successfully",
+        "message": (
+            "OC Mathematical Reasoning latest "
+            "exam generated successfully"
+        ),
+
         "exam_id": new_exam.id,
+
+        "batch_id": batch_id,
+
         "selected_date": selected_date,
+
         "total_questions": len(questions),
+
         "questions": questions
     }
 
@@ -25500,7 +27660,10 @@ def generate_oc_mathematical_reasoning_homework_latest(
     # 0️⃣ Parse payload
     # --------------------------------------------------
     raw_class_year = payload.get("class_year")
+
     selected_date = payload.get("selected_date")
+
+    batch_id = payload.get("batch_id")
 
     if not raw_class_year:
         raise HTTPException(
@@ -25514,18 +27677,29 @@ def generate_oc_mathematical_reasoning_homework_latest(
             "selected_date is required"
         )
 
+    if not batch_id:
+        raise HTTPException(
+            400,
+            "batch_id is required"
+        )
+
     # --------------------------------------------------
     # 1️⃣ Parse class year
     # --------------------------------------------------
     try:
+
         if isinstance(raw_class_year, str):
+
             class_year = int(
                 raw_class_year.strip().split()[-1]
             )
+
         else:
+
             class_year = int(raw_class_year)
 
     except:
+
         raise HTTPException(
             400,
             f"Invalid class_year: {raw_class_year}"
@@ -25537,12 +27711,14 @@ def generate_oc_mathematical_reasoning_homework_latest(
     # 2️⃣ Parse selected date
     # --------------------------------------------------
     try:
+
         parsed_date = datetime.strptime(
             selected_date,
             "%Y-%m-%d"
         ).date()
 
     except:
+
         raise HTTPException(
             400,
             f"Invalid selected_date: {selected_date}"
@@ -25550,12 +27726,16 @@ def generate_oc_mathematical_reasoning_homework_latest(
 
     print(f"📅 Parsed selected_date: {parsed_date}")
 
+    print(f"📦 Batch ID: {batch_id}")
+
     # --------------------------------------------------
-    # 3️⃣ Fetch ALL questions from selected upload date
+    # 3️⃣ Fetch ALL questions
+    # using date + batch id
     # --------------------------------------------------
     questions_from_db = (
-    db.query(Question)
+        db.query(Question)
         .filter(
+
             func.lower(
                 func.trim(Question.class_name)
             ) == "oc",
@@ -25566,22 +27746,33 @@ def generate_oc_mathematical_reasoning_homework_latest(
 
             Question.class_year == class_year,
 
+            # selected upload date
             func.date(
                 Question.created_at
             ) == parsed_date,
 
+            # selected upload batch
+            Question.batch_id == batch_id,
+
+            # only unused questions
             Question.is_used == False
+
         )
         .order_by(Question.created_at.asc())
         .all()
     )
 
-    print(f"\n📦 Questions Found: {len(questions_from_db)}")
+    print(
+        f"\n📦 Questions Found: "
+        f"{len(questions_from_db)}"
+    )
 
     if not questions_from_db:
+
         raise HTTPException(
             404,
-            "No questions found for selected date"
+            "No questions found for selected "
+            "date and batch"
         )
 
     # --------------------------------------------------
@@ -25589,15 +27780,26 @@ def generate_oc_mathematical_reasoning_homework_latest(
     # --------------------------------------------------
     questions = []
 
-    for index, q in enumerate(questions_from_db, start=1):
+    for index, q in enumerate(
+        questions_from_db,
+        start=1
+    ):
 
         questions.append({
             "id": q.id,
+
             "q_id": index,
+
             "topic": q.topic,
+
             "difficulty": q.difficulty,
+
+            "batch_id": q.batch_id,
+
             "blocks": q.question_blocks or [],
+
             "options": q.options,
+
             "correct": q.correct_answer
         })
 
@@ -25605,10 +27807,11 @@ def generate_oc_mathematical_reasoning_homework_latest(
 
     # --------------------------------------------------
     # 5️⃣ Mark DB questions as used
-    # (tracking only)
     # --------------------------------------------------
     used_ids = [
-        q["id"] for q in questions if q.get("id")
+        q["id"]
+        for q in questions
+        if q.get("id")
     ]
 
     if used_ids:
@@ -25623,7 +27826,10 @@ def generate_oc_mathematical_reasoning_homework_latest(
 
         db.commit()
 
-        print(f"🏷️ Marked {len(used_ids)} questions as used")
+        print(
+            f"🏷️ Marked {len(used_ids)} "
+            f"questions as used"
+        )
 
     # --------------------------------------------------
     # 6️⃣ Shuffle questions
@@ -25634,15 +27840,21 @@ def generate_oc_mathematical_reasoning_homework_latest(
     # 7️⃣ Save homework exam
     # --------------------------------------------------
     new_exam = HomeworkExamOCMathematicalReasoning(
-        homework_quiz_id=None,   # ✅ latest mode
+        homework_quiz_id=None,
+
         class_name="oc",
+
         class_year=str(class_year),
+
         subject="mathematical_reasoning",
+
         questions=questions
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
     print(f"💾 Homework saved: {new_exam.id}")
@@ -25653,22 +27865,32 @@ def generate_oc_mathematical_reasoning_homework_latest(
     # 8️⃣ Response
     # --------------------------------------------------
     return {
-        "message": "OC Mathematical Reasoning latest homework generated successfully",
+        "message": (
+            "OC Mathematical Reasoning latest "
+            "homework generated successfully"
+        ),
+
         "exam_id": new_exam.id,
+
+        "batch_id": batch_id,
+
         "selected_date": selected_date,
+
         "total_questions": len(questions),
+
         "questions": questions
     }
-
 @app.post("/api/exams/generate-thinking-skills-homework-latest")
 def generate_thinking_skills_homework_latest(
     payload: Optional[Dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
     """
-    Generate HOMEWORK exam using ALL questions from a selected date.
-    - Does NOT filter by is_used
-    - Marks included questions as used (tracking only)
+    Generate HOMEWORK exam using ALL questions
+    from a selected date + batch id.
+
+    - Uses only unused questions
+    - Marks included questions as used
     - Saves into HomeWorkExam table
     """
 
@@ -25678,23 +27900,47 @@ def generate_thinking_skills_homework_latest(
     # 0️⃣ Extract Input
     # ==================================================
     class_year = payload.get("class_year")
+
     selected_date = payload.get("date")
 
+    batch_id = payload.get("batch_id")
+
     if not class_year:
-        raise HTTPException(status_code=400, detail="class_year is required")
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
 
     if not selected_date:
-        raise HTTPException(status_code=400, detail="date is required")
+        raise HTTPException(
+            status_code=400,
+            detail="date is required"
+        )
 
-    print("\n================ GENERATE HOMEWORK (DATE MODE) =================")
-    print(f"📥 class_year={class_year}, date={selected_date}")
+    if not batch_id:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
+
+    print(
+        "\n================ GENERATE HOMEWORK "
+        "(BATCH MODE) ================="
+    )
+
+    print(
+        f"📥 class_year={class_year}, "
+        f"date={selected_date}, "
+        f"batch_id={batch_id}"
+    )
 
     # ==================================================
     # 1️⃣ Fetch Questions
     # ==================================================
     questions = (
-    db.query(Question)
+        db.query(Question)
         .filter(
+
             func.lower(
                 func.trim(Question.class_name)
             ) == "selective",
@@ -25705,11 +27951,17 @@ def generate_thinking_skills_homework_latest(
 
             Question.class_year == class_year,
 
+            # selected upload date
             func.date(
                 Question.created_at
             ) == selected_date,
 
+            # selected upload batch
+            Question.batch_id == batch_id,
+
+            # only unused questions
             Question.is_used == False
+
         )
         .order_by(Question.id.asc())
         .all()
@@ -25718,7 +27970,10 @@ def generate_thinking_skills_homework_latest(
     if not questions:
         raise HTTPException(
             status_code=400,
-            detail="No questions found for the selected date"
+            detail=(
+                "No questions found for selected "
+                "date and batch"
+            )
         )
 
     print(f"✅ Fetched {len(questions)} questions")
@@ -25727,6 +27982,7 @@ def generate_thinking_skills_homework_latest(
     # 2️⃣ Build Output
     # ==================================================
     generated_questions = []
+
     q_id = 1
 
     for row in questions:
@@ -25734,6 +27990,7 @@ def generate_thinking_skills_homework_latest(
         blocks = row.question_blocks or []
 
         if not blocks and row.question_text:
+
             blocks = [{
                 "type": "text",
                 "content": row.question_text
@@ -25746,7 +28003,9 @@ def generate_thinking_skills_homework_latest(
         }
 
         for image_src in row.images or []:
+
             if image_src not in existing_image_srcs:
+
                 blocks.append({
                     "type": "image",
                     "src": image_src
@@ -25754,23 +28013,36 @@ def generate_thinking_skills_homework_latest(
 
         generated_questions.append({
             "id": row.id,
+
             "q_id": q_id,
+
             "topic": row.topic,
+
+            "batch_id": row.batch_id,
+
             "blocks": blocks,
+
             "options": row.options,
+
             "correct": row.correct_answer
         })
 
         q_id += 1
 
-    print(f"📦 Built {len(generated_questions)} questions")
+    print(
+        f"📦 Built {len(generated_questions)} questions"
+    )
 
     # ==================================================
     # 3️⃣ MARK QUESTIONS AS USED
     # ==================================================
-    used_question_ids = [q["id"] for q in generated_questions]
+    used_question_ids = [
+        q["id"]
+        for q in generated_questions
+    ]
 
     if used_question_ids:
+
         updated = (
             db.query(Question)
             .filter(
@@ -25783,35 +28055,59 @@ def generate_thinking_skills_homework_latest(
             )
         )
 
-        print(f"🔒 Marked {updated} questions as used")
+        print(
+            f"🔒 Marked {updated} questions as used"
+        )
 
     # ==================================================
-    # 4️⃣ SAVE INTO HomeWorkExam (FIXED)
+    # 4️⃣ SAVE HOMEWORK
     # ==================================================
     new_homework = HomeWorkExam(
         class_name="selective",
+
         subject="thinking_skills",
+
         class_year=class_year,
+
         questions=generated_questions
     )
 
     db.add(new_homework)
+
     db.commit()
+
     db.refresh(new_homework)
 
-    print(f"💾 Homework saved with ID: {new_homework.id}")
+    print(
+        f"💾 Homework saved with ID: "
+        f"{new_homework.id}"
+    )
+
     print("================ END =================\n")
 
     # ==================================================
     # 5️⃣ RESPONSE
     # ==================================================
     return {
-        "message": "Homework Thinking Skills generated successfully",
-        "homework_id": new_homework.id,  # ✅ updated key
+        "message": (
+            "Homework Thinking Skills "
+            "generated successfully"
+        ),
+
+        "homework_id": new_homework.id,
+
+        "batch_id": batch_id,
+
         "class_name": "selective",
+
         "class_year": class_year,
+
+        "selected_date": selected_date,
+
         "subject": "thinking_skills",
+
         "total_questions": len(generated_questions),
+
         "questions": generated_questions
     }
 
@@ -40001,12 +42297,26 @@ def generate_exam_oc_reading_homework_latest(
     payload: ReadingHomeworkExamRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n================ GENERATE OC READING HOMEWORK (LATEST) =================")
+    print(
+        "\n================ "
+        "GENERATE OC READING HOMEWORK (LATEST) "
+        "================="
+    )
 
     # --------------------------------------------------
-    # 0️⃣ VALIDATE DATE
+    # 0️⃣ VALIDATE INPUT
     # --------------------------------------------------
-    selected_date = getattr(payload, "selected_date", None)
+    selected_date = getattr(
+        payload,
+        "selected_date",
+        None
+    )
+
+    batch_id = getattr(
+        payload,
+        "batch_id",
+        None
+    )
 
     if not selected_date:
         raise HTTPException(
@@ -40014,12 +42324,23 @@ def generate_exam_oc_reading_homework_latest(
             detail="selected_date is required"
         )
 
+    if batch_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
+
     print(f"📅 selected_date={selected_date}")
+    print(f"📦 batch_id={batch_id}")
 
     # --------------------------------------------------
     # 1️⃣ NORMALIZATION
     # --------------------------------------------------
-    class_name = payload.class_name.strip().lower()
+    class_name = (
+        payload.class_name
+        .strip()
+        .lower()
+    )
 
     class_year = (
         str(payload.class_year)
@@ -40032,35 +42353,49 @@ def generate_exam_oc_reading_homework_latest(
     print(f"📥 class_year={class_year}")
 
     warnings = []
+
     sections = []
 
     # --------------------------------------------------
-    # 2️⃣ FETCH ALL BUNDLES FROM DATE
+    # 2️⃣ FETCH BUNDLES
+    # Filter using BOTH:
+    # - selected_date
+    # - batch_id
     # --------------------------------------------------
     bundles = (
         db.query(QuestionReading)
         .filter(
+
             func.lower(
-                func.trim(QuestionReading.class_name)
+                func.trim(
+                    QuestionReading.class_name
+                )
             ) == class_name,
 
             func.trim(
                 func.replace(
-                    func.lower(QuestionReading.class_year),
+                    func.lower(
+                        QuestionReading.class_year
+                    ),
                     "year",
                     ""
                 )
             ) == class_year,
 
             func.lower(
-                func.trim(QuestionReading.subject)
+                func.trim(
+                    QuestionReading.subject
+                )
             ).like("%reading comprehension%"),
 
             func.date(
                 QuestionReading.created_at
             ) == selected_date,
 
+            QuestionReading.batch_id == batch_id,
+
             QuestionReading.is_used == False
+
         )
         .order_by(
             QuestionReading.created_at.asc()
@@ -40073,26 +42408,46 @@ def generate_exam_oc_reading_homework_latest(
     if not bundles:
         raise HTTPException(
             status_code=404,
-            detail="No reading homework bundles found for selected date"
+            detail=(
+                "No reading homework bundles found "
+                "for selected date and batch"
+            )
         )
 
     # --------------------------------------------------
     # 3️⃣ BUILD SECTIONS
     # --------------------------------------------------
-    for section_index, matched_bundle in enumerate(bundles, start=1):
+    for section_index, matched_bundle in enumerate(
+        bundles,
+        start=1
+    ):
 
-        print(f"\n➡️ Processing bundle ID={matched_bundle.id}")
+        print(
+            f"\n➡️ Processing bundle "
+            f"ID={matched_bundle.id}"
+        )
 
-        bundle_json = matched_bundle.exam_bundle or {}
+        bundle_json = (
+            matched_bundle.exam_bundle or {}
+        )
 
-        question_type = bundle_json.get("question_type")
+        question_type = (
+            bundle_json.get("question_type")
+        )
 
-        reading_material = bundle_json.get("reading_material")
+        reading_material = (
+            bundle_json.get("reading_material")
+        )
 
-        answer_options = bundle_json.get("answer_options")
+        answer_options = (
+            bundle_json.get("answer_options")
+        )
 
         topic_name = matched_bundle.topic
-        topic_difficulty = matched_bundle.difficulty
+
+        topic_difficulty = (
+            matched_bundle.difficulty
+        )
 
         section_id = (
             f"{topic_name.lower().replace(' ', '_')}"
@@ -40104,10 +42459,16 @@ def generate_exam_oc_reading_homework_latest(
         # --------------------------------------------------
         collected_questions = [
             copy.deepcopy(q)
-            for q in bundle_json.get("questions", [])
+            for q in bundle_json.get(
+                "questions",
+                []
+            )
         ]
 
-        for idx, q in enumerate(collected_questions, start=1):
+        for idx, q in enumerate(
+            collected_questions,
+            start=1
+        ):
 
             q["question_number"] = idx
 
@@ -40141,19 +42502,31 @@ def generate_exam_oc_reading_homework_latest(
 
         section = {
             "section_id": section_id,
+
             "section_index": section_index,
+
             "question_type": question_type,
+
             "topic": topic_name,
+
             "difficulty": topic_difficulty,
+
             "reading_material": reading_material,
+
             "passage_style": passage_style,
+
             "render_hint": render_hint,
+
             "options_scope": options_scope,
+
             "questions": collected_questions,
         }
 
         if answer_options:
-            section["answer_options"] = answer_options
+
+            section["answer_options"] = (
+                answer_options
+            )
 
         sections.append(section)
 
@@ -40161,9 +42534,13 @@ def generate_exam_oc_reading_homework_latest(
     # 4️⃣ FINALIZE
     # --------------------------------------------------
     if not sections:
+
         raise HTTPException(
             status_code=400,
-            detail="Not enough data to generate OC reading homework"
+            detail=(
+                "Not enough data to generate "
+                "OC reading homework"
+            )
         )
 
     total_questions = sum(
@@ -40173,58 +42550,106 @@ def generate_exam_oc_reading_homework_latest(
 
     exam_json = {
         "class_name": class_name,
+
         "class_year": class_year,
+
         "subject": "Reading Comprehension",
+
         "difficulty": "mixed",
+
         "duration_minutes": 40,
-        "selected_date": str(selected_date),
+
+        "selected_date": str(
+            selected_date
+        ),
+
+        "batch_id": batch_id,
+
         "total_questions": total_questions,
+
         "sections": sections,
     }
 
-    print(f"\n🧠 TOTAL QUESTIONS: {total_questions}")
+    print(
+        f"\n🧠 TOTAL QUESTIONS: "
+        f"{total_questions}"
+    )
 
     # --------------------------------------------------
     # 🏷️ MARK USED (TRACKING ONLY)
     # --------------------------------------------------
-    used_bundle_ids = [b.id for b in bundles]
+    used_bundle_ids = [
+        b.id for b in bundles
+    ]
 
     if used_bundle_ids:
 
-        db.query(QuestionReading).filter(
-            QuestionReading.id.in_(used_bundle_ids)
-        ).update(
-            {QuestionReading.is_used: True},
-            synchronize_session=False
+        updated = (
+            db.query(QuestionReading)
+            .filter(
+                QuestionReading.id.in_(
+                    used_bundle_ids
+                ),
+
+                QuestionReading.is_used.is_(False)
+            )
+            .update(
+                {
+                    QuestionReading.is_used: True
+                },
+                synchronize_session=False
+            )
+        )
+
+        print(
+            f"🔒 Marked {updated} "
+            f"bundles as used"
         )
 
     # --------------------------------------------------
     # 💾 SAVE
     # --------------------------------------------------
     saved = GeneratedHomeworkReading(
-        config_id=None,   # ✅ latest mode
+        config_id=None,
+
         class_name=class_name,
+
         class_year=class_year,
+
         subject="Reading Comprehension",
+
         difficulty="mixed",
+
         total_questions=total_questions,
+
         exam_json=exam_json,
     )
 
     db.add(saved)
+
     db.commit()
+
     db.refresh(saved)
 
-    print(f"✅ OC Reading Homework Latest generated ID: {saved.id}")
+    print(
+        f"✅ OC Reading Homework "
+        f"Latest generated ID: {saved.id}"
+    )
 
     # --------------------------------------------------
     # 5️⃣ RESPONSE
     # --------------------------------------------------
     return {
         "generated_exam_id": saved.id,
+
         "selected_date": selected_date,
+
+        "batch_id": batch_id,
+
         "total_questions": total_questions,
+
         "warnings": warnings,
+
         "exam_json": exam_json,
     }
 
@@ -40283,10 +42708,15 @@ def generate_exam_oc_reading(
     if not cfg:
         raise HTTPException(404, "No OC reading exam config found")
 
-    subject = cfg.subject
+    subject = (
+        cfg.subject
+        .strip()
+        .lower()
+    )
     topics = cfg.topics
 
     print("\n📦 CONFIG LOADED")
+    print(f"📚 Normalized subject = {subject}")
 
     # --------------------------------------------------
     # 2️⃣ PROCESS EACH TOPIC (LIKE SELECTIVE)
@@ -40478,9 +42908,19 @@ def generate_exam_oc_reading_latest(
     print("\n================ GENERATE OC READING EXAM (LATEST) =================")
 
     # --------------------------------------------------
-    # 0️⃣ VALIDATE DATE
+    # 0️⃣ VALIDATE INPUT
     # --------------------------------------------------
-    selected_date = getattr(payload, "selected_date", None)
+    selected_date = getattr(
+        payload,
+        "selected_date",
+        None
+    )
+
+    batch_id = getattr(
+        payload,
+        "batch_id",
+        None
+    )
 
     if not selected_date:
         raise HTTPException(
@@ -40488,12 +42928,23 @@ def generate_exam_oc_reading_latest(
             detail="selected_date is required"
         )
 
+    if batch_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
+
     print(f"📅 selected_date={selected_date}")
+    print(f"📦 batch_id={batch_id}")
 
     # --------------------------------------------------
     # 1️⃣ NORMALIZATION
     # --------------------------------------------------
-    class_name = payload.class_name.strip().lower()
+    class_name = (
+        payload.class_name
+        .strip()
+        .lower()
+    )
 
     class_year = (
         payload.class_year
@@ -40509,13 +42960,19 @@ def generate_exam_oc_reading_latest(
     warnings = []
 
     # --------------------------------------------------
-    # 2️⃣ FETCH ALL BUNDLES FROM DATE
+    # 2️⃣ FETCH BUNDLES
+    # Filter using BOTH:
+    # - selected_date
+    # - batch_id
     # --------------------------------------------------
     bundles = (
         db.query(QuestionReading)
         .filter(
+
             func.lower(
-                func.trim(QuestionReading.class_name)
+                func.trim(
+                    QuestionReading.class_name
+                )
             ) == class_name,
 
             func.trim(
@@ -40538,7 +42995,10 @@ def generate_exam_oc_reading_latest(
                 QuestionReading.created_at
             ) == selected_date,
 
+            QuestionReading.batch_id == batch_id,
+
             QuestionReading.is_used == False
+
         )
         .order_by(
             QuestionReading.created_at.asc()
@@ -40551,26 +43011,46 @@ def generate_exam_oc_reading_latest(
     if not bundles:
         raise HTTPException(
             status_code=404,
-            detail="No reading bundles found for selected date"
+            detail=(
+                "No reading bundles found "
+                "for selected date and batch"
+            )
         )
 
     # --------------------------------------------------
     # 3️⃣ BUILD SECTIONS
     # --------------------------------------------------
-    for section_index, matched_bundle in enumerate(bundles, start=1):
+    for section_index, matched_bundle in enumerate(
+        bundles,
+        start=1
+    ):
 
-        print(f"\n➡️ Processing bundle ID={matched_bundle.id}")
+        print(
+            f"\n➡️ Processing bundle "
+            f"ID={matched_bundle.id}"
+        )
 
-        bundle_json = matched_bundle.exam_bundle or {}
+        bundle_json = (
+            matched_bundle.exam_bundle or {}
+        )
 
-        question_type = bundle_json.get("question_type")
+        question_type = (
+            bundle_json.get("question_type")
+        )
 
-        reading_material = bundle_json.get("reading_material")
+        reading_material = (
+            bundle_json.get("reading_material")
+        )
 
-        answer_options = bundle_json.get("answer_options")
+        answer_options = (
+            bundle_json.get("answer_options")
+        )
 
         topic_name = matched_bundle.topic
-        topic_difficulty = matched_bundle.difficulty
+
+        topic_difficulty = (
+            matched_bundle.difficulty
+        )
 
         section_id = (
             f"{topic_name.lower().replace(' ', '_')}"
@@ -40582,10 +43062,16 @@ def generate_exam_oc_reading_latest(
         # --------------------------------------------------
         collected_questions = [
             copy.deepcopy(q)
-            for q in bundle_json.get("questions", [])
+            for q in bundle_json.get(
+                "questions",
+                []
+            )
         ]
 
-        for idx, q in enumerate(collected_questions, start=1):
+        for idx, q in enumerate(
+            collected_questions,
+            start=1
+        ):
 
             q["question_number"] = idx
 
@@ -40619,24 +43105,36 @@ def generate_exam_oc_reading_latest(
 
         section = {
             "section_id": section_id,
+
             "section_index": section_index,
+
             "question_type": question_type,
+
             "topic": topic_name,
+
             "difficulty": topic_difficulty,
+
             "reading_material": reading_material,
+
             "passage_style": passage_style,
+
             "render_hint": render_hint,
+
             "options_scope": options_scope,
+
             "questions": collected_questions,
         }
 
         if answer_options:
-            section["answer_options"] = answer_options
+
+            section["answer_options"] = (
+                answer_options
+            )
 
         sections.append(section)
 
     # --------------------------------------------------
-    # 4️⃣ FINALIZE
+    # 4️⃣ FINALIZE EXAM
     # --------------------------------------------------
     total_questions = sum(
         len(s["questions"])
@@ -40645,58 +43143,106 @@ def generate_exam_oc_reading_latest(
 
     exam_json = {
         "class_name": class_name,
+
         "class_year": class_year,
+
         "subject": "Reading Comprehension",
+
         "difficulty": "mixed",
+
         "duration_minutes": 40,
-        "selected_date": str(selected_date),
+
+        "selected_date": str(
+            selected_date
+        ),
+
+        "batch_id": batch_id,
+
         "total_questions": total_questions,
+
         "sections": sections,
     }
 
-    print(f"\n🧠 TOTAL QUESTIONS: {total_questions}")
+    print(
+        f"\n🧠 TOTAL QUESTIONS: "
+        f"{total_questions}"
+    )
 
     # --------------------------------------------------
     # 5️⃣ MARK USED (TRACKING ONLY)
     # --------------------------------------------------
-    used_bundle_ids = [b.id for b in bundles]
+    used_bundle_ids = [
+        b.id for b in bundles
+    ]
 
     if used_bundle_ids:
 
-        db.query(QuestionReading).filter(
-            QuestionReading.id.in_(used_bundle_ids)
-        ).update(
-            {QuestionReading.is_used: True},
-            synchronize_session=False
+        updated = (
+            db.query(QuestionReading)
+            .filter(
+                QuestionReading.id.in_(
+                    used_bundle_ids
+                ),
+
+                QuestionReading.is_used.is_(False)
+            )
+            .update(
+                {
+                    QuestionReading.is_used: True
+                },
+                synchronize_session=False
+            )
+        )
+
+        print(
+            f"🔒 Marked {updated} "
+            f"bundles as used"
         )
 
     # --------------------------------------------------
     # 6️⃣ SAVE GENERATED EXAM
     # --------------------------------------------------
     saved = GeneratedExamReading(
-        config_id=None,   # ✅ latest mode
+        config_id=None,
+
         class_name=class_name,
+
         class_year=class_year,
+
         subject="Reading Comprehension",
+
         difficulty="mixed",
+
         total_questions=total_questions,
+
         exam_json=exam_json,
     )
 
     db.add(saved)
+
     db.commit()
+
     db.refresh(saved)
 
-    print(f"✅ OC Reading Latest Exam generated ID: {saved.id}")
+    print(
+        f"✅ OC Reading Latest Exam "
+        f"generated ID: {saved.id}"
+    )
 
     # --------------------------------------------------
     # 7️⃣ RESPONSE
     # --------------------------------------------------
     return {
         "generated_exam_id": saved.id,
+
         "selected_date": selected_date,
+
+        "batch_id": batch_id,
+
         "total_questions": total_questions,
+
         "warnings": warnings,
+
         "exam_json": exam_json,
     }
 
@@ -40705,39 +43251,86 @@ def generate_exam_reading_homework_latest(
     payload: ReadingHomeworkExamRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n================ GENERATE READING HOMEWORK (DATE MODE) =================")
+    print(
+        "\n================ "
+        "GENERATE READING HOMEWORK "
+        "(DATE + BATCH MODE) "
+        "================="
+    )
 
     try:
-        print("📥 RAW PAYLOAD:", payload.dict())
+
+        print(
+            "📥 RAW PAYLOAD:",
+            payload.dict()
+        )
 
         # --------------------------------------------------
         # 0️⃣ NORMALIZE INPUT
         # --------------------------------------------------
-        class_name = payload.class_name.strip().lower()
-        class_year = payload.class_year.lower().replace("year", "").strip()
-        subject = "reading_comprehension"
+        class_name = (
+            payload.class_name
+            .strip()
+            .lower()
+        )
 
-        selected_date = payload.date  # ✅ NEW
+        class_year = (
+            payload.class_year
+            .lower()
+            .replace("year", "")
+            .strip()
+        )
+
+        subject = "reading"
+
+        selected_date = payload.selected_date
+
+        batch_id = payload.batch_id
 
         if not class_year:
-            raise HTTPException(400, "class_year is required")
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
+            )
 
         if not selected_date:
-            raise HTTPException(400, "date is required for latest mode")
+            raise HTTPException(
+                status_code=400,
+                detail="date is required for latest mode"
+            )
 
-        print(f"🔧 class_name={class_name}, class_year={class_year}, date={selected_date}")
+        if batch_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="batch_id is required"
+            )
+
+        print("\n🔧 NORMALIZED INPUTS:")
+        print(f"class_name = '{class_name}'")
+        print(f"class_year = '{class_year}'")
+        print(f"selected_date = '{selected_date}'")
+        print(f"batch_id = '{batch_id}'")
 
         sections = []
+
         used_bundle_ids = []
 
         # --------------------------------------------------
-        # 1️⃣ FETCH UNUSED QUESTIONS FOR SELECTED DATE
+        # 1️⃣ FETCH UNUSED QUESTIONS
+        # FILTER USING:
+        # - class
+        # - year
+        # - selected upload date
+        # - batch id
         # --------------------------------------------------
         rows = (
             db.query(QuestionReading)
             .filter(
+
                 func.lower(
-                    func.trim(QuestionReading.class_name)
+                    func.trim(
+                        QuestionReading.class_name
+                    )
                 ) == class_name,
 
                 func.trim(
@@ -40754,118 +43347,267 @@ def generate_exam_reading_homework_latest(
                     QuestionReading.created_at
                 ) == selected_date,
 
+                QuestionReading.batch_id == batch_id,
+
                 QuestionReading.is_used == False
+
             )
-            .order_by(QuestionReading.id.asc())
+            .order_by(
+                QuestionReading.id.asc()
+            )
             .all()
         )
 
-        if not rows:
-            raise HTTPException(
-                400,
-                "No unused questions found for the selected date"
+        print(
+            f"📦 FETCHED BUNDLES: "
+            f"{len(rows)}"
+        )
+
+        for row in rows:
+
+            print(
+                f"   ID={row.id} | "
+                f"topic={row.topic} | "
+                f"batch_id={row.batch_id}"
             )
 
-        print(f"✅ Fetched {len(rows)} bundles for date {selected_date}")
+        if not rows:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No unused questions found "
+                    "for the selected date and batch"
+                )
+            )
+
+        print(
+            f"✅ Fetched {len(rows)} "
+            f"bundles for date "
+            f"{selected_date}"
+        )
 
         # --------------------------------------------------
         # 2️⃣ BUILD SECTIONS
         # --------------------------------------------------
-        for idx, row in enumerate(rows, start=1):
-            bundle_json = row.exam_bundle or {}
+        for idx, row in enumerate(
+            rows,
+            start=1
+        ):
 
-            question_type = bundle_json.get("question_type")
-            reading_material = bundle_json.get("reading_material")
-            answer_options = bundle_json.get("answer_options")
+            bundle_json = (
+                row.exam_bundle or {}
+            )
+
+            question_type = (
+                bundle_json.get(
+                    "question_type"
+                )
+            )
+
+            reading_material = (
+                bundle_json.get(
+                    "reading_material"
+                )
+            )
+
+            answer_options = (
+                bundle_json.get(
+                    "answer_options"
+                )
+            )
 
             questions = [
                 copy.deepcopy(q)
-                for q in bundle_json.get("questions", [])
+                for q in bundle_json.get(
+                    "questions",
+                    []
+                )
             ]
 
-            for q_index, q in enumerate(questions, start=1):
+            for q_index, q in enumerate(
+                questions,
+                start=1
+            ):
+
                 q["question_number"] = q_index
-                q["question_id"] = f"hw_date_{idx}_Q{q_index}"
+
+                q["question_id"] = (
+                    f"hw_date_{idx}_Q{q_index}"
+                )
 
             section = {
-                "section_id": f"hw_date_section_{idx}",
-                "section_index": idx,
-                "topic": row.topic,
-                "difficulty": row.difficulty,
-                "question_type": question_type,
-                "reading_material": reading_material,
-                "questions": questions,
+                "section_id":
+                    f"hw_date_section_{idx}",
+
+                "section_index":
+                    idx,
+
+                "topic":
+                    row.topic,
+
+                "difficulty":
+                    row.difficulty,
+
+                "question_type":
+                    question_type,
+
+                "reading_material":
+                    reading_material,
+
+                "questions":
+                    questions,
             }
 
             if answer_options:
-                section["answer_options"] = answer_options
+
+                section["answer_options"] = (
+                    answer_options
+                )
 
             sections.append(section)
-            used_bundle_ids.append(row.id)
+
+            used_bundle_ids.append(
+                row.id
+            )
 
         # --------------------------------------------------
         # 3️⃣ FINALIZE
         # --------------------------------------------------
-        total_questions = sum(len(s["questions"]) for s in sections)
+        total_questions = sum(
+            len(s["questions"])
+            for s in sections
+        )
 
         homework_json = {
-            "class_name": class_name,
-            "class_year": class_year,
-            "subject": subject,
-            "difficulty": "mixed",
-            "total_questions": total_questions,
-            "sections": sections,
+            "class_name":
+                class_name,
+
+            "class_year":
+                class_year,
+
+            "subject":
+                subject,
+
+            "difficulty":
+                "mixed",
+
+            "selected_date":
+                str(selected_date),
+
+            "batch_id":
+                batch_id,
+
+            "total_questions":
+                total_questions,
+
+            "sections":
+                sections,
         }
 
-        print(f"📊 Sections: {len(sections)}")
-        print(f"📊 Total questions: {total_questions}")
+        print(
+            f"📊 Sections: "
+            f"{len(sections)}"
+        )
+
+        print(
+            f"📊 Total questions: "
+            f"{total_questions}"
+        )
 
         # --------------------------------------------------
-        # 4️⃣ MARK USED (SAFE UPDATE)
+        # 4️⃣ MARK USED
+        # TRACKING ONLY
         # --------------------------------------------------
         updated = (
             db.query(QuestionReading)
             .filter(
-                QuestionReading.id.in_(used_bundle_ids),
+                QuestionReading.id.in_(
+                    used_bundle_ids
+                ),
+
                 QuestionReading.is_used.is_(False)
             )
             .update(
-                {QuestionReading.is_used: True},
+                {
+                    QuestionReading.is_used:
+                        True
+                },
                 synchronize_session=False
             )
         )
 
-        print(f"🔒 Marked {updated} bundles as used")
+        print(
+            f"🔒 Marked {updated} "
+            f"bundles as used"
+        )
 
         # --------------------------------------------------
         # 5️⃣ SAVE
         # --------------------------------------------------
+        #sajjadalinoor
         saved = GeneratedHomeworkReading(
             config_id=None,
+
             class_name=class_name,
+
             class_year=class_year,
+
             subject=subject,
+
             difficulty="mixed",
+
             total_questions=total_questions,
+
             exam_json=homework_json,
         )
 
         db.add(saved)
+
         db.commit()
+
         db.refresh(saved)
 
-        print(f"💾 Homework saved ID={saved.id}")
-        print("================ END =================\n")
+        print(
+            f"💾 Homework saved "
+            f"ID={saved.id}"
+        )
 
+        print(
+            "================ "
+            "END "
+            "=================\n"
+        )
+
+        # --------------------------------------------------
+        # 6️⃣ RESPONSE
+        # --------------------------------------------------
         return {
-            "generated_exam_id": saved.id,
-            "total_questions": total_questions,
-            "exam_json": homework_json,
+            "generated_exam_id":
+                saved.id,
+
+            "selected_date":
+                selected_date,
+
+            "batch_id":
+                batch_id,
+
+            "total_questions":
+                total_questions,
+
+            "exam_json":
+                homework_json,
         }
 
     except Exception as e:
-        print("\n💥 ERROR IN READING HOMEWORK (DATE MODE)")
+
+        print(
+            "\n💥 ERROR IN "
+            "READING HOMEWORK "
+            "(DATE + BATCH MODE)"
+        )
+
         print(str(e))
+
         raise
 
 @app.post("/api/exams/generate-reading-homework")
@@ -40917,7 +43659,11 @@ def generate_exam_reading_homework(
 
         print(f"✅ Config loaded ID={cfg.id}")
 
-        subject = cfg.subject
+        subject = (
+            cfg.subject
+            .strip()
+            .lower()
+        )
         topics = cfg.topics
 
         # --------------------------------------------------
@@ -41113,37 +43859,74 @@ def generate_exam_reading_latest(
     payload: ReadingExamRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n================ GENERATE READING (DATE MODE) =================")
+    print(
+        "\n================ "
+        "GENERATE READING (DATE + BATCH MODE) "
+        "================="
+    )
 
     try:
+
         # --------------------------------------------------
         # 0️⃣ INPUT NORMALIZATION
         # --------------------------------------------------
         print("📥 RAW PAYLOAD:", payload.dict())
 
-        class_name = payload.class_name.strip().lower()
-        class_year = payload.class_year.lower().replace("year", "").strip()
+        class_name = (
+            payload.class_name
+            .strip()
+            .lower()
+        )
+
+        class_year = (
+            payload.class_year
+            .lower()
+            .replace("year", "")
+            .strip()
+        )
+
         subject = "reading_comprehension"
 
-        selected_date = payload.date  # ✅ NEW
+        selected_date = payload.selected_date
+
+        batch_id = payload.batch_id
 
         if not class_year:
-            raise HTTPException(400, "class_year is required")
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
+            )
 
         if not selected_date:
-            raise HTTPException(400, "date is required")
+            raise HTTPException(
+                status_code=400,
+                detail="date is required"
+            )
+
+        if batch_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="batch_id is required"
+            )
 
         print("\n🔧 NORMALIZED INPUTS:")
         print(f"class_name = '{class_name}'")
         print(f"class_year = '{class_year}'")
-        print(f"date = '{selected_date}'")
+        print(f"selected_date = '{selected_date}'")
+        print(f"batch_id = '{batch_id}'")
 
         # --------------------------------------------------
-        # 1️⃣ FETCH UNUSED QUESTIONS FOR SELECTED DATE
+        # 1️⃣ FETCH UNUSED QUESTIONS
+        # FILTER USING:
+        # - class
+        # - year
+        # - selected upload date
+        # - batch id
         # --------------------------------------------------
         rows = (
             db.query(QuestionReading)
             .filter(
+
                 func.lower(
                     func.trim(
                         QuestionReading.class_name
@@ -41164,124 +43947,269 @@ def generate_exam_reading_latest(
                     QuestionReading.created_at
                 ) == selected_date,
 
+                QuestionReading.batch_id == batch_id,
+
                 QuestionReading.is_used == False
+
             )
-            .order_by(QuestionReading.id.asc())
+            .order_by(
+                QuestionReading.id.asc()
+            )
             .all()
         )
 
-        if not rows:
-            raise HTTPException(
-                400,
-                "No unused questions found for the selected date"
+        print(
+            f"📦 FETCHED BUNDLES: "
+            f"{len(rows)}"
+        )
+
+        for row in rows:
+
+            print(
+                f"   ID={row.id} | "
+                f"topic={row.topic} | "
+                f"batch_id={row.batch_id}"
             )
 
-        print(f"✅ Fetched {len(rows)} bundles for date {selected_date}")
+        if not rows:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No unused questions found "
+                    "for selected date and batch"
+                )
+            )
 
         # --------------------------------------------------
         # 2️⃣ BUILD SECTIONS
         # --------------------------------------------------
         sections = []
+
         used_bundle_ids = []
 
-        for idx, row in enumerate(rows, start=1):
-            bundle_json = row.exam_bundle or {}
+        for idx, row in enumerate(
+            rows,
+            start=1
+        ):
 
-            question_type = bundle_json.get("question_type")
-            reading_material = bundle_json.get("reading_material")
-            answer_options = bundle_json.get("answer_options")
+            bundle_json = (
+                row.exam_bundle or {}
+            )
 
-            # ✅ SAFE COPY (important)
+            question_type = (
+                bundle_json.get(
+                    "question_type"
+                )
+            )
+
+            reading_material = (
+                bundle_json.get(
+                    "reading_material"
+                )
+            )
+
+            answer_options = (
+                bundle_json.get(
+                    "answer_options"
+                )
+            )
+
+            # --------------------------------------------------
+            # SAFE COPY
+            # --------------------------------------------------
             questions = [
                 copy.deepcopy(q)
-                for q in bundle_json.get("questions", [])
+                for q in bundle_json.get(
+                    "questions",
+                    []
+                )
             ]
 
-            for q_index, q in enumerate(questions, start=1):
+            for q_index, q in enumerate(
+                questions,
+                start=1
+            ):
+
                 q["question_number"] = q_index
-                q["question_id"] = f"date_{idx}_Q{q_index}"
+
+                q["question_id"] = (
+                    f"date_{idx}_Q{q_index}"
+                )
 
             section = {
-                "section_id": f"date_section_{idx}",
-                "section_index": idx,
-                "question_type": question_type,
-                "topic": row.topic,
-                "difficulty": row.difficulty,
-                "reading_material": reading_material,
-                "questions": questions,
+                "section_id":
+                    f"date_section_{idx}",
+
+                "section_index":
+                    idx,
+
+                "question_type":
+                    question_type,
+
+                "topic":
+                    row.topic,
+
+                "difficulty":
+                    row.difficulty,
+
+                "reading_material":
+                    reading_material,
+
+                "questions":
+                    questions,
             }
 
             if answer_options:
-                section["answer_options"] = answer_options
+
+                section["answer_options"] = (
+                    answer_options
+                )
 
             sections.append(section)
-            used_bundle_ids.append(row.id)
+
+            used_bundle_ids.append(
+                row.id
+            )
 
         # --------------------------------------------------
         # 3️⃣ FINALIZE EXAM
         # --------------------------------------------------
-        total_questions = sum(len(s["questions"]) for s in sections)
+        total_questions = sum(
+            len(s["questions"])
+            for s in sections
+        )
 
         exam_json = {
             "class_name": class_name,
+
             "class_year": class_year,
+
             "subject": subject,
+
             "difficulty": "mixed",
+
             "duration_minutes": 40,
-            "total_questions": total_questions,
-            "sections": sections,
+
+            "selected_date": str(
+                selected_date
+            ),
+
+            "batch_id": batch_id,
+
+            "total_questions":
+                total_questions,
+
+            "sections":
+                sections,
         }
 
-        print(f"📊 Sections: {len(sections)}")
-        print(f"📊 Total questions: {total_questions}")
+        print(
+            f"📊 Sections: "
+            f"{len(sections)}"
+        )
+
+        print(
+            f"📊 Total questions: "
+            f"{total_questions}"
+        )
 
         # --------------------------------------------------
-        # 4️⃣ MARK USED (SAFE UPDATE)
+        # 4️⃣ MARK USED
+        # TRACKING ONLY
         # --------------------------------------------------
         updated = (
             db.query(QuestionReading)
             .filter(
-                QuestionReading.id.in_(used_bundle_ids),
+                QuestionReading.id.in_(
+                    used_bundle_ids
+                ),
+
                 QuestionReading.is_used.is_(False)
             )
             .update(
-                {QuestionReading.is_used: True},
+                {
+                    QuestionReading.is_used:
+                        True
+                },
                 synchronize_session=False
             )
         )
 
-        print(f"🔒 Marked {updated} bundles as used")
+        print(
+            f"🔒 Marked {updated} "
+            f"bundles as used"
+        )
 
         # --------------------------------------------------
         # 5️⃣ SAVE EXAM
         # --------------------------------------------------
         saved = GeneratedExamReading(
             config_id=None,
+
             class_name=class_name,
+
             class_year=class_year,
+
             subject=subject,
+
             difficulty="mixed",
+
             total_questions=total_questions,
+
             exam_json=exam_json,
         )
 
         db.add(saved)
+
         db.commit()
+
         db.refresh(saved)
 
-        print(f"💾 Saved exam ID: {saved.id}")
-        print("================ END =================\n")
+        print(
+            f"💾 Saved exam ID: "
+            f"{saved.id}"
+        )
 
+        print(
+            "================ "
+            "END "
+            "=================\n"
+        )
+
+        # --------------------------------------------------
+        # 6️⃣ RESPONSE
+        # --------------------------------------------------
         return {
-            "generated_exam_id": saved.id,
-            "total_questions": total_questions,
-            "exam_json": exam_json,
+            "generated_exam_id":
+                saved.id,
+
+            "selected_date":
+                selected_date,
+
+            "batch_id":
+                batch_id,
+
+            "total_questions":
+                total_questions,
+
+            "exam_json":
+                exam_json,
         }
 
     except Exception as e:
-        print("\n💥 ERROR IN GENERATE READING (DATE MODE)")
-        print(f"❗ Exception: {str(e)}")
-        raise    
+
+        print(
+            "\n💥 ERROR IN "
+            "GENERATE READING "
+            "(DATE + BATCH MODE)"
+        )
+
+        print(
+            f"❗ Exception: "
+            f"{str(e)}"
+        )
+
+        raise
 
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(
@@ -42246,7 +45174,12 @@ def extract_all_metadata(block_text: str) -> dict[str, str]:
 
     return metadata
 
-def parse_gapped_block(block_text: str, db: Session) -> list[int]:
+def parse_gapped_block(
+    block_text: str,
+    db: Session,
+    batch_id: int
+) -> list[int]:
+
     import json
     import re
 
@@ -42423,10 +45356,11 @@ OUTPUT:
     # --------------------------------------------------
     obj = QuestionReading(
         class_name=class_name.lower(),
-        class_year=class_year,   # ✅ ADD THIS
+        class_year=class_year,
         subject=subject,
         difficulty=difficulty.lower(),
         topic=topic,
+        batch_id=batch_id,
         total_questions=len(enriched_questions),
         is_used=False,
         exam_bundle=bundle
@@ -42441,7 +45375,12 @@ OUTPUT:
     print(f"✅ Gapped text exam saved | ID={obj.id}")
     return saved_ids
 
-def parse_literary_block(block_text: str, db: Session) -> list[int]:
+def parse_literary_block(
+    block_text: str,
+    db: Session,
+    batch_id: int
+) -> list[int]:
+
     import json
 
     saved_ids: list[int] = []
@@ -42525,10 +45464,11 @@ RETURN VALID JSON ONLY.
 
     obj = QuestionReading(
         class_name=parsed["class_name"].lower(),
-        class_year=parsed["class_year"],   # ✅ ADD THIS
+        class_year=parsed["class_year"],
         subject=parsed["subject"],
         difficulty=parsed["difficulty"].lower(),
         topic=parsed["topic"],
+        batch_id=batch_id,
         total_questions=len(enriched_questions),
         is_used=False,
         exam_bundle=bundle
@@ -42543,7 +45483,11 @@ RETURN VALID JSON ONLY.
     print(f"💾 Literary exam saved | ID={obj.id}")
     return saved_ids
 
-def parse_main_idea_block(block_text: str, db: Session) -> list[int]:
+def parse_main_idea_block(
+    block_text: str,
+    db: Session,
+    batch_id: int
+) -> list[int]:    
     import json
 
     saved_ids: list[int] = []
@@ -42617,10 +45561,11 @@ RULES:
 
     obj = QuestionReading(
         class_name=meta["class"].lower(),
-        class_year=meta["class_year"],   # ✅ ADD THIS
+        class_year=meta["class_year"],
         subject=meta["subject"],
         difficulty=meta["difficulty"].lower(),
         topic=meta["topic"],
+        batch_id=batch_id,
         total_questions=len(enriched_questions),
         is_used=False,
         exam_bundle=bundle
@@ -42641,7 +45586,13 @@ import uuid
 upload_id = str(uuid.uuid4())[:8]
 print(f"🆔 Upload ID: {upload_id}")
 
-def parse_comparative_block(block_text: str, db: Session) -> list[int]:
+def parse_comparative_block(
+    block_text: str,
+    db: Session,
+    batch_id: int
+) -> list[int]:
+    
+
     import json
     import re
 
@@ -42872,6 +45823,7 @@ def parse_comparative_block(block_text: str, db: Session) -> list[int]:
         subject=subject,
         difficulty=difficulty.lower(),
         topic=topic,
+        batch_id=batch_id,
         total_questions=len(enriched_questions),
         is_used=False,
         exam_bundle=bundle
@@ -42906,6 +45858,21 @@ async def upload_word_reading_unified(
     saved_ids = []
     failed_blocks = []
     progress = []
+    # --------------------------------------------------
+    # Generate NEW batch id
+    # --------------------------------------------------
+    max_batch_id = db.query(
+        func.max(QuestionReading.batch_id)
+    ).scalar()
+
+    new_batch_id = (
+        (max_batch_id or 0) + 1
+    )
+
+    print(
+        f"📦 [{upload_id}] GENERATED "
+        f"BATCH ID: {new_batch_id}"
+    )
 
     # --------------------------------------------------
     # 1️⃣ File validation
@@ -42998,17 +45965,36 @@ async def upload_word_reading_unified(
 
             # -------- ROUTING (CORRECT & SAFE) --------
             if qtype == "comparative_analysis":
-                ids = parse_comparative_block(block, db) 
+
+                ids = parse_comparative_block(
+                    block,
+                    db,
+                    batch_id=new_batch_id
+                )
 
             elif qtype == "gapped_text":
-                ids = parse_gapped_block(block, db)
+
+                ids = parse_gapped_block(
+                    block,
+                    db,
+                    batch_id=new_batch_id
+                )
 
             elif qtype == "main_idea":
-                ids = parse_main_idea_block(block, db) 
+
+                ids = parse_main_idea_block(
+                    block,
+                    db,
+                    batch_id=new_batch_id
+                )
 
             elif qtype == "literary":
-                ids = parse_literary_block(block, db)
 
+                ids = parse_literary_block(
+                    block,
+                    db,
+                    batch_id=new_batch_id
+                )
             else:
                 raise ValueError(f"Unknown question_type: {qtype}")
 
@@ -44875,6 +47861,23 @@ async def upload_word_naplan_reading(
 
     saved_ids = []
     skipped = []
+    # --------------------------------------------------
+    # Generate upload batch_id
+    # --------------------------------------------------
+    print(f"[{request_id}] 📦 Generating batch_id")
+
+    latest_batch = db.query(
+        func.max(QuestionNaplanReading.batch_id)
+    ).scalar()
+
+    new_batch_id = (
+        (latest_batch or 0) + 1
+    )
+
+    print(
+        f"[{request_id}] ✅ batch_id generated | "
+        f"batch_id={new_batch_id}"
+    )
 
     # --------------------------------------------------
     # 2️⃣ Process each EXAM
@@ -44966,6 +47969,7 @@ async def upload_word_naplan_reading(
                         difficulty=meta["DIFFICULTY"].lower(),
                         topic=meta["TOPIC"],
                         question_type=qt,
+                        batch_id=new_batch_id,
                         exam_bundle=exam_bundle
                     )
             
@@ -55090,6 +58094,12 @@ async def upload_word(
 ):
     request_id = str(uuid.uuid4())[:8]
     report = []
+     # Get next batch id
+    last_batch_id = db.query(
+        func.max(Question.batch_id)
+    ).scalar()
+
+    next_batch_id = 1 if last_batch_id is None else last_batch_id + 1
 
     
     # -------------------------------------------------
@@ -55476,6 +58486,7 @@ async def upload_word(
             print("question_text preview =", repr(question_text[:1000]))
             print("question_blocks =", repr(filter_display_blocks(resolved_blocks)))
             new_question = Question(
+                batch_id=next_batch_id,
                 class_name=question.get("class_name"),
                 class_year=class_year,
                 subject=question.get("subject"),
@@ -57113,6 +60124,7 @@ async def process_exam_block(
     request_id,
     summary,
     exam_metadata,
+    batch_id: int,
 ):
  
     print("\n" + "-" * 60)
@@ -57353,6 +60365,7 @@ async def process_exam_block(
            has_stem_images=any(
                b["type"] == "image" for b in question_blocks
            ),
+           batch_id=batch_id,
            summary=summary,
            request_id=request_id,
         )
@@ -57891,7 +60904,8 @@ def persist_word_selection_question(
     sentence: str,
     selectable_words: list[str],
     correct_answer: str,
-    has_stem_images: bool,            # 👈 NEW
+    has_stem_images: bool,  
+    batch_id: int,          
     summary,
     request_id: str,
 ):
@@ -57928,6 +60942,7 @@ def persist_word_selection_question(
         subject=metadata.get("subject"),
         topic=metadata.get("topic"),
         difficulty=metadata.get("difficulty"),
+        batch_id=batch_id,
 
         # Semantic text (analytics / reporting)
         question_text=question_text,
@@ -58268,6 +61283,23 @@ async def upload_word_naplan(
     summary.file_bytes = content
     exam_metadata = None 
     print(f"[{request_id}] ✅ UploadSummary initialised")
+    # --------------------------------------------------
+    # STEP 5.1: Generate batch ID
+    # --------------------------------------------------
+    print(f"[{request_id}] ▶️ STEP 5.1: Generate batch_id")
+
+    latest_batch = db.query(
+        func.max(QuestionNumeracyLC.batch_id)
+    ).scalar()
+
+    new_batch_id = (
+        (latest_batch or 0) + 1
+    )
+
+    print(
+        f"[{request_id}] ✅ batch_id generated | "
+        f"batch_id={new_batch_id}"
+    )
     
 
     # --------------------------------------------------
@@ -58305,6 +61337,7 @@ async def upload_word_naplan(
                     request_id=request_id,
                     summary=summary,
                     exam_metadata=exam_metadata,
+                    batch_id=new_batch_id,
                 )
 
     
@@ -58320,6 +61353,7 @@ async def upload_word_naplan(
                 request_id=request_id,
                 summary=summary,
                 exam_metadata=exam_metadata,
+                batch_id=new_batch_id,
             )
 
     
@@ -58352,7 +61386,148 @@ async def upload_word_naplan(
     return response
 
 
+@app.get("/naplan/numeracy/available-batches")
+def get_available_naplan_batches(
+    class_year: int,
+    date: str,
+    db: Session = Depends(get_db),
+):
+    print("\n" + "=" * 80)
+    print("📦 AVAILABLE NAPLAN BATCHES ENDPOINT START")
+    print("=" * 80)
 
+    print(f"📥 Incoming request:")
+    print(f"   class_year = {class_year}")
+    print(f"   date       = {date}")
+
+    try:
+
+        # --------------------------------------------------
+        # STEP 1: Verify matching rows before distinct query
+        # --------------------------------------------------
+        print("\n🔍 STEP 1: Checking matching rows")
+
+        matching_rows = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == class_year,
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == date,
+            )
+            .all()
+        )
+
+        print(
+            f"✅ Matching rows found = "
+            f"{len(matching_rows)}"
+        )
+
+        for idx, row in enumerate(matching_rows[:10], start=1):
+            print(
+                f"   ROW {idx} | "
+                f"id={row.id} | "
+                f"year={row.year} | "
+                f"subject={row.subject} | "
+                f"batch_id={row.batch_id} | "
+                f"created_at={row.created_at}"
+            )
+
+        # --------------------------------------------------
+        # STEP 2: Filter rows WITH batch_id
+        # --------------------------------------------------
+        print("\n🔍 STEP 2: Filtering rows with batch_id")
+
+        rows_with_batch = (
+            db.query(QuestionNumeracyLC)
+            .filter(
+                QuestionNumeracyLC.year == class_year,
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == date,
+                QuestionNumeracyLC.batch_id.isnot(None)
+            )
+            .all()
+        )
+
+        print(
+            f"✅ Rows with batch_id found = "
+            f"{len(rows_with_batch)}"
+        )
+
+        for idx, row in enumerate(rows_with_batch[:10], start=1):
+            print(
+                f"   BATCH ROW {idx} | "
+                f"id={row.id} | "
+                f"batch_id={row.batch_id}"
+            )
+
+        # --------------------------------------------------
+        # STEP 3: Fetch distinct batch IDs
+        # --------------------------------------------------
+        print("\n🔍 STEP 3: Fetching distinct batch IDs")
+
+        batches = (
+            db.query(QuestionNumeracyLC.batch_id)
+            .filter(
+                QuestionNumeracyLC.year == class_year,
+                func.date(
+                    QuestionNumeracyLC.created_at
+                ) == date,
+                QuestionNumeracyLC.batch_id.isnot(None)
+            )
+            .distinct()
+            .order_by(
+                QuestionNumeracyLC.batch_id.desc()
+            )
+            .all()
+        )
+
+        print(f"✅ Raw distinct batch query result:")
+        print(batches)
+
+        batch_ids = [
+            b[0]
+            for b in batches
+            if b[0] is not None
+        ]
+
+        print(
+            f"\n✅ Final extracted batch IDs = "
+            f"{batch_ids}"
+        )
+
+        response_payload = {
+            "batches": batch_ids
+        }
+
+        print("\n📤 RESPONSE PAYLOAD")
+        print(response_payload)
+
+        print("\n" + "=" * 80)
+        print("🏁 AVAILABLE NAPLAN BATCHES END")
+        print("=" * 80)
+
+        return response_payload
+
+    except Exception as e:
+
+        print("\n" + "=" * 80)
+        print("❌ AVAILABLE NAPLAN BATCHES FAILED")
+        print("=" * 80)
+
+        print(f"❌ Exception type: {type(e)}")
+        print(f"❌ Exception: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        print("=" * 80)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch batches"
+        )
 
 @app.get("/api/student/exam-status")
 def exam_status(student_id: str, subject: str, db: Session = Depends(get_db)):
