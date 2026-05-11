@@ -257,7 +257,51 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class AdminUser(Base):
+    __tablename__ = "admin_users"
 
+    id = Column(Integer, primary_key=True, index=True)
+
+    username = Column(String, unique=True, nullable=False)
+
+    password = Column(String, nullable=False)
+
+    full_name = Column(String, nullable=False)
+
+    role = Column(String, nullable=False)
+
+    center_code = Column(String, nullable=True)
+
+    email = Column(String, nullable=True)
+
+    phone_number = Column(String, nullable=True)
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+class AddCenterAdminRequest(BaseModel):
+
+    username: str
+
+    center_code: str
+
+    admin_name: str
+
+    email: str
+
+    phone_number: str
+
+    password: str
+
+class AddCenterRequest(BaseModel):
+
+    center_code: str
+    center_name: str
+    address: Optional[str] = None
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
+    status: Optional[str] = "ACTIVE"
 
 class GenerateNaplanReadingHomeworkLatestRequest(BaseModel):
     year: int
@@ -365,6 +409,31 @@ class StudentHomeworkWritingSnapshot(Base):
     ai_evaluation_json = Column(JSON, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Center(Base):
+    __tablename__ = "centers"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(String, unique=True, nullable=False)
+
+    center_name = Column(String, nullable=False)
+
+    address = Column(String, nullable=True)
+
+    phone_number = Column(String, nullable=True)
+
+    email = Column(String, nullable=True)
+
+    status = Column(String, default="ACTIVE")
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
 
 class StudentHomeworkReportOCReading(Base):
     __tablename__ = "student_homework_report_oc_reading"
@@ -2802,6 +2871,8 @@ class UpdateStudentRequest(BaseModel):
     parent_email: Optional[str] = None
     class_name: Optional[str] = None
     class_day: Optional[str] = None
+    center_code: Optional[str] = None
+    gender: str
     password: Optional[str] = None  # plain text (as per your system)
  
 class StudentExamReportReading(Base):
@@ -3365,10 +3436,12 @@ class AddStudentExamModuleRequest(BaseModel):
     id: str                 # Backend-suggested ID (e.g. "1" or UUID)
     student_id: str         # "Gem001"
     name: str
+    gender: str
     parent_email: EmailStr
     class_name: str
     class_day: str
     student_year: str
+    center_code: str
 
 class GeneratedExamReading(Base):
     __tablename__ = "generated_exams_reading"
@@ -3527,20 +3600,63 @@ class ReadingHomeworkConfigCreate(ReadingExamConfigCreate):
     class_year: str
 
 class Student(Base):
+
     __tablename__ = "students"
 
-    id = Column(String, primary_key=True, index=True)   # internal PK
-    student_id = Column(String, unique=True, nullable=False)  # e.g. External "Gem002"
-    gender = Column(String, nullable=True)
+    id = Column(String, primary_key=True, index=True)
 
-    password = Column(String, nullable=False)
-    name = Column(String, nullable=False)
-    parent_email = Column(String, nullable=False)
+    # External student ID
+    student_id = Column(
+        String,
+        unique=True,
+        nullable=False
+    )
 
-    class_name = Column(String, nullable=False)
-    class_day = Column(String, nullable=True)
-     # ✅ NAPLAN year (e.g. 3, 5)
-    student_year = Column(String, nullable=False)
+    gender = Column(
+        String,
+        nullable=True
+    )
+
+    password = Column(
+        String,
+        nullable=False
+    )
+
+    name = Column(
+        String,
+        nullable=False
+    )
+
+    parent_email = Column(
+        String,
+        nullable=False
+    )
+
+    class_name = Column(
+        String,
+        nullable=False
+    )
+
+    class_day = Column(
+        String,
+        nullable=True
+    )
+
+    # NAPLAN year
+    student_year = Column(
+        String,
+        nullable=False
+    )
+
+    # NEW
+    center_code = Column(
+        String,
+        nullable=False
+    )
+    center_name = Column(
+        String,
+        nullable=False
+    )
 
 class StudentHomeworkReportReading(Base):
     __tablename__ = "student_homework_report_reading"
@@ -5006,11 +5122,399 @@ def generate_exam_questions_latest(
 # --------------------------------------------------
 from sqlalchemy import func
 
-# --------------------------------------------------
-# Get available Reading upload dates
-# --------------------------------------------------
-from sqlalchemy import or_
+# =========================
+# Update Center Admin API
+# =========================
 
+@app.put("/center-admin/update-center-admin/{admin_id}")
+def update_center_admin(
+    admin_id: int,
+    payload: AddCenterAdminRequest,
+    db: Session = Depends(get_db)
+):
+
+    existing_admin = (
+        db.query(AdminUser)
+        .filter(
+            AdminUser.id == admin_id
+        )
+        .first()
+    )
+
+    if not existing_admin:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center admin not found"
+        )
+
+    # Update fields
+    existing_admin.center_code = payload.center_code
+
+    existing_admin.full_name = payload.admin_name
+
+    existing_admin.username = payload.email
+
+    existing_admin.email = payload.email
+
+    existing_admin.phone_number = payload.phone_number
+
+    existing_admin.password = payload.password
+
+    db.commit()
+
+    db.refresh(existing_admin)
+
+    return {
+
+        "message": "Center admin updated successfully",
+
+        "admin": {
+
+            "id": existing_admin.id,
+
+            "full_name": existing_admin.full_name,
+
+            "email": existing_admin.email,
+
+            "center_code": existing_admin.center_code
+        }
+    }
+@app.get("/students/by-center/{center_code}")
+def get_students_by_center(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code
+        )
+        .all()
+    )
+
+    formatted_students = []
+
+    for student in students:
+
+        formatted_students.append({
+
+            "id": student.id,
+
+            "student_id": student.student_id,
+
+            "name": student.name,
+
+            "class_name": student.class_name,
+
+            "class_day": student.class_day,
+
+            "parent_email": student.parent_email,
+
+            "gender": student.gender,
+
+            "center_code": student.center_code
+
+        })
+
+    return {
+        "students": formatted_students
+    }
+@app.get("/center-admin/get-all-center-admins")
+def get_all_center_admins(
+    db: Session = Depends(get_db)
+):
+
+    admins = (
+        db.query(AdminUser)
+        .filter(
+            AdminUser.role == "CENTER_ADMIN"
+        )
+        .all()
+    )
+
+    formatted_admins = []
+
+    for admin in admins:
+
+        formatted_admins.append({
+
+            "id": admin.id,
+
+            "full_name": admin.full_name,
+
+            "email": admin.email,
+
+            "phone_number": admin.phone_number,
+
+            "center_code": admin.center_code,
+
+            "role": admin.role
+
+        })
+
+    return {
+        "admins": formatted_admins
+    }
+# =========================
+# Delete Center Admin API
+# =========================
+
+@app.delete("/center-admin/delete-center-admin/{admin_id}")
+def delete_center_admin(
+    admin_id: int,
+    db: Session = Depends(get_db)
+):
+
+    existing_admin = (
+        db.query(AdminUser)
+        .filter(
+            AdminUser.id == admin_id
+        )
+        .first()
+    )
+
+    if not existing_admin:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center admin not found"
+        )
+
+    db.delete(existing_admin)
+
+    db.commit()
+
+    return {
+        "message": "Center admin deleted successfully"
+    }
+
+@app.post("/center-admin/add-center-admin")
+def add_center_admin(
+    payload: AddCenterAdminRequest,
+    db: Session = Depends(get_db)
+):
+
+    # Check existing username/email
+    existing_admin = (
+        db.query(AdminUser)
+        .filter(
+            AdminUser.username == payload.email
+        )
+        .first()
+    )
+
+    if existing_admin:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Center admin already exists"
+        )
+
+    # Create center admin
+    new_admin = AdminUser(
+
+        username=payload.username,
+
+        password=payload.password,
+
+        full_name=payload.admin_name,
+
+        role="CENTER_ADMIN",
+
+        center_code=payload.center_code,
+
+        email=payload.email,
+
+        phone_number=payload.phone_number
+    )
+
+    db.add(new_admin)
+
+    db.commit()
+
+    db.refresh(new_admin)
+
+    return {
+
+        "message": "Center admin added successfully",
+
+        "admin": {
+
+            "id": new_admin.id,
+
+            "username": new_admin.username,
+
+            "full_name": new_admin.full_name,
+
+            "role": new_admin.role,
+
+            "center_code": new_admin.center_code
+        }
+    }
+
+# =========================
+# Update Center API
+# =========================
+@app.delete("/centers/delete-center/{center_code}")
+def delete_center(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+
+    existing_center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == center_code
+        )
+        .first()
+    )
+
+    if not existing_center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    db.delete(existing_center)
+
+    db.commit()
+
+    return {
+        "message": "Center deleted successfully"
+    }
+@app.get("/centers/get-all-centers")
+def get_all_centers(
+    db: Session = Depends(get_db)
+):
+
+    centers = db.query(Center).all()
+
+    formatted_centers = []
+
+    for center in centers:
+
+        formatted_centers.append({
+
+            "id": center.id,
+
+            "center_code": center.center_code,
+
+            "center_name": center.center_name,
+
+            "address": center.address,
+
+            "phone_number": center.phone_number,
+
+            "email": center.email,
+
+            "status": center.status
+
+        })
+
+    return {
+        "centers": formatted_centers
+    }
+
+@app.put("/centers/update-center/{center_code}")
+def update_center(
+    center_code: str,
+    payload: AddCenterRequest,
+    db: Session = Depends(get_db)
+):
+
+    existing_center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == center_code
+        )
+        .first()
+    )
+
+    if not existing_center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # Update fields
+    existing_center.center_name = payload.center_name
+    existing_center.address = payload.address
+    existing_center.phone_number = payload.phone_number
+    existing_center.email = payload.email
+    existing_center.status = payload.status
+
+    db.commit()
+
+    db.refresh(existing_center)
+
+    return {
+
+        "message": "Center updated successfully",
+
+        "center": {
+            "id": existing_center.id,
+            "center_code": existing_center.center_code,
+            "center_name": existing_center.center_name
+        }
+    }
+@app.post("/centers/add-center")
+def add_center(
+    payload: AddCenterRequest,
+    db: Session = Depends(get_db)
+):
+
+    # Check duplicate center code
+    existing_center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == payload.center_code
+        )
+        .first()
+    )
+
+    if existing_center:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Center code already exists"
+        )
+
+    # Create new center
+    new_center = Center(
+
+        center_code=payload.center_code,
+
+        center_name=payload.center_name,
+
+        address=payload.address,
+
+        phone_number=payload.phone_number,
+
+        email=payload.email,
+
+        status=payload.status
+    )
+
+    db.add(new_center)
+
+    db.commit()
+
+    db.refresh(new_center)
+
+    return {
+
+        "message": "Center added successfully",
+
+        "center": {
+            "id": new_center.id,
+            "center_code": new_center.center_code,
+            "center_name": new_center.center_name
+        }
+    }
 @app.get("/naplan/language-conventions/available-batches")
 def get_available_language_convention_batches(
     year: int,
@@ -5183,6 +5687,52 @@ def get_available_language_convention_batches(
             status_code=500,
             detail="Failed to fetch available batches"
         )
+# =========================
+# Get Next Center Code API
+# =========================
+
+
+
+@app.get("/centers/get-next-center-code")
+def get_next_center_code(
+    db: Session = Depends(get_db)
+):
+
+    # Get latest center ID
+    latest_center = (
+        db.query(Center)
+        .order_by(Center.id.desc())
+        .first()
+    )
+
+    # First center
+    if not latest_center:
+
+        next_number = 101
+
+    else:
+
+        try:
+
+            # Example: CENTER-101
+            current_code = latest_center.center_code
+
+            current_number = int(
+                current_code.split("-")[1]
+            )
+
+            next_number = current_number + 1
+
+        except Exception:
+
+            next_number = latest_center.id + 101
+
+    next_center_code = f"CENTER-{next_number}"
+
+    return {
+        "center_code": next_center_code
+    }
+
 @app.get("/naplan/reading/available-batches")
 def get_available_naplan_reading_batches(
     year: int,
@@ -29378,43 +29928,82 @@ def edit_student_exam_module(
     payload: UpdateStudentRequest,
     db: Session = Depends(get_db)
 ):
+
     student = (
         db.query(Student)
-        .filter(Student.student_id == payload.student_id)
+        .filter(
+            Student.student_id == payload.student_id
+        )
         .first()
     )
 
     if not student:
+
         raise HTTPException(
             status_code=404,
             detail="Student not found"
         )
 
-    # --------------------------------------------------
-    # Update fields ONLY if provided
-    # --------------------------------------------------
+    # =========================
+    # Update Fields
+    # =========================
+
     if payload.name is not None:
+
         student.name = payload.name
 
     if payload.parent_email is not None:
+
         student.parent_email = payload.parent_email
 
     if payload.class_name is not None:
+
         student.class_name = payload.class_name
 
     if payload.class_day is not None:
+
         student.class_day = payload.class_day
 
+    if payload.gender is not None:
+
+        student.gender = payload.gender
+
+    if payload.center_code is not None:
+
+        student.center_code = payload.center_code
+
     if payload.password is not None:
-        student.password = payload.password  # plain text (intentional)
+
+        # Plain text intentionally
+        student.password = payload.password
 
     db.commit()
+
     db.refresh(student)
 
     return {
+
         "message": "Student updated successfully",
-        "student_id": student.student_id
+
+        "student": {
+
+            "student_id": student.student_id,
+
+            "name": student.name,
+
+            "class_name": student.class_name,
+
+            "class_day": student.class_day,
+
+            "parent_email": student.parent_email,
+
+            "gender": student.gender,
+
+            "center_code": student.center_code
+
+        }
     }
+
 @app.get("/api/exams/oc-reading-homework-report")
 def get_oc_reading_homework_report(
     session_id: int = Query(..., description="OC Reading Homework session ID"),
@@ -34173,42 +34762,134 @@ def add_student_exam_module(
     payload: AddStudentExamModuleRequest,
     db: Session = Depends(get_db)
 ):
+
+    print("\n========== ADD STUDENT START ==========")
+
+    print("Incoming payload:")
+    print(payload)
+
+    # ---------------------------------------
+    # Check existing student
+    # ---------------------------------------
+
     existing_student = (
         db.query(Student)
-        .filter(Student.student_id == payload.student_id)
+        .filter(
+            Student.student_id == payload.student_id
+        )
         .first()
     )
 
     if existing_student:
+
+        print("Student already exists")
+        print(
+            f"Existing Student ID: "
+            f"{existing_student.student_id}"
+        )
+
         raise HTTPException(
             status_code=400,
             detail="Student with this student_id already exists"
         )
 
-    # ⚠️ Plain text password (as requested)
-    plain_password = payload.student_id
+    print("Student ID is unique")
 
-    student = Student(
-        id=payload.id,
-        student_id=payload.student_id,
-        name=payload.name,
-        student_year=payload.student_year,
-        parent_email=payload.parent_email,
-        class_name=payload.class_name,
-        class_day=payload.class_day,
-        password=plain_password,  # ← STORED AS IS
+    # ---------------------------------------
+    # Lookup Center
+    # ---------------------------------------
+
+    print(
+        f"Looking up center: "
+        f"{payload.center_code}"
     )
 
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == payload.center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        print("Center not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print("Center found")
+    print(f"Center Name: {center.center_name}")
+    print(f"Center Code: {center.center_code}")
+
+    formatted_center = (
+        f"{center.center_name} | "
+        f"{center.center_code}"
+    )
+
+    print(
+        f"Formatted Center: "
+        f"{formatted_center}"
+    )
+
+    # ---------------------------------------
+    # Plain text password
+    # ---------------------------------------
+
+    plain_password = payload.student_id
+    
+
+    student = Student(
+
+        id=payload.id,
+
+        student_id=payload.student_id,
+
+        name=payload.name,
+        gender=payload.gender,
+        student_year=payload.student_year,
+
+        parent_email=payload.parent_email,
+
+        class_name=payload.class_name,
+
+        class_day=payload.class_day,
+
+        password=plain_password,
+
+        center_code=center.center_code,
+
+        center_name=center.center_name,
+    )
+
+    print("Saving student to database...")
+
     db.add(student)
+
     db.commit()
+
     db.refresh(student)
 
+    print("Student saved successfully")
+
+    print("========== ADD STUDENT END ==========\n")
+
     return {
+
         "message": "Student added successfully",
+
         "student_id": student.student_id,
-        "student_year": student.student_year,  # ✅ optional but useful
+
+        "student_year": student.student_year,
+
+        "center_code": student.center_code,
+
         "password": plain_password
-    }#here
+    }
+
 def generate_admin_exam_report_reading(
     db: Session,
     student: Student,
@@ -61748,31 +62429,177 @@ def retrieve_week_number(request: WeekRequest, db: Session = Depends(get_db)):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-@app.post("/login-exam-module")
-def login_exam_module(login_data: StudentLogin, db: Session = Depends(get_db)):
+#@app.post("/login-exam-module")
+#def login_exam_module(login_data: StudentLogin, db: Session = Depends(get_db)):
     """
     Login a student using student_id and password
     """
     # Look up student by student_id
-    student = db.query(Student).filter(Student.student_id == login_data.student_id).first()
+ #   student = db.query(Student).filter(Student.student_id == login_data.student_id).first()
     
-    if not student:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+  #  if not student:
+   #     raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # Simple password check (plaintext; replace with hashed check in production)
-    if login_data.password != student.password:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    #if login_data.password != student.password:
+     #   raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # Return student info (without password)
-    return {
-        "student_id": student.student_id,
-        "name": student.name,
-        "parent_email": student.parent_email,
-        "class_name": student.class_name,
-        "class_day": student.class_day
-    }
+    #return {
+     #   "student_id": student.student_id,
+      #  "name": student.name,
+       # "parent_email": student.parent_email,
+       # "class_name": student.class_name,
+       # "class_day": student.class_day
+    #}
 
+@app.post("/login-exam-module")
+def login_exam_module(
+    login_data: StudentLogin,
+    db: Session = Depends(get_db)
+):
+    """
+    Authenticate:
+    - SUPER_ADMIN
+    - CENTER_ADMIN
+    - STUDENT
+    """
 
+    print("\n================ LOGIN REQUEST START ================")
+
+    print("Received login request")
+    print(f"Entered Username: {login_data.student_id}")
+    print(f"Entered Password: {login_data.password}")
+
+    # ==================================================
+    # STEP 1: CHECK ADMIN USERS TABLE FIRST
+    # ==================================================
+
+    print("\nChecking admin_users table...")
+
+    admin_user = (
+        db.query(AdminUser)
+        .filter(
+            AdminUser.username == login_data.student_id
+        )
+        .first()
+    )
+
+    # --------------------------------------------------
+    # ADMIN FOUND
+    # --------------------------------------------------
+
+    if admin_user:
+
+        print("Admin user found")
+        print(f"Database Username: {admin_user.username}")
+        print(f"Database Role: {admin_user.role}")
+        print(f"Database Password: {admin_user.password}")
+
+        print("Checking admin password...")
+
+        # Password validation
+        if admin_user.password != login_data.password:
+
+            print("Admin password mismatch")
+            print("Returning 401 Unauthorized")
+
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid credentials"
+            )
+
+        print("Admin password verified successfully")
+        print("Admin login successful")
+
+        admin_response = {
+            "user_type": admin_user.role,
+            "username": admin_user.username,
+            "name": admin_user.full_name,
+            "center_code": admin_user.center_code,
+            "email": admin_user.email,
+        }
+
+        print("Returning admin response:")
+        print(admin_response)
+
+        print("================ LOGIN REQUEST END ================\n")
+
+        return admin_response
+
+    # ==================================================
+    # STEP 2: CHECK STUDENT TABLE
+    # ==================================================
+
+    print("\nAdmin user not found")
+    print("Checking students table...")
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.student_id == login_data.student_id
+        )
+        .first()
+    )
+
+    # --------------------------------------------------
+    # STUDENT FOUND
+    # --------------------------------------------------
+
+    if student:
+
+        print("Student record found")
+        print(f"Database Student ID: {student.student_id}")
+        print(f"Student Name: {student.name}")
+        print(f"Class Name: {student.class_name}")
+
+        print("Checking student password...")
+
+        # Password validation
+        if student.password != login_data.password:
+
+            print("Student password mismatch")
+            print("Returning 401 Unauthorized")
+
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid credentials"
+            )
+
+        print("Student password verified successfully")
+        print("Student login successful")
+
+        student_response = {
+            "user_type": "STUDENT",
+            "student_id": student.student_id,
+            "name": student.name,
+            "parent_email": student.parent_email,
+            "class_name": student.class_name,
+            "class_day": student.class_day,
+        }
+
+        print("Returning student response:")
+        print(student_response)
+
+        print("================ LOGIN REQUEST END ================\n")
+
+        return student_response
+
+    # ==================================================
+    # STEP 3: INVALID LOGIN
+    # ==================================================
+
+    print("\nNo matching admin or student found")
+    print("Login failed")
+    print("Returning 401 Unauthorized")
+
+    print("================ LOGIN REQUEST END ================\n")
+
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid credentials"
+    )
+  
 @app.get("/student-name")
 def get_student_name(student_id: int = Query(...), db: Session = Depends(get_db)):
     """
