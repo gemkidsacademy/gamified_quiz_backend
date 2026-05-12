@@ -53,7 +53,7 @@ import base64
  
 import json
 
-from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey, select, func, text, Boolean, Date, Text, desc, Float, Index, case, Numeric, distinct, cast, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey,or_,select, func, text, Boolean, Date, Text, desc, Float, Index, case, Numeric, distinct, cast, UniqueConstraint
 from fastapi.responses import JSONResponse, HTMLResponse
 
 
@@ -280,6 +280,16 @@ class AdminUser(Base):
         DateTime,
         default=datetime.utcnow
     )
+class QuestionUsage(Base):
+    __tablename__ = "question_usage"
+
+    id = Column(Integer, primary_key=True)
+
+    question_id = Column(Integer, ForeignKey("questions.id"))
+    center_id = Column(Integer, ForeignKey("centers.id"))
+    
+
+    used_at = Column(DateTime, default=datetime.utcnow)
 class AddCenterAdminRequest(BaseModel):
 
     username: str
@@ -332,6 +342,7 @@ class ResetUsedQuestionsRequest(BaseModel):
     class_name: str
     subject: str
     class_year: int
+    center_code: str
     
 class ExamNaplanNumeracyHomework(Base):
     __tablename__ = "exam_naplan_numeracy_homework"
@@ -988,6 +999,10 @@ class HomeWorkExam(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
+    center_code = Column(
+        String,
+        nullable=True
+    )
     
 
     questions = Column(JSON, nullable=False)
@@ -1002,6 +1017,10 @@ class HomeWorkQuiz(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
+    center_code = Column(
+        String,
+        nullable=True
+    )
     
 
     num_topics = Column(Integer, nullable=False)
@@ -3706,6 +3725,7 @@ class QuizCreate(BaseModel):
     class_name: str
     subject: str
     class_year: int
+    center_code: str
     num_topics: int
     topics: List[TopicInput]
  
@@ -3737,6 +3757,7 @@ class Quiz(Base):
 
     num_topics = Column(Integer, nullable=False)
     topics = Column(JSON, nullable=False)
+    center_code = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -4138,6 +4159,10 @@ class Exam(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
+    center_code = Column(
+        String,
+        nullable=True
+    )
     
 
     questions = Column(JSON, nullable=False)
@@ -7159,13 +7184,13 @@ def search_questions(
     class_year: int,
     db: Session = Depends(get_db)
 ):
+
     questions = (
         db.query(Question)
         .filter(
             Question.class_name.ilike("selective"),
             Question.subject.ilike("thinking skills"),
             Question.class_year == class_year,
-
             or_(
                 Question.question_text.ilike(f"%{query}%"),
                 Question.topic.ilike(f"%{query}%")
@@ -7181,15 +7206,14 @@ def search_questions(
             "id": q.id,
             "topic": q.topic,
             "difficulty": q.difficulty,
-
             "preview": (
-                q.question_text.split("QUESTION_TEXT:")[-1]
-                .split("OPTIONS:")[0]
-                .strip()[:250]
-                + "..."
-                if q.question_text
-                else ""
-            )
+                (
+                    q.question_text
+                    .split("QUESTION_TEXT:")[-1]
+                    .split("OPTIONS:")[0]
+                    .strip()[:250]
+                ) + "..."
+            ) if q.question_text else ""
         }
         for q in questions
     ]
@@ -8172,30 +8196,60 @@ def generate_exam_questions_oc_mr(
 def generate_exam_questions_selective_ts(
     quiz,
     db,
-    only_unused=False
+    excluded_question_ids=None
 ):
 
-    print("\n===================== GENERATE EXAM START =====================\n")
+    if excluded_question_ids is None:
+        excluded_question_ids = []
+
+    print(
+        "\n===================== GENERATE EXAM START =====================\n"
+    )
+
     print(f"Quiz ID       : {quiz.id}")
+
     print(f"Class         : {quiz.class_name}")
+
     print(f"Subject       : {quiz.subject}")
+
     print(f"Class Year    : {quiz.class_year}")
+
     print(f"Topics Config : {quiz.topics}")
-    print("===============================================================\n")
+
+    print(
+        f"Excluded IDs  : {len(excluded_question_ids)}"
+    )
+
+    print(
+        "===============================================================\n"
+    )
 
     all_questions = []
+
     q_id = 1
+
+    # ==================================================
+    # LOOP THROUGH TOPICS
+    # ==================================================
 
     for topic in quiz.topics:
 
-        print("\n===================== PROCESSING TOPIC =====================")
+        print(
+            "\n===================== PROCESSING TOPIC ====================="
+        )
 
         topic_name = topic.get("name")
 
         print(f"Topic         : {topic_name}")
-        print("============================================================")
 
-        # 🔥 LOOP OVER DIFFICULTIES
+        print(
+            "============================================================"
+        )
+
+        # ==================================================
+        # LOOP THROUGH DIFFICULTIES
+        # ==================================================
+
         for level in ["easy", "medium", "hard"]:
 
             config = topic.get(level, {})
@@ -8208,134 +8262,268 @@ def generate_exam_questions_selective_ts(
             if db_count == 0:
                 continue
 
-            print(f"\n➡️ Processing {level.upper()} | Required DB: {db_count}")
+            print(
+                f"\n➡️ Processing "
+                f"{level.upper()} | "
+                f"Required DB: {db_count}"
+            )
 
-            # --------------------------------------------------
-            # 1️⃣ STRICT DB PRE-FLIGHT CHECK
-            # --------------------------------------------------
+            # ==================================================
+            # 1️⃣ STRICT PRE-FLIGHT CHECK
+            # ==================================================
+
             availability_query = (
                 db.query(Question)
                 .filter(
-                    func.lower(Question.class_name) == "selective",
-                    func.lower(Question.subject) == "thinking skills",
+
+                    func.lower(
+                        Question.class_name
+                    ) == "selective",
+
+                    func.lower(
+                        Question.subject
+                    ) == "thinking skills",
+
                     Question.class_year == quiz.class_year,
-                    func.lower(Question.topic) == topic_name.lower(),
-                    func.lower(Question.difficulty) == level
+
+                    func.lower(
+                        Question.topic
+                    ) == topic_name.lower(),
+
+                    func.lower(
+                        Question.difficulty
+                    ) == level
+
                 )
             )
 
-            if only_unused:
-                availability_query = availability_query.filter(
-                    Question.is_used == False
+            # ==============================================
+            # EXCLUDE ALREADY USED QUESTIONS
+            # ==============================================
+
+            if excluded_question_ids:
+
+                availability_query = (
+                    availability_query.filter(
+                        ~Question.id.in_(
+                            excluded_question_ids
+                        )
+                    )
                 )
 
             available_db = availability_query.count()
 
-            print(f"[DB CHECK] {level} available: {available_db}")
+            print(
+                f"[DB CHECK] "
+                f"{level} available: {available_db}"
+            )
+
+            # ==============================================
+            # HARD STOP IF NOT ENOUGH QUESTIONS
+            # ==============================================
 
             if available_db < db_count:
+
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough {level} questions for topic '{topic_name}'. "
-                        f"Required: {db_count}, Available: {available_db}"
+                        f"Not enough unused "
+                        f"{level} questions "
+                        f"for topic '{topic_name}'. "
+                        f"Required: {db_count}, "
+                        f"Available: {available_db}"
                     )
                 )
 
-            # --------------------------------------------------
+            # ==================================================
             # 2️⃣ FETCH QUESTIONS
-            # --------------------------------------------------
+            # ==================================================
+
             raw_query = (
                 db.query(Question)
                 .filter(
-                    func.lower(Question.class_name) == "selective",
-                    func.lower(Question.subject) == "thinking skills",
+
+                    func.lower(
+                        Question.class_name
+                    ) == "selective",
+
+                    func.lower(
+                        Question.subject
+                    ) == "thinking skills",
+
                     Question.class_year == quiz.class_year,
-                    func.lower(Question.topic) == topic_name.lower(),
-                    func.lower(Question.difficulty) == level
+
+                    func.lower(
+                        Question.topic
+                    ) == topic_name.lower(),
+
+                    func.lower(
+                        Question.difficulty
+                    ) == level
+
                 )
             )
 
-            if only_unused:
-                raw_query = raw_query.filter(
-                    Question.is_used == False
+            # ==============================================
+            # EXCLUDE USED QUESTIONS
+            # ==============================================
+
+            if excluded_question_ids:
+
+                raw_query = (
+                    raw_query.filter(
+                        ~Question.id.in_(
+                            excluded_question_ids
+                        )
+                    )
                 )
 
-            raw_questions = raw_query.order_by(func.random()).all()
+            raw_questions = (
+                raw_query
+                .order_by(func.random())
+                .all()
+            )
 
-            print(f"Fetched {level} rows:", len(raw_questions))
+            print(
+                f"Fetched {level} rows:",
+                len(raw_questions)
+            )
 
-            # --------------------------------------------------
-            # 3️⃣ REMOVE DUPLICATES (UNCHANGED)
-            # --------------------------------------------------
+            # ==================================================
+            # 3️⃣ REMOVE DUPLICATES
+            # ==================================================
+
             def normalize_blocks_exam(blocks):
+
                 parts = []
+
                 for block in blocks or []:
+
                     if block.get("type") == "text":
-                        text = block.get("content", "").lower()
-                        text = re.sub(r"\s+", " ", text).strip()
+
+                        text = (
+                            block.get("content", "")
+                            .lower()
+                        )
+
+                        text = re.sub(
+                            r"\s+",
+                            " ",
+                            text
+                        ).strip()
+
                         parts.append(text)
+
                     elif block.get("type") == "image":
-                        parts.append(block.get("src", "").strip())
+
+                        parts.append(
+                            block.get("src", "").strip()
+                        )
+
                 return " ".join(parts)
 
             unique_questions = {}
+
             db_questions = []
 
             for question_row in raw_questions:
-                key = normalize_blocks_exam(question_row.question_blocks)
+
+                key = normalize_blocks_exam(
+                    question_row.question_blocks
+                )
 
                 if key not in unique_questions:
+
                     unique_questions[key] = question_row
+
                     db_questions.append(question_row)
+
+            # ==============================================
+            # LIMIT TO REQUIRED COUNT
+            # ==============================================
 
             db_questions = db_questions[:db_count]
 
-            # --------------------------------------------------
-            # 4️⃣ BUILD FINAL OUTPUT (UNCHANGED FORMAT)
-            # --------------------------------------------------
+            # ==================================================
+            # 4️⃣ BUILD FINAL OUTPUT
+            # ==================================================
+
             for question_row in db_questions:
 
-                blocks = question_row.question_blocks or []
+                blocks = (
+                    question_row.question_blocks
+                    or []
+                )
 
-                if not blocks and question_row.question_text:
+                if (
+                    not blocks
+                    and question_row.question_text
+                ):
+
                     blocks = [{
                         "type": "text",
-                        "content": question_row.question_text
+                        "content":
+                            question_row.question_text
                     }]
 
                 existing_image_srcs = {
+
                     block.get("src")
+
                     for block in blocks
+
                     if block.get("type") == "image"
                 }
 
-                for image_src in question_row.images or []:
+                for image_src in (
+                    question_row.images or []
+                ):
+
                     if image_src not in existing_image_srcs:
+
                         blocks.append({
+
                             "type": "image",
+
                             "src": image_src
                         })
 
                 all_questions.append({
+
                     "id": question_row.id,
+
                     "q_id": q_id,
+
                     "topic": topic_name,
+
                     "blocks": blocks,
+
                     "options": question_row.options,
-                    "correct": question_row.correct_answer
+
+                    "correct":
+                        question_row.correct_answer
                 })
 
                 q_id += 1
 
-    # --------------------------------------------------
-    # 5️⃣ FINAL SHUFFLE (IMPORTANT)
-    # --------------------------------------------------
+    # ==================================================
+    # 5️⃣ FINAL SHUFFLE
+    # ==================================================
+
     random.shuffle(all_questions)
 
-    print("\n==================== FINAL EXAM SUMMARY ====================")
-    print(f"TOTAL QUESTIONS GENERATED: {len(all_questions)}")
-    print("===========================================================\n")
+    print(
+        "\n==================== FINAL EXAM SUMMARY ===================="
+    )
+
+    print(
+        f"TOTAL QUESTIONS GENERATED: "
+        f"{len(all_questions)}"
+    )
+
+    print(
+        "===========================================================\n"
+    )
 
     return all_questions
 
@@ -9209,8 +9397,8 @@ def generate_thinking_skills_exam_latest(
     Generate Thinking Skills exam using ALL questions
     from a selected date + batch id.
 
-    - Uses only unused questions
-    - Marks included questions as used
+    Questions are tracked PER CENTER using
+    QuestionUsage instead of Question.is_used.
     """
 
     payload = payload or {}
@@ -9218,28 +9406,41 @@ def generate_thinking_skills_exam_latest(
     # ==================================================
     # 0️⃣ Extract Input
     # ==================================================
+
     class_year = payload.get("class_year")
 
     selected_date = payload.get("date")
 
     batch_id = payload.get("batch_id")
 
+    center_code = payload.get("center_code")
+
     if not class_year:
+
         raise HTTPException(
             status_code=400,
             detail="class_year is required"
         )
 
     if not selected_date:
+
         raise HTTPException(
             status_code=400,
             detail="date is required"
         )
 
     if not batch_id:
+
         raise HTTPException(
             status_code=400,
             detail="batch_id is required"
+        )
+
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
         )
 
     print(
@@ -9250,22 +9451,71 @@ def generate_thinking_skills_exam_latest(
     print(
         f"📥 class_year={class_year}, "
         f"date={selected_date}, "
-        f"batch_id={batch_id}"
+        f"batch_id={batch_id}, "
+        f"center_code={center_code}"
     )
 
     # ==================================================
-    # 1️⃣ Fetch Questions
+    # 1️⃣ FIND CENTER
     # ==================================================
-    questions = (
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==================================================
+    # 2️⃣ FETCH USED QUESTION IDS
+    # ==================================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
+        )
+        .all()
+    )
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_ids
+    ]
+
+    print(
+        f"📚 Previously used questions: "
+        f"{len(used_question_ids)}"
+    )
+
+    # ==================================================
+    # 3️⃣ Fetch Questions
+    # ==================================================
+
+    query = (
         db.query(Question)
         .filter(
 
             func.lower(
-                func.trim(Question.class_name)
+                func.trim(
+                    Question.class_name
+                )
             ) == "selective",
 
             func.lower(
-                func.trim(Question.subject)
+                func.trim(
+                    Question.subject
+                )
             ) == "thinking skills",
 
             Question.class_year == class_year,
@@ -9276,30 +9526,45 @@ def generate_thinking_skills_exam_latest(
             ) == selected_date,
 
             # selected upload batch
-            Question.batch_id == batch_id,
-
-            # only unused questions
-            Question.is_used == False
+            Question.batch_id == batch_id
 
         )
+    )
+
+    # ==========================================
+    # EXCLUDE USED QUESTIONS
+    # ==========================================
+
+    if used_question_ids:
+
+        query = query.filter(
+            ~Question.id.in_(
+                used_question_ids
+            )
+        )
+
+    questions = (
+        query
         .order_by(Question.id.asc())
         .all()
     )
 
     if not questions:
+
         raise HTTPException(
             status_code=400,
             detail=(
-                "No questions found for selected "
-                "date and batch"
+                "No unused questions found "
+                "for selected date and batch"
             )
         )
 
     print(f"✅ Fetched {len(questions)} questions")
 
     # ==================================================
-    # 2️⃣ Build Output
+    # 4️⃣ Build Output
     # ==================================================
+
     generated_questions = []
 
     q_id = 1
@@ -9309,6 +9574,7 @@ def generate_thinking_skills_exam_latest(
         blocks = row.question_blocks or []
 
         # fallback to text if blocks missing
+
         if not blocks and row.question_text:
 
             blocks = [{
@@ -9317,9 +9583,13 @@ def generate_thinking_skills_exam_latest(
             }]
 
         # ensure images included
+
         existing_image_srcs = {
+
             block.get("src")
+
             for block in blocks
+
             if block.get("type") == "image"
         }
 
@@ -9328,11 +9598,14 @@ def generate_thinking_skills_exam_latest(
             if image_src not in existing_image_srcs:
 
                 blocks.append({
+
                     "type": "image",
+
                     "src": image_src
                 })
 
         generated_questions.append({
+
             "id": row.id,
 
             "q_id": q_id,
@@ -9351,39 +9624,16 @@ def generate_thinking_skills_exam_latest(
         q_id += 1
 
     print(
-        f"📦 Built {len(generated_questions)} questions"
+        f"📦 Built "
+        f"{len(generated_questions)} questions"
     )
 
     # ==================================================
-    # 3️⃣ MARK QUESTIONS AS USED
+    # 5️⃣ SAVE EXAM
     # ==================================================
-    used_question_ids = [
-        q["id"]
-        for q in generated_questions
-    ]
 
-    if used_question_ids:
-
-        updated = (
-            db.query(Question)
-            .filter(
-                Question.id.in_(used_question_ids),
-                Question.is_used.is_(False)
-            )
-            .update(
-                {Question.is_used: True},
-                synchronize_session=False
-            )
-        )
-
-        print(
-            f"🔒 Marked {updated} questions as used"
-        )
-
-    # ==================================================
-    # 4️⃣ SAVE EXAM
-    # ==================================================
     new_exam = Exam(
+
         quiz_id=None,
 
         class_name="selective",
@@ -9391,6 +9641,8 @@ def generate_thinking_skills_exam_latest(
         subject="thinking_skills",
 
         class_year=class_year,
+
+        center_code=center_code,
 
         questions=generated_questions
     )
@@ -9406,12 +9658,49 @@ def generate_thinking_skills_exam_latest(
         f"{new_exam.id}"
     )
 
+    # ==================================================
+    # 6️⃣ STORE QUESTION USAGE
+    # ==================================================
+
+    usage_rows = []
+
+    for q in generated_questions:
+
+        question_id = q.get("id")
+
+        if not question_id:
+            continue
+
+        usage_rows.append(
+
+            QuestionUsage(
+
+                question_id=question_id,
+
+                center_id=center.id
+
+            )
+        )
+
+    if usage_rows:
+
+        db.add_all(usage_rows)
+
+        db.commit()
+
+    print(
+        f"✅ Stored usage rows: "
+        f"{len(usage_rows)}"
+    )
+
     print("================ END =================\n")
 
     # ==================================================
-    # 5️⃣ RESPONSE
+    # 7️⃣ RESPONSE
     # ==================================================
+
     return {
+
         "message": (
             "Thinking Skills exam generated "
             "(batch-based)"
@@ -9431,11 +9720,14 @@ def generate_thinking_skills_exam_latest(
 
         "subject": "thinking_skills",
 
-        "total_questions": len(generated_questions),
+        "center_code": center_code,
 
-        "questions": generated_questions
+        "total_questions":
+            len(generated_questions),
+
+        "questions":
+            generated_questions
     }
-
 @app.get("/api/reading-availability")
 def get_reading_availability(
     class_year: str,
@@ -9648,12 +9940,21 @@ def reset_used_questions(
     payload: ResetUsedQuestionsRequest,
     db: Session = Depends(get_db)
 ):
+
     print("\n🔁 RESET USED QUESTIONS REQUEST")
+
     print("➡ class_name:", payload.class_name)
+
     print("➡ subject:", payload.subject)
+
     print("➡ class_year:", payload.class_year)
 
-    # 🔥 Normalize (important for your DB)
+    print("➡ center_code:", payload.center_code)
+
+    # ==========================================
+    # NORMALIZE VALUES
+    # ==========================================
+
     subject_map = {
         "thinking_skills": "Thinking Skills",
         "mathematical_reasoning": "Mathematical Reasoning",
@@ -9665,42 +9966,74 @@ def reset_used_questions(
         "selective": "Selective"
     }
 
-    db_subject = subject_map.get(payload.subject, payload.subject)
-    db_class = class_map.get(payload.class_name, payload.class_name)
+    db_subject = subject_map.get(
+        payload.subject,
+        payload.subject
+    )
+
+    db_class = class_map.get(
+        payload.class_name,
+        payload.class_name
+    )
 
     try:
-        updated_count = (
-            db.query(Question)
+
+        # ==========================================
+        # FIND CENTER
+        # ==========================================
+
+        center = (
+            db.query(Center)
             .filter(
-                func.lower(Question.class_name) == db_class.lower(),
-                func.lower(Question.subject) == db_subject.lower(),
-                Question.class_year == payload.class_year,
-                Question.is_used == True
+                Center.center_code.ilike(
+                    payload.center_code
+                )
             )
-            .update(
-                {Question.is_used: False},
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        # ==========================================
+        # DELETE QUESTION USAGE ROWS
+        # FOR THIS CENTER
+        # ==========================================
+
+        deleted_count = (
+            db.query(QuestionUsage)
+            .filter(
+                QuestionUsage.center_id == center.id
+            )
+            .delete(
                 synchronize_session=False
             )
         )
-
         db.commit()
 
-        print(f"✅ Reset {updated_count} questions")
+        print(
+            f"✅ Reset {deleted_count} question usages"
+        )
 
         return {
             "message": "Used questions reset successfully",
-            "updated_count": updated_count
+            "deleted_count": deleted_count
         }
 
     except Exception as e:
+
         db.rollback()
+
         print("❌ ERROR:", str(e))
 
         raise HTTPException(
             status_code=500,
             detail=f"Failed to reset used questions: {str(e)}"
-        )
-    
+        )    
 
 
 
@@ -9710,9 +10043,14 @@ def get_question_count(
     subject: str,
     class_year: int,
     topic: str,
+    center_code: str,
     db: Session = Depends(get_db)
 ):
-    # 🔹 Normalize mappings
+
+    # ==========================================
+    # NORMALIZE SUBJECTS
+    # ==========================================
+
     subject_map = {
         "thinking_skills": "Thinking Skills",
         "mathematical_reasoning": "Mathematical Reasoning",
@@ -9720,48 +10058,127 @@ def get_question_count(
         "writing": "Writing",
     }
 
+    # ==========================================
+    # NORMALIZE CLASS NAMES
+    # ==========================================
+
     class_map = {
         "selective": "Selective",
-        "oc": "OC",   # ✅ IMPORTANT FIX
+        "oc": "OC",
     }
 
-    # 🔹 Normalize inputs safely
-    db_subject = subject_map.get(subject.lower(), subject)
-    db_class = class_map.get(class_name.lower(), class_name)
+    # ==========================================
+    # SAFE NORMALIZATION
+    # ==========================================
+
+    db_subject = subject_map.get(
+        subject.lower(),
+        subject
+    )
+
+    db_class = class_map.get(
+        class_name.lower(),
+        class_name
+    )
 
     normalized_topic = topic.strip().lower()
 
-    # 🔹 Helper function
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(center_code)
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==========================================
+    # QUESTIONS ALREADY USED
+    # ==========================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
+        )
+    )
+
+    # ==========================================
+    # HELPER FUNCTION
+    # ==========================================
+
     def get_count(level: str):
+
         return (
             db.query(func.count(Question.id))
             .filter(
-                func.lower(func.trim(Question.class_name)) == db_class.lower(),
-                func.lower(func.trim(Question.subject)) == db_subject.lower(),
+
+                func.lower(
+                    func.trim(Question.class_name)
+                ) == db_class.lower(),
+
+                func.lower(
+                    func.trim(Question.subject)
+                ) == db_subject.lower(),
+
                 Question.class_year == class_year,
-                func.lower(func.trim(Question.topic)) == normalized_topic,
-                func.lower(func.trim(Question.difficulty)) == level,
-                Question.is_used == False
+
+                func.lower(
+                    func.trim(Question.topic)
+                ) == normalized_topic,
+
+                func.lower(
+                    func.trim(Question.difficulty)
+                ) == level,
+
+                # EXCLUDE QUESTIONS
+                # ALREADY USED
+                # BY THIS CENTER
+                ~Question.id.in_(used_question_ids)
+
             )
             .scalar()
         )
 
-    # 🔹 Final result
+    # ==========================================
+    # FINAL RESULT
+    # ==========================================
+
     result = {
         "easy": get_count("easy"),
         "medium": get_count("medium"),
         "hard": get_count("hard"),
     }
 
-    # 🔍 Debug logs (keep during testing)
+    # ==========================================
+    # DEBUG LOGS
+    # ==========================================
+
     print("🔍 DEBUG QUESTION COUNT")
+
     print("Class:", db_class)
+
     print("Subject:", db_subject)
+
     print("Year:", class_year)
+
     print("Topic:", normalized_topic)
+
+    print("Center:", center_code)
+
     print("Result:", result)
 
-    return result    
+    return result
 @app.get("/api/exams/writing/review-by-attempt")
 def get_writing_review_by_attempt(
     attempt_id: int,
@@ -12918,12 +13335,21 @@ def start_homework_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n================ START HOMEWORK THINKING SKILLS =================")
-    print("📥 Incoming payload:", req.dict())
+
+    print(
+        "\n================ START HOMEWORK "
+        "THINKING SKILLS ================="
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
 
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
+
     student = (
         db.query(Student)
         .filter(
@@ -12934,167 +13360,351 @@ def start_homework_exam(
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
+    )
+
+    print(
+        f"🏢 Student center_code: "
+        f"{student.center_code}"
+    )
 
     # --------------------------------------------------
     # 2️⃣ Extract class_year
     # --------------------------------------------------
+
     if not student.student_year:
+
         raise HTTPException(
             status_code=400,
-            detail="Student does not have class_year assigned"
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
         )
 
-    class_year = extract_class_year_numeric(student.student_year)
-    print(f"📘 Student class_year: {class_year}")
+    class_year = extract_class_year_numeric(
+        student.student_year
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{class_year}"
+    )
 
     now = datetime.now(timezone.utc)
+
     MAX_DURATION = timedelta(minutes=40)
 
     # --------------------------------------------------
-    # 3️⃣ Fetch latest HOMEWORK exam
+    # 3️⃣ Fetch latest CENTER-SPECIFIC
+    # HOMEWORK exam
     # --------------------------------------------------
+
     homework_exam = (
         db.query(HomeWorkExam)
         .filter(
-            HomeWorkExam.subject == "thinking_skills",
-            HomeWorkExam.class_name == "selective",
-            HomeWorkExam.class_year == class_year
+
+            HomeWorkExam.subject
+            == "thinking_skills",
+
+            HomeWorkExam.class_name
+            == "selective",
+
+            HomeWorkExam.class_year
+            == class_year,
+
+            HomeWorkExam.center_code
+            == student.center_code
+
         )
         .order_by(HomeWorkExam.id.desc())
         .first()
     )
 
     if not homework_exam:
+
         raise HTTPException(
             status_code=404,
-            detail=f"No homework exam found for class_year={class_year}"
+            detail=(
+                f"No homework exam found "
+                f"for class_year={class_year} "
+                f"and center="
+                f"{student.center_code}"
+            )
         )
 
-    print(f"📝 Homework exam selected | exam_id={homework_exam.id}")
+    print(
+        f"📝 Homework exam selected | "
+        f"exam_id={homework_exam.id}"
+    )
 
     # --------------------------------------------------
     # 4️⃣ Check ACTIVE attempt (resume)
     # --------------------------------------------------
+
     active_attempt = (
         db.query(StudentHomeworkThinkingSkills)
         .filter(
-            StudentHomeworkThinkingSkills.student_id == student.id,
-            StudentHomeworkThinkingSkills.homework_exam_id == homework_exam.id,
-            StudentHomeworkThinkingSkills.class_year == class_year,
-            StudentHomeworkThinkingSkills.completed_at.is_(None)
+
+            StudentHomeworkThinkingSkills.student_id
+            == student.id,
+
+            StudentHomeworkThinkingSkills
+            .homework_exam_id
+            == homework_exam.id,
+
+            StudentHomeworkThinkingSkills
+            .class_year
+            == class_year,
+
+            StudentHomeworkThinkingSkills
+            .completed_at
+            .is_(None)
+
         )
-        .order_by(StudentHomeworkThinkingSkills.started_at.desc())
+        .order_by(
+            StudentHomeworkThinkingSkills
+            .started_at.desc()
+        )
         .first()
     )
 
     if active_attempt:
-        print(f"🧠 Active homework attempt found | attempt_id={active_attempt.id}")
+
+        print(
+            f"🧠 Active homework "
+            f"attempt found | "
+            f"attempt_id={active_attempt.id}"
+        )
 
         started_at = active_attempt.started_at
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
 
-        expires_at = started_at + MAX_DURATION
-        elapsed = int((now - started_at).total_seconds())
+        if started_at.tzinfo is None:
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        expires_at = (
+            started_at + MAX_DURATION
+        )
+
+        elapsed = int(
+            (now - started_at)
+            .total_seconds()
+        )
 
         # ⛔ Timeout
+
         if now > expires_at:
-            print("⛔ Homework attempt expired → auto submit")
-            active_attempt.completed_at = expires_at
+
+            print(
+                "⛔ Homework attempt "
+                "expired → auto submit"
+            )
+
+            active_attempt.completed_at = (
+                expires_at
+            )
+
             db.commit()
-            return {"completed": True}
 
-        remaining = max(0, active_attempt.duration_minutes * 60 - elapsed)
+            return {
+                "completed": True
+            }
 
-        normalized_questions = normalize_thinking_skills_questions(
-            homework_exam.questions or [],
-            db
+        remaining = max(
+
+            0,
+
+            active_attempt.duration_minutes
+            * 60
+            - elapsed
+        )
+
+        normalized_questions = (
+            normalize_thinking_skills_questions(
+                homework_exam.questions or [],
+                db
+            )
         )
 
         return {
+
             "completed": False,
-            "exam_attempt_id": active_attempt.id,
-            "questions": jsonable_encoder(normalized_questions),
-            "remaining_time": remaining
+
+            "exam_attempt_id":
+                active_attempt.id,
+
+            "questions":
+                jsonable_encoder(
+                    normalized_questions
+                ),
+
+            "remaining_time":
+                remaining
         }
 
     # --------------------------------------------------
     # 5️⃣ Check COMPLETED attempt (block)
     # --------------------------------------------------
+
     completed_attempt = (
         db.query(StudentHomeworkThinkingSkills)
         .filter(
-            StudentHomeworkThinkingSkills.student_id == student.id,
-            StudentHomeworkThinkingSkills.homework_exam_id == homework_exam.id,
-            StudentHomeworkThinkingSkills.class_year == homework_exam.class_year,
-            StudentHomeworkThinkingSkills.completed_at.isnot(None)
+
+            StudentHomeworkThinkingSkills
+            .student_id
+            == student.id,
+
+            StudentHomeworkThinkingSkills
+            .homework_exam_id
+            == homework_exam.id,
+
+            StudentHomeworkThinkingSkills
+            .class_year
+            == homework_exam.class_year,
+
+            StudentHomeworkThinkingSkills
+            .completed_at
+            .isnot(None)
+
         )
         .first()
     )
 
     if completed_attempt:
-        print(f"🚫 Homework already completed | attempt_id={completed_attempt.id}")
+
+        print(
+            f"🚫 Homework already "
+            f"completed | "
+            f"attempt_id="
+            f"{completed_attempt.id}"
+        )
 
         return {
+
             "completed": True,
-            "exam_attempt_id": completed_attempt.id,
-            "message": "Homework already attempted"
+
+            "exam_attempt_id":
+                completed_attempt.id,
+
+            "message":
+                "Homework already attempted"
         }
 
     # --------------------------------------------------
     # 6️⃣ Create NEW attempt
     # --------------------------------------------------
-    print("🆕 Creating new homework attempt")
 
-    normalized_questions = normalize_thinking_skills_questions(
-        homework_exam.questions or [],
-        db
+    print(
+        "🆕 Creating new "
+        "homework attempt"
     )
 
-    new_attempt = StudentHomeworkThinkingSkills(
-        student_id=student.id,
-        homework_exam_id=homework_exam.id,
-        class_year=homework_exam.class_year,
-        started_at=now,
-        duration_minutes=40
+    normalized_questions = (
+        normalize_thinking_skills_questions(
+            homework_exam.questions or [],
+            db
+        )
+    )
+
+    new_attempt = (
+        StudentHomeworkThinkingSkills(
+
+            student_id=student.id,
+
+            homework_exam_id=
+                homework_exam.id,
+
+            class_year=
+                homework_exam.class_year,
+
+            started_at=now,
+
+            duration_minutes=40
+        )
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
-    print(f"🆕 New homework attempt created | attempt_id={new_attempt.id}")
+    print(
+        f"🆕 New homework attempt "
+        f"created | "
+        f"attempt_id={new_attempt.id}"
+    )
 
     # --------------------------------------------------
     # 7️⃣ Pre-create responses
     # --------------------------------------------------
+
     for q in normalized_questions:
+
         db.add(
+
             StudentHomeworkResponseThinkingSkills(
+
                 student_id=student.id,
-                homework_exam_id=homework_exam.id,
-                homework_attempt_id=new_attempt.id,
-                class_year=homework_exam.class_year,
+
+                homework_exam_id=
+                    homework_exam.id,
+
+                homework_attempt_id=
+                    new_attempt.id,
+
+                class_year=
+                    homework_exam.class_year,
+
                 q_id=q["q_id"],
+
                 topic=q.get("topic"),
+
                 selected_option=None,
-                correct_option=q["correct_answer"],
+
+                correct_option=
+                    q["correct_answer"],
+
                 is_correct=None
             )
         )
 
     db.commit()
 
+    # --------------------------------------------------
+    # 8️⃣ Response
+    # --------------------------------------------------
+
     return {
+
         "completed": False,
-        "exam_attempt_id": new_attempt.id,
-        "questions": jsonable_encoder(normalized_questions),
-        "remaining_time": int(new_attempt.duration_minutes * 60)
-    }
- 
+
+        "exam_attempt_id":
+            new_attempt.id,
+
+        "questions":
+            jsonable_encoder(
+                normalized_questions
+            ),
+
+        "remaining_time":
+            int(
+                new_attempt.duration_minutes
+                * 60
+            )
+    } 
 @app.get("/api/student/exam-attempts/oc-mathematical-reasoning")
 def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
 
@@ -23684,22 +24294,66 @@ def get_exam_topics(
 
 
 from fastapi import Query
-
 @app.get("/api/admin/question-bank-thinking-skills")
 def get_question_bank_thinking_skills(
     class_year: int,
+    center_code: str,
     db: Session = Depends(get_db)
 ):
     """
     Returns question bank grouped by difficulty + topic
     for Thinking Skills (Selective), filtered by class year.
-    Only unused questions are included.
+
+    Only questions NOT already used by this center
+    are included.
     """
 
     print(
-        f"📚 Fetching question bank for Thinking Skills | "
-        f"Year: {class_year}"
+        f"📚 Fetching question bank | "
+        f"Year: {class_year} | "
+        f"Center Code: {center_code}"
     )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==========================================
+    # SUBQUERY:
+    # Questions already used by this center
+    # ==========================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
+        )
+        .all()
+    )
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_ids
+    ]
+
+    # ==========================================
+    # MAIN QUERY
+    # ==========================================
 
     results = (
         db.query(
@@ -23708,12 +24362,22 @@ def get_question_bank_thinking_skills(
             func.count(Question.id).label("total_questions")
         )
         .filter(
+
             Question.subject == "Thinking Skills",
+
             Question.class_name == "Selective",
+
             Question.class_year == class_year,
-            Question.is_used == False,
+
+            # Exclude already used questions
+            (
+                ~Question.id.in_(used_question_ids)
+                if used_question_ids
+                else True
+            ),
 
             Question.topic.isnot(None),
+
             Question.topic != ""
         )
         .group_by(
@@ -23734,8 +24398,7 @@ def get_question_bank_thinking_skills(
             "total_questions": row.total_questions
         }
         for row in results
-    ] 
-
+    ]
 
 @app.get("/api/admin/question-bank-oc-thinking-skills")
 def get_question_bank_oc_thinking_skills(
@@ -28439,9 +29102,8 @@ def generate_thinking_skills_homework_latest(
     Generate HOMEWORK exam using ALL questions
     from a selected date + batch id.
 
-    - Uses only unused questions
-    - Marks included questions as used
-    - Saves into HomeWorkExam table
+    Questions are tracked PER CENTER using
+    QuestionUsage instead of Question.is_used.
     """
 
     payload = payload or {}
@@ -28449,28 +29111,41 @@ def generate_thinking_skills_homework_latest(
     # ==================================================
     # 0️⃣ Extract Input
     # ==================================================
+
     class_year = payload.get("class_year")
 
     selected_date = payload.get("date")
 
     batch_id = payload.get("batch_id")
 
+    center_code = payload.get("center_code")
+
     if not class_year:
+
         raise HTTPException(
             status_code=400,
             detail="class_year is required"
         )
 
     if not selected_date:
+
         raise HTTPException(
             status_code=400,
             detail="date is required"
         )
 
     if not batch_id:
+
         raise HTTPException(
             status_code=400,
             detail="batch_id is required"
+        )
+
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
         )
 
     print(
@@ -28481,22 +29156,71 @@ def generate_thinking_skills_homework_latest(
     print(
         f"📥 class_year={class_year}, "
         f"date={selected_date}, "
-        f"batch_id={batch_id}"
+        f"batch_id={batch_id}, "
+        f"center_code={center_code}"
     )
 
     # ==================================================
-    # 1️⃣ Fetch Questions
+    # 1️⃣ FIND CENTER
     # ==================================================
-    questions = (
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==================================================
+    # 2️⃣ FETCH USED QUESTION IDS
+    # ==================================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
+        )
+        .all()
+    )
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_ids
+    ]
+
+    print(
+        f"📚 Previously used questions: "
+        f"{len(used_question_ids)}"
+    )
+
+    # ==================================================
+    # 3️⃣ Fetch Questions
+    # ==================================================
+
+    query = (
         db.query(Question)
         .filter(
 
             func.lower(
-                func.trim(Question.class_name)
+                func.trim(
+                    Question.class_name
+                )
             ) == "selective",
 
             func.lower(
-                func.trim(Question.subject)
+                func.trim(
+                    Question.subject
+                )
             ) == "thinking skills",
 
             Question.class_year == class_year,
@@ -28507,30 +29231,45 @@ def generate_thinking_skills_homework_latest(
             ) == selected_date,
 
             # selected upload batch
-            Question.batch_id == batch_id,
-
-            # only unused questions
-            Question.is_used == False
+            Question.batch_id == batch_id
 
         )
+    )
+
+    # ==========================================
+    # EXCLUDE USED QUESTIONS
+    # ==========================================
+
+    if used_question_ids:
+
+        query = query.filter(
+            ~Question.id.in_(
+                used_question_ids
+            )
+        )
+
+    questions = (
+        query
         .order_by(Question.id.asc())
         .all()
     )
 
     if not questions:
+
         raise HTTPException(
             status_code=400,
             detail=(
-                "No questions found for selected "
-                "date and batch"
+                "No unused questions found "
+                "for selected date and batch"
             )
         )
 
     print(f"✅ Fetched {len(questions)} questions")
 
     # ==================================================
-    # 2️⃣ Build Output
+    # 4️⃣ Build Output
     # ==================================================
+
     generated_questions = []
 
     q_id = 1
@@ -28547,8 +29286,11 @@ def generate_thinking_skills_homework_latest(
             }]
 
         existing_image_srcs = {
+
             block.get("src")
+
             for block in blocks
+
             if block.get("type") == "image"
         }
 
@@ -28557,11 +29299,14 @@ def generate_thinking_skills_homework_latest(
             if image_src not in existing_image_srcs:
 
                 blocks.append({
+
                     "type": "image",
+
                     "src": image_src
                 })
 
         generated_questions.append({
+
             "id": row.id,
 
             "q_id": q_id,
@@ -28580,44 +29325,23 @@ def generate_thinking_skills_homework_latest(
         q_id += 1
 
     print(
-        f"📦 Built {len(generated_questions)} questions"
+        f"📦 Built "
+        f"{len(generated_questions)} questions"
     )
 
     # ==================================================
-    # 3️⃣ MARK QUESTIONS AS USED
+    # 5️⃣ SAVE HOMEWORK
     # ==================================================
-    used_question_ids = [
-        q["id"]
-        for q in generated_questions
-    ]
 
-    if used_question_ids:
-
-        updated = (
-            db.query(Question)
-            .filter(
-                Question.id.in_(used_question_ids),
-                Question.is_used.is_(False)
-            )
-            .update(
-                {Question.is_used: True},
-                synchronize_session=False
-            )
-        )
-
-        print(
-            f"🔒 Marked {updated} questions as used"
-        )
-
-    # ==================================================
-    # 4️⃣ SAVE HOMEWORK
-    # ==================================================
     new_homework = HomeWorkExam(
+
         class_name="selective",
 
         subject="thinking_skills",
 
         class_year=class_year,
+
+        center_code=center_code,
 
         questions=generated_questions
     )
@@ -28633,12 +29357,49 @@ def generate_thinking_skills_homework_latest(
         f"{new_homework.id}"
     )
 
+    # ==================================================
+    # 6️⃣ STORE QUESTION USAGE
+    # ==================================================
+
+    usage_rows = []
+
+    for q in generated_questions:
+
+        question_id = q.get("id")
+
+        if not question_id:
+            continue
+
+        usage_rows.append(
+
+            QuestionUsage(
+
+                question_id=question_id,
+
+                center_id=center.id
+
+            )
+        )
+
+    if usage_rows:
+
+        db.add_all(usage_rows)
+
+        db.commit()
+
+    print(
+        f"✅ Stored usage rows: "
+        f"{len(usage_rows)}"
+    )
+
     print("================ END =================\n")
 
     # ==================================================
-    # 5️⃣ RESPONSE
+    # 7️⃣ RESPONSE
     # ==================================================
+
     return {
+
         "message": (
             "Homework Thinking Skills "
             "generated successfully"
@@ -28656,9 +29417,13 @@ def generate_thinking_skills_homework_latest(
 
         "subject": "thinking_skills",
 
-        "total_questions": len(generated_questions),
+        "center_code": center_code,
 
-        "questions": generated_questions
+        "total_questions":
+            len(generated_questions),
+
+        "questions":
+            generated_questions
     }
 
 @app.post("/api/exams/generate-thinking-skills-homework")
@@ -28667,8 +29432,10 @@ def generate_thinking_skills_homework_exam(
     db: Session = Depends(get_db)
 ):
     """
-    Generate a Thinking Skills homework exam based on class year.
-    Uses configuration stored in HomeWorkQuiz.
+    Generate a Thinking Skills homework exam.
+
+    Questions are tracked PER CENTER using
+    QuestionUsage instead of Question.is_used.
     """
 
     payload = payload or {}
@@ -28676,109 +29443,239 @@ def generate_thinking_skills_homework_exam(
     # ==================================================
     # 0️⃣ Extract Input
     # ==================================================
+
     class_year = payload.get("class_year")
 
+    center_code = payload.get("center_code")
+
     if not class_year:
+
         raise HTTPException(
             status_code=400,
             detail="class_year is required"
         )
 
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print("\n========== GENERATE HOMEWORK EXAM ==========")
+
+    print("➡️ class_year:", class_year)
+
+    print("➡️ center_code:", center_code)
+
     # ==================================================
-    # 1️⃣ Fetch Latest Homework Quiz
+    # 1️⃣ FIND CENTER
     # ==================================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(center_code)
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==================================================
+    # 2️⃣ Fetch Latest Homework Quiz
+    # ==================================================
+
     quiz = (
         db.query(HomeWorkQuiz)
         .filter(
+
             HomeWorkQuiz.subject == "thinking_skills",
+
             HomeWorkQuiz.class_name == "selective",
-            HomeWorkQuiz.class_year == class_year
+
+            HomeWorkQuiz.class_year == class_year,
+
+            HomeWorkQuiz.center_code == center_code
+
         )
         .order_by(HomeWorkQuiz.id.desc())
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
             status_code=404,
-            detail=f"No Thinking Skills homework quiz found for class_year {class_year}"
+            detail=(
+                "No Thinking Skills homework quiz "
+                f"found for class_year {class_year}"
+            )
         )
 
     # ==================================================
-    # 2️⃣ Generate Questions
+    # 3️⃣ QUESTIONS ALREADY USED
     # ==================================================
-    try:
-        generated_questions = generate_exam_questions_selective_ts(
-            quiz,
-            db,
-            only_unused=True
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
         )
+        .all()
+    )
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_ids
+    ]
+
+    print(
+        f"📚 Used questions for center: "
+        f"{len(used_question_ids)}"
+    )
+
+    # ==================================================
+    # 4️⃣ Generate Questions
+    # ==================================================
+
+    try:
+
+        generated_questions = (
+            generate_exam_questions_selective_ts(
+                quiz,
+                db,
+                excluded_question_ids=used_question_ids
+            )
+        )
+
     except Exception as e:
+
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate Thinking Skills homework: {str(e)}"
+            detail=(
+                "Failed to generate "
+                f"Thinking Skills homework: {str(e)}"
+            )
         )
 
     if not generated_questions:
+
         raise HTTPException(
             status_code=500,
-            detail="No questions generated for Thinking Skills homework"
+            detail=(
+                "No questions generated for "
+                "Thinking Skills homework"
+            )
         )
 
     # ==================================================
-    # 3️⃣ Mark Used Questions
+    # 5️⃣ Save Homework Exam
     # ==================================================
-    used_question_ids = [
-        q.get("id") for q in generated_questions if q.get("id")
-    ]
 
-    if used_question_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_question_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
-        )
-
-    # ==================================================
-    # 4️⃣ Save Homework Exam
-    # ==================================================
     new_exam = HomeWorkExam(
+
         quiz_id=quiz.id,
+
         class_name=quiz.class_name,
+
         subject=quiz.subject,
-        
+
         class_year=class_year,
+        center_code=center_code,
+
         questions=generated_questions
+
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    # ==================================================
-    # 5️⃣ Response
-    # ==================================================
-    return {
-        "message": "Thinking Skills homework generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": quiz.id,
-        "class_name": quiz.class_name,
-        "class_year": class_year,
-        "subject": quiz.subject,        
-        "total_questions": len(generated_questions),
-        "questions": generated_questions
-    } 
+    print(
+        f"✅ Homework exam created: "
+        f"{new_exam.id}"
+    )
 
+    # ==================================================
+    # 6️⃣ STORE QUESTION USAGE
+    # ==================================================
+
+    usage_rows = []
+
+    for q in generated_questions:
+
+        question_id = q.get("id")
+
+        if not question_id:
+            continue
+
+        usage_rows.append(
+
+            QuestionUsage(
+
+                question_id=question_id,
+
+                center_id=center.id,                
+
+            )
+        )
+
+    if usage_rows:
+
+        db.add_all(usage_rows)
+
+        db.commit()
+
+    print(
+        f"✅ Stored usage rows: "
+        f"{len(usage_rows)}"
+    )
+
+    # ==================================================
+    # 7️⃣ Response
+    # ==================================================
+
+    return {
+
+        "message":
+            "Thinking Skills homework generated successfully",
+
+        "exam_id": new_exam.id,
+
+        "quiz_id": quiz.id,
+
+        "class_name": quiz.class_name,
+
+        "class_year": class_year,
+
+        "subject": quiz.subject,
+
+        "center_code": center_code,
+
+        "total_questions":
+            len(generated_questions),
+
+        "questions":
+            generated_questions
+    }
 @app.post("/api/exams/generate-thinking-skills")
 def generate_thinking_skills_exam(
     payload: Optional[Dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
     """
-    Generate a Thinking Skills exam based on class year.
-    Uses topic + difficulty configuration stored in Quiz.topics.
+    Generate a Thinking Skills exam.
+
+    Questions are tracked PER CENTER using
+    QuestionUsage instead of Question.is_used.
     """
 
     payload = payload or {}
@@ -28786,112 +29683,242 @@ def generate_thinking_skills_exam(
     # ==================================================
     # 0️⃣ Extract Input
     # ==================================================
+
     class_year = payload.get("class_year")
 
+    center_code = payload.get("center_code")
+
     if not class_year:
+
         raise HTTPException(
             status_code=400,
             detail="class_year is required"
         )
 
-    print(f"\n📘 Generating Thinking Skills exam for class_year: {class_year}")
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print(
+        f"\n📘 Generating Thinking Skills exam "
+        f"for class_year: {class_year}"
+    )
+
+    print(f"🏢 Center Code: {center_code}")
 
     # ==================================================
-    # 1️⃣ Fetch Latest Quiz Config
+    # 1️⃣ FIND CENTER
     # ==================================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(center_code)
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==================================================
+    # 2️⃣ Fetch Latest Quiz Config
+    # ==================================================
+
     quiz = (
         db.query(Quiz)
         .filter(
+
             Quiz.subject == "thinking_skills",
+
             Quiz.class_name == "selective",
-            Quiz.class_year == class_year
+
+            Quiz.class_year == class_year,
+
+            Quiz.center_code == center_code
+
         )
         .order_by(Quiz.id.desc())
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
             status_code=404,
-            detail=f"No Thinking Skills quiz found for class_year {class_year}"
+            detail=(
+                "No Thinking Skills quiz found "
+                f"for class_year {class_year}"
+            )
         )
 
     print(f"✅ Using Quiz ID: {quiz.id}")
 
     # ==================================================
-    # 2️⃣ Generate Questions (NEW LOGIC HANDLED INSIDE)
+    # 3️⃣ FETCH USED QUESTIONS
     # ==================================================
-    try:
-        generated_questions = generate_exam_questions_selective_ts(
-            quiz,
-            db,
-            only_unused=True
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
         )
+        .all()
+    )
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_ids
+    ]
+
+    print(
+        f"📚 Questions already used by "
+        f"center: {len(used_question_ids)}"
+    )
+
+    # ==================================================
+    # 4️⃣ Generate Questions
+    # ==================================================
+
+    try:
+
+        generated_questions = (
+            generate_exam_questions_selective_ts(
+                quiz,
+                db,
+                excluded_question_ids=used_question_ids
+            )
+        )
+
     except HTTPException as e:
-        # Preserve your strict failure behavior
+
         raise e
+
     except Exception as generation_error:
+
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate Thinking Skills exam: {str(generation_error)}"
+            detail=(
+                "Failed to generate "
+                f"Thinking Skills exam: "
+                f"{str(generation_error)}"
+            )
         )
 
     if not generated_questions:
+
         raise HTTPException(
             status_code=500,
-            detail="No questions generated for Thinking Skills exam"
+            detail=(
+                "No questions generated "
+                "for Thinking Skills exam"
+            )
         )
 
-    print(f"✅ Generated {len(generated_questions)} questions")
-
-    # ==================================================
-    # 3️⃣ Mark Used Questions
-    # ==================================================
-    used_question_ids = [
-        q.get("id") for q in generated_questions if q.get("id")
-    ]
-
-    if used_question_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_question_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
-        )
-
-        print(f"🔒 Marked {len(used_question_ids)} questions as used")
-
-    # ==================================================
-    # 4️⃣ Save Exam (REMOVED difficulty)
-    # ==================================================
-    new_exam = Exam(
-        quiz_id=quiz.id,
-        class_name=quiz.class_name,
-        subject=quiz.subject,
-        class_year=class_year,
-        questions=generated_questions
+    print(
+        f"✅ Generated "
+        f"{len(generated_questions)} questions"
     )
 
+    # ==================================================
+    # 5️⃣ Save Exam
+    # ==================================================
+
+    new_exam = Exam(
+
+        quiz_id=quiz.id,
+
+        class_name=quiz.class_name,
+
+        subject=quiz.subject,
+
+        class_year=class_year,
+
+        center_code=center_code,
+
+        questions=generated_questions
+
+    )
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"💾 Exam saved with ID: {new_exam.id}")
+    print(
+        f"💾 Exam saved with ID: "
+        f"{new_exam.id}"
+    )
 
     # ==================================================
-    # 5️⃣ Response (UNCHANGED FORMAT)
+    # 6️⃣ STORE QUESTION USAGE
     # ==================================================
+
+    usage_rows = []
+
+    for q in generated_questions:
+
+        question_id = q.get("id")
+
+        if not question_id:
+            continue
+
+        usage_rows.append(
+
+            QuestionUsage(
+
+                question_id=question_id,
+
+                center_id=center.id,
+
+            )
+        )
+
+    if usage_rows:
+
+        db.add_all(usage_rows)
+
+        db.commit()
+
+    print(
+        f"✅ Stored usage rows: "
+        f"{len(usage_rows)}"
+    )
+
+    # ==================================================
+    # 7️⃣ Response
+    # ==================================================
+
     return {
-        "message": "Thinking Skills exam generated successfully",
+
+        "message":
+            "Thinking Skills exam generated successfully",
+
         "exam_id": new_exam.id,
+
         "quiz_id": quiz.id,
+
         "class_name": quiz.class_name,
+
         "class_year": class_year,
+
         "subject": quiz.subject,
-        "total_questions": len(generated_questions),
-        "questions": generated_questions
-    } 
+
+        "center_code": center_code,
+
+        "total_questions":
+            len(generated_questions),
+
+        "questions":
+            generated_questions
+    }
 
 @app.post("/api/generate-exam-mathematical-reasoning")
 def generate_exam_mathematical_reasoning(
@@ -52468,12 +53495,21 @@ def start_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n================ START THINKING SKILLS EXAM =================")
-    print("📥 Incoming payload:", req.dict())
+
+    print(
+        "\n================ START THINKING "
+        "SKILLS EXAM ================="
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
 
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
+
     student = (
         db.query(Student)
         .filter(
@@ -52484,171 +53520,324 @@ def start_exam(
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
-      # --------------------------------------------------
-    # 2️⃣ Extract class_year from student
-    # --------------------------------------------------
-    if not student.student_year:
         raise HTTPException(
-            status_code=400,
-            detail="Student does not have class_year assigned"
+            status_code=404,
+            detail="Student not found"
         )
 
-    class_year = extract_class_year_numeric(student.student_year)
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
+    )
 
-    print(f"📘 Student class_year: {class_year}")
+    print(
+        f"🏢 Student center_code: "
+        f"{student.center_code}"
+    )
 
+    # --------------------------------------------------
+    # 2️⃣ Extract class_year from student
+    # --------------------------------------------------
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
+        )
+
+    class_year = extract_class_year_numeric(
+        student.student_year
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{class_year}"
+    )
 
     now = datetime.now(timezone.utc)
+
     MAX_DURATION = timedelta(minutes=40)
 
     # --------------------------------------------------
-    # 2️⃣ Fetch latest exam FIRST (IMPORTANT)
+    # 3️⃣ Fetch latest CENTER-SPECIFIC exam
     # --------------------------------------------------
+
     exam = (
         db.query(Exam)
         .filter(
+
             Exam.subject == "thinking_skills",
+
             Exam.class_name == "selective",
-            Exam.class_year == class_year
+
+            Exam.class_year == class_year,
+
+            Exam.center_code == student.center_code
+
         )
         .order_by(Exam.id.desc())
         .first()
     )
 
     if not exam:
+
         raise HTTPException(
             status_code=404,
-            detail=f"No exam found for class_year={class_year}"
+            detail=(
+                f"No exam found for "
+                f"class_year={class_year} "
+                f"and center="
+                f"{student.center_code}"
+            )
         )
 
-    print(f"📝 Exam selected | exam_id={exam.id}")
+    print(
+        f"📝 Exam selected | "
+        f"exam_id={exam.id}"
+    )
 
-
-    print(f"📘 Using exam_id={exam.id}")
+    print(
+        f"📘 Using exam_id={exam.id}"
+    )
 
     # --------------------------------------------------
-    # 3️⃣ Check ACTIVE attempt for THIS exam (resume)
+    # 4️⃣ Check ACTIVE attempt for THIS exam
     # --------------------------------------------------
+
     active_attempt = (
         db.query(StudentExamThinkingSkills)
         .filter(
-            StudentExamThinkingSkills.student_id == student.id,
-            StudentExamThinkingSkills.exam_id == exam.id,
-            StudentExamThinkingSkills.class_year == class_year,
-            StudentExamThinkingSkills.completed_at.is_(None)
+
+            StudentExamThinkingSkills.student_id
+            == student.id,
+
+            StudentExamThinkingSkills.exam_id
+            == exam.id,
+
+            StudentExamThinkingSkills.class_year
+            == class_year,
+
+            StudentExamThinkingSkills.completed_at
+            .is_(None)
+
         )
-        .order_by(StudentExamThinkingSkills.started_at.desc())
+        .order_by(
+            StudentExamThinkingSkills.started_at
+            .desc()
+        )
         .first()
     )
 
     if active_attempt:
-        print(f"🧠 Active attempt found | attempt_id={active_attempt.id}")
+
+        print(
+            f"🧠 Active attempt found | "
+            f"attempt_id={active_attempt.id}"
+        )
 
         started_at = active_attempt.started_at
+
         if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
 
         expires_at = started_at + MAX_DURATION
-        elapsed = int((now - started_at).total_seconds())
+
+        elapsed = int(
+            (now - started_at).total_seconds()
+        )
 
         # ⛔ Timeout
+
         if now > expires_at:
-            print("⛔ Attempt expired → auto submit")
-            active_attempt.completed_at = expires_at
+
+            print(
+                "⛔ Attempt expired "
+                "→ auto submit"
+            )
+
+            active_attempt.completed_at = (
+                expires_at
+            )
+
             db.commit()
-            return {"completed": True}
 
-        remaining = max(0, active_attempt.duration_minutes * 60 - elapsed)
+            return {
+                "completed": True
+            }
 
-        normalized_questions = normalize_thinking_skills_questions(
-            exam.questions or [],
-            db
+        remaining = max(
+            0,
+            active_attempt.duration_minutes
+            * 60
+            - elapsed
+        )
+
+        normalized_questions = (
+            normalize_thinking_skills_questions(
+                exam.questions or [],
+                db
+            )
         )
 
         return {
+
             "completed": False,
-            "exam_attempt_id": active_attempt.id,
-            "questions": jsonable_encoder(normalized_questions),
-            "remaining_time": remaining
+
+            "exam_attempt_id":
+                active_attempt.id,
+
+            "questions":
+                jsonable_encoder(
+                    normalized_questions
+                ),
+
+            "remaining_time":
+                remaining
         }
 
     # --------------------------------------------------
-    # 4️⃣ Check COMPLETED attempt for THIS exam (block)
+    # 5️⃣ Check COMPLETED attempt
     # --------------------------------------------------
+
     completed_attempt = (
         db.query(StudentExamThinkingSkills)
         .filter(
-            StudentExamThinkingSkills.student_id == student.id,
-            StudentExamThinkingSkills.exam_id == exam.id,
-            StudentExamThinkingSkills.class_year == exam.class_year,
-            StudentExamThinkingSkills.completed_at.isnot(None)
+
+            StudentExamThinkingSkills.student_id
+            == student.id,
+
+            StudentExamThinkingSkills.exam_id
+            == exam.id,
+
+            StudentExamThinkingSkills.class_year
+            == exam.class_year,
+
+            StudentExamThinkingSkills.completed_at
+            .isnot(None)
+
         )
         .first()
     )
 
     if completed_attempt:
-        print(f"🚫 Already completed exam_id={exam.id} | attempt_id={completed_attempt.id}")
+
+        print(
+            f"🚫 Already completed "
+            f"exam_id={exam.id} | "
+            f"attempt_id={completed_attempt.id}"
+        )
 
         return {
+
             "completed": True,
-            "exam_attempt_id": completed_attempt.id,
-            "message": "Exam already attempted"
+
+            "exam_attempt_id":
+                completed_attempt.id,
+
+            "message":
+                "Exam already attempted"
         }
 
     # --------------------------------------------------
-    # 5️⃣ Create NEW attempt (first time for this exam)
+    # 6️⃣ Create NEW attempt
     # --------------------------------------------------
+
     print("🆕 Creating new attempt")
 
-    normalized_questions = normalize_thinking_skills_questions(
-        exam.questions or [],
-        db
+    normalized_questions = (
+        normalize_thinking_skills_questions(
+            exam.questions or [],
+            db
+        )
     )
 
     new_attempt = StudentExamThinkingSkills(
+
         student_id=student.id,
+
         exam_id=exam.id,
+
         class_year=exam.class_year,
+
         started_at=now,
+
         duration_minutes=40
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
-    print(f"🆕 New attempt created | attempt_id={new_attempt.id}")
+    print(
+        f"🆕 New attempt created | "
+        f"attempt_id={new_attempt.id}"
+    )
 
     # --------------------------------------------------
-    # Pre-create responses
+    # 7️⃣ Pre-create responses
     # --------------------------------------------------
+
     for q in normalized_questions:
+
         db.add(
+
             StudentExamResponseThinkingSkills(
+
                 student_id=student.id,
+
                 exam_id=exam.id,
+
                 exam_attempt_id=new_attempt.id,
+
                 class_year=exam.class_year,
+
                 q_id=q["q_id"],
+
                 topic=q.get("topic"),
+
                 selected_option=None,
+
                 correct_option=q["correct_answer"],
+
                 is_correct=None
             )
         )
 
     db.commit()
 
-    return {
-        "completed": False,
-        "exam_attempt_id": new_attempt.id,
-        "questions": jsonable_encoder(normalized_questions),
-        "remaining_time": int(new_attempt.duration_minutes * 60)
-    } 
+    # --------------------------------------------------
+    # 8️⃣ Response
+    # --------------------------------------------------
 
+    return {
+
+        "completed": False,
+
+        "exam_attempt_id":
+            new_attempt.id,
+
+        "questions":
+            jsonable_encoder(
+                normalized_questions
+            ),
+
+        "remaining_time":
+            int(
+                new_attempt.duration_minutes
+                * 60
+            )
+    }
 
 @app.post("/api/student/start-homework-oc-thinking-skills")
 def start_homework_oc_thinking_skills(
@@ -63079,104 +64268,208 @@ def create_quiz_oc_mathematical_reasoning(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/quizzes-homework")
-def create_homework_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
+def create_homework_quiz(
+    quiz: QuizCreate,
+    db: Session = Depends(get_db)
+):
     """
-    Create or replace a homework quiz (scoped by class, subject, year, difficulty).
+    Create or replace a homework quiz
+    scoped by:
+    - class
+    - subject
+    - year
+    - center
     """
 
-    print("\n========== CREATE HOMEWORK QUIZ START ==========")
+    print(
+        "\n========== CREATE HOMEWORK QUIZ START =========="
+    )
 
     try:
+
         # ==================================================
         # 0️⃣ Incoming Payload Debug
         # ==================================================
+
         try:
-            quiz_dict = quiz.dict()
-            print("📦 Incoming payload:", quiz_dict)
+
+            quiz_dict = quiz.model_dump()
+
+            print(
+                "📦 Incoming payload:",
+                quiz_dict
+            )
+
         except Exception as e:
-            print("❌ Failed to parse quiz payload:", str(e))
-            raise HTTPException(status_code=400, detail="Invalid quiz payload")
+
+            print(
+                "❌ Failed to parse quiz payload:",
+                str(e)
+            )
+
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid quiz payload"
+            )
 
         print(f"➡️ class_name: {quiz.class_name}")
+
         print(f"➡️ subject: {quiz.subject}")
+
         print(f"➡️ class_year: {quiz.class_year}")
-        
+
+        print(f"➡️ center_code: {quiz.center_code}")
+
         print(f"➡️ num_topics: {quiz.num_topics}")
-        print(f"➡️ topics count: {len(quiz.topics) if quiz.topics else 0}")
+
+        print(
+            f"➡️ topics count: "
+            f"{len(quiz.topics) if quiz.topics else 0}"
+        )
 
         # ==================================================
         # 1️⃣ Validation
         # ==================================================
+
         if not isinstance(quiz.topics, list):
+
             print("❌ topics is not a list")
-            raise HTTPException(status_code=400, detail="topics must be a list")
+
+            raise HTTPException(
+                status_code=400,
+                detail="topics must be a list"
+            )
 
         # ==================================================
         # 2️⃣ Delete Existing (Scoped)
         # ==================================================
-        print("\n--- Deleting existing homework quizzes ---")
 
-        deleted_count = db.query(HomeWorkQuiz).filter(
-            HomeWorkQuiz.class_name == quiz.class_name,
-            HomeWorkQuiz.subject == quiz.subject,
-            HomeWorkQuiz.class_year == quiz.class_year
-        ).delete(synchronize_session=False)
+        print(
+            "\n--- Deleting existing homework quizzes ---"
+        )
+
+        deleted_count = (
+            db.query(HomeWorkQuiz)
+            .filter(
+
+                HomeWorkQuiz.class_name == quiz.class_name,
+
+                HomeWorkQuiz.subject == quiz.subject,
+
+                HomeWorkQuiz.class_year == quiz.class_year,
+
+                HomeWorkQuiz.center_code == quiz.center_code
+
+            )
+            .delete(
+                synchronize_session=False
+            )
+        )
 
         print(f"🗑️ Deleted rows: {deleted_count}")
 
         db.commit()
+
         print("✅ Delete commit successful")
 
         # ==================================================
         # 3️⃣ Create New Quiz
         # ==================================================
-        print("\n--- Creating new homework quiz ---")
+
+        print(
+            "\n--- Creating new homework quiz ---"
+        )
 
         try:
-            topics_data = [t.dict() for t in quiz.topics]
-            print(f"📊 Topics prepared: {len(topics_data)}")
+
+            topics_data = [
+                t.model_dump()
+                for t in quiz.topics
+            ]
+
+            print(
+                f"📊 Topics prepared: "
+                f"{len(topics_data)}"
+            )
+
         except Exception as e:
-            print("❌ Error converting topics:", str(e))
+
+            print(
+                "❌ Error converting topics:",
+                str(e)
+            )
+
             raise
 
         new_quiz = HomeWorkQuiz(
+
             class_name=quiz.class_name,
+
             subject=quiz.subject,
+
             class_year=quiz.class_year,
+
+            center_code=quiz.center_code,
+
             num_topics=quiz.num_topics,
+
             topics=topics_data
+
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print(f"✅ Homework quiz created with ID: {new_quiz.id}")
-        print("========== CREATE HOMEWORK QUIZ COMPLETE ==========\n")
+        print(
+            f"✅ Homework quiz created with ID: "
+            f"{new_quiz.id}"
+        )
+
+        print(
+            "========== CREATE HOMEWORK QUIZ COMPLETE ==========\n"
+        )
 
         return {
+
             "id": new_quiz.id,
+
             "class_name": new_quiz.class_name,
+
             "subject": new_quiz.subject,
-            
-            "message": "Homework quiz created successfully"
+
+            "center_code": new_quiz.center_code,
+
+            "message":
+                "Homework quiz created successfully"
         }
 
     except Exception as e:
-        print("\n❌ ERROR DURING HOMEWORK QUIZ CREATION ❌")
+
+        print(
+            "\n❌ ERROR DURING HOMEWORK QUIZ CREATION ❌"
+        )
+
         print("Error:", str(e))
 
         import traceback
+
         traceback.print_exc()
 
         db.rollback()
+
         print("🔄 Rolled back transaction")
 
         raise HTTPException(
             status_code=500,
-            detail=f"Error creating homework quiz: {str(e)}"
+            detail=(
+                "Error creating homework quiz: "
+                f"{str(e)}"
+            )
         )
-     
+         
 @app.post("/api/quizzes")
 def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
@@ -63233,13 +64526,7 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         # accumulate total
         total_questions += topic.total or 0
 
-    # Optional: enforce 40 question rule (matches frontend)
-    if total_questions != 40:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Total questions must be 40. Got {total_questions}"
-        )
-
+    
     # -------------------------------
     # 3️⃣ Scoped cleanup
     # -------------------------------
@@ -63268,11 +64555,22 @@ def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
         print("\n--- Creating new quiz ---")
 
         new_quiz = Quiz(
+
             class_name=quiz.class_name.strip(),
+
             subject=quiz.subject.strip(),
+
             class_year=quiz.class_year,
+
             num_topics=quiz.num_topics,
-            topics=[t.model_dump() for t in quiz.topics]  # ✅ Pydantic v2 safe
+
+            center_code=quiz.center_code,
+
+            topics=[
+                t.model_dump()
+                for t in quiz.topics
+            ]
+
         )
 
         db.add(new_quiz)
