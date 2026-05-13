@@ -366,6 +366,7 @@ class ExamNaplanNumeracyHomework(Base):
     )
 class GenerateExamRequest(BaseModel):
     class_year: int 
+    center_code: str
 class StudentWritingSnapshot(Base):
     __tablename__ = "student_writing_snapshot"
 
@@ -822,6 +823,11 @@ class HomeworkExamMathematicalReasoning(Base):
     quiz_id = Column(Integer)
     class_name = Column(String)
     class_year = Column(String, index=True)  # 👈 added (important)
+    center_code = Column(
+        String,
+        nullable=True,
+        index=True
+    )
     subject = Column(String)
     
     questions = Column(JSON)
@@ -844,14 +850,21 @@ class TopicConfigMathematicalReasoning(BaseModel):
 class QuizMathematicalReasoningCreate(BaseModel):
     class_name: str
     subject: str
-    class_year: int        # ✅ you are sending this from frontend
+    class_year: int
+    center_code: str
     num_topics: int
     topics: List[TopicConfigMathematicalReasoning]
-
+class TopicConfigMathematicalReasoning(BaseModel):
+    name: str
+    easy: DifficultySplit
+    medium: DifficultySplit
+    hard: DifficultySplit
+    total: int
 class QuizMathematicalReasoningHomeworkCreate(BaseModel):
     class_name: str
     subject: str
     class_year: int   # 👈 MUST be here    
+    center_code: str
     num_topics: int
     topics: List[TopicConfigMathematicalReasoning]
 class QuizMathematicalReasoningHomework(Base):
@@ -863,6 +876,11 @@ class QuizMathematicalReasoningHomework(Base):
     subject = Column(String, nullable=False)
 
     class_year = Column(String, nullable=False)   # 👈 important
+    center_code = Column(
+        String,
+        nullable=True,
+        index=True
+    )
 
     
 
@@ -2783,7 +2801,11 @@ class QuizMathematicalReasoning(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)  # always mathematical_reasoning
     class_year = Column(Integer, nullable=False) 
-    
+    center_code = Column(
+        String,
+        nullable=True,
+        index=True
+    )
     num_topics = Column(Integer, nullable=False)
     
 
@@ -10004,10 +10026,38 @@ def reset_used_questions(
         # FOR THIS CENTER
         # ==========================================
 
+        question_ids_to_reset = (
+            db.query(Question.id)
+            .filter(
+
+                func.lower(func.trim(Question.subject))
+                == db_subject.lower(),
+
+                func.lower(func.trim(Question.class_name))
+                == db_class.lower(),
+
+                Question.class_year == payload.class_year
+            )
+            .all()
+        )
+
+        question_ids_to_reset = [
+            row[0]
+            for row in question_ids_to_reset
+        ]
+
+        print("\n🧠 Question IDs To Reset:")
+        print(question_ids_to_reset)
+
         deleted_count = (
             db.query(QuestionUsage)
             .filter(
-                QuestionUsage.center_id == center.id
+
+                QuestionUsage.center_id == center.id,
+
+                QuestionUsage.question_id.in_(
+                    question_ids_to_reset
+                )
             )
             .delete(
                 synchronize_session=False
@@ -12749,18 +12799,19 @@ def generate_exam_homework_latest(
     Generate Mathematical Reasoning HOMEWORK exam
     using ALL questions from a selected date + batch id.
 
-    - No quiz dependency
-    - Uses only unused questions
-    - Marks questions as used after generation
+    Questions are tracked PER CENTER using
+    QuestionUsage instead of Question.is_used.
     """
 
     print(
-        "\n========== MR HOMEWORK (BATCH MODE) GENERATION START =========="
+        "\n========== MR HOMEWORK "
+        "(BATCH MODE) GENERATION START =========="
     )
 
-    # --------------------------------------------------
+    # ==================================================
     # 1️⃣ INPUT
-    # --------------------------------------------------
+    # ==================================================
+
     payload = payload or {}
 
     class_year = payload.get("class_year")
@@ -12769,48 +12820,117 @@ def generate_exam_homework_latest(
 
     batch_id = payload.get("batch_id")
 
+    center_code = payload.get("center_code")
+
     if not class_year:
+
         raise HTTPException(
             status_code=400,
             detail="class_year is required"
         )
 
     if not selected_date:
+
         raise HTTPException(
             status_code=400,
             detail="date is required"
         )
 
     if not batch_id:
+
         raise HTTPException(
             status_code=400,
             detail="batch_id is required"
         )
 
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
     print(
         f"📘 Generating MR HOMEWORK "
-        f"(BATCH MODE) for "
-        f"class_year={class_year}, "
-        f"date={selected_date}, "
-        f"batch_id={batch_id}"
+        f"(BATCH MODE) | "
+        f"class_year={class_year} | "
+        f"date={selected_date} | "
+        f"batch_id={batch_id} | "
+        f"center_code={center_code}"
     )
 
-    # --------------------------------------------------
-    # 2️⃣ FETCH QUESTIONS
-    # --------------------------------------------------
+    # ==================================================
+    # 2️⃣ FIND CENTER
+    # ==================================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"✅ Center Found | "
+        f"ID={center.id}"
+    )
+
+    # ==================================================
+    # 3️⃣ FETCH USED QUESTIONS
+    # ==================================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .all()
+    )
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_ids
+    ]
+
+    print(
+        f"📚 Questions already used "
+        f"by center: "
+        f"{len(used_question_ids)}"
+    )
+
+    # ==================================================
+    # 4️⃣ FETCH QUESTIONS
+    # ==================================================
+
     rows = (
         db.query(Question)
         .filter(
 
             func.lower(
-                func.trim(Question.class_name)
+                func.trim(
+                    Question.class_name
+                )
             ) == "selective",
 
             func.lower(
-                func.trim(Question.subject)
+                func.trim(
+                    Question.subject
+                )
             ) == "mathematical reasoning",
 
-            Question.class_year == class_year,
+            Question.class_year
+            == class_year,
 
             # selected upload date
             func.date(
@@ -12818,29 +12938,44 @@ def generate_exam_homework_latest(
             ) == selected_date,
 
             # selected upload batch
-            Question.batch_id == batch_id,
+            Question.batch_id
+            == batch_id,
 
-            # only unused questions
-            Question.is_used == False
+            # exclude already used
+            (
+                ~Question.id.in_(
+                    used_question_ids
+                )
+                if used_question_ids
+                else True
+            )
         )
-        .order_by(Question.id.asc())
+        .order_by(
+            Question.id.asc()
+        )
         .all()
     )
 
     if not rows:
+
         raise HTTPException(
             status_code=400,
             detail=(
-                "No questions found for selected "
-                "date and batch"
+                "No unused questions found "
+                "for selected date and batch"
             )
         )
 
-    print(f"✅ Fetched {len(rows)} MR questions")
+    print(
+        f"✅ Fetched "
+        f"{len(rows)} "
+        f"unused MR questions"
+    )
 
-    # --------------------------------------------------
-    # 3️⃣ BUILD QUESTIONS
-    # --------------------------------------------------
+    # ==================================================
+    # 5️⃣ BUILD QUESTIONS
+    # ==================================================
+
     questions = []
 
     q_id = 1
@@ -12848,6 +12983,7 @@ def generate_exam_homework_latest(
     for row in rows:
 
         if not row.question_blocks:
+
             raise HTTPException(
                 status_code=500,
                 detail=(
@@ -12856,11 +12992,14 @@ def generate_exam_homework_latest(
                 )
             )
 
-        sanitized_blocks = sanitize_question_blocks(
-            row.question_blocks
+        sanitized_blocks = (
+            sanitize_question_blocks(
+                row.question_blocks
+            )
         )
 
         questions.append({
+
             "id": row.id,
 
             "q_id": q_id,
@@ -12869,55 +13008,44 @@ def generate_exam_homework_latest(
 
             "batch_id": row.batch_id,
 
-            "question_blocks": sanitized_blocks,
+            "question_blocks":
+                sanitized_blocks,
 
-            "options": normalize_options(
-                row.options
-            ),
+            "options":
+                normalize_options(
+                    row.options
+                ),
 
-            "correct": row.correct_answer
+            "correct":
+                row.correct_answer
         })
 
         q_id += 1
 
-    print(f"📦 Built {len(questions)} questions")
+    print(
+        f"📦 Built "
+        f"{len(questions)} questions"
+    )
 
-    # --------------------------------------------------
-    # 4️⃣ MARK USED
-    # --------------------------------------------------
-    used_ids = [q["id"] for q in questions]
+    # ==================================================
+    # 6️⃣ SAVE HOMEWORK
+    # ==================================================
 
-    if used_ids:
+    new_homework = (
+        HomeworkExamMathematicalReasoning(
 
-        updated = (
-            db.query(Question)
-            .filter(
-                Question.id.in_(used_ids),
-                Question.is_used.is_(False)
-            )
-            .update(
-                {Question.is_used: True},
-                synchronize_session=False
-            )
+            quiz_id=None,
+
+            class_name="selective",
+
+            subject="mathematical_reasoning",
+
+            class_year=str(class_year),
+
+            center_code=center_code,
+
+            questions=questions
         )
-
-        print(
-            f"🔒 Marked {updated} questions as used"
-        )
-
-    # --------------------------------------------------
-    # 5️⃣ SAVE HOMEWORK
-    # --------------------------------------------------
-    new_homework = HomeworkExamMathematicalReasoning(
-        quiz_id=None,
-
-        class_name="selective",
-
-        subject="mathematical_reasoning",
-
-        class_year=str(class_year),
-
-        questions=questions
     )
 
     db.add(new_homework)
@@ -12927,33 +13055,84 @@ def generate_exam_homework_latest(
     db.refresh(new_homework)
 
     print(
-        f"💾 MR homework saved with ID: "
+        f"💾 MR homework saved "
+        f"with ID: "
         f"{new_homework.id}"
     )
 
-    print("========== COMPLETE ==========\n")
+    # ==================================================
+    # 7️⃣ STORE QUESTION USAGE
+    # ==================================================
 
-    # --------------------------------------------------
-    # 6️⃣ RESPONSE
-    # --------------------------------------------------
+    usage_rows = []
+
+    for q in questions:
+
+        question_id = q.get("id")
+
+        if not question_id:
+            continue
+
+        usage_rows.append(
+
+            QuestionUsage(
+
+                question_id=question_id,
+
+                center_id=center.id
+            )
+        )
+
+    if usage_rows:
+
+        db.add_all(usage_rows)
+
+        db.commit()
+
+    print(
+        f"✅ Stored usage rows: "
+        f"{len(usage_rows)}"
+    )
+
+    print(
+        "========== COMPLETE ==========\n"
+    )
+
+    # ==================================================
+    # 8️⃣ RESPONSE
+    # ==================================================
+
     return {
-        "message": "MR homework generated (batch-based)",
 
-        "homework_id": new_homework.id,
+        "message":
+            "MR homework generated (batch-based)",
 
-        "batch_id": batch_id,
+        "homework_id":
+            new_homework.id,
 
-        "class_name": "selective",
+        "batch_id":
+            batch_id,
 
-        "subject": "mathematical_reasoning",
+        "class_name":
+            "selective",
 
-        "class_year": int(class_year),
+        "subject":
+            "mathematical_reasoning",
 
-        "selected_date": selected_date,
+        "class_year":
+            int(class_year),
 
-        "total_questions": len(questions),
+        "center_code":
+            center_code,
 
-        "questions": questions
+        "selected_date":
+            selected_date,
+
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
     }
 @app.get("/api/available-thinking-batches")
 def get_available_thinking_batches(
@@ -13050,127 +13229,302 @@ def generate_mr_homework_exam(
     """
     Generate Mathematical Reasoning HOMEWORK exam
     using stored quiz configuration.
+
+    Questions are tracked PER CENTER using
+    QuestionUsage instead of Question.is_used.
     """
 
-    print("\n========== MR HOMEWORK EXAM GENERATION START ==========")
+    print(
+        "\n========== MR HOMEWORK "
+        "EXAM GENERATION START =========="
+    )
 
-    # --------------------------------------------------
+    # ==================================================
     # 1️⃣ Parse Payload
-    # --------------------------------------------------
+    # ==================================================
+
     payload = payload or {}
 
     print("📥 Payload:", payload)
 
     class_year = payload.get("class_year")
-    print("➡ class_year:", class_year, type(class_year))
+
+    center_code = payload.get("center_code")
+
+    print(
+        "➡ class_year:",
+        class_year,
+        type(class_year)
+    )
+
+    print(
+        "🏢 center_code:",
+        center_code
+    )
 
     if not class_year:
+
         raise HTTPException(
             status_code=400,
             detail="class_year is required"
         )
 
-    # --------------------------------------------------
-    # 2️⃣ Fetch Homework Quiz Config
-    # --------------------------------------------------
-    quiz = (
-        db.query(QuizMathematicalReasoningHomework)
-        .filter(
-            QuizMathematicalReasoningHomework.subject == "mathematical_reasoning",
-            QuizMathematicalReasoningHomework.class_name == "selective",
-            QuizMathematicalReasoningHomework.class_year == str(class_year)
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
         )
-        .order_by(QuizMathematicalReasoningHomework.id.desc())
+
+    # ==================================================
+    # 2️⃣ Resolve Center
+    # ==================================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"✅ Center Found | "
+        f"ID={center.id}"
+    )
+
+    # ==================================================
+    # 3️⃣ Fetch Used Question IDs
+    # ==================================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .all()
+    )
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_ids
+    ]
+
+    print(
+        f"📚 Questions already used "
+        f"by center: "
+        f"{len(used_question_ids)}"
+    )
+
+    # ==================================================
+    # 4️⃣ Fetch Homework Quiz Config
+    # ==================================================
+
+    quiz = (
+        db.query(
+            QuizMathematicalReasoningHomework
+        )
+        .filter(
+
+            QuizMathematicalReasoningHomework
+            .subject
+            == "mathematical_reasoning",
+
+            QuizMathematicalReasoningHomework
+            .class_name
+            == "selective",
+
+            QuizMathematicalReasoningHomework
+            .class_year
+            == str(class_year),
+
+            QuizMathematicalReasoningHomework
+            .center_code
+            == center_code
+        )
+        .order_by(
+            QuizMathematicalReasoningHomework
+            .id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
             status_code=404,
-            detail=f"No MR homework quiz found for class_year {class_year}"
+            detail=(
+                f"No MR homework quiz found "
+                f"for class_year "
+                f"{class_year}"
+            )
         )
 
-    print(f"✅ Using Homework Quiz ID: {quiz.id}")
+    print(
+        f"✅ Using Homework Quiz ID: "
+        f"{quiz.id}"
+    )
 
-    # --------------------------------------------------
-    # 3️⃣ Generate Questions
-    # --------------------------------------------------
+    # ==================================================
+    # 5️⃣ Generate Questions
+    # ==================================================
+
     try:
-        questions = generate_exam_questions_selective_mr(
-            quiz,
-            db,
-            only_unused=True
+
+        questions = (
+            generate_exam_questions_selective_mr(
+                quiz,
+                db,
+
+                only_unused=True,
+
+                used_question_ids=
+                    used_question_ids
+            )
         )
+
     except HTTPException as e:
+
         raise e
+
     except Exception as e:
-        print("❌ Generation failed:", str(e))
+
+        print(
+            "❌ Generation failed:",
+            str(e)
+        )
+
         raise HTTPException(
             status_code=500,
-            detail="Failed to generate homework exam"
+            detail=(
+                "Failed to generate "
+                "homework exam"
+            )
         )
 
     if not questions:
+
         raise HTTPException(
             status_code=500,
             detail="No questions generated"
         )
 
-    print(f"✅ Generated {len(questions)} questions")
+    print(
+        f"✅ Generated "
+        f"{len(questions)} questions"
+    )
 
-    # --------------------------------------------------
-    # 4️⃣ Mark Used Questions
-    # --------------------------------------------------
-    used_ids = [q.get("id") for q in questions if q.get("id")]
+    # ==================================================
+    # 6️⃣ SAVE EXAM
+    # ==================================================
 
-    if used_ids:
-        updated = (
-            db.query(Question)
-            .filter(
-                Question.id.in_(used_ids),
-                Question.is_used == False
-            )
-            .update(
-                {Question.is_used: True},
-                synchronize_session=False
-            )
-        )
-
-        print(f"🔒 Marked {updated} questions as used")
-
-    # --------------------------------------------------
-    # 5️⃣ Save Exam
-    # --------------------------------------------------
     new_exam = Exam(
+
         quiz_id=quiz.id,
+
         class_name=quiz.class_name,
+
         subject=quiz.subject,
+
         class_year=int(class_year),
+
+        center_code=center_code,
+
         questions=questions
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"💾 Exam saved with ID: {new_exam.id}")
+    print(
+        f"💾 Exam saved "
+        f"with ID: {new_exam.id}"
+    )
 
-    print("========== COMPLETE ==========\n")
+    # ==================================================
+    # 7️⃣ STORE QUESTION USAGE
+    # ==================================================
 
-    # --------------------------------------------------
-    # 6️⃣ Response
-    # --------------------------------------------------
+    usage_rows = []
+
+    for q in questions:
+
+        question_id = q.get("id")
+
+        if not question_id:
+            continue
+
+        usage_rows.append(
+
+            QuestionUsage(
+
+                question_id=question_id,
+
+                center_id=center.id
+            )
+        )
+
+    if usage_rows:
+
+        db.add_all(usage_rows)
+
+        db.commit()
+
+    print(
+        f"✅ Stored usage rows: "
+        f"{len(usage_rows)}"
+    )
+
+    print(
+        "========== COMPLETE ==========\n"
+    )
+
+    # ==================================================
+    # 8️⃣ Response
+    # ==================================================
+
     return {
-        "message": "MR Homework exam generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": quiz.id,
-        "class_name": quiz.class_name,
-        "class_year": int(class_year),
-        "subject": quiz.subject,
-        "total_questions": len(questions),
-        "questions": questions
-    }
- 
+
+        "message":
+            "MR Homework exam generated successfully",
+
+        "exam_id":
+            new_exam.id,
+
+        "quiz_id":
+            quiz.id,
+
+        "class_name":
+            quiz.class_name,
+
+        "class_year":
+            int(class_year),
+
+        "subject":
+            quiz.subject,
+
+        "center_code":
+            center_code,
+
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
+    } 
 @app.get(
     "/api/student/homework-review/thinking-skills",
     response_model=ExamReviewResponse
@@ -23537,12 +23891,87 @@ def get_question_bank_reading(
         for r in results
     ]
 
+
 @app.get("/api/admin/question-bank-mathematical-reasoning")
 def get_question_bank_mathematical_reasoning(
     class_name: str = Query(...),
     class_year: int = Query(...),
+    center_code: str = Query(...),
     db: Session = Depends(get_db)
 ):
+    """
+    Returns Mathematical Reasoning question bank
+    grouped by difficulty + topic.
+
+    Only questions NOT already used by this center
+    are included.
+    """
+
+    print("\n==============================")
+    print("📚 MR QUESTION BANK REQUEST")
+    print("==============================")
+
+    print(f"📘 Class Name: {class_name}")
+    print(f"📗 Class Year: {class_year}")
+    print(f"🏫 Center Code: {center_code}")
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == center_code
+        )
+        .first()
+    )
+
+    print("\n🔍 Center Lookup Result:")
+    print(center)
+
+    if not center:
+
+        print("❌ Center not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(f"✅ Center ID: {center.id}")
+
+    # ==========================================
+    # FETCH USED QUESTION IDS
+    # ==========================================
+
+    used_question_rows = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
+        )
+        .all()
+    )
+
+    print("\n🧠 Raw Used Question Rows:")
+    print(used_question_rows)
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_rows
+    ]
+
+    print("\n🧠 Used Question IDs:")
+    print(used_question_ids)
+
+    print(f"\n📊 Total Used Questions: {len(used_question_ids)}")
+
+    # ==========================================
+    # MAIN QUERY
+    # ==========================================
+
+    print("\n🚀 Running Main Question Bank Query...")
+
     results = (
         db.query(
             Question.difficulty,
@@ -23550,12 +23979,24 @@ def get_question_bank_mathematical_reasoning(
             func.count(Question.id).label("total_questions")
         )
         .filter(
-            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
-            func.lower(func.trim(Question.class_name)) == class_name.lower(),
+
+            func.lower(func.trim(Question.subject))
+            == "mathematical reasoning".lower(),
+
+            func.lower(func.trim(Question.class_name))
+            == class_name.lower(),
+
             Question.class_year == class_year,
-            Question.is_used == False,   # only unused questions
+
+            # Exclude already used questions
+            (
+                ~Question.id.in_(used_question_ids)
+                if used_question_ids
+                else True
+            ),
 
             Question.topic.isnot(None),
+
             Question.topic != ""
         )
         .group_by(
@@ -23569,6 +24010,21 @@ def get_question_bank_mathematical_reasoning(
         .all()
     )
 
+    print("\n✅ Query Finished")
+
+    print(f"\n📦 Total Result Rows: {len(results)}")
+
+    for row in results:
+        print(
+            f"• Difficulty: {row.difficulty} | "
+            f"Topic: {row.topic} | "
+            f"Count: {row.total_questions}"
+        )
+
+    print("\n==============================")
+    print("✅ END MR QUESTION BANK")
+    print("==============================\n")
+
     return [
         {
             "difficulty": row.difficulty,
@@ -23577,7 +24033,7 @@ def get_question_bank_mathematical_reasoning(
         }
         for row in results
     ]
- 
+
 import re
 
 def helper_extract_year_writing_api(value):
@@ -25597,44 +26053,98 @@ def create_quiz_mathematical_reasoning_homework(
 
     print("\n========== MR HOMEWORK QUIZ CREATION START ==========")
 
-    # --------------------------------------------------
-    # 1️⃣ Parse + Validate Payload
-    # --------------------------------------------------
-    try:
-        quiz_dict = quiz.model_dump()
-        print("📦 Parsed quiz payload:", quiz_dict)
-    except Exception as e:
-        print("❌ Failed to parse payload:", str(e))
-        raise HTTPException(status_code=400, detail="Invalid payload")
+    # ==================================================
+    # PARSE PAYLOAD
+    # ==================================================
 
-    # --------------------------------------------------
-    # 2️⃣ Basic Validation
-    # --------------------------------------------------
+    try:
+
+        quiz_dict = quiz.model_dump()
+
+        print("📦 Parsed quiz payload:")
+        print(quiz_dict)
+
+    except Exception as e:
+
+        print("❌ Failed to parse payload:", str(e))
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payload"
+        )
+
+    # ==================================================
+    # VALIDATE SUBJECT
+    # ==================================================
+
     if quiz.subject != "mathematical_reasoning":
+
         raise HTTPException(
             status_code=400,
             detail="Invalid subject. Expected 'mathematical_reasoning'"
         )
 
+    # ==================================================
+    # VALIDATE CENTER CODE
+    # ==================================================
+
+    print("\n🏫 Center Code:", quiz.center_code)
+
+    if not quiz.center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == quiz.center_code
+        )
+        .first()
+    )
+
+    print("🔍 Center Lookup Result:")
+    print(center)
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(f"✅ Center Found | ID: {center.id}")
+
+    # ==================================================
+    # BASIC VALIDATION
+    # ==================================================
+
     if not quiz.class_name or quiz.class_year is None:
+
         raise HTTPException(
             status_code=400,
             detail="class_name and class_year are required"
         )
 
     if not isinstance(quiz.topics, list) or len(quiz.topics) == 0:
+
         raise HTTPException(
             status_code=400,
             detail="topics must be a non-empty list"
         )
 
-    # --------------------------------------------------
-    # 3️⃣ Topic-level Validation
-    # --------------------------------------------------
+    # ==================================================
+    # TOPIC VALIDATION
+    # ==================================================
+
     total_questions = 0
 
     for topic in quiz.topics:
+
         if not topic.name or not topic.name.strip():
+
             raise HTTPException(
                 status_code=400,
                 detail="Each topic must have a valid name"
@@ -25647,6 +26157,7 @@ def create_quiz_mathematical_reasoning_homework(
         )
 
         if not has_difficulty:
+
             raise HTTPException(
                 status_code=400,
                 detail=f"No difficulty selected for topic: {topic.name}"
@@ -25654,234 +26165,526 @@ def create_quiz_mathematical_reasoning_homework(
 
         total_questions += topic.total or 0
 
-    # --------------------------------------------------
-    # 4️⃣ Enforce total = 35
-    # --------------------------------------------------
-    if total_questions != 35:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Total questions must be 35. Got {total_questions}"
-        )
+    print("📊 Total Questions:", total_questions)
 
-    # --------------------------------------------------
-    # 5️⃣ Scoped Cleanup (IMPORTANT)
-    # --------------------------------------------------
+    # ==================================================
+    # CLEAN OLD HOMEWORK QUIZZES
+    # ==================================================
+
     try:
+
         print("\n--- Cleaning previous homework quizzes ---")
 
-        deleted = db.query(QuizMathematicalReasoningHomework).filter(
-            QuizMathematicalReasoningHomework.class_name == quiz.class_name,
-            QuizMathematicalReasoningHomework.subject == quiz.subject,
-            QuizMathematicalReasoningHomework.class_year == str(quiz.class_year)
-        ).delete(synchronize_session=False)
+        deleted = (
+            db.query(QuizMathematicalReasoningHomework)
+            .filter(
+
+                QuizMathematicalReasoningHomework.class_name
+                == quiz.class_name,
+
+                QuizMathematicalReasoningHomework.subject
+                == quiz.subject,
+
+                QuizMathematicalReasoningHomework.class_year
+                == str(quiz.class_year),
+
+                QuizMathematicalReasoningHomework.center_code
+                == quiz.center_code
+            )
+            .delete(
+                synchronize_session=False
+            )
+        )
 
         print(f"🗑️ Deleted homework quizzes: {deleted}")
 
         db.commit()
 
     except Exception as e:
+
         print("❌ Cleanup failed:", str(e))
+
         db.rollback()
+
         raise HTTPException(
             status_code=500,
             detail="Failed to clean old homework quizzes"
         )
 
-    # --------------------------------------------------
-    # 6️⃣ Create Homework Quiz
-    # --------------------------------------------------
+    # ==================================================
+    # CREATE HOMEWORK QUIZ
+    # ==================================================
+
     try:
+
         print("\n--- Creating homework quiz ---")
 
         new_quiz = QuizMathematicalReasoningHomework(
+
             class_name=quiz.class_name.strip(),
+
             subject="mathematical_reasoning",
-            class_year=str(quiz.class_year),   # ⚠️ string because DB is varchar
+
+            class_year=str(quiz.class_year),
+
+            center_code=quiz.center_code,
+
             num_topics=quiz.num_topics,
-            topics=[t.model_dump() for t in quiz.topics]
+
+            topics=[
+                t.model_dump()
+                for t in quiz.topics
+            ]
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print("✅ Homework quiz created with ID:", new_quiz.id)
-        print("========== COMPLETE ==========\n")
+        print("\n✅ Homework quiz created successfully")
+
+        print("🆔 Quiz ID:", new_quiz.id)
+
+        print("🏫 Center Code:", new_quiz.center_code)
+
+        print("\n========== COMPLETE ==========\n")
 
         return {
-            "message": "Mathematical Reasoning homework quiz created successfully",
+            "message":
+            "Mathematical Reasoning homework quiz created successfully",
+
             "quiz_id": new_quiz.id
         }
 
     except Exception as e:
+
         print("❌ DB ERROR:", str(e))
+
         db.rollback()
+
         raise HTTPException(
             status_code=500,
             detail="Error creating homework quiz"
         )
-    
 def generate_exam_questions_selective_mr(
     quiz,
     db,
-    only_unused=False
+    only_unused=False,
+    used_question_ids=None
 ):
-    print("\n===================== MR GENERATION START =====================\n")
+
+    print(
+        "\n===================== "
+        "MR GENERATION START "
+        "=====================\n"
+    )
+
+    used_question_ids = (
+        used_question_ids or []
+    )
+
+    print(
+        f"📚 Used Question IDs Count: "
+        f"{len(used_question_ids)}"
+    )
 
     all_questions = []
+
     q_id = 1
 
     for topic in quiz.topics:
+
         topic_name = topic.get("name")
 
         print(f"\n📘 Topic: {topic_name}")
 
         for level in ["easy", "medium", "hard"]:
+
             config = topic.get(level, {})
 
             if not config.get("enabled"):
                 continue
 
-            db_count = int(config.get("db", 0))
-            ai_count = int(config.get("ai", 0))
+            db_count = int(
+                config.get("db", 0)
+            )
 
-            print(f"➡️ {level.upper()} | DB: {db_count} | AI: {ai_count}")
+            ai_count = int(
+                config.get("ai", 0)
+            )
 
-            # --------------------------------------------------
+            print(
+                f"➡️ {level.upper()} | "
+                f"DB: {db_count} | "
+                f"AI: {ai_count}"
+            )
+
+            # ==================================================
             # 1️⃣ PRE-FLIGHT DB CHECK
-            # --------------------------------------------------
+            # ==================================================
+
             if db_count > 0:
-                query = db.query(Question).filter(
-                    func.lower(Question.class_name) == "selective",
-                    func.lower(Question.subject) == "mathematical reasoning",
-                    Question.class_year == quiz.class_year,
-                    func.lower(Question.topic) == topic_name.lower(),
-                    func.lower(Question.difficulty) == level
+
+                query = (
+                    db.query(Question)
+                    .filter(
+
+                        func.lower(
+                            Question.class_name
+                        ) == "selective",
+
+                        func.lower(
+                            Question.subject
+                        ) == "mathematical reasoning",
+
+                        Question.class_year
+                        == quiz.class_year,
+
+                        func.lower(
+                            Question.topic
+                        ) == topic_name.lower(),
+
+                        func.lower(
+                            Question.difficulty
+                        ) == level
+                    )
                 )
 
+                # ==============================================
+                # EXCLUDE USED QUESTIONS
+                # ==============================================
+
                 if only_unused:
-                    query = query.filter(Question.is_used == False)
 
-                available = query.count()
+                    query = query.filter(
 
-                print(f"[DB CHECK] {level}: {available}")
-
-                if available < db_count:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            f"Not enough {level} questions for '{topic_name}'. "
-                            f"Required: {db_count}, Available: {available}"
+                        (
+                            ~Question.id.in_(
+                                used_question_ids
+                            )
+                            if used_question_ids
+                            else True
                         )
                     )
 
-            # --------------------------------------------------
-            # 2️⃣ FETCH DB QUESTIONS
-            # --------------------------------------------------
-            if db_count > 0:
-                query = db.query(Question).filter(
-                    func.lower(Question.class_name) == "selective",
-                    func.lower(Question.subject) == "mathematical reasoning",
-                    Question.class_year == quiz.class_year,
-                    func.lower(Question.topic) == topic_name.lower(),
-                    func.lower(Question.difficulty) == level
+                available = query.count()
+
+                print(
+                    f"[DB CHECK] {level}: "
+                    f"{available}"
                 )
 
-                if only_unused:
-                    query = query.filter(Question.is_used == False)
+                if available < db_count:
 
-                rows = query.order_by(func.random()).limit(db_count).all()
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Not enough {level} "
+                            f"questions for "
+                            f"'{topic_name}'. "
+                            f"Required: {db_count}, "
+                            f"Available: {available}"
+                        )
+                    )
+
+            # ==================================================
+            # 2️⃣ FETCH DB QUESTIONS
+            # ==================================================
+
+            if db_count > 0:
+
+                query = (
+                    db.query(Question)
+                    .filter(
+
+                        func.lower(
+                            Question.class_name
+                        ) == "selective",
+
+                        func.lower(
+                            Question.subject
+                        ) == "mathematical reasoning",
+
+                        Question.class_year
+                        == quiz.class_year,
+
+                        func.lower(
+                            Question.topic
+                        ) == topic_name.lower(),
+
+                        func.lower(
+                            Question.difficulty
+                        ) == level
+                    )
+                )
+
+                # ==============================================
+                # EXCLUDE USED QUESTIONS
+                # ==============================================
+
+                if only_unused:
+
+                    query = query.filter(
+
+                        (
+                            ~Question.id.in_(
+                                used_question_ids
+                            )
+                            if used_question_ids
+                            else True
+                        )
+                    )
+
+                rows = (
+                    query
+                    .order_by(func.random())
+                    .limit(db_count)
+                    .all()
+                )
+
+                print(
+                    f"📦 Selected DB Rows: "
+                    f"{len(rows)}"
+                )
 
                 for row in rows:
-                    sanitized_blocks = sanitize_question_blocks(row.question_blocks)
+
+                    sanitized_blocks = (
+                        sanitize_question_blocks(
+                            row.question_blocks
+                        )
+                    )
 
                     all_questions.append({
+
                         "id": row.id,
+
                         "q_id": q_id,
+
                         "topic": topic_name,
-                        "blocks": sanitized_blocks,
-                        "options": normalize_options(row.options),
-                        "correct": row.correct_answer
+
+                        "blocks":
+                            sanitized_blocks,
+
+                        "options":
+                            normalize_options(
+                                row.options
+                            ),
+
+                        "correct":
+                            row.correct_answer
                     })
+
                     q_id += 1
 
-            # --------------------------------------------------
+            # ==================================================
             # 3️⃣ AI QUESTIONS
-            # --------------------------------------------------
+            # ==================================================
+
             if ai_count > 0:
-                ai_questions = generate_ai_questions_strict_Mathematical_Reasoning(
-                    quiz=quiz,
-                    topic_name=topic_name,
-                    ai_count=ai_count,
-                    db=db
+
+                ai_questions = (
+                    generate_ai_questions_strict_Mathematical_Reasoning(
+                        quiz=quiz,
+                        topic_name=topic_name,
+                        ai_count=ai_count,
+                        db=db
+                    )
+                )
+
+                print(
+                    f"🤖 AI Questions Generated: "
+                    f"{len(ai_questions)}"
                 )
 
                 for item in ai_questions:
+
                     all_questions.append({
+
                         "q_id": q_id,
+
                         "topic": topic_name,
+
                         "blocks": [
                             {
                                 "type": "text",
-                                "content": clean_question_text(item["question"])
+
+                                "content":
+                                    clean_question_text(
+                                        item["question"]
+                                    )
                             }
                         ],
-                        "options": normalize_options(item["options"]),
-                        "correct": item["correct"]
+
+                        "options":
+                            normalize_options(
+                                item["options"]
+                            ),
+
+                        "correct":
+                            item["correct"]
                     })
+
                     q_id += 1
 
-    # --------------------------------------------------
+    # ==================================================
     # 4️⃣ FINAL SHUFFLE
-    # --------------------------------------------------
+    # ==================================================
+
     random.shuffle(all_questions)
 
-    print(f"\n✅ TOTAL QUESTIONS: {len(all_questions)}")
+    print(
+        f"\n✅ TOTAL QUESTIONS: "
+        f"{len(all_questions)}"
+    )
 
     return all_questions
-
  
 @app.post("/generate-new-mr")
 def generate_exam(
     req: GenerateExamRequest,
     db: Session = Depends(get_db)
 ):
-    # --------------------------------------------------
-    # 1️⃣ Fetch latest quiz
-    # --------------------------------------------------
+    """
+    Generate a Mathematical Reasoning exam.
+
+    Questions are tracked PER CENTER using
+    QuestionUsage instead of Question.is_used.
+    """
+
+    # ==================================================
+    # 0️⃣ Extract Input
+    # ==================================================
+
     class_year = req.class_year
-    print(f"🎯 Generating MR exam for class_year={class_year}")
+
+    center_code = req.center_code
+
+    if not class_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print(
+        f"\n📘 Generating Mathematical Reasoning exam "
+        f"for class_year: {class_year}"
+    )
+
+    print(f"🏢 Center Code: {center_code}")
+
+    # ==================================================
+    # 1️⃣ FIND CENTER
+    # ==================================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(center_code)
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(f"✅ Center Found | ID: {center.id}")
+
+    # ==================================================
+    # 2️⃣ FETCH LATEST QUIZ CONFIG
+    # ==================================================
 
     quiz = (
         db.query(QuizMathematicalReasoning)
         .filter(
-            QuizMathematicalReasoning.subject == "mathematical_reasoning",
-            QuizMathematicalReasoning.class_name == "selective",
-            QuizMathematicalReasoning.class_year == class_year
+
+            QuizMathematicalReasoning.subject
+            == "mathematical_reasoning",
+
+            QuizMathematicalReasoning.class_name
+            == "selective",
+
+            QuizMathematicalReasoning.class_year
+            == class_year,
+
+            QuizMathematicalReasoning.center_code
+            == center_code
+
         )
-        .order_by(QuizMathematicalReasoning.id.desc())
+        .order_by(
+            QuizMathematicalReasoning.id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
             status_code=404,
-            detail="No Mathematical Reasoning quiz found"
+            detail=(
+                "No Mathematical Reasoning quiz found "
+                f"for class_year {class_year}"
+            )
         )
 
-    # --------------------------------------------------
-    # 2️⃣ PRE-FLIGHT VALIDATION
-    # --------------------------------------------------
+    print(f"✅ Using Quiz ID: {quiz.id}")
+
+    # ==================================================
+    # 3️⃣ FETCH USED QUESTIONS
+    # ==================================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
+        )
+        .all()
+    )
+
+    used_question_ids = [
+        row[0]
+        for row in used_question_ids
+    ]
+
+    print(
+        f"📚 Questions already used by "
+        f"center: {len(used_question_ids)}"
+    )
+
+    # ==================================================
+    # 4️⃣ PRE-FLIGHT VALIDATION
+    # ==================================================
+
     for topic in quiz.topics:
+
         topic_name = topic["name"]
 
+        print(f"\n📖 Topic: {topic_name}")
+
         for level in ["easy", "medium", "hard"]:
+
             config = topic.get(level, {})
 
             if not config.get("enabled"):
                 continue
 
-            db_required = int(config.get("db", 0))
+            db_required = int(
+                config.get("db", 0)
+            )
 
             if db_required == 0:
                 continue
@@ -25889,175 +26692,388 @@ def generate_exam(
             available = (
                 db.query(Question)
                 .filter(
-                    func.lower(func.trim(Question.class_name)) == "selective",
-                    func.lower(func.trim(Question.subject)) == "mathematical reasoning",
-                    Question.class_year == class_year,
-                    func.lower(Question.topic) == topic_name.lower(),
-                    func.lower(Question.difficulty) == level,
-                    Question.is_used == False
+
+                    func.lower(
+                        func.trim(
+                            Question.class_name
+                        )
+                    ) == "selective",
+
+                    func.lower(
+                        func.trim(
+                            Question.subject
+                        )
+                    ) == "mathematical reasoning",
+
+                    Question.class_year
+                    == class_year,
+
+                    func.lower(Question.topic)
+                    == topic_name.lower(),
+
+                    func.lower(Question.difficulty)
+                    == level,
+
+                    (
+                        ~Question.id.in_(
+                            used_question_ids
+                        )
+                        if used_question_ids
+                        else True
+                    )
                 )
                 .count()
             )
 
+            print(
+                f"📊 {level.upper()} | "
+                f"Required: {db_required} | "
+                f"Available: {available}"
+            )
+
             if available < db_required:
+
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough {level} questions for '{topic_name}'. "
-                        f"Required: {db_required}, Available: {available}"
+                        f"Not enough {level} questions "
+                        f"for '{topic_name}'. "
+                        f"Required: {db_required}, "
+                        f"Available: {available}"
                     )
                 )
 
-    # --------------------------------------------------
-    # 3️⃣ GENERATE QUESTIONS
-    # --------------------------------------------------
+    # ==================================================
+    # 5️⃣ GENERATE QUESTIONS
+    # ==================================================
+
     questions = []
+
     q_id = 1
 
     for topic in quiz.topics:
+
         topic_name = topic["name"]
 
+        print(f"\n🚀 Generating Topic: {topic_name}")
+
         for level in ["easy", "medium", "hard"]:
+
             config = topic.get(level, {})
 
             if not config.get("enabled"):
                 continue
 
-            db_count = int(config.get("db", 0))
-            ai_count = int(config.get("ai", 0))
+            db_count = int(
+                config.get("db", 0)
+            )
 
-            # ---------------- DB QUESTIONS ----------------
+            ai_count = int(
+                config.get("ai", 0)
+            )
+
+            # ==========================================
+            # DB QUESTIONS
+            # ==========================================
+
             if db_count > 0:
+
                 rows = (
                     db.query(Question)
                     .filter(
-                        func.lower(func.trim(Question.class_name)) == "selective",
-                        func.lower(func.trim(Question.subject)) == "mathematical reasoning",
-                        Question.class_year == class_year,
-                        func.lower(Question.topic) == topic_name.lower(),
-                        func.lower(Question.difficulty) == level,
-                        Question.is_used == False
+
+                        func.lower(
+                            func.trim(
+                                Question.class_name
+                            )
+                        ) == "selective",
+
+                        func.lower(
+                            func.trim(
+                                Question.subject
+                            )
+                        ) == "mathematical reasoning",
+
+                        Question.class_year
+                        == class_year,
+
+                        func.lower(Question.topic)
+                        == topic_name.lower(),
+
+                        func.lower(Question.difficulty)
+                        == level,
+
+                        (
+                            ~Question.id.in_(
+                                used_question_ids
+                            )
+                            if used_question_ids
+                            else True
+                        )
                     )
                     .order_by(func.random())
                     .all()
                 )
 
-                # ✅ Deduplicate (important)
+                print(
+                    f"📦 Raw DB Rows: {len(rows)}"
+                )
+
+                # ======================================
+                # DEDUPLICATE
+                # ======================================
+
                 seen = set()
+
                 unique_rows = []
 
                 for row in rows:
-                    key = str(row.question_blocks)
+
+                    key = str(
+                        row.question_blocks
+                    )
 
                     if key not in seen:
+
                         seen.add(key)
+
                         unique_rows.append(row)
 
                 unique_rows = unique_rows[:db_count]
 
+                print(
+                    f"✅ Unique Rows Used: "
+                    f"{len(unique_rows)}"
+                )
+
                 for row in unique_rows:
+
                     if not row.question_blocks:
+
                         raise HTTPException(
                             status_code=500,
-                            detail=f"Question {row.id} has no question_blocks"
+                            detail=(
+                                f"Question {row.id} "
+                                f"has no question_blocks"
+                            )
                         )
 
-                    sanitized_blocks = sanitize_question_blocks(row.question_blocks)
+                    sanitized_blocks = (
+                        sanitize_question_blocks(
+                            row.question_blocks
+                        )
+                    )
 
                     questions.append({
+
                         "id": row.id,
+
                         "q_id": q_id,
+
                         "topic": topic_name,
-                        "question_blocks": sanitized_blocks,
-                        "options": normalize_options(row.options),
-                        "correct": row.correct_answer
+
+                        "question_blocks":
+                            sanitized_blocks,
+
+                        "options":
+                            normalize_options(
+                                row.options
+                            ),
+
+                        "correct":
+                            row.correct_answer
                     })
+
                     q_id += 1
 
-            # ---------------- AI QUESTIONS ----------------
+            # ==========================================
+            # AI QUESTIONS
+            # ==========================================
+
             if ai_count > 0:
-                ai_questions = generate_ai_questions_strict_Mathematical_Reasoning(
-                    quiz=quiz,
-                    topic_name=topic_name,
-                    ai_count=ai_count,
-                    db=db
+
+                ai_questions = (
+                    generate_ai_questions_strict_Mathematical_Reasoning(
+                        quiz=quiz,
+                        topic_name=topic_name,
+                        ai_count=ai_count,
+                        db=db
+                    )
+                )
+
+                print(
+                    f"🤖 AI Questions Generated: "
+                    f"{len(ai_questions)}"
                 )
 
                 for item in ai_questions:
+
                     questions.append({
+
                         "q_id": q_id,
+
                         "topic": topic_name,
+
                         "question_blocks": [
                             {
                                 "type": "text",
-                                "content": clean_question_text(item["question"])
+
+                                "content":
+                                    clean_question_text(
+                                        item["question"]
+                                    )
                             }
                         ],
-                        "options": normalize_options(item["options"]),
-                        "correct": item["correct"]
+
+                        "options":
+                            normalize_options(
+                                item["options"]
+                            ),
+
+                        "correct":
+                            item["correct"]
                     })
+
                     q_id += 1
 
-    # --------------------------------------------------
-    # 4️⃣ FINAL TOTAL VALIDATION
-    # --------------------------------------------------
+    # ==================================================
+    # 6️⃣ FINAL TOTAL VALIDATION
+    # ==================================================
+
     expected_total = sum(
+
         int(t.get("easy", {}).get("db", 0)) +
+
         int(t.get("easy", {}).get("ai", 0)) +
+
         int(t.get("medium", {}).get("db", 0)) +
+
         int(t.get("medium", {}).get("ai", 0)) +
+
         int(t.get("hard", {}).get("db", 0)) +
+
         int(t.get("hard", {}).get("ai", 0))
+
         for t in quiz.topics
     )
 
     actual_total = len(questions)
 
+    print(
+        f"\n📊 Expected Total: {expected_total}"
+    )
+
+    print(
+        f"📊 Actual Total: {actual_total}"
+    )
+
     if actual_total != expected_total:
+
         raise HTTPException(
             status_code=500,
-            detail=f"Expected {expected_total}, got {actual_total}"
+            detail=(
+                f"Expected {expected_total}, "
+                f"got {actual_total}"
+            )
         )
 
-    # --------------------------------------------------
-    # 5️⃣ MARK USED QUESTIONS
-    # --------------------------------------------------
-    used_ids = [q["id"] for q in questions if q.get("id")]
+    # ==================================================
+    # 7️⃣ SAVE EXAM
+    # ==================================================
 
-    if used_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_ids)
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
-        )
-
-    # --------------------------------------------------
-    # 6️⃣ SAVE EXAM
-    # --------------------------------------------------
     new_exam = Exam(
+
         quiz_id=quiz.id,
+
         class_name=quiz.class_name,
+
         subject=quiz.subject,
+
         class_year=class_year,
+
+        center_code=center_code,
+
         questions=questions,
+
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    # --------------------------------------------------
-    # 7️⃣ RESPONSE (UNCHANGED FORMAT)
-    # --------------------------------------------------
+    print(
+        f"💾 Exam saved with ID: "
+        f"{new_exam.id}"
+    )
+
+    # ==================================================
+    # 8️⃣ STORE QUESTION USAGE
+    # ==================================================
+
+    usage_rows = []
+
+    for q in questions:
+
+        question_id = q.get("id")
+
+        if not question_id:
+            continue
+
+        usage_rows.append(
+
+            QuestionUsage(
+
+                question_id=question_id,
+
+                center_id=center.id,
+            )
+        )
+
+    if usage_rows:
+
+        db.add_all(usage_rows)
+
+        db.commit()
+
+    print(
+        f"✅ Stored usage rows: "
+        f"{len(usage_rows)}"
+    )
+
+    # ==================================================
+    # 9️⃣ RESPONSE
+    # ==================================================
+
     return {
-        "message": "Exam generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": quiz.id,
-        "class_name": quiz.class_name,
-        "subject": quiz.subject,
-        "total_questions": len(questions),
-        "questions": questions,
+
+        "message":
+            "Mathematical Reasoning exam generated successfully",
+
+        "exam_id":
+            new_exam.id,
+
+        "quiz_id":
+            quiz.id,
+
+        "class_name":
+            quiz.class_name,
+
+        "class_year":
+            class_year,
+
+        "subject":
+            quiz.subject,
+
+        "center_code":
+            center_code,
+
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
     }
 
 @app.post("/generate-new-mr-latest")
@@ -26069,63 +27085,161 @@ def generate_exam_mr_latest(
     Generate Mathematical Reasoning exam using ALL questions
     from a selected date + batch id.
 
-    - No quiz dependency
-    - No topic config
-    - Ignores is_used during fetch
-    - Marks questions as used after generation
+    Questions are tracked PER CENTER using
+    QuestionUsage instead of Question.is_used.
     """
+
+    print(
+        "\n================ "
+        "GENERATE MR "
+        "(BATCH MODE) ================="
+    )
 
     payload = payload or {}
 
     # ==================================================
     # 0️⃣ Extract Input
     # ==================================================
+
     class_year = payload.get("class_year")
+
     selected_date = payload.get("date")
+
     batch_id = payload.get("batch_id")
 
+    center_code = payload.get("center_code")
+
+    print("\n📥 Incoming Payload:")
+    print(payload)
+
     if not class_year:
+
         raise HTTPException(
             status_code=400,
             detail="class_year is required"
         )
 
     if not selected_date:
+
         raise HTTPException(
             status_code=400,
             detail="date is required"
         )
 
     if not batch_id:
+
         raise HTTPException(
             status_code=400,
             detail="batch_id is required"
         )
 
-    print("\n================ GENERATE MR (BATCH MODE) =================")
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
 
     print(
-        f"📥 class_year={class_year}, "
-        f"date={selected_date}, "
-        f"batch_id={batch_id}"
+        f"\n📘 class_year={class_year}"
+    )
+
+    print(
+        f"📅 selected_date={selected_date}"
+    )
+
+    print(
+        f"📦 batch_id={batch_id}"
+    )
+
+    print(
+        f"🏢 center_code={center_code}"
     )
 
     # ==================================================
-    # 1️⃣ Fetch Questions
+    # 1️⃣ FIND CENTER
     # ==================================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    print("\n🔍 Center Lookup Result:")
+    print(center)
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"✅ Center Found | "
+        f"ID={center.id}"
+    )
+
+    # ==================================================
+    # 2️⃣ FETCH USED QUESTIONS
+    # ==================================================
+
+    raw_used_question_rows = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .all()
+    )
+
+    print("\n🧠 Raw Used Question Rows:")
+    print(raw_used_question_rows)
+
+    used_question_ids = [
+        row[0]
+        for row in raw_used_question_rows
+    ]
+
+    print("\n🧠 Used Question IDs:")
+    print(used_question_ids)
+
+    print(
+        f"\n📊 Total Used Questions: "
+        f"{len(used_question_ids)}"
+    )
+
+    # ==================================================
+    # 3️⃣ FETCH QUESTIONS
+    # ==================================================
+
+    print(
+        "\n🚀 Running Main Question Query..."
+    )
+
     rows = (
         db.query(Question)
         .filter(
 
             func.lower(
-                func.trim(Question.class_name)
+                func.trim(
+                    Question.class_name
+                )
             ) == "selective",
 
             func.lower(
-                func.trim(Question.subject)
+                func.trim(
+                    Question.subject
+                )
             ) == "mathematical reasoning",
 
-            Question.class_year == class_year,
+            Question.class_year
+            == class_year,
 
             # selected upload date
             func.date(
@@ -26133,29 +27247,49 @@ def generate_exam_mr_latest(
             ) == selected_date,
 
             # selected upload batch
-            Question.batch_id == batch_id,
+            Question.batch_id
+            == batch_id,
 
-            # tracking only
-            Question.is_used == False
+            # exclude already used
+            (
+                ~Question.id.in_(
+                    used_question_ids
+                )
+                if used_question_ids
+                else True
+            )
         )
-        .order_by(Question.id.asc())
+        .order_by(
+            Question.id.asc()
+        )
         .all()
     )
 
+    print("\n✅ Query Finished")
+
+    print(
+        f"📦 Total Questions Fetched: "
+        f"{len(rows)}"
+    )
+
     if not rows:
+
         raise HTTPException(
             status_code=400,
             detail=(
-                "No questions found for selected "
-                "date and batch"
+                "No unused questions found "
+                "for selected date and batch"
             )
         )
 
-    print(f"✅ Fetched {len(rows)} MR questions")
+    # ==================================================
+    # 4️⃣ BUILD QUESTIONS
+    # ==================================================
 
-    # ==================================================
-    # 2️⃣ Build Questions
-    # ==================================================
+    print(
+        "\n🧱 Building Questions..."
+    )
+
     questions = []
 
     q_id = 1
@@ -26163,6 +27297,7 @@ def generate_exam_mr_latest(
     for row in rows:
 
         if not row.question_blocks:
+
             raise HTTPException(
                 status_code=500,
                 detail=(
@@ -26171,56 +27306,51 @@ def generate_exam_mr_latest(
                 )
             )
 
-        sanitized_blocks = sanitize_question_blocks(
-            row.question_blocks
+        sanitized_blocks = (
+            sanitize_question_blocks(
+                row.question_blocks
+            )
         )
 
         questions.append({
+
             "id": row.id,
+
             "q_id": q_id,
+
             "topic": row.topic,
+
             "batch_id": row.batch_id,
 
-            "question_blocks": sanitized_blocks,
+            "question_blocks":
+                sanitized_blocks,
 
-            "options": normalize_options(
-                row.options
-            ),
+            "options":
+                normalize_options(
+                    row.options
+                ),
 
-            "correct": row.correct_answer
+            "correct":
+                row.correct_answer
         })
 
         q_id += 1
 
-    print(f"📦 Built {len(questions)} questions")
+    print(
+        f"✅ Built "
+        f"{len(questions)} questions"
+    )
 
     # ==================================================
-    # 3️⃣ MARK QUESTIONS AS USED
+    # 5️⃣ SAVE EXAM
     # ==================================================
-    used_ids = [q["id"] for q in questions]
 
-    if used_ids:
+    print(
+        "\n💾 Saving Exam..."
+    )
 
-        updated = (
-            db.query(Question)
-            .filter(
-                Question.id.in_(used_ids),
-                Question.is_used.is_(False)
-            )
-            .update(
-                {Question.is_used: True},
-                synchronize_session=False
-            )
-        )
-
-        print(
-            f"🔒 Marked {updated} questions as used"
-        )
-
-    # ==================================================
-    # 4️⃣ SAVE EXAM
-    # ==================================================
     new_exam = Exam(
+
         quiz_id=None,
 
         class_name="selective",
@@ -26228,6 +27358,8 @@ def generate_exam_mr_latest(
         subject="mathematical_reasoning",
 
         class_year=class_year,
+
+        center_code=center_code,
 
         questions=questions
     )
@@ -26238,36 +27370,107 @@ def generate_exam_mr_latest(
 
     db.refresh(new_exam)
 
-    print(f"💾 MR Exam saved with ID: {new_exam.id}")
-
-    print("================ END =================\n")
+    print(
+        f"✅ Exam saved | "
+        f"exam_id={new_exam.id}"
+    )
 
     # ==================================================
-    # 5️⃣ RESPONSE
+    # 6️⃣ STORE QUESTION USAGE
     # ==================================================
+
+    print(
+        "\n🧠 Creating QuestionUsage rows..."
+    )
+
+    usage_rows = []
+
+    already_added = set()
+
+    for q in questions:
+
+        question_id = q.get("id")
+
+        if not question_id:
+            continue
+
+        # avoid accidental duplicates
+        if question_id in already_added:
+            continue
+
+        already_added.add(question_id)
+
+        usage_rows.append(
+
+            QuestionUsage(
+
+                question_id=question_id,
+
+                center_id=center.id
+            )
+        )
+
+    print(
+        "\n🧠 Question IDs being stored:"
+    )
+
+    print(list(already_added))
+
+    if usage_rows:
+
+        db.add_all(usage_rows)
+
+        db.commit()
+
+    print(
+        f"\n✅ Stored usage rows: "
+        f"{len(usage_rows)}"
+    )
+
+    print(
+        "\n================ "
+        "END =================\n"
+    )
+
+    # ==================================================
+    # 7️⃣ RESPONSE
+    # ==================================================
+
     return {
-        "message": "MR exam generated (batch-based)",
 
-        "exam_id": new_exam.id,
+        "message":
+            "MR exam generated (batch-based)",
 
-        "quiz_id": None,
+        "exam_id":
+            new_exam.id,
 
-        "batch_id": batch_id,
+        "quiz_id":
+            None,
 
-        "class_name": "selective",
+        "batch_id":
+            batch_id,
 
-        "subject": "mathematical_reasoning",
+        "class_name":
+            "selective",
 
-        "class_year": class_year,
+        "subject":
+            "mathematical_reasoning",
 
-        "selected_date": selected_date,
+        "class_year":
+            class_year,
 
-        "total_questions": len(questions),
+        "center_code":
+            center_code,
 
-        "questions": questions
+        "selected_date":
+            selected_date,
+
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
     }
-
-
 
 @app.post("/api/admin/bulk-users-exam-module")
 async def bulk_users_exam_module(
@@ -30670,264 +31873,186 @@ def create_quiz_mathematical_reasoning(
     Stored in quiz_mathematical_reasoning table.
     """
 
+    print("\n🔥 ENDPOINT 1 HIT 🔥")
+
     print("\n========== MATHEMATICAL REASONING QUIZ CREATION START ==========")
 
     print("🔍 Incoming payload:", quiz)
 
-    # Convert to dict for debugging
-    try:
-        quiz_dict = quiz.dict()
-        print("📦 Parsed quiz payload:", quiz_dict)
-    except Exception as e:
-        print("❌ Invalid payload")
-        raise HTTPException(status_code=400, detail=str(e))
+    # ==========================================
+    # PARSE PAYLOAD
+    # ==========================================
 
-    # Enforce subject correctness
+    try:
+
+        quiz_dict = quiz.dict()
+
+        print("📦 Parsed quiz payload:")
+        print(quiz_dict)
+
+    except Exception as e:
+
+        print("❌ Invalid payload")
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+    # ==========================================
+    # VALIDATE SUBJECT
+    # ==========================================
+
     if quiz.subject != "mathematical_reasoning":
+
         raise HTTPException(
             status_code=400,
             detail="Invalid subject. Expected 'mathematical_reasoning'."
         )
 
-    # Validate topics
+    # ==========================================
+    # VALIDATE CENTER CODE
+    # ==========================================
+
+    print("\n🏫 Center Code:", quiz.center_code)
+
+    if not quiz.center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == quiz.center_code
+        )
+        .first()
+    )
+
+    print("🔍 Center Lookup Result:")
+    print(center)
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(f"✅ Center Found | ID: {center.id}")
+
+    # ==========================================
+    # VALIDATE TOPICS
+    # ==========================================
+
     if not isinstance(quiz.topics, list):
+
         raise HTTPException(
             status_code=400,
             detail="topics must be a list"
         )
 
     print("📝 Topics count:", len(quiz.topics))
-    for i, t in enumerate(quiz.topics):
-        print(f"   └─ Topic {i}: {t}")
-
-    try:
-        print("\n--- Deleting existing Mathematical Reasoning quizzes ---")
-
-        db.query(QuizMathematicalReasoning).filter(
-            QuizMathematicalReasoning.class_name == quiz.class_name,
-            QuizMathematicalReasoning.subject == quiz.subject,
-            QuizMathematicalReasoning.class_year == quiz.class_year
-        ).delete(synchronize_session=False)
-
-        print("🗑️ All previous quizzes deleted")
-     
-        print("\n--- Creating SQLAlchemy object ---")
-
-        new_quiz = QuizMathematicalReasoning(
-            class_name=quiz.class_name.strip(),
-            subject="mathematical_reasoning",
-            class_year=quiz.class_year,
-            num_topics=quiz.num_topics,
-            topics=[t.model_dump() for t in quiz.topics]
-        )
-
-        db.add(new_quiz)
-        db.commit()
-        db.refresh(new_quiz)
-
-        print("✅ Quiz saved with ID:", new_quiz.id)
-        print("========== QUIZ CREATION COMPLETE ==========\n")
-
-        return {
-            "message": "Mathematical Reasoning quiz created successfully",
-            "quiz_id": new_quiz.id
-        }
-
-    except Exception as e:
-        print("❌ DB error:", str(e))
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Error creating Mathematical Reasoning quiz"
-        )
-@app.post("/api/quizzes/mathematical-reasoning")
-def create_quiz_mathematical_reasoning(
-    quiz: QuizMathematicalReasoningCreate,
-    db: Session = Depends(get_db)
-):
-    """
-    Create a Mathematical Reasoning quiz aligned with topic-level difficulty structure.
-    """
-
-    print("\n========== MR QUIZ CREATION START ==========")
-
-    # -------------------------------
-    # 1️⃣ Parse + Validate Payload
-    # -------------------------------
-    try:
-        quiz_dict = quiz.model_dump()
-        print("📦 Parsed quiz payload:", quiz_dict)
-    except Exception as e:
-        print("❌ Failed to parse quiz:", e)
-        raise HTTPException(status_code=400, detail="Invalid payload")
-
-    # -------------------------------
-    # 2️⃣ Basic Validation
-    # -------------------------------
-    if quiz.subject != "mathematical_reasoning":
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid subject. Expected 'mathematical_reasoning'"
-        )
-
-    if not quiz.class_name or not quiz.class_year:
-        raise HTTPException(
-            status_code=400,
-            detail="class_name and class_year are required"
-        )
-
-    if not isinstance(quiz.topics, list) or len(quiz.topics) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="topics must be a non-empty list"
-        )
 
     total_questions = 0
 
-    # -------------------------------
-    # 3️⃣ Topic-level Validation
-    # -------------------------------
-    for topic in quiz.topics:
-        if not topic.name or not topic.name.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Each topic must have a valid name"
-            )
+    for i, t in enumerate(quiz.topics):
 
-        has_difficulty = (
-            topic.easy.enabled or
-            topic.medium.enabled or
-            topic.hard.enabled
+        print(f"   └─ Topic {i}: {t}")
+
+        total_questions += t.total or 0
+
+    print("📊 Total Questions:", total_questions)
+
+    # ==========================================
+    # CLEAN OLD QUIZZES
+    # ==========================================
+
+    try:
+
+        print("\n--- Deleting existing MR quizzes ---")
+
+        deleted_count = (
+            db.query(QuizMathematicalReasoning)
+            .filter(
+
+                QuizMathematicalReasoning.class_name
+                == quiz.class_name,
+
+                QuizMathematicalReasoning.subject
+                == quiz.subject,
+
+                QuizMathematicalReasoning.class_year
+                == quiz.class_year,
+
+                QuizMathematicalReasoning.center_code
+                == quiz.center_code
+            )
+            .delete(
+                synchronize_session=False
+            )
         )
 
-        if not has_difficulty:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No difficulty selected for topic: {topic.name}"
-            )
+        print(f"🗑️ Deleted old quizzes: {deleted_count}")
 
-        total_questions += topic.total or 0
+        # ==========================================
+        # CREATE NEW QUIZ
+        # ==========================================
 
-    # -------------------------------
-    # 4️⃣ Enforce total = 35 (KEY CHANGE)
-    # -------------------------------
-    if total_questions != 35:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Total questions must be 35. Got {total_questions}"
-        )
-
-    # -------------------------------
-    # 5️⃣ Scoped Cleanup (IMPORTANT FIX)
-    # -------------------------------
-    try:
-        print("\n--- Cleaning previous MR quizzes ---")
-
-        deleted = db.query(QuizMathematicalReasoning).filter(
-            QuizMathematicalReasoning.class_name == quiz.class_name,
-            QuizMathematicalReasoning.subject == quiz.subject,
-            QuizMathematicalReasoning.class_year == quiz.class_year
-        ).delete(synchronize_session=False)
-
-        print(f"🗑️ Deleted quizzes: {deleted}")
-        db.commit()
-
-    except Exception as e:
-        print("❌ Cleanup failed:", e)
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to clean old quizzes")
-
-    # -------------------------------
-    # 6️⃣ Create Quiz
-    # -------------------------------
-    try:
-        print("\n--- Creating MR quiz ---")
+        print("\n--- Creating SQLAlchemy object ---")
 
         new_quiz = QuizMathematicalReasoning(
+
             class_name=quiz.class_name.strip(),
+
             subject="mathematical_reasoning",
+
             class_year=quiz.class_year,
+
+            center_code=quiz.center_code,
+
             num_topics=quiz.num_topics,
-            topics=[t.model_dump() for t in quiz.topics]  # ✅ v2 safe
+
+            topics=[
+                t.model_dump()
+                for t in quiz.topics
+            ]
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print("✅ Quiz created with ID:", new_quiz.id)
-        print("========== COMPLETE ==========\n")
+        print("\n✅ Quiz saved successfully")
+
+        print("🆔 Quiz ID:", new_quiz.id)
+
+        print("🏫 Center Code:", new_quiz.center_code)
+
+        print(
+            "\n========== QUIZ CREATION COMPLETE ==========\n"
+        )
 
         return {
-            "message": "Mathematical Reasoning quiz created successfully",
+            "message":
+            "Mathematical Reasoning quiz created successfully",
+
             "quiz_id": new_quiz.id
         }
 
     except Exception as e:
-        print("❌ DB ERROR:", str(e))
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Error creating quiz")
 
-@app.post("/api/quizzes/mathematical-reasoning")
-def create_topic_config_mathematical_reasoning(
-    payload: TopicConfigMathematicalReasoningCreate,
-    db: Session = Depends(get_db)
-):
-    """
-    Create Mathematical Reasoning topic configuration.
-    """
-
-    print("\n========== MATHEMATICAL REASONING TOPIC CONFIG ==========")
-
-    try:
-        # Debug incoming payload
-        payload_dict = payload.dict()
-        print("📦 Incoming payload:", payload_dict)
-
-        # Validate subject explicitly
-        if payload.subject != "mathematical_reasoning":
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid subject. Expected 'mathematical_reasoning'."
-            )
-
-        # Create DB record
-        quiz_config = QuizMathematicalReasoning(
-            class_name=payload.class_name.strip(),
-            subject=payload.subject.strip(),
-            difficulty=payload.difficulty.strip(),
-            num_topics=payload.num_topics,
-            topics=[t.dict() for t in payload.topics]
-        )
-
-        db.add(quiz_config)
-        db.commit()
-        db.refresh(quiz_config)
-
-
-        print(
-            "✅ Saved topicConfig_mathematical_reasoning | ID:",
-            quiz_config.id
-        )
-        print("=======================================================\n")
-
-        return {
-            "message": "Mathematical Reasoning topic config saved successfully",
-            "topic_config_id": quiz_config.id
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        print("❌ ERROR saving Mathematical Reasoning topic config")
-        print("Error:", str(e))
-        traceback.print_exc()
+        print("❌ DB error:", str(e))
 
         db.rollback()
+
         raise HTTPException(
             status_code=500,
-            detail="Error saving Mathematical Reasoning topic configuration"
+            detail="Error creating Mathematical Reasoning quiz"
         )
 
 
@@ -51046,12 +52171,22 @@ def start_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n🚀 START-EXAM REQUEST")
-    print("➡ payload:", req.dict())
 
-    # --------------------------------------------------
-    # 1️⃣ Resolve student (external → internal)
-    # --------------------------------------------------
+    print(
+        "\n================ START "
+        "MATHEMATICAL REASONING "
+        "EXAM ================="
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
+
+    # ==================================================
+    # 1️⃣ Resolve student
+    # ==================================================
+
     student = (
         db.query(Student)
         .filter(
@@ -51060,246 +52195,449 @@ def start_exam(
         )
         .first()
     )
-    
+
     if not student:
-        print(f"❌ Student not found (raw={repr(req.student_id)})")
-        raise HTTPException(status_code=404, detail="Student not found")
 
-    
-    print(f"✅ Student resolved: id={student.id}")
-    student_year_number = extract_numeric_year_from_student(student.student_year)
-
-    print(f"🎯 Parsed student_year: {student.student_year} → {student_year_number}")
-    
-    # --------------------------------------------------
-    # 🟢 CASE A — COMPLETED attempt exists → SHOW REPORT
-    # --------------------------------------------------
-    
-
-    # --------------------------------------------------
-    # 3️⃣ Load quiz (class-based) 
-    # --------------------------------------------------
-    quiz = (
-        db.query(
-            Quiz.id,
-            Quiz.class_name,
-            Quiz.subject,
-            Quiz.class_year,
-            Quiz.num_topics,
-            Quiz.topics,
-            Quiz.created_at
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
         )
-        .filter(func.lower(Quiz.class_name) == func.lower(student.class_name))
-        .order_by(Quiz.id.desc())
-        .first()
+
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
     )
 
-    if not quiz:
-        print("❌ Quiz not found for class")
-        raise HTTPException(status_code=404, detail="Quiz not found")
+    print(
+        f"🏢 Student center_code: "
+        f"{student.center_code}"
+    )
 
-    # --------------------------------------------------
-    # 4️⃣ Load exam
-    # --------------------------------------------------
+    # ==================================================
+    # 2️⃣ Extract class_year
+    # ==================================================
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
+        )
+
+    class_year = (
+        extract_numeric_year_from_student(
+            student.student_year
+        )
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{class_year}"
+    )
+
+    now = datetime.now(timezone.utc)
+
+    MAX_DURATION = timedelta(minutes=40)
+
+    # ==================================================
+    # 3️⃣ Fetch latest CENTER-SPECIFIC exam
+    # ==================================================
+
     exam = (
         db.query(Exam)
         .filter(
-            func.lower(Exam.class_name) == func.lower(student.class_name),
-            Exam.class_year == student_year_number,   # ✅ FIXED
-            Exam.subject == "mathematical_reasoning"
+
+            Exam.subject
+            == "mathematical_reasoning",
+
+            Exam.class_name
+            == "selective",
+
+            Exam.class_year
+            == class_year,
+
+            Exam.center_code
+            == student.center_code
+
         )
-        .order_by(Exam.created_at.desc())
+        .order_by(
+            Exam.id.desc()
+        )
         .first()
     )
 
-
     if not exam:
-        print("❌ Exam not generated")
-        raise HTTPException(status_code=404, detail="Exam not generated")
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No Mathematical Reasoning "
+                f"exam found for "
+                f"class_year={class_year} "
+                f"and center="
+                f"{student.center_code}"
+            )
+        )
+
+    print(
+        f"📝 Exam selected | "
+        f"exam_id={exam.id}"
+    )
+
+    # ==================================================
+    # 4️⃣ Normalize Questions
+    # ==================================================
+
     def normalize_questions(raw_questions):
+
         normalized = []
-    
+
         for q in raw_questions or []:
+
             fixed = dict(q)
-    
-            # -----------------------------
-            # ✅ NORMALIZE QUESTION BLOCKS (FIXED)
-            # -----------------------------
+
+            # ==========================================
+            # QUESTION BLOCKS
+            # ==========================================
+
             raw_blocks = (
                 fixed.get("question_blocks")
                 or fixed.get("blocks")
                 or []
             )
-            
+
             fixed["blocks"] = raw_blocks
-            
-            # 🔥 resolve question images
-            resolve_images(fixed["blocks"], db, "start-exam")
-    
-            # -----------------------------
-            # ✅ NORMALIZE OPTIONS
-            # -----------------------------
+
+            resolve_images(
+                fixed["blocks"],
+                db,
+                "start-exam-mr"
+            )
+
+            # ==========================================
+            # OPTIONS
+            # ==========================================
+
             opts = fixed.get("options")
-    
+
             if isinstance(opts, dict):
+
                 fixed["options"] = {
-                    k: {"content": v} for k, v in opts.items()
+                    k: {"content": v}
+                    for k, v in opts.items()
                 }
+
             elif isinstance(opts, list):
+
                 fixed["options"] = {
                     chr(65 + i): {"content": v}
                     for i, v in enumerate(opts)
                 }
-            else:
-                fixed["options"] = {}
-            resolve_option_images(fixed["options"], db, "start-exam")
-    
-            normalized.append(fixed)
-    
-        return normalized
-    # --------------------------------------------------
-    # 🧮 MATHEMATICAL REASONING ATTEMPT HANDLING
-    # --------------------------------------------------
-    print("🔍 Checking Mathematical Reasoning attempts...")
 
-    math_attempt = (
-        db.query(StudentExamMathematicalReasoning)
-        .filter(
-            StudentExamMathematicalReasoning.student_id == student.id,
-            StudentExamMathematicalReasoning.exam_id == exam.id   # ✅ KEY CHANGE
+            else:
+
+                fixed["options"] = {}
+
+            resolve_option_images(
+                fixed["options"],
+                db,
+                "start-exam-mr"
+            )
+
+            normalized.append(fixed)
+
+        return normalized
+
+    # ==================================================
+    # 5️⃣ Check ACTIVE attempt
+    # ==================================================
+
+    active_attempt = (
+        db.query(
+            StudentExamMathematicalReasoning
         )
-        .order_by(StudentExamMathematicalReasoning.started_at.desc())
+        .filter(
+
+            StudentExamMathematicalReasoning
+            .student_id == student.id,
+
+            StudentExamMathematicalReasoning
+            .exam_id == exam.id,
+
+            StudentExamMathematicalReasoning
+            .completed_at.is_(None)
+
+        )
+        .order_by(
+            StudentExamMathematicalReasoning
+            .started_at.desc()
+        )
         .first()
     )
-    
-    if math_attempt:
-        print("📘 Latest math attempt found")
-        print("   ├─ attempt.id:", math_attempt.id)
-        print("   ├─ started_at:", math_attempt.started_at)
-        print("   └─ completed_at:", math_attempt.completed_at)
-    else:
-        print("📘 No previous math attempts found")
-    # --------------------------------------------------
-    # 🟢 CASE A — COMPLETED math attempt exists → SHOW REPORT
-    # --------------------------------------------------
-    if math_attempt and math_attempt.completed_at is not None:
-        print("✅ Completed math attempt exists → returning completed=true")
-        return {"completed": True}
- 
-    # --------------------------------------------------
-    # 🟡 CASE B — ACTIVE math attempt → RESUME
-    # --------------------------------------------------
-    if math_attempt and math_attempt.completed_at is None:
-        print("⏳ Active math attempt → resuming")
-    
-        # 🔒 DEFENSIVE: ensure response rows exist
+
+    if active_attempt:
+
+        print(
+            f"🧠 Active attempt found | "
+            f"attempt_id={active_attempt.id}"
+        )
+
+        started_at = active_attempt.started_at
+
+        if started_at.tzinfo is None:
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        expires_at = (
+            started_at + MAX_DURATION
+        )
+
+        elapsed = int(
+            (now - started_at)
+            .total_seconds()
+        )
+
+        # ==========================================
+        # TIMEOUT
+        # ==========================================
+
+        if now > expires_at:
+
+            print(
+                "⛔ Attempt expired "
+                "→ auto submit"
+            )
+
+            active_attempt.completed_at = (
+                expires_at
+            )
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        remaining = max(
+            0,
+            40 * 60 - elapsed
+        )
+
+        # ==========================================
+        # REHYDRATE RESPONSES
+        # ==========================================
+
         existing_count = (
-            db.query(StudentExamResponseMathematicalReasoning)
+            db.query(
+                StudentExamResponseMathematicalReasoning
+            )
             .filter(
-                StudentExamResponseMathematicalReasoning.exam_attempt_id == math_attempt.id
+                StudentExamResponseMathematicalReasoning
+                .exam_attempt_id
+                == active_attempt.id
             )
             .count()
         )
-    
+
         if existing_count == 0:
-            print("⚠️ Active attempt has no response rows — rehydrating")
+
+            print(
+                "⚠️ No response rows found "
+                "→ rehydrating"
+            )
+
             for q in exam.questions or []:
+
                 db.add(
+
                     StudentExamResponseMathematicalReasoning(
+
                         student_id=student.id,
+
                         exam_id=exam.id,
-                        exam_attempt_id=math_attempt.id,
+
+                        exam_attempt_id=active_attempt.id,
+
                         q_id=q["q_id"],
+
                         topic=q.get("topic"),
+
                         selected_option=None,
+
                         correct_option=q.get("correct"),
+
                         is_correct=None
                     )
                 )
-            db.commit()
-    
-        started_at = math_attempt.started_at
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-    
-        now = datetime.now(timezone.utc)
-        elapsed = int((now - started_at).total_seconds())
-        remaining = max(0, 40 * 60 - elapsed)
-    
-        print(f"⏱ elapsed={elapsed}s, remaining={remaining}s")
-    
-        if remaining == 0:
-            print("⛔ Time expired → marking completed")
-            math_attempt.completed_at = now
-            db.commit()
-            return {"completed": True}
-    
-        normalized = normalize_questions(exam.questions)
 
-        print("🧪 DEBUG Q5 OPTIONS:", normalized[4]["options"])
-        
+            db.commit()
+
+        normalized_questions = (
+            normalize_questions(
+                exam.questions or []
+            )
+        )
+
         return {
+
             "completed": False,
-            "questions": normalized,
-            "remaining_time": remaining
+
+            "exam_attempt_id":
+                active_attempt.id,
+
+            "questions":
+                jsonable_encoder(
+                    normalized_questions
+                ),
+
+            "remaining_time":
+                remaining
         }
-    
-    # --------------------------------------------------
-    # 🔵 CASE C — NO active attempt → START NEW
-    # --------------------------------------------------
-    print("🆕 No active math attempt → starting new exam")
-    
-    new_attempt = StudentExamMathematicalReasoning(
-        student_id=student.id,
-        exam_id=exam.id,
-        started_at=datetime.now(timezone.utc)
+
+    # ==================================================
+    # 6️⃣ Check COMPLETED attempt
+    # ==================================================
+
+    completed_attempt = (
+        db.query(
+            StudentExamMathematicalReasoning
+        )
+        .filter(
+
+            StudentExamMathematicalReasoning
+            .student_id == student.id,
+
+            StudentExamMathematicalReasoning
+            .exam_id == exam.id,
+
+            StudentExamMathematicalReasoning
+            .completed_at.isnot(None)
+
+        )
+        .first()
     )
-    
+
+    if completed_attempt:
+
+        print(
+            f"🚫 Already completed "
+            f"exam_id={exam.id} | "
+            f"attempt_id="
+            f"{completed_attempt.id}"
+        )
+
+        return {
+
+            "completed": True,
+
+            "exam_attempt_id":
+                completed_attempt.id,
+
+            "message":
+                "Exam already attempted"
+        }
+
+    # ==================================================
+    # 7️⃣ Create NEW attempt
+    # ==================================================
+
+    print("🆕 Creating new attempt")
+
+    normalized_questions = (
+        normalize_questions(
+            exam.questions or []
+        )
+    )
+
+    new_attempt = (
+        StudentExamMathematicalReasoning(
+
+            student_id=student.id,
+
+            exam_id=exam.id,
+
+            started_at=now
+        )
+    )
+
     db.add(new_attempt)
+
     db.commit()
-    
-    print("✅ New math attempt created")
-    print("   ├─ attempt.id:", new_attempt.id)
-    print("   └─ started_at:", new_attempt.started_at)
-    
-    # --------------------------------------------------
-    # 🧱 PRE-CREATE RESPONSE ROWS
-    # --------------------------------------------------
-    print("🧱 Pre-creating response rows")
-    
-    for q in exam.questions or []:
+
+    db.refresh(new_attempt)
+
+    print(
+        f"🆕 New attempt created | "
+        f"attempt_id={new_attempt.id}"
+    )
+
+    # ==================================================
+    # 8️⃣ Pre-create responses
+    # ==================================================
+
+    for q in normalized_questions:
+
         db.add(
+
             StudentExamResponseMathematicalReasoning(
+
                 student_id=student.id,
+
                 exam_id=exam.id,
+
                 exam_attempt_id=new_attempt.id,
-                q_id=q["q_id"],              # ✅ CORRECT
+
+                q_id=q["q_id"],
+
                 topic=q.get("topic"),
+
                 selected_option=None,
+
                 correct_option=q.get("correct"),
+
                 is_correct=None
             )
         )
 
-    
     db.commit()
-    print(
-       "🧱 Response rows created:",
-       db.query(StudentExamResponseMathematicalReasoning)
-         .filter(
-             StudentExamResponseMathematicalReasoning.exam_attempt_id == new_attempt.id
-         )
-         .count()
-   )
-    
-    normalized = normalize_questions(exam.questions)
 
-    print("🧪 DEBUG Q5 OPTIONS:", normalized[4]["options"])
-    
+    print(
+        "🧱 Response rows created:",
+        db.query(
+            StudentExamResponseMathematicalReasoning
+        )
+        .filter(
+            StudentExamResponseMathematicalReasoning
+            .exam_attempt_id
+            == new_attempt.id
+        )
+        .count()
+    )
+
+    # ==================================================
+    # 9️⃣ Response
+    # ==================================================
+
     return {
+
         "completed": False,
-        "questions": normalized,
-        "remaining_time": 40 * 60
+
+        "exam_attempt_id":
+            new_attempt.id,
+
+        "questions":
+            jsonable_encoder(
+                normalized_questions
+            ),
+
+        "remaining_time":
+            40 * 60
     }
 
 
