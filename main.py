@@ -568,6 +568,7 @@ class HomeworkExamOCMathematicalReasoning(Base):
     class_name = Column(String, nullable=False)
     class_year = Column(String, nullable=False)
     subject = Column(String, nullable=False)
+    center_code = Column(String, nullable=False)
     
 
     questions = Column(JSON, nullable=False)
@@ -582,6 +583,7 @@ class HomeworkQuiz_OC_MR(Base):
     class_name = Column(String, nullable=False)   # "oc"
     class_year = Column(String, nullable=False)   # "Year 5"
     subject = Column(String, nullable=False)      # "mathematical_reasoning"
+    center_code = Column(String, nullable=False)
     
 
     num_topics = Column(Integer, nullable=False)
@@ -607,6 +609,7 @@ class QuizCreate_OC_MR_Homework(BaseModel):
     class_name: str
     class_year: str
     subject: str
+    center_code: str
     difficulty: str
     num_topics: int
     topics: List[TopicCreate]
@@ -620,6 +623,7 @@ class HomeworkExamOCThinkingSkills(Base):
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
+    center_code = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
 
     difficulty = Column(String, nullable=False)
@@ -699,6 +703,7 @@ class HomeworkQuizCreateOC_TS(BaseModel):
     class_name: str
     class_year: str  # ✅ REQUIRED
     subject: str
+    center_code: str
     difficulty: str
     num_topics: int
     topics: List[TopicConfig]
@@ -3841,6 +3846,7 @@ class QuizCreateOC_TS(BaseModel):
     class_name: str
     class_year: str   # ✅ ADD THIS
     subject: str    
+    center_code: str
     difficulty: str
     num_topics: int
     topics: List[TopicInput]
@@ -3849,6 +3855,7 @@ class QuizCreate_OC_MR(BaseModel):
     class_name: str
     subject: str
     class_year: Union[int, str]  # ✅ supports both "Year 4" and 4
+    center_code: str
     difficulty: str
     num_topics: int
     topics: List[TopicInput]
@@ -3878,6 +3885,7 @@ class HomeworkQuizOC_TS(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     class_year = Column(Integer, nullable=False)
+    center_code = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
 
     num_topics = Column(Integer, nullable=False)
@@ -7788,346 +7796,195 @@ def get_available_oc_reading_batches(
             detail="Failed to fetch batch ids"
         )
         
-@app.post("/api/exams/generate-oc-thinking-skills-homework-latest")
-def generate_oc_thinking_skills_homework_exam_latest(
-    payload: dict = Body(...),
-    db: Session = Depends(get_db)
-):
-    """
-    Generate OC Thinking Skills Homework Exam
-    using ALL questions uploaded on
-    selected date + batch id.
-    """
 
-    print(
-        "\n🚀 GENERATE OC THINKING "
-        "SKILLS HOMEWORK (BATCH MODE)\n"
-    )
 
-    payload = payload or {}
-
-    # --------------------------------------------------
-    # 1️⃣ Constants
-    # --------------------------------------------------
-    CLASS_DB = "oc"
-    SUBJECT_DB = "thinking skills"
-
-    CLASS_EXAM = "oc"
-    SUBJECT_EXAM = "thinking_skills"
-
-    # --------------------------------------------------
-    # 2️⃣ Validate payload
-    # --------------------------------------------------
-    class_year = payload.get("class_year")
-
-    selected_date = payload.get("selected_date")
-
-    batch_id = payload.get("batch_id")
-
-    if not class_year:
-        raise HTTPException(
-            status_code=400,
-            detail="class_year is required"
-        )
-
-    if not selected_date:
-        raise HTTPException(
-            status_code=400,
-            detail="selected_date is required"
-        )
-
-    if not batch_id:
-        raise HTTPException(
-            status_code=400,
-            detail="batch_id is required"
-        )
-
-    try:
-        class_year_int = int(class_year)
-
-    except:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid class_year"
-        )
-
-    print(f"🎓 Class Year: {class_year_int}")
-
-    print(f"📅 Selected Date: {selected_date}")
-
-    print(f"📦 Batch ID: {batch_id}")
-
-    # --------------------------------------------------
-    # 3️⃣ Fetch Questions
-    # --------------------------------------------------
-    rows = (
-        db.query(Question)
-        .filter(
-
-            func.lower(
-                func.trim(Question.class_name)
-            ) == CLASS_DB,
-
-            func.lower(
-                func.trim(Question.subject)
-            ) == SUBJECT_DB,
-
-            Question.class_year == class_year_int,
-
-            # selected upload date
-            func.date(
-                Question.created_at
-            ) == selected_date,
-
-            # selected upload batch
-            Question.batch_id == batch_id,
-
-            # only unused questions
-            Question.is_used == False
-
-        )
-        .order_by(Question.id.asc())
-        .all()
-    )
-
-    if not rows:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "No questions found for selected "
-                "date and batch"
-            )
-        )
-
-    print(f"🧠 Fetched {len(rows)} questions")
-
-    # --------------------------------------------------
-    # 4️⃣ Build Questions
-    # --------------------------------------------------
-    questions = []
-
-    q_id = 1
-
-    for row in rows:
-
-        blocks = row.question_blocks or []
-
-        # fallback text
-        if not blocks and row.question_text:
-
-            blocks = [{
-                "type": "text",
-                "content": row.question_text
-            }]
-
-        # safely include images
-        existing_image_srcs = {
-            block.get("src")
-            for block in blocks
-            if block.get("type") == "image"
-        }
-
-        for image_src in row.images or []:
-
-            if image_src not in existing_image_srcs:
-
-                blocks.append({
-                    "type": "image",
-                    "src": image_src
-                })
-
-        questions.append({
-            "id": row.id,
-
-            "q_id": q_id,
-
-            "topic": row.topic,
-
-            "batch_id": row.batch_id,
-
-            "blocks": blocks,
-
-            "options": row.options,
-
-            "correct": row.correct_answer
-        })
-
-        q_id += 1
-
-    print(f"📦 Built {len(questions)} questions")
-
-    # --------------------------------------------------
-    # 5️⃣ Mark questions as used
-    # --------------------------------------------------
-    used_ids = [
-        q.get("id")
-        for q in questions
-        if q.get("id")
-    ]
-
-    if used_ids:
-
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
-        )
-
-        print(
-            f"🏷️ Marked {len(used_ids)} "
-            f"questions as used"
-        )
-
-    # --------------------------------------------------
-    # 6️⃣ Save exam
-    # --------------------------------------------------
-    new_exam = HomeworkExamOCThinkingSkills(
-        quiz_id=None,
-
-        class_name=CLASS_EXAM,
-
-        subject=SUBJECT_EXAM,
-
-        difficulty="mixed",
-
-        class_year=class_year_int,
-
-        questions=questions
-    )
-
-    db.add(new_exam)
-
-    db.commit()
-
-    db.refresh(new_exam)
-
-    print(
-        f"💾 Saved homework exam "
-        f"ID={new_exam.id}"
-    )
-
-    # --------------------------------------------------
-    # 7️⃣ Response
-    # --------------------------------------------------
-    return {
-        "message": (
-            "OC Thinking Skills latest "
-            "homework exam generated successfully"
-        ),
-
-        "exam_id": new_exam.id,
-
-        "quiz_id": None,
-
-        "batch_id": batch_id,
-
-        "class_name": CLASS_EXAM,
-
-        "class_year": class_year_int,
-
-        "subject": SUBJECT_EXAM,
-
-        "difficulty": "mixed",
-
-        "selected_date": selected_date,
-
-        "total_questions": len(questions),
-
-        "questions": questions
-    }
-
-
-# ai_engine.py (for example)
-def generate_exam_questions(
+# ai_engine.py (for example)def generate_exam_questions
+def generate_exam_questions_oc_thinking_skills(
     quiz,
     db,
+    center_id,
     only_unused=False
 ):
-    print("\n🚀 GENERATE EXAM (NEW STRUCTURE)\n")
+    print("\n🚀 GENERATE EXAM (CENTER AWARE)\n")
 
     all_questions = []
+
     q_id = 1
 
     SUBJECT_DB = "Thinking Skills"
+
     CLASS_DB = "OC"
 
+    # ==========================================
+    # USED QUESTIONS FOR THIS CENTER
+    # ==========================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center_id
+        )
+        .subquery()
+    )
+
+    # ==========================================
+    # LOOP TOPICS
+    # ==========================================
+
     for topic in quiz.topics:
+
         topic_name = topic.get("name")
 
         print(f"\n📘 Topic: {topic_name}")
 
-        # 🔥 LOOP THROUGH DIFFICULTIES
+        # ==========================================
+        # LOOP DIFFICULTIES
+        # ==========================================
+
         for level in ["easy", "medium", "hard"]:
+
             level_data = topic.get(level, {})
 
             if not level_data.get("enabled"):
+
                 continue
 
-            ai_count = int(level_data.get("ai", 0))
-            db_count = int(level_data.get("db", 0))
+            ai_count = int(
+                level_data.get("ai", 0)
+            )
 
-            print(f"➡ {level.upper()} | DB={db_count} | AI={ai_count}")
+            db_count = int(
+                level_data.get("db", 0)
+            )
 
-            # --------------------------------------------------
-            # 1️⃣ DB QUERY (WITH DIFFICULTY)
-            # --------------------------------------------------
+            print(
+                f"➡ {level.upper()} | "
+                f"DB={db_count} | "
+                f"AI={ai_count}"
+            )
+
+            # ==========================================
+            # DB QUERY
+            # ==========================================
+
             query = (
                 db.query(Question)
                 .filter(
-                    func.lower(Question.class_name) == CLASS_DB.lower(),
-                    func.lower(Question.subject) == SUBJECT_DB.lower(),
-                    Question.class_year == quiz.class_year,
-                    func.lower(Question.topic) == topic_name.lower(),
-                    func.lower(Question.difficulty) == level
+
+                    func.lower(
+                        func.trim(
+                            Question.class_name
+                        )
+                    ) == CLASS_DB.lower(),
+
+                    func.lower(
+                        func.trim(
+                            Question.subject
+                        )
+                    ) == SUBJECT_DB.lower(),
+
+                    Question.class_year
+                    == quiz.class_year,
+
+                    func.lower(
+                        func.trim(
+                            Question.topic
+                        )
+                    ) == topic_name.lower(),
+
+                    func.lower(
+                        func.trim(
+                            Question.difficulty
+                        )
+                    ) == level
+
                 )
             )
 
+            # ==========================================
+            # EXCLUDE USED QUESTIONS
+            # FOR THIS CENTER
+            # ==========================================
+
             if only_unused:
-                query = query.filter(Question.is_used == False)
+
+                query = query.filter(
+                    ~Question.id.in_(
+                        used_question_ids
+                    )
+                )
 
             available = query.count()
 
-            print(f"   Available DB: {available}")
+            print(
+                f"   Available DB: {available}"
+            )
 
             if available < db_count:
+
                 raise HTTPException(
+
                     status_code=400,
-                    detail=f"Not enough {level} DB questions for {topic_name}"
+
+                    detail=(
+                        f"Not enough {level} "
+                        f"DB questions for "
+                        f"{topic_name}"
+                    )
                 )
 
-            # --------------------------------------------------
-            # 2️⃣ FETCH DB QUESTIONS
-            # --------------------------------------------------
+            # ==========================================
+            # FETCH DB QUESTIONS
+            # ==========================================
+
             db_questions = (
-                query.order_by(func.random())
+                query
+                .order_by(func.random())
                 .limit(db_count)
                 .all()
             )
 
             for q in db_questions:
+
                 blocks = q.question_blocks or []
 
                 all_questions.append({
+
                     "id": q.id,
+
                     "q_id": q_id,
+
                     "topic": topic_name,
+
                     "difficulty": level,
+
                     "blocks": blocks,
+
                     "options": q.options,
+
                     "correct": q.correct_answer
+
                 })
 
                 q_id += 1
 
-            # --------------------------------------------------
-            # 3️⃣ AI GENERATION
-            # --------------------------------------------------
-            if ai_count > 0:
-                print(f"   🤖 Generating {ai_count} AI questions")
+            # ==========================================
+            # AI GENERATION
+            # ==========================================
 
-                location = db.query(FranchiseLocation).first()
+            if ai_count > 0:
+
+                print(
+                    f"   🤖 Generating "
+                    f"{ai_count} AI questions"
+                )
+
+                location = (
+                    db.query(
+                        FranchiseLocation
+                    )
+                    .first()
+                )
 
                 prompt = f"""
 Generate {ai_count} {level} difficulty MCQs.
@@ -8140,164 +7997,401 @@ Return JSON only:
 [{{"question":"...","options":["A","B","C","D"],"correct":"A"}}]
 """
 
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "system", "content": prompt}],
-                    temperature=0.4
+                response = (
+                    client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": prompt
+                            }
+                        ],
+                        temperature=0.4
+                    )
                 )
 
-                data = json.loads(response.choices[0].message.content)
+                data = json.loads(
+                    response
+                    .choices[0]
+                    .message
+                    .content
+                )
 
                 for item in data:
+
                     all_questions.append({
+
                         "q_id": q_id,
+
                         "topic": topic_name,
+
                         "difficulty": level,
-                        "blocks": [{"type": "text", "content": item["question"]}],
+
+                        "blocks": [
+                            {
+                                "type": "text",
+                                "content": item["question"]
+                            }
+                        ],
+
                         "options": item["options"],
+
                         "correct": item["correct"]
+
                     })
 
                     q_id += 1
 
-    print(f"\n✅ TOTAL GENERATED: {len(all_questions)}\n")
+    print(
+        f"\n✅ TOTAL GENERATED: "
+        f"{len(all_questions)}\n"
+    )
 
     return all_questions
 
 def generate_exam_questions_oc_mr(
     quiz,
     db,
+    center_id,
     only_unused=False
 ):
-    print("\n===================== GENERATE EXAM START =====================\n")
+    print(
+        "\n===================== "
+        "GENERATE EXAM START "
+        "=====================\n"
+    )
 
     all_questions = []
+
     q_id = 1
 
-    CLASS_DB = quiz.class_name.strip().lower()
-    SUBJECT_DB = "mathematical reasoning"
+    CLASS_DB = (
+        quiz.class_name
+        .strip()
+        .lower()
+    )
+
+    SUBJECT_DB = (
+        "mathematical reasoning"
+    )
+
+    # ==========================================
+    # USED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
+    used_question_ids = (
+        db.query(
+            QuestionUsage.question_id
+        )
+        .filter(
+            QuestionUsage.center_id
+            == center_id
+        )
+        .subquery()
+    )
+
+    # ==========================================
+    # LOOP TOPICS
+    # ==========================================
 
     for topic in quiz.topics:
 
         topic_name = topic.get("name")
 
-        print(f"\n🎯 Topic: {topic_name}")
+        print(
+            f"\n🎯 Topic: "
+            f"{topic_name}"
+        )
 
-        for level in ["easy", "medium", "hard"]:
+        for level in [
+
+            "easy",
+
+            "medium",
+
+            "hard"
+
+        ]:
 
             config = topic.get(level)
 
-            if not config or not config.get("enabled"):
+            if (
+                not config
+                or not config.get("enabled")
+            ):
+
                 continue
 
-            db_count = int(config.get("db", 0))
-            ai_count = int(config.get("ai", 0))
+            db_count = int(
+                config.get("db", 0)
+            )
 
-            print(f"\n➡ {level.upper()} → DB: {db_count}, AI: {ai_count}")
+            ai_count = int(
+                config.get("ai", 0)
+            )
 
-            # --------------------------------------------------
-            # DB QUERY WITH DIFFICULTY
-            # --------------------------------------------------
+            print(
+                f"\n➡ {level.upper()} "
+                f"→ DB: {db_count}, "
+                f"AI: {ai_count}"
+            )
+
+            # ==========================================
+            # DB QUERY
+            # ==========================================
+
             query = (
                 db.query(Question)
                 .filter(
-                    func.lower(func.trim(Question.class_name)) == CLASS_DB,
-                    func.lower(func.trim(Question.subject)) == SUBJECT_DB,
-                    Question.class_year == quiz.class_year,
-                    func.lower(func.trim(Question.topic)) == topic_name.lower(),
-                    func.lower(func.trim(Question.difficulty)) == level
+
+                    func.lower(
+                        func.trim(
+                            Question.class_name
+                        )
+                    ) == CLASS_DB,
+
+                    func.lower(
+                        func.trim(
+                            Question.subject
+                        )
+                    ) == SUBJECT_DB,
+
+                    Question.class_year
+                    == quiz.class_year,
+
+                    func.lower(
+                        func.trim(
+                            Question.topic
+                        )
+                    ) == topic_name.lower(),
+
+                    func.lower(
+                        func.trim(
+                            Question.difficulty
+                        )
+                    ) == level
+
                 )
             )
 
+            # ==========================================
+            # EXCLUDE USED QUESTIONS
+            # FOR THIS CENTER
+            # ==========================================
+
             if only_unused:
-                query = query.filter(Question.is_used == False)
+
+                query = query.filter(
+
+                    ~Question.id.in_(
+                        used_question_ids
+                    )
+
+                )
 
             available = query.count()
 
-            print(f"[DB AVAILABLE] {available}")
+            print(
+                f"[DB AVAILABLE] "
+                f"{available}"
+            )
 
             if available < db_count:
+
                 raise HTTPException(
+
                     status_code=400,
+
                     detail=(
-                        f"Not enough DB questions for "
-                        f"{topic_name} - {level}. "
-                        f"Required {db_count}, Available {available}"
+
+                        f"Not enough DB "
+                        f"questions for "
+                        f"{topic_name} - "
+                        f"{level}. "
+
+                        f"Required "
+                        f"{db_count}, "
+
+                        f"Available "
+                        f"{available}"
+
                     )
                 )
 
-            # --------------------------------------------------
-            # FETCH RANDOM DB QUESTIONS
-            # --------------------------------------------------
+            # ==========================================
+            # FETCH RANDOM QUESTIONS
+            # ==========================================
+
             db_questions = (
-                query.order_by(func.random())
+                query
+                .order_by(func.random())
                 .limit(db_count)
                 .all()
             )
 
             for row in db_questions:
 
-                blocks = row.question_blocks or []
+                blocks = (
+                    row.question_blocks
+                    or []
+                )
 
-                if not blocks and row.question_text:
-                    blocks = [{"type": "text", "content": row.question_text}]
+                if (
+                    not blocks
+                    and row.question_text
+                ):
+
+                    blocks = [
+
+                        {
+
+                            "type": "text",
+
+                            "content":
+                                row.question_text
+
+                        }
+
+                    ]
 
                 for img in row.images or []:
-                    blocks.append({"type": "image", "src": img})
+
+                    blocks.append({
+
+                        "type": "image",
+
+                        "src": img
+
+                    })
 
                 all_questions.append({
+
                     "id": row.id,
+
                     "q_id": q_id,
+
                     "topic": topic_name,
-                    "difficulty": level,   # ✅ NEW
+
+                    "difficulty": level,
+
                     "blocks": blocks,
+
                     "options": row.options,
+
                     "correct": row.correct_answer
+
                 })
 
                 q_id += 1
 
-            # --------------------------------------------------
+            # ==========================================
             # AI GENERATION
-            # --------------------------------------------------
-            if ai_count > 0:
-                print(f"[AI GEN] {ai_count} for {topic_name} ({level})")
+            # ==========================================
 
-                location = db.query(FranchiseLocation).first()
+            if ai_count > 0:
+
+                print(
+                    f"[AI GEN] "
+                    f"{ai_count} for "
+                    f"{topic_name} "
+                    f"({level})"
+                )
+
+                location = (
+                    db.query(
+                        FranchiseLocation
+                    )
+                    .first()
+                )
 
                 system_prompt = (
-                    f"Generate exactly {ai_count} MCQs.\n"
+
+                    f"Generate exactly "
+                    f"{ai_count} MCQs.\n"
+
                     f"Topic: {topic_name}\n"
+
                     f"Difficulty: {level}\n"
+
                     "Return JSON array only."
+
                 )
 
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "system", "content": system_prompt}],
-                    temperature=0.4
+                response = (
+                    client.chat.completions.create(
+
+                        model="gpt-4o-mini",
+
+                        messages=[
+
+                            {
+                                "role": "system",
+                                "content": system_prompt
+                            }
+
+                        ],
+
+                        temperature=0.4
+
+                    )
                 )
 
-                data = json.loads(response.choices[0].message.content)
+                data = json.loads(
+
+                    response
+                    .choices[0]
+                    .message
+                    .content
+
+                )
 
                 if len(data) != ai_count:
+
                     raise HTTPException(
+
                         500,
-                        f"AI count mismatch for {topic_name}-{level}"
+
+                        f"AI count mismatch "
+                        f"for {topic_name}"
+                        f"-{level}"
+
                     )
 
                 for item in data:
+
                     all_questions.append({
+
                         "q_id": q_id,
+
                         "topic": topic_name,
+
                         "difficulty": level,
-                        "blocks": [{"type": "text", "content": item["question"]}],
-                        "options": item["options"],
-                        "correct": item["correct"]
+
+                        "blocks": [
+
+                            {
+                                "type": "text",
+                                "content":
+                                    item["question"]
+                            }
+
+                        ],
+
+                        "options":
+                            item["options"],
+
+                        "correct":
+                            item["correct"]
+
                     })
+
                     q_id += 1
 
-    print(f"\n✅ TOTAL GENERATED: {len(all_questions)}\n")
+    print(
+        f"\n✅ TOTAL GENERATED: "
+        f"{len(all_questions)}\n"
+    )
 
     return all_questions
 
@@ -9997,51 +10091,175 @@ def reset_used_questions_oc_mr(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n🔄 RESET USED QUESTIONS (OC MR)")
+    print(
+        "\n🔄 RESET USED QUESTIONS (OC MR)"
+    )
 
-    raw_class_year = payload.get("class_year")
+    raw_class_year = payload.get(
+        "class_year"
+    )
+
+    center_code = payload.get(
+        "center_code"
+    )
 
     if not raw_class_year:
-        raise HTTPException(400, "class_year is required")
 
-    # --------------------------------------------------
-    # Normalize class_year
-    # --------------------------------------------------
-    try:
-        if isinstance(raw_class_year, str):
-            class_year = int(raw_class_year.strip().split()[-1])
-        else:
-            class_year = int(raw_class_year)
-    except:
-        raise HTTPException(400, f"Invalid class_year: {raw_class_year}")
-
-    print("➡️ Parsed class_year:", class_year)
-
-    # --------------------------------------------------
-    # Perform update
-    # --------------------------------------------------
-    updated_rows = (
-        db.query(Question)
-        .filter(
-            func.lower(func.trim(Question.class_name)) == "oc",
-            func.lower(func.trim(Question.subject)) == "mathematical reasoning",
-            Question.class_year == class_year,
-            Question.is_used == True
+        raise HTTPException(
+            400,
+            "class_year is required"
         )
-        .update(
-            {Question.is_used: False},
+
+    if not center_code:
+
+        raise HTTPException(
+            400,
+            "center_code is required"
+        )
+
+    # ==========================================
+    # NORMALIZE CLASS YEAR
+    # ==========================================
+
+    try:
+
+        if isinstance(
+            raw_class_year,
+            str
+        ):
+
+            class_year = int(
+
+                raw_class_year
+                .strip()
+                .split()[-1]
+
+            )
+
+        else:
+
+            class_year = int(
+                raw_class_year
+            )
+
+    except:
+
+        raise HTTPException(
+
+            400,
+
+            f"Invalid class_year: "
+            f"{raw_class_year}"
+
+        )
+
+    print(
+        "➡️ Parsed class_year:",
+        class_year
+    )
+
+    print(
+        "🏫 center_code:",
+        center_code
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            404,
+            "Center not found"
+        )
+
+    # ==========================================
+    # FIND QUESTION IDS
+    # ==========================================
+
+    question_ids = (
+
+        db.query(Question.id)
+
+        .filter(
+
+            func.lower(
+                func.trim(
+                    Question.class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.trim(
+                    Question.subject
+                )
+            ) == "mathematical reasoning",
+
+            Question.class_year
+            == class_year
+
+        )
+
+        .subquery()
+
+    )
+
+    # ==========================================
+    # DELETE QUESTION USAGE
+    # ==========================================
+
+    deleted_rows = (
+        db.query(QuestionUsage)
+        .filter(
+
+            QuestionUsage.center_id
+            == center.id,
+
+            QuestionUsage.question_id.in_(
+                question_ids
+            )
+
+        )
+        .delete(
             synchronize_session=False
         )
     )
 
     db.commit()
 
-    print(f"✅ Reset {updated_rows} questions")
+    print(
+        f"✅ Reset "
+        f"{deleted_rows} questions"
+    )
 
     return {
-        "message": f"{updated_rows} questions reset for OC MR (Year {class_year})",
-        "class_year": class_year,
-        "reset_count": updated_rows
+
+        "message": (
+            f"{deleted_rows} questions "
+            f"reset for OC MR "
+            f"(Year {class_year})"
+        ),
+
+        "class_year":
+            class_year,
+
+        "center_code":
+            center_code,
+
+        "reset_count":
+            deleted_rows
+
     }
 
 @app.post("/api/admin/reset-used-reading-questions")
@@ -10516,6 +10734,7 @@ def get_question_count(
     print("Result:", result)
 
     return result
+
 @app.get("/api/exams/writing/review-by-attempt")
 def get_writing_review_by_attempt(
     attempt_id: int,
@@ -25332,40 +25551,97 @@ def get_question_bank_thinking_skills(
 
 @app.get("/api/admin/question-bank-oc-thinking-skills")
 def get_question_bank_oc_thinking_skills(
-    class_name: str = Query("oc"),
-    class_year: str = Query(...),
-    subject: str = Query("thinking skills"),
+    class_name: str,
+    subject: str,
+    class_year: int,
+    center_code: str,
     db: Session = Depends(get_db)
 ):
-    print("\n" + "=" * 70)
-    print("🚀 [QUESTION BANK FETCH STARTED]")
+    """
+    Returns OC Thinking Skills question bank
+    grouped by difficulty + topic.
 
-    # --------------------------------------------------
-    # 1️⃣ RAW INPUTS
-    # --------------------------------------------------
-    print("📥 RAW INPUTS:")
-    print(f"   class_name = '{class_name}'")
-    print(f"   class_year = '{class_year}'")
-    print(f"   subject    = '{subject}'")
+    Only questions NOT already used
+    by this center are included.
+    """
 
-    # --------------------------------------------------
-    # 2️⃣ NORMALIZATION
-    # --------------------------------------------------
-    normalized_class_name = class_name.strip().lower()
-    normalized_subject = (
-        subject.replace("_", " ")
-        .strip()
-        .lower()
+    print(
+        f"📚 Fetching OC Thinking Skills Question Bank | "
+        f"Class: {class_name} | "
+        f"Subject: {subject} | "
+        f"Year: {class_year} | "
+        f"Center: {center_code}"
     )
 
-    try:
-        class_year_int = int(class_year)
-    except Exception:
-        return []
+    # ==========================================
+    # NORMALIZE SUBJECTS
+    # ==========================================
 
-    # --------------------------------------------------
-    # 3️⃣ MAIN QUERY (unused only)
-    # --------------------------------------------------
+    subject_map = {
+        "thinking_skills": "Thinking Skills",
+        "mathematical_reasoning": "Mathematical Reasoning",
+        "reading": "Reading",
+        "writing": "Writing",
+    }
+
+    # ==========================================
+    # NORMALIZE CLASS NAMES
+    # ==========================================
+
+    class_map = {
+        "selective": "Selective",
+        "oc": "OC",
+    }
+
+    # ==========================================
+    # SAFE NORMALIZATION
+    # ==========================================
+
+    db_subject = subject_map.get(
+        subject.lower(),
+        subject
+    )
+
+    db_class = class_map.get(
+        class_name.lower(),
+        class_name
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(center_code)
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==========================================
+    # QUESTIONS ALREADY USED
+    # ==========================================
+
+    used_question_ids = (
+        db.query(QuestionUsage.question_id)
+        .filter(
+            QuestionUsage.center_id == center.id
+        )
+        .subquery()
+    )
+
+    # ==========================================
+    # MAIN QUERY
+    # ==========================================
+
     results = (
         db.query(
             Question.difficulty,
@@ -25373,19 +25649,23 @@ def get_question_bank_oc_thinking_skills(
             func.count(Question.id).label("total_questions")
         )
         .filter(
-            func.lower(Question.class_name)
-            == normalized_class_name,
 
-            func.lower(Question.subject)
-            == normalized_subject,
+            func.lower(
+                func.trim(Question.class_name)
+            ) == db_class.lower(),
 
-            Question.class_year
-            == class_year_int,
+            func.lower(
+                func.trim(Question.subject)
+            ) == db_subject.lower(),
 
-            Question.is_used == False,
+            Question.class_year == class_year,
+
+            ~Question.id.in_(used_question_ids),
 
             Question.topic.isnot(None),
-            Question.topic != ""
+
+            func.trim(Question.topic) != ""
+
         )
         .group_by(
             Question.difficulty,
@@ -25398,13 +25678,24 @@ def get_question_bank_oc_thinking_skills(
         .all()
     )
 
-    print(
-        f"📦 Query returned {len(results)} grouped rows"
-    )
+    # ==========================================
+    # DEBUG LOGS
+    # ==========================================
 
-    # --------------------------------------------------
-    # 4️⃣ RESPONSE
-    # --------------------------------------------------
+    print("📚 QUESTION BANK RESULTS")
+
+    for row in results:
+
+        print(
+            row.difficulty,
+            row.topic,
+            row.total_questions
+        )
+
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return [
         {
             "difficulty": row.difficulty,
@@ -25412,60 +25703,201 @@ def get_question_bank_oc_thinking_skills(
             "total_questions": row.total_questions
         }
         for row in results
-    ] 
-
+    ]
 
 @app.get("/api/admin/question-bank-oc-mathematical-reasoning")
 def get_question_bank_oc_mathematical_reasoning(
-    class_year: str = Query(...),
+    class_name: str,
+    subject: str,
+    class_year: str,
+    center_code: str,
     db: Session = Depends(get_db)
 ):
-    print("\n================ QUESTION BANK OC MR =================")
-    print(f"📥 Raw incoming class_year = '{class_year}'")
+    """
+    Returns OC Mathematical Reasoning
+    question bank grouped by:
 
-    # --------------------------------------------------
-    # 1️⃣ Parse "Year 4" -> 4
-    # --------------------------------------------------
+    - difficulty
+    - topic
+
+    Only UNUSED questions for THIS center
+    are returned.
+
+    Uses QuestionUsage instead of
+    Question.is_used.
+    """
+
+    print(
+        "\n================ QUESTION BANK OC MR ================="
+    )
+
+    print(f"📥 class_name = '{class_name}'")
+
+    print(f"📥 subject = '{subject}'")
+
+    print(f"📥 class_year = '{class_year}'")
+
+    print(f"📥 center_code = '{center_code}'")
+
+    # ==========================================
+    # NORMALIZE SUBJECTS
+    # ==========================================
+
+    subject_map = {
+
+        "thinking_skills":
+            "Thinking Skills",
+
+        "mathematical_reasoning":
+            "Mathematical Reasoning",
+
+        "reading":
+            "Reading",
+
+        "writing":
+            "Writing",
+
+    }
+
+    # ==========================================
+    # NORMALIZE CLASS NAMES
+    # ==========================================
+
+    class_map = {
+
+        "selective":
+            "Selective",
+
+        "oc":
+            "OC",
+
+    }
+
+    # ==========================================
+    # SAFE NORMALIZATION
+    # ==========================================
+
+    db_subject = subject_map.get(
+
+        subject.lower(),
+
+        subject
+
+    )
+
+    db_class = class_map.get(
+
+        class_name.lower(),
+
+        class_name
+
+    )
+
+    # ==========================================
+    # PARSE CLASS YEAR
+    # ==========================================
+
     try:
+
         parsed_year = int(
-            class_year.strip().split()[-1]
+            str(class_year).strip()
         )
+
     except Exception as error:
+
         print(
             f"❌ Failed to parse class_year: "
             f"{error}"
         )
 
-        return {
-            "error": "Invalid class_year format"
-        }
+        raise HTTPException(
 
-    print(f"✅ Parsed class_year = {parsed_year}")
+            status_code=400,
 
-    # --------------------------------------------------
-    # 2️⃣ Count AFTER filters
-    # --------------------------------------------------
+            detail="Invalid class_year format"
+
+        )
+
+    print(
+        f"✅ Parsed class_year = "
+        f"{parsed_year}"
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"🏫 Center ID = {center.id}"
+    )
+
+    # ==========================================
+    # USED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
+    used_question_ids = (
+        db.query(
+            QuestionUsage.question_id
+        )
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .subquery()
+    )
+
+    # ==========================================
+    # COUNT AFTER FILTERS
+    # ==========================================
+
     filtered_count = (
         db.query(Question)
         .filter(
+
             func.lower(
                 func.trim(
                     Question.class_name
                 )
-            ) == "oc",
+            ) == db_class.lower(),
 
             func.lower(
                 func.trim(
                     Question.subject
                 )
-            ) == "mathematical reasoning",
+            ) == db_subject.lower(),
 
-            Question.class_year == parsed_year,
+            Question.class_year
+            == parsed_year,
 
-            Question.is_used == False,
+            # exclude used questions
+            ~Question.id.in_(
+                used_question_ids
+            ),
 
             Question.topic.isnot(None),
-            Question.topic != ""
+
+            func.trim(
+                Question.topic
+            ) != ""
+
         )
         .count()
     )
@@ -25475,44 +25907,67 @@ def get_question_bank_oc_mathematical_reasoning(
         f"{filtered_count}"
     )
 
-    # --------------------------------------------------
-    # 3️⃣ Fetch grouped results
-    # --------------------------------------------------
+    # ==========================================
+    # FETCH GROUPED RESULTS
+    # ==========================================
+
     results = (
         db.query(
+
             Question.difficulty,
+
             Question.topic,
+
             func.count(
                 Question.id
-            ).label("total_questions")
+            ).label(
+                "total_questions"
+            )
+
         )
         .filter(
+
             func.lower(
                 func.trim(
                     Question.class_name
                 )
-            ) == "oc",
+            ) == db_class.lower(),
 
             func.lower(
                 func.trim(
                     Question.subject
                 )
-            ) == "mathematical reasoning",
+            ) == db_subject.lower(),
 
-            Question.class_year == parsed_year,
+            Question.class_year
+            == parsed_year,
 
-            Question.is_used == False,
+            # exclude used questions
+            # for THIS center
+            ~Question.id.in_(
+                used_question_ids
+            ),
 
             Question.topic.isnot(None),
-            Question.topic != ""
+
+            func.trim(
+                Question.topic
+            ) != ""
+
         )
         .group_by(
+
             Question.difficulty,
+
             Question.topic
+
         )
         .order_by(
+
             Question.difficulty,
+
             Question.topic
+
         )
         .all()
     )
@@ -25523,6 +25978,7 @@ def get_question_bank_oc_mathematical_reasoning(
     )
 
     for row in results[:10]:
+
         print(
             f"➡️ {row.difficulty} | "
             f"{row.topic} | "
@@ -25533,14 +25989,29 @@ def get_question_bank_oc_mathematical_reasoning(
         "=====================================================\n"
     )
 
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return [
+
         {
-            "difficulty": row.difficulty,
-            "topic": row.topic,
-            "total_questions": row.total_questions
+
+            "difficulty":
+                row.difficulty,
+
+            "topic":
+                row.topic,
+
+            "total_questions":
+                row.total_questions
+
         }
+
         for row in results
-    ] 
+
+    ]
+
 def get_attempt_filter(ResponseModel, exam_attempt_id):
     if hasattr(ResponseModel, "exam_attempt_id"):
         return ResponseModel.exam_attempt_id == exam_attempt_id
@@ -29393,147 +29864,369 @@ def generate_oc_thinking_skills_homework_exam_latest(
     db: Session = Depends(get_db)
 ):
     """
-    Generate OC Thinking Skills Homework Exam
-    using ALL questions uploaded on selected date.
+    Generate CENTER-AWARE
+    OC Thinking Skills Homework Exam
+    using ALL questions uploaded
+    on selected date.
+
+    Uses QuestionUsage instead of
+    Question.is_used.
     """
 
-    print("\n🚀 GENERATE OC HOMEWORK THINKING SKILLS EXAM (LATEST)")
+    print(
+        "\n🚀 GENERATE OC HOMEWORK "
+        "THINKING SKILLS EXAM (LATEST)"
+    )
 
-    # 🔹 Constants
+    # ==========================================
+    # CONSTANTS
+    # ==========================================
+
     CLASS_DB = "oc"
+
     SUBJECT_DB = "thinking skills"
 
     CLASS_EXAM = "oc"
+
     SUBJECT_EXAM = "thinking_skills"
 
-    # --------------------------------------------------
-    # 1️⃣ Validate input
-    # --------------------------------------------------
-    class_year = payload.get("class_year")
-    selected_date = payload.get("selected_date")
+    # ==========================================
+    # VALIDATE INPUT
+    # ==========================================
+
+    class_year = payload.get(
+        "class_year"
+    )
+
+    selected_date = payload.get(
+        "selected_date"
+    )
+
+    center_code = payload.get(
+        "center_code"
+    )
 
     if class_year is None:
+
         raise HTTPException(
+
             status_code=400,
+
             detail="class_year is required"
         )
 
     if not selected_date:
+
         raise HTTPException(
+
             status_code=400,
+
             detail="selected_date is required"
         )
 
-    try:
-        class_year_int = int(class_year)
-    except:
+    if not center_code:
+
         raise HTTPException(
+
             status_code=400,
+
+            detail="center_code is required"
+        )
+
+    try:
+
+        class_year_int = int(
+            class_year
+        )
+
+    except:
+
+        raise HTTPException(
+
+            status_code=400,
+
             detail="Invalid class_year"
         )
 
-    print(f"🎓 Generating latest homework exam for class_year={class_year_int}")
-    print(f"📅 Selected Date: {selected_date}")
+    print(
+        f"🎓 Generating latest "
+        f"homework exam for "
+        f"class_year={class_year_int}"
+    )
 
-    # --------------------------------------------------
-    # 2️⃣ Fetch ALL questions uploaded on selected date
-    # --------------------------------------------------
+    print(
+        f"📅 Selected Date: "
+        f"{selected_date}"
+    )
+
+    print(
+        f"🏫 Center Code: "
+        f"{center_code}"
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==========================================
+    # USED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
+    used_question_ids = (
+        db.query(
+            QuestionUsage.question_id
+        )
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .subquery()
+    )
+
+    # ==========================================
+    # FETCH UNUSED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
     questions_from_db = (
         db.query(Question)
         .filter(
-            func.lower(Question.class_name) == CLASS_DB,
-            func.lower(Question.subject) == SUBJECT_DB,
-            Question.class_year == class_year_int,
-            func.date(Question.created_at) == selected_date
+
+            func.lower(
+                func.trim(
+                    Question.class_name
+                )
+            ) == CLASS_DB,
+
+            func.lower(
+                func.trim(
+                    Question.subject
+                )
+            ) == SUBJECT_DB,
+
+            Question.class_year
+            == class_year_int,
+
+            func.date(
+                Question.created_at
+            ) == selected_date,
+
+            # exclude already used
+            # by THIS center
+            ~Question.id.in_(
+                used_question_ids
+            )
+
         )
-        .order_by(Question.created_at.asc())
+        .order_by(
+            Question.created_at.asc()
+        )
         .all()
     )
 
-    print(f"📦 Found {len(questions_from_db)} questions")
+    print(
+        f"📦 Found "
+        f"{len(questions_from_db)} "
+        f"unused questions"
+    )
 
     if not questions_from_db:
+
         raise HTTPException(
+
             status_code=404,
-            detail="No questions found for selected date"
+
+            detail=(
+                "No unused questions "
+                "found for selected date"
+            )
         )
 
-    # --------------------------------------------------
-    # 3️⃣ Build exam question structure
-    # --------------------------------------------------
+    # ==========================================
+    # BUILD QUESTION STRUCTURE
+    # ==========================================
+
     questions = []
 
-    for index, q in enumerate(questions_from_db, start=1):
+    for index, q in enumerate(
+        questions_from_db,
+        start=1
+    ):
 
-        blocks = q.question_blocks or []
+        blocks = (
+            q.question_blocks
+            or []
+        )
 
         questions.append({
+
             "id": q.id,
+
             "q_id": index,
+
             "topic": q.topic,
+
             "difficulty": q.difficulty,
+
             "blocks": blocks,
+
             "options": q.options,
+
             "correct": q.correct_answer
+
         })
 
-    print(f"🧠 Generated {len(questions)} questions")
+    print(
+        f"🧠 Generated "
+        f"{len(questions)} questions"
+    )
 
-    # --------------------------------------------------
-    # 4️⃣ Mark DB questions as used
-    # --------------------------------------------------
+    # ==========================================
+    # STORE QUESTION USAGE
+    # ==========================================
+
     used_ids = [
-        q.get("id") for q in questions if q.get("id")
+
+        q.get("id")
+
+        for q in questions
+
+        if q.get("id")
+
     ]
 
     if used_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
+
+        usage_rows = [
+
+            QuestionUsage(
+
+                question_id=q_id,
+
+                center_id=center.id
+
+            )
+
+            for q_id in used_ids
+
+        ]
+
+        db.add_all(usage_rows)
+
+        print(
+            f"🏷️ Added "
+            f"{len(usage_rows)} "
+            f"QuestionUsage rows"
         )
 
-        print(f"🏷️ Marked {len(used_ids)} questions as used")
-
     else:
-        print("⚠️ No DB question IDs found")
 
-    # --------------------------------------------------
-    # 5️⃣ Save homework exam
-    # --------------------------------------------------
-    new_exam = HomeworkExamOCThinkingSkills(
-        quiz_id=None,   # 🔥 no quiz config used
-        class_name=CLASS_EXAM,
-        subject=SUBJECT_EXAM,
-        difficulty="mixed",
-        class_year=class_year_int,
-        questions=questions
+        print(
+            "⚠️ No DB question IDs found"
+        )
+
+    # ==========================================
+    # SAVE HOMEWORK EXAM
+    # ==========================================
+
+    new_exam = (
+        HomeworkExamOCThinkingSkills(
+
+            quiz_id=None,
+
+            class_name=
+                CLASS_EXAM,
+
+            subject=
+                SUBJECT_EXAM,
+
+            center_code=
+                center_code,
+
+            difficulty=
+                "mixed",
+
+            class_year=
+                class_year_int,
+
+            questions=
+                questions
+
+        )
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"💾 Homework exam saved ID={new_exam.id}")
+    print(
+        f"💾 Homework exam "
+        f"saved ID={new_exam.id}"
+    )
 
-    # --------------------------------------------------
-    # 6️⃣ Response
-    # --------------------------------------------------
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return {
-        "message": "OC Thinking Skills latest homework exam generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": None,
-        "class_name": CLASS_DB,
-        "class_year": class_year_int,
-        "subject": SUBJECT_DB,
-        "difficulty": "mixed",
-        "selected_date": selected_date,
-        "total_questions": len(questions),
-        "questions": questions
-    }
 
+        "message": (
+            "OC Thinking Skills "
+            "latest homework exam "
+            "generated successfully"
+        ),
+
+        "exam_id":
+            new_exam.id,
+
+        "quiz_id":
+            None,
+
+        "center_code":
+            center_code,
+
+        "class_name":
+            CLASS_DB,
+
+        "class_year":
+            class_year_int,
+
+        "subject":
+            SUBJECT_DB,
+
+        "difficulty":
+            "mixed",
+
+        "selected_date":
+            selected_date,
+
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
+
+    }
 @app.post("/api/exams/generate-oc-thinking-skills-latest")
 def generate_oc_thinking_skills_exam_latest(
     payload: Optional[dict] = Body(default=None),
@@ -29783,263 +30476,577 @@ def generate_oc_thinking_skills_homework_exam(
     db: Session = Depends(get_db)
 ):
     """
-    Generate OC Thinking Skills Homework Exam using latest homework config.
-    Uses per-topic difficulty (easy / medium / hard).
+    Generate CENTER-AWARE
+    OC Thinking Skills Homework Exam
+    using latest homework config.
     """
 
-    print("\n🚀 GENERATE OC HOMEWORK THINKING SKILLS EXAM")
+    print(
+        "\n🚀 GENERATE OC HOMEWORK THINKING SKILLS EXAM"
+    )
 
-    # 🔹 Constants
+    # ==========================================
+    # CONSTANTS
+    # ==========================================
+
     CLASS_DB = "oc"
+
     SUBJECT_DB = "thinking_skills"
 
     CLASS_EXAM = "oc"
+
     SUBJECT_EXAM = "thinking_skills"
 
-    # --------------------------------------------------
-    # 1️⃣ Validate input
-    # --------------------------------------------------
-    class_year = payload.get("class_year")
+    # ==========================================
+    # VALIDATE INPUT
+    # ==========================================
+
+    class_year = payload.get(
+        "class_year"
+    )
+
+    center_code = payload.get(
+        "center_code"
+    )
 
     if class_year is None:
-        raise HTTPException(status_code=400, detail="class_year is required")
+
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
 
     try:
-        class_year_int = int(class_year)
+
+        class_year_int = int(
+            class_year
+        )
+
     except:
-        raise HTTPException(status_code=400, detail="Invalid class_year")
 
-    print(f"🎓 Generating homework exam for class_year={class_year_int}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid class_year"
+        )
 
-    # --------------------------------------------------
-    # 2️⃣ Fetch latest homework config
-    # --------------------------------------------------
+    print(
+        f"🎓 Generating homework exam "
+        f"for class_year={class_year_int}"
+    )
+
+    print(
+        f"🏫 Center Code={center_code}"
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==========================================
+    # FETCH LATEST HOMEWORK CONFIG
+    # ==========================================
+
     quiz = (
         db.query(HomeworkQuizOC_TS)
         .filter(
-            func.lower(func.trim(HomeworkQuizOC_TS.class_name)) == CLASS_DB,
-            func.lower(func.trim(HomeworkQuizOC_TS.subject)) == SUBJECT_DB,
-            HomeworkQuizOC_TS.class_year == class_year_int
+
+            func.lower(
+                func.trim(
+                    HomeworkQuizOC_TS.class_name
+                )
+            ) == CLASS_DB,
+
+            func.lower(
+                func.trim(
+                    HomeworkQuizOC_TS.subject
+                )
+            ) == SUBJECT_DB,
+
+            HomeworkQuizOC_TS.class_year
+            == class_year_int,
+
+            HomeworkQuizOC_TS.center_code
+            == center_code
+
         )
-        .order_by(HomeworkQuizOC_TS.id.desc())
+        .order_by(
+            HomeworkQuizOC_TS.id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
+
             status_code=404,
-            detail=f"No OC homework config found for class_year={class_year_int}"
+
+            detail=(
+                f"No OC homework config found "
+                f"for class_year={class_year_int} "
+                f"and center={center_code}"
+            )
         )
 
-    print(f"✅ Using homework config ID={quiz.id}")
+    print(
+        f"✅ Using homework config ID={quiz.id}"
+    )
 
-    # --------------------------------------------------
-    # 3️⃣ Generate questions from config
-    # --------------------------------------------------
+    # ==========================================
+    # GENERATE QUESTIONS
+    # ==========================================
+
     try:
-        questions = generate_exam_questions(
-            quiz,
-            db,
-            only_unused=True   # 🔥 important
+
+        questions = (
+            generate_exam_questions_oc_thinking_skills(
+
+                quiz=quiz,
+
+                db=db,
+
+                center_id=center.id,
+
+                only_unused=True
+
+            )
         )
+
     except Exception as e:
+
         raise HTTPException(
+
             status_code=500,
-            detail=f"Failed to generate homework exam: {str(e)}"
+
+            detail=(
+                f"Failed to generate "
+                f"homework exam: {str(e)}"
+            )
         )
 
     if not questions:
+
         raise HTTPException(
             status_code=500,
             detail="No questions generated"
         )
 
-    print(f"🧠 Generated {len(questions)} questions")
+    print(
+        f"🧠 Generated "
+        f"{len(questions)} questions"
+    )
 
-    # --------------------------------------------------
-    # 4️⃣ Mark DB questions as used
-    # --------------------------------------------------
+    # ==========================================
+    # STORE QUESTION USAGE
+    # ==========================================
+
     used_ids = [
-        q.get("id") for q in questions if q.get("id")
+
+        q.get("id")
+
+        for q in questions
+
+        if q.get("id")
+
     ]
 
     if used_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
+
+        usage_rows = [
+
+            QuestionUsage(
+
+                question_id=q_id,
+
+                center_id=center.id
+
+            )
+
+            for q_id in used_ids
+
+        ]
+
+        db.add_all(usage_rows)
+
+        print(
+            f"🏷️ Added "
+            f"{len(usage_rows)} "
+            f"QuestionUsage rows"
         )
 
-        print(f"🏷️ Marked {len(used_ids)} questions as used")
     else:
-        print("⚠️ No DB question IDs found")
 
-    # --------------------------------------------------
-    # 5️⃣ Save homework exam
-    # --------------------------------------------------
+        print(
+            "⚠️ No DB question IDs found"
+        )
+
+    # ==========================================
+    # SAVE HOMEWORK EXAM
+    # ==========================================
+
     new_exam = HomeworkExamOCThinkingSkills(
+
         quiz_id=quiz.id,
+
         class_name=CLASS_EXAM,
+
         subject=SUBJECT_EXAM,
-        difficulty="mixed",   # 🔥 always mixed now
+
+        center_code=center_code,
+
+        difficulty="mixed",
+
         class_year=class_year_int,
+
         questions=questions
+
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"💾 Homework exam saved ID={new_exam.id}")
+    print(
+        f"💾 Homework exam saved "
+        f"ID={new_exam.id}"
+    )
 
-    # --------------------------------------------------
-    # 6️⃣ Response
-    # --------------------------------------------------
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return {
-        "message": "OC Thinking Skills homework exam generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": quiz.id,
-        "class_name": CLASS_DB,
-        "class_year": class_year_int,
-        "subject": SUBJECT_DB,
-        "difficulty": "mixed",
-        "total_questions": len(questions),
-        "questions": questions
-    }
 
+        "message":
+            "OC Thinking Skills homework exam generated successfully",
+
+        "exam_id": new_exam.id,
+
+        "quiz_id": quiz.id,
+
+        "center_code": center_code,
+
+        "class_name": CLASS_DB,
+
+        "class_year": class_year_int,
+
+        "subject": SUBJECT_DB,
+
+        "difficulty": "mixed",
+
+        "total_questions": len(questions),
+
+        "questions": questions
+
+    }
 @app.post("/api/exams/generate-oc-thinking-skills")
 def generate_oc_thinking_skills_exam(
     payload: Optional[dict] = Body(default=None),
     db: Session = Depends(get_db)
 ):
     """
-    Generate OC Thinking Skills exam using latest stored exam config.
-    Uses per-topic difficulty distribution (easy / medium / hard).
+    Generate CENTER-AWARE
+    OC Thinking Skills exam.
     """
 
-    print("\n🚀 GENERATE OC THINKING SKILLS EXAM")
+    print(
+        "\n🚀 GENERATE OC THINKING SKILLS EXAM"
+    )
 
     payload = payload or {}
 
-    # 🔹 Constants
+    # ==========================================
+    # CONSTANTS
+    # ==========================================
+
     CLASS_DB = "oc"
+
     SUBJECT_DB = "thinking_skills"
 
     CLASS_EXAM = "OC"
+
     SUBJECT_EXAM = "thinking_skills"
 
-    # --------------------------------------------------
-    # 1️⃣ Validate input
-    # --------------------------------------------------
+    # ==========================================
+    # VALIDATE INPUT
+    # ==========================================
+
     class_year = payload.get("class_year")
 
+    center_code = payload.get(
+        "center_code"
+    )
+
     if class_year is None:
-        raise HTTPException(status_code=400, detail="class_year is required")
+
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
 
     try:
+
         class_year_int = int(class_year)
+
     except:
-        raise HTTPException(status_code=400, detail="Invalid class_year")
 
-    print(f"🎓 Generating for class_year={class_year_int}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid class_year"
+        )
 
-    # --------------------------------------------------
-    # 2️⃣ Fetch latest exam config (IMPORTANT)
-    # --------------------------------------------------
+    print(
+        f"🎓 Generating for "
+        f"class_year={class_year_int}"
+    )
+
+    print(
+        f"🏫 Center Code={center_code}"
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==========================================
+    # FETCH LATEST CENTER CONFIG
+    # ==========================================
+
     quiz = (
         db.query(Quiz)
         .filter(
-            func.lower(func.trim(Quiz.class_name)) == CLASS_DB,
-            func.lower(func.trim(Quiz.subject)) == SUBJECT_DB,
-            Quiz.class_year == class_year_int
+
+            func.lower(
+                func.trim(
+                    Quiz.class_name
+                )
+            ) == CLASS_DB,
+
+            func.lower(
+                func.trim(
+                    Quiz.subject
+                )
+            ) == SUBJECT_DB,
+
+            Quiz.class_year
+            == class_year_int,
+
+            Quiz.center_code
+            == center_code
+
         )
-        .order_by(Quiz.id.desc())
+        .order_by(
+            Quiz.id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
+
             status_code=404,
-            detail=f"No OC Thinking Skills config found for class_year={class_year_int}"
+
+            detail=(
+                f"No OC Thinking Skills "
+                f"config found for "
+                f"class_year={class_year_int} "
+                f"and center={center_code}"
+            )
         )
 
-    print(f"✅ Using config ID={quiz.id}")
+    print(
+        f"✅ Using config ID={quiz.id}"
+    )
 
-    # --------------------------------------------------
-    # 3️⃣ Generate questions from config
-    # --------------------------------------------------
+    # ==========================================
+    # GENERATE QUESTIONS
+    # ==========================================
+
     try:
-        questions = generate_exam_questions(
-            quiz,
-            db,
-            only_unused=True   # 🔥 important for rotation
+        
+        questions = generate_exam_questions_oc_thinking_skills(
+
+            quiz=quiz,
+
+            db=db,
+
+            center_id=center.id,
+
+            only_unused=True
+
         )
+
     except Exception as e:
+
         raise HTTPException(
+
             status_code=500,
-            detail=f"Failed to generate exam: {str(e)}"
+
+            detail=(
+                f"Failed to generate exam: "
+                f"{str(e)}"
+            )
         )
 
     if not questions:
+
         raise HTTPException(
             status_code=500,
             detail="No questions generated"
         )
 
-    print(f"🧠 Generated {len(questions)} questions")
+    print(
+        f"🧠 Generated "
+        f"{len(questions)} questions"
+    )
 
-    # --------------------------------------------------
-    # 4️⃣ Mark DB questions as used
-    # --------------------------------------------------
+    # ==========================================
+    # STORE QUESTION USAGE
+    # ==========================================
+
     used_ids = [
-        q.get("id") for q in questions if q.get("id")
+
+        q.get("id")
+
+        for q in questions
+
+        if q.get("id")
+
     ]
 
     if used_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
+
+        usage_rows = [
+
+            QuestionUsage(
+
+                question_id=q_id,
+
+                center_id=center.id
+
+            )
+
+            for q_id in used_ids
+
+        ]
+
+        db.add_all(usage_rows)
+
+        print(
+            f"🏷️ Added "
+            f"{len(usage_rows)} "
+            f"QuestionUsage rows"
         )
 
-        print(f"🏷️ Marked {len(used_ids)} questions as used")
+    # ==========================================
+    # SAVE EXAM
+    # ==========================================
 
-    # --------------------------------------------------
-    # 5️⃣ Save generated exam
-    # --------------------------------------------------
     new_exam = Exam(
+
         quiz_id=quiz.id,
+
         class_name=CLASS_EXAM,
+
         subject=SUBJECT_EXAM,
+
         class_year=class_year_int,
+
+        center_code=center_code,
+
         questions=questions
+
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"💾 Exam saved ID={new_exam.id}")
+    print(
+        f"💾 Exam saved ID={new_exam.id}"
+    )
 
-    # --------------------------------------------------
-    # 6️⃣ Response
-    # --------------------------------------------------
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return {
-        "message": "OC Thinking Skills exam generated successfully",
-        "exam_id": new_exam.id,
-        "quiz_id": quiz.id,
-        "class_name": CLASS_DB,
-        "class_year": class_year_int,
-        "subject": SUBJECT_DB,
-        "difficulty": "mixed",
-        "total_questions": len(questions),
-        "questions": questions
-    }
 
+        "message":
+            "OC Thinking Skills exam generated successfully",
+
+        "exam_id": new_exam.id,
+
+        "quiz_id": quiz.id,
+
+        "center_code": center_code,
+
+        "class_name": CLASS_DB,
+
+        "class_year": class_year_int,
+
+        "subject": SUBJECT_DB,
+
+        "difficulty": "mixed",
+
+        "total_questions": len(questions),
+
+        "questions": questions
+
+    }
 @app.post("/api/exams/generate-oc-mathematical-reasoning-latest")
 def generate_oc_mathematical_reasoning_exam_latest(
     payload: dict = Body(...),
@@ -30052,95 +31059,193 @@ def generate_oc_mathematical_reasoning_exam_latest(
     print("🚀 OC MR LATEST EXAM GENERATION START")
     print("=" * 70)
 
-    # --------------------------------------------------
-    # 0️⃣ Parse payload
-    # --------------------------------------------------
-    raw_class_year = payload.get("class_year")
+    # ==========================================
+    # PARSE PAYLOAD
+    # ==========================================
 
-    selected_date = payload.get("selected_date")
+    raw_class_year = payload.get(
+        "class_year"
+    )
 
-    batch_id = payload.get("batch_id")
+    selected_date = payload.get(
+        "selected_date"
+    )
+
+    batch_id = payload.get(
+        "batch_id"
+    )
+
+    center_code = payload.get(
+        "center_code"
+    )
 
     if not raw_class_year:
+
         raise HTTPException(
             400,
             "class_year is required"
         )
 
     if not selected_date:
+
         raise HTTPException(
             400,
             "selected_date is required"
         )
 
     if not batch_id:
+
         raise HTTPException(
             400,
             "batch_id is required"
         )
 
-    # --------------------------------------------------
-    # 1️⃣ Parse class year
-    # --------------------------------------------------
+    if not center_code:
+
+        raise HTTPException(
+            400,
+            "center_code is required"
+        )
+
+    # ==========================================
+    # PARSE CLASS YEAR
+    # ==========================================
+
     try:
 
-        if isinstance(raw_class_year, str):
+        if isinstance(
+            raw_class_year,
+            str
+        ):
 
             class_year = int(
-                raw_class_year.strip().split()[-1]
+                raw_class_year
+                .strip()
+                .split()[-1]
             )
 
         else:
 
-            class_year = int(raw_class_year)
+            class_year = int(
+                raw_class_year
+            )
 
     except:
 
         raise HTTPException(
+
             400,
-            f"Invalid class_year: {raw_class_year}"
+
+            f"Invalid class_year: "
+            f"{raw_class_year}"
+
         )
 
-    print(f"🎓 Parsed class_year: {class_year}")
+    print(
+        f"🎓 Parsed class_year: "
+        f"{class_year}"
+    )
 
-    # --------------------------------------------------
-    # 2️⃣ Parse selected date
-    # --------------------------------------------------
+    # ==========================================
+    # PARSE SELECTED DATE
+    # ==========================================
+
     try:
 
         parsed_date = datetime.strptime(
+
             selected_date,
+
             "%Y-%m-%d"
+
         ).date()
 
     except:
 
         raise HTTPException(
+
             400,
-            f"Invalid selected_date: {selected_date}"
+
+            f"Invalid selected_date: "
+            f"{selected_date}"
+
         )
 
-    print(f"📅 Parsed selected_date: {parsed_date}")
+    print(
+        f"📅 Parsed selected_date: "
+        f"{parsed_date}"
+    )
 
-    print(f"📦 Batch ID: {batch_id}")
+    print(
+        f"📦 Batch ID: "
+        f"{batch_id}"
+    )
 
-    # --------------------------------------------------
-    # 3️⃣ Fetch ALL questions
-    # using date + batch id
-    # --------------------------------------------------
+    print(
+        f"🏫 Center Code: "
+        f"{center_code}"
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            404,
+            "Center not found"
+        )
+
+    # ==========================================
+    # USED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
+    used_question_ids = (
+        db.query(
+            QuestionUsage.question_id
+        )
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .subquery()
+    )
+
+    # ==========================================
+    # FETCH UNUSED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
     questions_from_db = (
         db.query(Question)
         .filter(
 
             func.lower(
-                func.trim(Question.class_name)
+                func.trim(
+                    Question.class_name
+                )
             ) == "oc",
 
             func.lower(
-                func.trim(Question.subject)
+                func.trim(
+                    Question.subject
+                )
             ) == "mathematical reasoning",
 
-            Question.class_year == class_year,
+            Question.class_year
+            == class_year,
 
             # selected upload date
             func.date(
@@ -30148,13 +31253,19 @@ def generate_oc_mathematical_reasoning_exam_latest(
             ) == parsed_date,
 
             # selected upload batch
-            Question.batch_id == batch_id,
+            Question.batch_id
+            == batch_id,
 
-            # only unused questions
-            Question.is_used == False
+            # exclude already used
+            # by THIS center
+            ~Question.id.in_(
+                used_question_ids
+            )
 
         )
-        .order_by(Question.created_at.asc())
+        .order_by(
+            Question.created_at.asc()
+        )
         .all()
     )
 
@@ -30166,14 +31277,18 @@ def generate_oc_mathematical_reasoning_exam_latest(
     if not questions_from_db:
 
         raise HTTPException(
+
             404,
-            "No questions found for selected "
-            "date and batch"
+
+            "No unused questions found "
+            "for selected date and batch"
+
         )
 
-    # --------------------------------------------------
-    # 4️⃣ Build exam question structure
-    # --------------------------------------------------
+    # ==========================================
+    # BUILD QUESTION STRUCTURE
+    # ==========================================
+
     questions = []
 
     for index, q in enumerate(
@@ -30182,6 +31297,7 @@ def generate_oc_mathematical_reasoning_exam_latest(
     ):
 
         questions.append({
+
             "id": q.id,
 
             "q_id": index,
@@ -30192,59 +31308,88 @@ def generate_oc_mathematical_reasoning_exam_latest(
 
             "batch_id": q.batch_id,
 
-            "blocks": q.question_blocks or [],
+            "blocks":
+                q.question_blocks or [],
 
-            "options": q.options,
+            "options":
+                q.options,
 
-            "correct": q.correct_answer
+            "correct":
+                q.correct_answer
+
         })
 
-    print(f"✅ Generated {len(questions)} questions")
+    print(
+        f"✅ Generated "
+        f"{len(questions)} questions"
+    )
 
-    # --------------------------------------------------
-    # 5️⃣ Mark questions as used
-    # --------------------------------------------------
+    # ==========================================
+    # STORE QUESTION USAGE
+    # ==========================================
+
     used_ids = [
+
         q["id"]
+
         for q in questions
+
         if q.get("id")
+
     ]
 
     if used_ids:
 
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
-        )
+        usage_rows = [
 
-        db.commit()
+            QuestionUsage(
+
+                question_id=q_id,
+
+                center_id=center.id
+
+            )
+
+            for q_id in used_ids
+
+        ]
+
+        db.add_all(usage_rows)
 
         print(
-            f"🏷️ Marked {len(used_ids)} "
-            f"questions as used"
+            f"🏷️ Added "
+            f"{len(usage_rows)} "
+            f"QuestionUsage rows"
         )
 
-    # --------------------------------------------------
-    # 6️⃣ Shuffle questions
-    # --------------------------------------------------
+    # ==========================================
+    # SHUFFLE QUESTIONS
+    # ==========================================
+
     random.shuffle(questions)
 
-    # --------------------------------------------------
-    # 7️⃣ Save exam
-    # --------------------------------------------------
+    # ==========================================
+    # SAVE EXAM
+    # ==========================================
+
     new_exam = Exam(
+
         quiz_id=None,
 
         class_name="oc",
 
-        subject="mathematical_reasoning",
+        subject=
+            "mathematical_reasoning",
 
-        class_year=class_year,
+        class_year=
+            class_year,
 
-        questions=questions
+        center_code=
+            center_code,
+
+        questions=
+            questions
+
     )
 
     db.add(new_exam)
@@ -30253,28 +31398,45 @@ def generate_oc_mathematical_reasoning_exam_latest(
 
     db.refresh(new_exam)
 
-    print(f"💾 Exam saved: {new_exam.id}")
+    print(
+        f"💾 Exam saved: "
+        f"{new_exam.id}"
+    )
 
     print("=" * 70 + "\n")
 
-    # --------------------------------------------------
-    # 8️⃣ Response
-    # --------------------------------------------------
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return {
+
         "message": (
-            "OC Mathematical Reasoning latest "
+
+            "OC Mathematical "
+            "Reasoning latest "
             "exam generated successfully"
+
         ),
 
-        "exam_id": new_exam.id,
+        "exam_id":
+            new_exam.id,
 
-        "batch_id": batch_id,
+        "batch_id":
+            batch_id,
 
-        "selected_date": selected_date,
+        "center_code":
+            center_code,
 
-        "total_questions": len(questions),
+        "selected_date":
+            selected_date,
 
-        "questions": questions
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
+
     }
 
 @app.post("/api/exams/generate-oc-mathematical-reasoning")
@@ -30284,119 +31446,309 @@ def generate_oc_mathematical_reasoning_exam(
 ):
     import random
 
-    print("\n========== OC MR EXAM GENERATION START ==========")
+    print(
+        "\n========== OC MR "
+        "EXAM GENERATION START =========="
+    )
 
-    # --------------------------------------------------
-    # 0️⃣ Parse class_year
-    # --------------------------------------------------
-    raw_class_year = payload.get("class_year")
+    # ==========================================
+    # PARSE INPUT
+    # ==========================================
+
+    raw_class_year = payload.get(
+        "class_year"
+    )
+
+    center_code = payload.get(
+        "center_code"
+    )
 
     if not raw_class_year:
-        raise HTTPException(400, "class_year is required")
+
+        raise HTTPException(
+            400,
+            "class_year is required"
+        )
+
+    if not center_code:
+
+        raise HTTPException(
+            400,
+            "center_code is required"
+        )
 
     try:
-        if isinstance(raw_class_year, str):
-            class_year = int(raw_class_year.strip().split()[-1])
+
+        if isinstance(
+            raw_class_year,
+            str
+        ):
+
+            class_year = int(
+
+                raw_class_year
+                .strip()
+                .split()[-1]
+
+            )
+
         else:
-            class_year = int(raw_class_year)
+
+            class_year = int(
+                raw_class_year
+            )
+
     except:
-        raise HTTPException(400, f"Invalid class_year: {raw_class_year}")
 
-    print("➡️ class_year:", class_year)
+        raise HTTPException(
 
-    # --------------------------------------------------
-    # 1️⃣ Fetch latest quiz config
-    # --------------------------------------------------
+            400,
+
+            f"Invalid class_year: "
+            f"{raw_class_year}"
+
+        )
+
+    print(
+        "➡️ class_year:",
+        class_year
+    )
+
+    print(
+        "🏫 center_code:",
+        center_code
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            404,
+            "Center not found"
+        )
+
+    # ==========================================
+    # FETCH LATEST QUIZ CONFIG
+    # FOR THIS CENTER
+    # ==========================================
+
     quiz = (
         db.query(Quiz)
         .filter(
-            func.lower(func.trim(Quiz.class_name)) == "oc",
-            func.lower(func.trim(Quiz.subject)) == "mathematical_reasoning",
-            Quiz.class_year == class_year
+
+            func.lower(
+                func.trim(
+                    Quiz.class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.trim(
+                    Quiz.subject
+                )
+            ) == "mathematical_reasoning",
+
+            Quiz.class_year
+            == class_year,
+
+            Quiz.center_code
+            == center_code
+
         )
-        .order_by(Quiz.id.desc())
+        .order_by(
+            Quiz.id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
+
             404,
-            f"No quiz config found for class_year={class_year}"
+
+            f"No quiz config found "
+            f"for class_year="
+            f"{class_year} "
+            f"and center="
+            f"{center_code}"
+
         )
 
-    print(f"✅ Using Quiz ID: {quiz.id}")
+    print(
+        f"✅ Using Quiz ID: "
+        f"{quiz.id}"
+    )
 
-    # --------------------------------------------------
-    # 2️⃣ Generate questions
-    # --------------------------------------------------
-    questions = generate_exam_questions_oc_mr(
-        quiz,
-        db,
-        only_unused=True
+    # ==========================================
+    # GENERATE QUESTIONS
+    # ==========================================
+
+    questions = (
+        generate_exam_questions_oc_mr(
+
+            quiz=quiz,
+
+            db=db,
+
+            center_id=center.id,
+
+            only_unused=True
+
+        )
     )
 
     if not questions:
-        raise HTTPException(500, "No questions generated")
 
-    print(f"✅ Generated {len(questions)} questions")
-
-    # --------------------------------------------------
-    # 3️⃣ Validate total (CRITICAL)
-    # --------------------------------------------------
-    expected_total = sum(t["total"] for t in quiz.topics)
-
-    if len(questions) != expected_total:
         raise HTTPException(
             500,
-            f"Mismatch: expected {expected_total}, got {len(questions)}"
+            "No questions generated"
         )
 
-    # --------------------------------------------------
-    # 4️⃣ Mark DB questions as used
-    # --------------------------------------------------
-    used_ids = [q["id"] for q in questions if q.get("id")]
+    print(
+        f"✅ Generated "
+        f"{len(questions)} questions"
+    )
+
+    # ==========================================
+    # VALIDATE TOTAL
+    # ==========================================
+
+    expected_total = sum(
+
+        t["total"]
+
+        for t in quiz.topics
+
+    )
+
+    if len(questions) != expected_total:
+
+        raise HTTPException(
+
+            500,
+
+            f"Mismatch: expected "
+            f"{expected_total}, "
+            f"got {len(questions)}"
+
+        )
+
+    # ==========================================
+    # STORE QUESTION USAGE
+    # ==========================================
+
+    used_ids = [
+
+        q["id"]
+
+        for q in questions
+
+        if q.get("id")
+
+    ]
 
     if used_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
+
+        usage_rows = [
+
+            QuestionUsage(
+
+                question_id=q_id,
+
+                center_id=center.id
+
+            )
+
+            for q_id in used_ids
+
+        ]
+
+        db.add_all(usage_rows)
+
+        print(
+            f"🏷️ Added "
+            f"{len(usage_rows)} "
+            f"QuestionUsage rows"
         )
 
-        db.commit()   # ✅ important
+    # ==========================================
+    # SHUFFLE QUESTIONS
+    # ==========================================
 
-    # --------------------------------------------------
-    # 5️⃣ Shuffle questions
-    # --------------------------------------------------
     random.shuffle(questions)
 
-    # --------------------------------------------------
-    # 6️⃣ Save exam
-    # --------------------------------------------------
+    # ==========================================
+    # SAVE EXAM
+    # ==========================================
+
     new_exam = Exam(
+
         quiz_id=quiz.id,
+
         class_name="oc",
-        subject="mathematical_reasoning",
-        class_year=class_year,
-        questions=questions
+
+        subject=
+            "mathematical_reasoning",
+
+        class_year=
+            class_year,
+
+        center_code=
+            center_code,
+
+        questions=
+            questions
+
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"✅ Exam saved: {new_exam.id}")
+    print(
+        f"✅ Exam saved: "
+        f"{new_exam.id}"
+    )
 
-    # --------------------------------------------------
-    # 7️⃣ Response
-    # --------------------------------------------------
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return {
-        "message": "OC Mathematical Reasoning exam generated successfully",
-        "exam_id": new_exam.id,
-        "total_questions": len(questions),
-        "questions": questions
+
+        "message":
+            "OC Mathematical "
+            "Reasoning exam "
+            "generated successfully",
+
+        "exam_id":
+            new_exam.id,
+
+        "center_code":
+            center_code,
+
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
+
     }
 
 
@@ -30407,133 +31759,340 @@ def generate_oc_mathematical_reasoning_homework(
 ):
     import random
 
-    print("\n========== OC MR HOMEWORK GENERATION START ==========")
+    print(
+        "\n========== OC MR "
+        "HOMEWORK GENERATION START =========="
+    )
 
-    # --------------------------------------------------
-    # 0️⃣ Parse class_year
-    # --------------------------------------------------
-    raw_class_year = payload.get("class_year")
+    # ==========================================
+    # PARSE INPUT
+    # ==========================================
+
+    raw_class_year = payload.get(
+        "class_year"
+    )
+
+    center_code = payload.get(
+        "center_code"
+    )
 
     if not raw_class_year:
-        raise HTTPException(400, "class_year is required")
+
+        raise HTTPException(
+            400,
+            "class_year is required"
+        )
+
+    if not center_code:
+
+        raise HTTPException(
+            400,
+            "center_code is required"
+        )
 
     try:
-        if isinstance(raw_class_year, str):
-            class_year = int(raw_class_year.strip().split()[-1])
+
+        if isinstance(
+            raw_class_year,
+            str
+        ):
+
+            class_year = int(
+
+                raw_class_year
+                .strip()
+                .split()[-1]
+
+            )
+
         else:
-            class_year = int(raw_class_year)
+
+            class_year = int(
+                raw_class_year
+            )
+
     except:
-        raise HTTPException(400, f"Invalid class_year: {raw_class_year}")
 
-    print("➡️ class_year:", class_year)
+        raise HTTPException(
 
-    # --------------------------------------------------
-    # 1️⃣ Fetch latest homework config
-    # --------------------------------------------------
+            400,
+
+            f"Invalid class_year: "
+            f"{raw_class_year}"
+
+        )
+
+    print(
+        "➡️ class_year:",
+        class_year
+    )
+
+    print(
+        "🏫 center_code:",
+        center_code
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            404,
+            "Center not found"
+        )
+
+    # ==========================================
+    # FETCH LATEST HOMEWORK CONFIG
+    # FOR THIS CENTER
+    # ==========================================
+
     homework_quiz = (
         db.query(HomeworkQuiz_OC_MR)
         .filter(
-            func.lower(func.trim(HomeworkQuiz_OC_MR.class_name)) == "oc",
-            func.lower(func.trim(HomeworkQuiz_OC_MR.subject)) == "mathematical_reasoning",
-            HomeworkQuiz_OC_MR.class_year == str(class_year)   # ✅ FIXED
+
+            func.lower(
+                func.trim(
+                    HomeworkQuiz_OC_MR.class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.trim(
+                    HomeworkQuiz_OC_MR.subject
+                )
+            ) == "mathematical_reasoning",
+
+            HomeworkQuiz_OC_MR.class_year
+            == str(class_year),
+
+            HomeworkQuiz_OC_MR.center_code
+            == center_code
+
         )
-        .order_by(HomeworkQuiz_OC_MR.id.desc())
+        .order_by(
+            HomeworkQuiz_OC_MR.id.desc()
+        )
         .first()
     )
 
     if not homework_quiz:
+
         raise HTTPException(
+
             404,
-            f"No homework config found for class_year={class_year}"
+
+            f"No homework config found "
+            f"for class_year="
+            f"{class_year} "
+            f"and center="
+            f"{center_code}"
+
         )
 
-    print(f"✅ Using Homework Config ID: {homework_quiz.id}")
+    print(
+        f"✅ Using Homework "
+        f"Config ID: "
+        f"{homework_quiz.id}"
+    )
 
-    # --------------------------------------------------
-    # 2️⃣ Convert JSON topics (no mutation!)
-    # --------------------------------------------------
+    # ==========================================
+    # CONVERT JSON TOPICS
+    # ==========================================
+
     class DummyQuiz:
         pass
 
     quiz_like = DummyQuiz()
-    quiz_like.class_name = homework_quiz.class_name
-    quiz_like.subject = homework_quiz.subject
-    quiz_like.class_year = class_year   # int for generator
-    quiz_like.topics = homework_quiz.topics
 
-    # --------------------------------------------------
-    # 3️⃣ Generate questions
-    # --------------------------------------------------
-    questions = generate_exam_questions_oc_mr(
-        quiz_like,
-        db,
-        only_unused=True
+    quiz_like.class_name = (
+        homework_quiz.class_name
+    )
+
+    quiz_like.subject = (
+        homework_quiz.subject
+    )
+
+    quiz_like.class_year = (
+        class_year
+    )
+
+    quiz_like.topics = (
+        homework_quiz.topics
+    )
+
+    # ==========================================
+    # GENERATE QUESTIONS
+    # ==========================================
+
+    questions = (
+        generate_exam_questions_oc_mr(
+
+            quiz=quiz_like,
+
+            db=db,
+
+            center_id=center.id,
+
+            only_unused=True
+
+        )
     )
 
     if not questions:
-        raise HTTPException(500, "No questions generated")
 
-    print(f"✅ Generated {len(questions)} questions")
-
-    # --------------------------------------------------
-    # 4️⃣ Validate total (CRITICAL)
-    # --------------------------------------------------
-    expected_total = sum(t["total"] for t in homework_quiz.topics)
-
-    if len(questions) != expected_total:
         raise HTTPException(
             500,
-            f"Mismatch: expected {expected_total}, got {len(questions)}"
+            "No questions generated"
         )
 
-    # --------------------------------------------------
-    # 5️⃣ Mark DB questions as used
-    # --------------------------------------------------
-    used_ids = [q["id"] for q in questions if q.get("id")]
+    print(
+        f"✅ Generated "
+        f"{len(questions)} questions"
+    )
+
+    # ==========================================
+    # VALIDATE TOTAL
+    # ==========================================
+
+    expected_total = sum(
+
+        t["total"]
+
+        for t in homework_quiz.topics
+
+    )
+
+    if len(questions) != expected_total:
+
+        raise HTTPException(
+
+            500,
+
+            f"Mismatch: expected "
+            f"{expected_total}, "
+            f"got {len(questions)}"
+
+        )
+
+    # ==========================================
+    # STORE QUESTION USAGE
+    # ==========================================
+
+    used_ids = [
+
+        q["id"]
+
+        for q in questions
+
+        if q.get("id")
+
+    ]
 
     if used_ids:
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
+
+        usage_rows = [
+
+            QuestionUsage(
+
+                question_id=q_id,
+
+                center_id=center.id
+
+            )
+
+            for q_id in used_ids
+
+        ]
+
+        db.add_all(usage_rows)
+
+        print(
+            f"🏷️ Added "
+            f"{len(usage_rows)} "
+            f"QuestionUsage rows"
         )
 
-        db.commit()   # ✅ IMPORTANT
+    # ==========================================
+    # SHUFFLE QUESTIONS
+    # ==========================================
 
-    # --------------------------------------------------
-    # 6️⃣ Shuffle questions
-    # --------------------------------------------------
     random.shuffle(questions)
 
-    # --------------------------------------------------
-    # 7️⃣ Save homework exam
-    # --------------------------------------------------
-    new_exam = HomeworkExamOCMathematicalReasoning(
-        homework_quiz_id=homework_quiz.id,
-        class_name="oc",
-        class_year=str(class_year),
-        subject="mathematical_reasoning",
-        questions=questions   # ✅ NO difficulty
+    # ==========================================
+    # SAVE HOMEWORK EXAM
+    # ==========================================
+
+    new_exam = (
+        HomeworkExamOCMathematicalReasoning(
+
+            homework_quiz_id=
+                homework_quiz.id,
+
+            class_name=
+                "oc",
+
+            class_year=
+                str(class_year),
+
+            subject=
+                "mathematical_reasoning",
+
+            center_code=
+                center_code,
+
+            questions=
+                questions
+
+        )
     )
 
     db.add(new_exam)
+
     db.commit()
+
     db.refresh(new_exam)
 
-    print(f"✅ Homework saved: {new_exam.id}")
+    print(
+        f"✅ Homework saved: "
+        f"{new_exam.id}"
+    )
 
-    # --------------------------------------------------
-    # 8️⃣ Response
-    # --------------------------------------------------
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return {
-        "message": "OC Mathematical Reasoning homework generated successfully",
-        "exam_id": new_exam.id,
-        "total_questions": len(questions),
-        "questions": questions
-    }
 
+        "message":
+            "OC Mathematical "
+            "Reasoning homework "
+            "generated successfully",
+
+        "exam_id":
+            new_exam.id,
+
+        "center_code":
+            center_code,
+
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
+
+    }
 @app.post("/api/exams/generate-oc-mathematical-reasoning-homework-latest")
 def generate_oc_mathematical_reasoning_homework_latest(
     payload: dict = Body(...),
@@ -30543,98 +32102,202 @@ def generate_oc_mathematical_reasoning_homework_latest(
     from datetime import datetime
 
     print("\n" + "=" * 70)
-    print("🚀 OC MR HOMEWORK LATEST GENERATION START")
+
+    print(
+        "🚀 OC MR HOMEWORK "
+        "LATEST GENERATION START"
+    )
+
     print("=" * 70)
 
-    # --------------------------------------------------
-    # 0️⃣ Parse payload
-    # --------------------------------------------------
-    raw_class_year = payload.get("class_year")
+    # ==========================================
+    # PARSE PAYLOAD
+    # ==========================================
 
-    selected_date = payload.get("selected_date")
+    raw_class_year = payload.get(
+        "class_year"
+    )
 
-    batch_id = payload.get("batch_id")
+    selected_date = payload.get(
+        "selected_date"
+    )
+
+    batch_id = payload.get(
+        "batch_id"
+    )
+
+    center_code = payload.get(
+        "center_code"
+    )
 
     if not raw_class_year:
+
         raise HTTPException(
             400,
             "class_year is required"
         )
 
     if not selected_date:
+
         raise HTTPException(
             400,
             "selected_date is required"
         )
 
     if not batch_id:
+
         raise HTTPException(
             400,
             "batch_id is required"
         )
 
-    # --------------------------------------------------
-    # 1️⃣ Parse class year
-    # --------------------------------------------------
+    if not center_code:
+
+        raise HTTPException(
+            400,
+            "center_code is required"
+        )
+
+    # ==========================================
+    # PARSE CLASS YEAR
+    # ==========================================
+
     try:
 
-        if isinstance(raw_class_year, str):
+        if isinstance(
+            raw_class_year,
+            str
+        ):
 
             class_year = int(
-                raw_class_year.strip().split()[-1]
+
+                raw_class_year
+                .strip()
+                .split()[-1]
+
             )
 
         else:
 
-            class_year = int(raw_class_year)
+            class_year = int(
+                raw_class_year
+            )
 
     except:
 
         raise HTTPException(
+
             400,
-            f"Invalid class_year: {raw_class_year}"
+
+            f"Invalid class_year: "
+            f"{raw_class_year}"
+
         )
 
-    print(f"🎓 Parsed class_year: {class_year}")
+    print(
+        f"🎓 Parsed class_year: "
+        f"{class_year}"
+    )
 
-    # --------------------------------------------------
-    # 2️⃣ Parse selected date
-    # --------------------------------------------------
+    # ==========================================
+    # PARSE DATE
+    # ==========================================
+
     try:
 
         parsed_date = datetime.strptime(
+
             selected_date,
+
             "%Y-%m-%d"
+
         ).date()
 
     except:
 
         raise HTTPException(
+
             400,
-            f"Invalid selected_date: {selected_date}"
+
+            f"Invalid selected_date: "
+            f"{selected_date}"
+
         )
 
-    print(f"📅 Parsed selected_date: {parsed_date}")
+    print(
+        f"📅 Parsed selected_date: "
+        f"{parsed_date}"
+    )
 
-    print(f"📦 Batch ID: {batch_id}")
+    print(
+        f"📦 Batch ID: "
+        f"{batch_id}"
+    )
 
-    # --------------------------------------------------
-    # 3️⃣ Fetch ALL questions
-    # using date + batch id
-    # --------------------------------------------------
+    print(
+        f"🏫 Center Code: "
+        f"{center_code}"
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            404,
+            "Center not found"
+        )
+
+    # ==========================================
+    # USED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
+    used_question_ids = (
+        db.query(
+            QuestionUsage.question_id
+        )
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .subquery()
+    )
+
+    # ==========================================
+    # FETCH UNUSED QUESTIONS
+    # ==========================================
+
     questions_from_db = (
         db.query(Question)
         .filter(
 
             func.lower(
-                func.trim(Question.class_name)
+                func.trim(
+                    Question.class_name
+                )
             ) == "oc",
 
             func.lower(
-                func.trim(Question.subject)
+                func.trim(
+                    Question.subject
+                )
             ) == "mathematical reasoning",
 
-            Question.class_year == class_year,
+            Question.class_year
+            == class_year,
 
             # selected upload date
             func.date(
@@ -30642,13 +32305,19 @@ def generate_oc_mathematical_reasoning_homework_latest(
             ) == parsed_date,
 
             # selected upload batch
-            Question.batch_id == batch_id,
+            Question.batch_id
+            == batch_id,
 
-            # only unused questions
-            Question.is_used == False
+            # exclude already used
+            # for THIS center
+            ~Question.id.in_(
+                used_question_ids
+            )
 
         )
-        .order_by(Question.created_at.asc())
+        .order_by(
+            Question.created_at.asc()
+        )
         .all()
     )
 
@@ -30660,14 +32329,18 @@ def generate_oc_mathematical_reasoning_homework_latest(
     if not questions_from_db:
 
         raise HTTPException(
+
             404,
-            "No questions found for selected "
-            "date and batch"
+
+            "No unused questions found "
+            "for selected date and batch"
+
         )
 
-    # --------------------------------------------------
-    # 4️⃣ Build question structure
-    # --------------------------------------------------
+    # ==========================================
+    # BUILD QUESTION STRUCTURE
+    # ==========================================
+
     questions = []
 
     for index, q in enumerate(
@@ -30676,6 +32349,7 @@ def generate_oc_mathematical_reasoning_homework_latest(
     ):
 
         questions.append({
+
             "id": q.id,
 
             "q_id": index,
@@ -30686,59 +32360,89 @@ def generate_oc_mathematical_reasoning_homework_latest(
 
             "batch_id": q.batch_id,
 
-            "blocks": q.question_blocks or [],
+            "blocks":
+                q.question_blocks or [],
 
-            "options": q.options,
+            "options":
+                q.options,
 
-            "correct": q.correct_answer
+            "correct":
+                q.correct_answer
+
         })
 
-    print(f"✅ Generated {len(questions)} questions")
+    print(
+        f"✅ Generated "
+        f"{len(questions)} questions"
+    )
 
-    # --------------------------------------------------
-    # 5️⃣ Mark DB questions as used
-    # --------------------------------------------------
+    # ==========================================
+    # STORE QUESTION USAGE
+    # ==========================================
+
     used_ids = [
+
         q["id"]
+
         for q in questions
+
         if q.get("id")
+
     ]
 
     if used_ids:
 
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
-        )
+        usage_rows = [
 
-        db.commit()
+            QuestionUsage(
+
+                question_id=q_id,
+
+                center_id=center.id
+
+            )
+
+            for q_id in used_ids
+
+        ]
+
+        db.add_all(usage_rows)
 
         print(
-            f"🏷️ Marked {len(used_ids)} "
-            f"questions as used"
+            f"🏷️ Added "
+            f"{len(usage_rows)} "
+            f"QuestionUsage rows"
         )
 
-    # --------------------------------------------------
-    # 6️⃣ Shuffle questions
-    # --------------------------------------------------
+    # ==========================================
+    # SHUFFLE QUESTIONS
+    # ==========================================
+
     random.shuffle(questions)
 
-    # --------------------------------------------------
-    # 7️⃣ Save homework exam
-    # --------------------------------------------------
-    new_exam = HomeworkExamOCMathematicalReasoning(
-        homework_quiz_id=None,
+    # ==========================================
+    # SAVE HOMEWORK EXAM
+    # ==========================================
 
-        class_name="oc",
+    new_exam = (
+        HomeworkExamOCMathematicalReasoning(
 
-        class_year=str(class_year),
+            homework_quiz_id=None,
 
-        subject="mathematical_reasoning",
+            class_name="oc",
 
-        questions=questions
+            class_year=str(class_year),
+
+            subject=
+                "mathematical_reasoning",
+
+            center_code=
+                center_code,
+
+            questions=
+                questions
+
+        )
     )
 
     db.add(new_exam)
@@ -30747,29 +32451,48 @@ def generate_oc_mathematical_reasoning_homework_latest(
 
     db.refresh(new_exam)
 
-    print(f"💾 Homework saved: {new_exam.id}")
+    print(
+        f"💾 Homework saved: "
+        f"{new_exam.id}"
+    )
 
     print("=" * 70 + "\n")
 
-    # --------------------------------------------------
-    # 8️⃣ Response
-    # --------------------------------------------------
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
     return {
+
         "message": (
-            "OC Mathematical Reasoning latest "
-            "homework generated successfully"
+
+            "OC Mathematical "
+            "Reasoning latest "
+            "homework generated "
+            "successfully"
+
         ),
 
-        "exam_id": new_exam.id,
+        "exam_id":
+            new_exam.id,
 
-        "batch_id": batch_id,
+        "batch_id":
+            batch_id,
 
-        "selected_date": selected_date,
+        "center_code":
+            center_code,
 
-        "total_questions": len(questions),
+        "selected_date":
+            selected_date,
 
-        "questions": questions
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
+
     }
+
 @app.post("/api/exams/generate-thinking-skills-homework-latest")
 def generate_thinking_skills_homework_latest(
     payload: Optional[Dict] = Body(default=None),
@@ -67444,91 +69167,216 @@ def create_homework_quiz_oc_thinking_skills(
 ):
     """
     Create a NEW OC Thinking Skills HOMEWORK exam configuration.
-    Stores per-topic difficulty (easy / medium / hard).
+
+    Homework configs are now CENTER-AWARE.
+
+    Each center maintains its own:
+    - homework config
+    - question history
+    - homework exams
     """
 
-    print("\n========== OC HOMEWORK CONFIG CREATION START ==========")
+    print(
+        "\n========== OC HOMEWORK CONFIG CREATION START =========="
+    )
 
-    # 🔹 Debug payload
+    # ==========================================
+    # DEBUG PAYLOAD
+    # ==========================================
+
     try:
+
         quiz_dict = quiz.dict()
-        print("📦 Payload:", quiz_dict)
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=400, detail="Invalid payload")
 
-    # 🔹 Validation
-    if not isinstance(quiz.topics, list) or len(quiz.topics) == 0:
-        raise HTTPException(status_code=400, detail="topics must be a non-empty list")
+        print("📦 Payload:", quiz_dict)
+
+    except Exception as e:
+
+        print("❌ Payload parsing failed:", e)
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payload"
+        )
+
+    # ==========================================
+    # VALIDATION
+    # ==========================================
+
+    if (
+        not isinstance(quiz.topics, list)
+        or len(quiz.topics) == 0
+    ):
+
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a non-empty list"
+        )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                quiz.center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
 
     try:
-        # 🔹 Normalize (match your system)
+
+        # ==========================================
+        # NORMALIZE
+        # ==========================================
+
         db_class = "oc"
+
         db_subject = "thinking_skills"
 
-        # ----------------------------------
-        # ✅ Scoped cleanup (UPDATED)
-        # ----------------------------------
+        # ==========================================
+        # DELETE EXISTING CONFIG
+        # ONLY FOR SAME CENTER
+        # ==========================================
+
         deleted = (
             db.query(HomeworkQuizOC_TS)
             .filter(
-                func.lower(HomeworkQuizOC_TS.class_name) == db_class,
-                func.lower(HomeworkQuizOC_TS.subject) == db_subject,
-                HomeworkQuizOC_TS.class_year == quiz.class_year
+
+                func.lower(
+                    HomeworkQuizOC_TS.class_name
+                ) == db_class,
+
+                func.lower(
+                    HomeworkQuizOC_TS.subject
+                ) == db_subject,
+
+                HomeworkQuizOC_TS.class_year
+                == quiz.class_year,
+
+                HomeworkQuizOC_TS.center_code
+                == quiz.center_code
+
             )
-            .delete(synchronize_session=False)
+            .delete(
+                synchronize_session=False
+            )
         )
 
-        print(f"🗑️ Deleted existing homework configs: {deleted}")
+        print(
+            f"🗑️ Deleted existing homework configs "
+            f"for center {quiz.center_code}: "
+            f"{deleted}"
+        )
 
         db.commit()
 
-        # ----------------------------------
-        # ✅ Build structured topics
-        # ----------------------------------
+        # ==========================================
+        # BUILD STRUCTURED TOPICS
+        # ==========================================
+
         structured_topics = []
+
         for t in quiz.topics:
+
             structured_topics.append({
+
                 "name": t.name.strip(),
+
                 "easy": t.easy.dict(),
+
                 "medium": t.medium.dict(),
+
                 "hard": t.hard.dict(),
+
                 "total": t.total
+
             })
 
         print("🧠 Structured topics ready")
 
-        # ----------------------------------
-        # ✅ Create new homework config
-        # ----------------------------------
+        # ==========================================
+        # CREATE NEW HOMEWORK CONFIG
+        # ==========================================
+
         new_quiz = HomeworkQuizOC_TS(
+
             class_name=db_class,
+
             subject=db_subject,
+
             class_year=quiz.class_year,
-            difficulty="mixed",   # 🔥 always mixed now
-            num_topics=len(structured_topics),
+
+            center_code=quiz.center_code,
+
+            difficulty="mixed",
+
+            num_topics=len(
+                structured_topics
+            ),
+
             topics=structured_topics
+
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print("✅ Homework Config created with ID:", new_quiz.id)
-        print("========== OC HOMEWORK CONFIG CREATION COMPLETE ==========\n")
+        print(
+            "✅ Homework Config created with ID:",
+            new_quiz.id
+        )
+
+        print(
+            "🏫 Center:",
+            quiz.center_code
+        )
+
+        print(
+            "========== OC HOMEWORK CONFIG CREATION COMPLETE ==========\n"
+        )
 
         return {
-            "message": "OC homework exam config saved successfully",
-            "quiz_id": new_quiz.id
+
+            "message":
+                "OC homework exam config saved successfully",
+
+            "quiz_id": new_quiz.id,
+
+            "center_code": quiz.center_code
+
         }
 
     except Exception as e:
+
         print("\n❌ DB ERROR ❌")
+
+        print(str(e))
+
         traceback.print_exc()
+
         db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to create homework config")
 
-
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create homework config"
+        )
+    
 @app.post("/api/quizzes/oc-thinking-skills")
 def create_quiz_oc_thinking_skills(
     quiz: QuizCreateOC_TS,
@@ -67536,351 +69384,897 @@ def create_quiz_oc_thinking_skills(
 ):
     """
     Create a NEW OC Thinking Skills exam configuration.
-    Stores per-topic difficulty (easy / medium / hard).
+
+    Config is now CENTER-AWARE.
+
+    Each center maintains its own:
+    - latest config
+    - question history
+    - generated exams
     """
 
     print("\n========== OC EXAM CONFIG CREATION START ==========")
 
-    # 🔹 Debug payload
+    # ==========================================
+    # DEBUG PAYLOAD
+    # ==========================================
+
     try:
+
         quiz_dict = quiz.dict()
-        print("📦 Payload:", quiz_dict)
-    except Exception as e:
-        print("❌ Payload parsing failed:", e)
-        traceback.print_exc()
-        raise HTTPException(status_code=400, detail="Invalid payload")
 
-    # 🔹 Basic validation
-    if not isinstance(quiz.topics, list) or len(quiz.topics) == 0:
-        raise HTTPException(status_code=400, detail="topics must be a non-empty list")
+        print("📦 Payload:", quiz_dict)
+
+    except Exception as e:
+
+        print("❌ Payload parsing failed:", e)
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payload"
+        )
+
+    # ==========================================
+    # BASIC VALIDATION
+    # ==========================================
+
+    if (
+        not isinstance(quiz.topics, list)
+        or len(quiz.topics) == 0
+    ):
+
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a non-empty list"
+        )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                quiz.center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
 
     try:
-        # 🔹 Normalize
+
+        # ==========================================
+        # NORMALIZE
+        # ==========================================
+
         db_class = "oc"
+
         db_subject = "thinking_skills"
 
-        # 🔹 Delete existing config (ONLY same class + year + subject)
+        # ==========================================
+        # DELETE EXISTING CONFIG
+        # ONLY FOR SAME CENTER
+        # ==========================================
+
         deleted_quizzes = (
             db.query(Quiz)
             .filter(
-                func.lower(Quiz.class_name) == db_class,
-                func.lower(Quiz.subject) == db_subject,
-                Quiz.class_year == quiz.class_year
+
+                func.lower(
+                    Quiz.class_name
+                ) == db_class,
+
+                func.lower(
+                    Quiz.subject
+                ) == db_subject,
+
+                Quiz.class_year == quiz.class_year,
+
+                Quiz.center_code == quiz.center_code
+
             )
-            .delete(synchronize_session=False)
+            .delete(
+                synchronize_session=False
+            )
         )
 
-        print(f"🗑️ Deleted existing OC configs: {deleted_quizzes}")
+        print(
+            f"🗑️ Deleted existing OC configs "
+            f"for center {quiz.center_code}: "
+            f"{deleted_quizzes}"
+        )
 
         db.commit()
 
-        # 🔹 Build topics safely (explicit structure)
+        # ==========================================
+        # BUILD STRUCTURED TOPICS
+        # ==========================================
+
         structured_topics = []
+
         for t in quiz.topics:
+
             structured_topics.append({
+
                 "name": t.name.strip(),
+
                 "easy": t.easy.dict(),
+
                 "medium": t.medium.dict(),
+
                 "hard": t.hard.dict(),
+
                 "total": t.total
+
             })
 
         print("🧠 Structured topics ready")
 
-        # 🔹 Create new config
+        # ==========================================
+        # CREATE NEW CONFIG
+        # ==========================================
+
         new_quiz = Quiz(
+
             class_name=db_class,
+
             class_year=quiz.class_year,
+
             subject=db_subject,
-            num_topics=len(structured_topics),
+
+            center_code=quiz.center_code,
+
+            num_topics=len(
+                structured_topics
+            ),
+
             topics=structured_topics
+
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print("✅ OC Exam Config created ID:", new_quiz.id)
-        print("========== OC EXAM CONFIG CREATION COMPLETE ==========\n")
+        print(
+            "✅ OC Exam Config created ID:",
+            new_quiz.id
+        )
+
+        print(
+            "🏫 Center:",
+            quiz.center_code
+        )
+
+        print(
+            "========== OC EXAM CONFIG CREATION COMPLETE ==========\n"
+        )
 
         return {
-            "message": "OC Thinking Skills exam config saved successfully",
-            "quiz_id": new_quiz.id
+
+            "message":
+                "OC Thinking Skills exam config saved successfully",
+
+            "quiz_id": new_quiz.id,
+
+            "center_code": quiz.center_code
+
         }
 
     except Exception as e:
+
         print("\n❌ DB ERROR ❌")
+
         print(str(e))
+
         traceback.print_exc()
 
         db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to create OC exam config")
 
-
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create OC exam config"
+        )
+    
 @app.post("/api/quizzes/oc-mathematical-reasoning-homework")
 def create_quiz_oc_mathematical_reasoning_homework(
     quiz: QuizCreate_OC_MR_Homework,
     db: Session = Depends(get_db)
 ):
     """
-    Create OC Mathematical Reasoning Homework (config-driven, per-topic difficulty)
-    - Separate table
-    - Scoped delete by class_year
+    Create CENTER-AWARE
+    OC Mathematical Reasoning Homework config.
+
+    Each center maintains its own:
+    - homework config
+    - question history
+    - generated exams
     """
 
-    print("\n========== OC MR HOMEWORK CREATION START ==========")
+    print(
+        "\n========== OC MR HOMEWORK CREATION START =========="
+    )
 
-    # --------------------------------------------------
-    # 0️⃣ Debug payload
-    # --------------------------------------------------
+    # ==========================================
+    # DEBUG PAYLOAD
+    # ==========================================
+
     try:
+
         quiz_dict = quiz.dict()
+
         print("📦 Payload:", quiz_dict)
+
     except Exception as e:
+
         print("❌ Payload parsing failed:", e)
+
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e))
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
     print("➡️ class_name:", quiz.class_name)
+
     print("➡️ subject:", quiz.subject)
+
     print("➡️ class_year (raw):", quiz.class_year)
+
+    print("➡️ center_code:", quiz.center_code)
+
     print("➡️ num_topics:", quiz.num_topics)
+
     print("➡️ topics count:", len(quiz.topics))
 
-    # --------------------------------------------------
-    # 1️⃣ Normalize class_year (SAME AS EXAM)
-    # --------------------------------------------------
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                quiz.center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==========================================
+    # NORMALIZE CLASS YEAR
+    # ==========================================
+
     try:
+
         if not quiz.class_year:
-            raise ValueError("class_year is required")
+
+            raise ValueError(
+                "class_year is required"
+            )
 
         raw_class_year = quiz.class_year
 
-        if isinstance(raw_class_year, str):
-            class_year = int(raw_class_year.strip().split()[-1])
+        if isinstance(
+            raw_class_year,
+            str
+        ):
+
+            class_year = int(
+                raw_class_year
+                .strip()
+                .split()[-1]
+            )
+
         else:
-            class_year = int(raw_class_year)
 
-        print(f"✅ Parsed class_year: {class_year}")
+            class_year = int(
+                raw_class_year
+            )
 
-    except Exception as e:
-        print(f"❌ Failed to parse class_year: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid class_year: {quiz.class_year}"
+        print(
+            f"✅ Parsed class_year: "
+            f"{class_year}"
         )
 
-    # --------------------------------------------------
-    # 2️⃣ Validate topics (NEW STRUCTURE)
-    # --------------------------------------------------
-    if not isinstance(quiz.topics, list):
-        raise HTTPException(status_code=400, detail="topics must be a list")
+    except Exception as e:
+
+        print(
+            f"❌ Failed to parse "
+            f"class_year: {e}"
+        )
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail=(
+                f"Invalid class_year: "
+                f"{quiz.class_year}"
+            )
+        )
+
+    # ==========================================
+    # VALIDATE TOPICS
+    # ==========================================
+
+    if not isinstance(
+        quiz.topics,
+        list
+    ):
+
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a list"
+        )
 
     for t in quiz.topics:
-        if not t.name:
-            raise HTTPException(status_code=400, detail="Each topic must have a name")
 
-        for level in ["easy", "medium", "hard"]:
+        if not t.name:
+
+            raise HTTPException(
+
+                status_code=400,
+
+                detail=(
+                    "Each topic "
+                    "must have a name"
+                )
+            )
+
+        for level in [
+
+            "easy",
+
+            "medium",
+
+            "hard"
+
+        ]:
+
             diff = getattr(t, level)
 
             if diff.enabled:
-                if diff.ai < 0 or diff.db < 0:
+
+                if (
+                    diff.ai < 0
+                    or diff.db < 0
+                ):
+
                     raise HTTPException(
+
                         status_code=400,
-                        detail=f"Invalid counts in {t.name} - {level}"
+
+                        detail=(
+                            f"Invalid counts "
+                            f"in {t.name} - "
+                            f"{level}"
+                        )
                     )
 
-    # --------------------------------------------------
-    # 3️⃣ Scoped delete (ONLY same year)
-    # --------------------------------------------------
+    # ==========================================
+    # DELETE EXISTING CONFIG
+    # ONLY FOR SAME CENTER
+    # ==========================================
+
     try:
-        print("\n--- Deleting existing homework for SAME year ---")
-        print(f"🔍 Target class_year: {class_year}")
+
+        print(
+            "\n--- Deleting existing "
+            "homework for SAME center/year ---"
+        )
+
+        print(
+            f"🔍 Target class_year: "
+            f"{class_year}"
+        )
+
+        print(
+            f"🏫 Target center: "
+            f"{quiz.center_code}"
+        )
 
         deleted_homework = (
             db.query(HomeworkQuiz_OC_MR)
             .filter(
-                func.lower(func.trim(HomeworkQuiz_OC_MR.subject)) == "mathematical_reasoning",
-                func.lower(func.trim(HomeworkQuiz_OC_MR.class_name)) == "oc",
-                HomeworkQuiz_OC_MR.class_year == str(class_year)   # ✅ FIXED
+
+                func.lower(
+                    func.trim(
+                        HomeworkQuiz_OC_MR.subject
+                    )
+                ) == "mathematical_reasoning",
+
+                func.lower(
+                    func.trim(
+                        HomeworkQuiz_OC_MR.class_name
+                    )
+                ) == "oc",
+
+                HomeworkQuiz_OC_MR.class_year
+                == str(class_year),
+
+                HomeworkQuiz_OC_MR.center_code
+                == quiz.center_code
+
             )
-            .delete(synchronize_session=False)
+            .delete(
+                synchronize_session=False
+            )
         )
 
-        print(f"🗑️ Deleted OC MR homework (same year): {deleted_homework}")
+        print(
+            f"🗑️ Deleted OC MR homework "
+            f"(same center/year): "
+            f"{deleted_homework}"
+        )
 
         db.commit()
-        print("✅ Cleanup commit complete")
 
-        # --------------------------------------------------
-        # 4️⃣ Create new homework config
-        # --------------------------------------------------
-        print("\n--- Creating OC MR Homework ---")
+        print(
+            "✅ Cleanup commit complete"
+        )
 
-        structured_topics = [t.dict() for t in quiz.topics]
+        # ==========================================
+        # CREATE NEW HOMEWORK CONFIG
+        # ==========================================
 
-        new_homework = HomeworkQuiz_OC_MR(
-            class_name="oc",
-            subject="mathematical_reasoning",
-            class_year=str(class_year),
-            num_topics=quiz.num_topics,
-            topics=structured_topics
+        print(
+            "\n--- Creating "
+            "OC MR Homework ---"
+        )
+
+        structured_topics = [
+
+            t.dict()
+
+            for t in quiz.topics
+
+        ]
+
+        new_homework = (
+            HomeworkQuiz_OC_MR(
+
+                class_name="oc",
+
+                subject=
+                    "mathematical_reasoning",
+
+                class_year=
+                    str(class_year),
+
+                center_code=
+                    quiz.center_code,
+
+                num_topics=
+                    quiz.num_topics,
+
+                topics=
+                    structured_topics
+
+            )
         )
 
         db.add(new_homework)
+
         db.commit()
+
         db.refresh(new_homework)
 
-        print("✅ Homework created with ID:", new_homework.id)
-        print(f"📘 Saved class_year: {new_homework.class_year}")
+        print(
+            "✅ Homework created "
+            "with ID:",
+            new_homework.id
+        )
 
-        print("========== OC MR HOMEWORK CREATION COMPLETE ==========\n")
+        print(
+            f"📘 Saved class_year: "
+            f"{new_homework.class_year}"
+        )
+
+        print(
+            f"🏫 Saved center_code: "
+            f"{new_homework.center_code}"
+        )
+
+        print(
+            "========== OC MR HOMEWORK "
+            "CREATION COMPLETE ==========\n"
+        )
 
         return {
-            "message": "OC Mathematical Reasoning homework created successfully",
-            "homework_id": new_homework.id,
-            "class_year": new_homework.class_year
+
+            "message":
+                "OC Mathematical Reasoning "
+                "homework created successfully",
+
+            "homework_id":
+                new_homework.id,
+
+            "class_year":
+                new_homework.class_year,
+
+            "center_code":
+                new_homework.center_code
+
         }
 
     except Exception as e:
+
         print("\n❌ DB ERROR ❌")
+
         print(str(e))
+
         traceback.print_exc()
 
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
 
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+    
 @app.post("/api/quizzes/oc-mathematical-reasoning")
 def create_quiz_oc_mathematical_reasoning(
     quiz: QuizCreate_OC_MR,
     db: Session = Depends(get_db)
 ):
     """
-    Create OC Mathematical Reasoning quiz (config-driven, per-topic difficulty)
+    Create CENTER-AWARE
+    OC Mathematical Reasoning quiz.
+
+    Each center maintains its own:
+    - quiz config
+    - question history
+    - generated exams
     """
 
-    print("\n========== OC MR QUIZ CREATION START ==========")
+    print(
+        "\n========== OC MR QUIZ CREATION START =========="
+    )
 
-    # --------------------------------------------------
-    # 0️⃣ Debug payload
-    # --------------------------------------------------
+    # ==========================================
+    # DEBUG PAYLOAD
+    # ==========================================
+
     try:
+
         quiz_dict = quiz.dict()
+
         print("📦 Payload:", quiz_dict)
+
     except Exception as e:
+
         print("❌ Payload parsing failed:", e)
+
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=str(e))
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
     print("➡️ class_name:", quiz.class_name)
+
     print("➡️ subject:", quiz.subject)
+
     print("➡️ class_year (raw):", quiz.class_year)
+
+    print("➡️ center_code:", quiz.center_code)
+
     print("➡️ num_topics:", quiz.num_topics)
+
     print("➡️ topics count:", len(quiz.topics))
 
-    # --------------------------------------------------
-    # 1️⃣ Validate + normalize class_year
-    # --------------------------------------------------
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                quiz.center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    # ==========================================
+    # VALIDATE + NORMALIZE CLASS YEAR
+    # ==========================================
+
     try:
+
         if not quiz.class_year:
-            raise ValueError("class_year is required")
+
+            raise ValueError(
+                "class_year is required"
+            )
 
         raw_class_year = quiz.class_year
 
-        if isinstance(raw_class_year, str):
-            class_year = int(raw_class_year.strip().split()[-1])  # "Year 4" → 4
+        if isinstance(
+            raw_class_year,
+            str
+        ):
+
+            class_year = int(
+                raw_class_year
+                .strip()
+                .split()[-1]
+            )
+
         else:
-            class_year = int(raw_class_year)
 
-        print(f"✅ Parsed class_year: {class_year}")
+            class_year = int(
+                raw_class_year
+            )
 
-    except Exception as e:
-        print(f"❌ Failed to parse class_year: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid class_year: {quiz.class_year}"
+        print(
+            f"✅ Parsed class_year: "
+            f"{class_year}"
         )
 
-    # --------------------------------------------------
-    # 2️⃣ Validate topics (NEW STRUCTURE)
-    # --------------------------------------------------
-    if not isinstance(quiz.topics, list):
-        raise HTTPException(status_code=400, detail="topics must be a list")
+    except Exception as e:
+
+        print(
+            f"❌ Failed to parse "
+            f"class_year: {e}"
+        )
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail=(
+                f"Invalid class_year: "
+                f"{quiz.class_year}"
+            )
+        )
+
+    # ==========================================
+    # VALIDATE TOPICS
+    # ==========================================
+
+    if not isinstance(
+        quiz.topics,
+        list
+    ):
+
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a list"
+        )
 
     for t in quiz.topics:
-        if not t.name:
-            raise HTTPException(status_code=400, detail="Each topic must have a name")
 
-        for level in ["easy", "medium", "hard"]:
+        if not t.name:
+
+            raise HTTPException(
+
+                status_code=400,
+
+                detail=(
+                    "Each topic "
+                    "must have a name"
+                )
+            )
+
+        for level in [
+
+            "easy",
+
+            "medium",
+
+            "hard"
+
+        ]:
+
             diff = getattr(t, level)
 
             if diff.enabled:
-                if diff.ai < 0 or diff.db < 0:
+
+                if (
+                    diff.ai < 0
+                    or diff.db < 0
+                ):
+
                     raise HTTPException(
+
                         status_code=400,
-                        detail=f"Invalid counts in {t.name} - {level}"
+
+                        detail=(
+                            f"Invalid counts "
+                            f"in {t.name} - "
+                            f"{level}"
+                        )
                     )
 
-    # --------------------------------------------------
-    # 3️⃣ Scoped delete (ONLY same year)
-    # --------------------------------------------------
+    # ==========================================
+    # DELETE EXISTING CONFIG
+    # ONLY FOR SAME CENTER
+    # ==========================================
+
     try:
-        print("\n--- Deleting existing quizzes for SAME year ---")
-        print(f"🔍 Target class_year: {class_year}")
+
+        print(
+            "\n--- Deleting existing "
+            "quizzes for SAME center/year ---"
+        )
+
+        print(
+            f"🔍 Target class_year: "
+            f"{class_year}"
+        )
+
+        print(
+            f"🏫 Target center: "
+            f"{quiz.center_code}"
+        )
 
         deleted_quizzes = (
             db.query(Quiz)
             .filter(
-                func.lower(func.trim(Quiz.subject)) == "mathematical_reasoning",
-                func.lower(func.trim(Quiz.class_name)) == "oc",
-                Quiz.class_year == class_year
+
+                func.lower(
+                    func.trim(
+                        Quiz.subject
+                    )
+                ) == "mathematical_reasoning",
+
+                func.lower(
+                    func.trim(
+                        Quiz.class_name
+                    )
+                ) == "oc",
+
+                Quiz.class_year
+                == class_year,
+
+                Quiz.center_code
+                == quiz.center_code
+
             )
-            .delete(synchronize_session=False)
+            .delete(
+                synchronize_session=False
+            )
         )
 
-        print(f"🗑️ Deleted quizzes (same year): {deleted_quizzes}")
+        print(
+            f"🗑️ Deleted quizzes "
+            f"(same center/year): "
+            f"{deleted_quizzes}"
+        )
 
         db.commit()
-        print("✅ Cleanup commit complete")
 
-        # --------------------------------------------------
-        # 4️⃣ Create new quiz (NEW STRUCTURE)
-        # --------------------------------------------------
-        print("\n--- Creating OC Mathematical Reasoning Quiz ---")
+        print(
+            "✅ Cleanup commit complete"
+        )
 
-        structured_topics = [t.dict() for t in quiz.topics]
+        # ==========================================
+        # CREATE NEW QUIZ
+        # ==========================================
+
+        print(
+            "\n--- Creating OC "
+            "Mathematical Reasoning Quiz ---"
+        )
+
+        structured_topics = [
+
+            t.dict()
+
+            for t in quiz.topics
+
+        ]
 
         new_quiz = Quiz(
+
             class_name="oc",
-            subject="mathematical_reasoning",
-            class_year=class_year,
-            num_topics=quiz.num_topics,
-            topics=structured_topics   # ✅ JSON config
+
+            subject=
+                "mathematical_reasoning",
+
+            class_year=
+                class_year,
+
+            center_code=
+                quiz.center_code,
+
+            num_topics=
+                quiz.num_topics,
+
+            topics=
+                structured_topics
+
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print("✅ OC MR Quiz created with ID:", new_quiz.id)
-        print(f"📘 Saved class_year: {new_quiz.class_year}")
+        print(
+            "✅ OC MR Quiz "
+            "created with ID:",
+            new_quiz.id
+        )
 
-        print("========== OC MR QUIZ CREATION COMPLETE ==========\n")
+        print(
+            f"📘 Saved class_year: "
+            f"{new_quiz.class_year}"
+        )
+
+        print(
+            f"🏫 Saved center_code: "
+            f"{new_quiz.center_code}"
+        )
+
+        print(
+            "========== OC MR QUIZ "
+            "CREATION COMPLETE ==========\n"
+        )
 
         return {
-            "message": "OC Mathematical Reasoning quiz created successfully",
-            "quiz_id": new_quiz.id,
-            "class_year": new_quiz.class_year
+
+            "message":
+                "OC Mathematical Reasoning "
+                "quiz created successfully",
+
+            "quiz_id":
+                new_quiz.id,
+
+            "class_year":
+                new_quiz.class_year,
+
+            "center_code":
+                new_quiz.center_code
+
         }
 
     except Exception as e:
+
         print("\n❌ DB ERROR ❌")
+
         print(str(e))
+
         traceback.print_exc()
 
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
 
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 @app.post("/api/quizzes-homework")
 def create_homework_quiz(
     quiz: QuizCreate,
