@@ -285,6 +285,34 @@ class ReadingQuestionUsage(Base):
         DateTime,
         default=datetime.utcnow
     )
+class OCReadingQuestionUsage(Base):
+
+    __tablename__ = "oc_reading_question_usage"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    question_reading_id = Column(
+        Integer,
+        ForeignKey(
+            "questions_reading.id"
+        ),
+        nullable=False
+    )
+
+    center_id = Column(
+        Integer,
+        ForeignKey("centers.id"),
+        nullable=False
+    )
+
+    used_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )    
 class AdminUser(Base):
     __tablename__ = "admin_users"
 
@@ -548,6 +576,10 @@ class ReadingHomeworkExamConfig(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
+    center_code = Column(
+        String,
+        nullable=False
+    )
     class_year = Column(String, nullable=False)   # ✅ NEW
     num_topics = Column(Integer, nullable=False)
     topics = Column(JSONB, nullable=False)
@@ -696,6 +728,7 @@ class ReadingHomeworkExamConfigCreate(BaseModel):
     class_name: str
     subject: str
     difficulty: str
+    center_code: str
     class_year: str   # ✅ NEW
     topics: List[ReadingTopicItem]
 
@@ -10462,6 +10495,212 @@ def reset_used_reading_questions(
         "deleted_count":
             deleted_count
     }
+
+
+@app.post("/api/admin/reset-used-oc-reading-questions")
+def reset_used_oc_reading_questions(
+    payload: ResetUsedQuestionsRequest,
+    db: Session = Depends(get_db)
+):
+
+    print(
+        "\n🔁 RESET USED OC READING QUESTIONS"
+    )
+
+    print(
+        "➡ class_year:",
+        payload.class_year
+    )
+
+    print(
+        "➡ center_code:",
+        payload.center_code
+    )
+
+    # ==================================================
+    # VALIDATION
+    # ==================================================
+
+    if not payload.center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    # ==================================================
+    # FIND CENTER
+    # ==================================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                payload.center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"✅ Center Found | "
+        f"ID={center.id}"
+    )
+
+    # ==================================================
+    # NORMALIZE CLASS YEAR
+    # ==================================================
+
+    class_year_clean = (
+        str(payload.class_year)
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(
+        f"📘 class_year_clean: "
+        f"{class_year_clean}"
+    )
+
+    # ==================================================
+    # FETCH OC READING QUESTION IDS
+    # ==================================================
+
+    reading_question_ids = (
+
+        db.query(
+            QuestionReading.id
+        )
+
+        .filter(
+
+            func.lower(
+                func.trim(
+                    QuestionReading.class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.replace(
+                    func.trim(
+                        QuestionReading.subject
+                    ),
+                    " ",
+                    "_"
+                )
+            ) == "reading_comprehension",
+
+            func.trim(
+                func.replace(
+
+                    func.lower(
+                        QuestionReading.class_year
+                    ),
+
+                    "year",
+
+                    ""
+                )
+            ) == class_year_clean
+        )
+
+        .all()
+    )
+
+    reading_question_ids = [
+
+        row[0]
+
+        for row in reading_question_ids
+
+    ]
+
+    print(
+        "\n🧠 OC Reading Question IDs:"
+    )
+
+    print(
+        reading_question_ids
+    )
+
+    print(
+        f"📊 Total OC Reading Bundles: "
+        f"{len(reading_question_ids)}"
+    )
+
+    # ==================================================
+    # DELETE USAGE ROWS
+    # ==================================================
+
+    deleted_count = 0
+
+    if reading_question_ids:
+
+        deleted_count = (
+
+            db.query(
+                OCReadingQuestionUsage
+            )
+
+            .filter(
+
+                OCReadingQuestionUsage.center_id
+                == center.id,
+
+                OCReadingQuestionUsage
+                .question_reading_id
+                .in_(
+                    reading_question_ids
+                )
+            )
+
+            .delete(
+                synchronize_session=False
+            )
+        )
+
+        db.commit()
+
+    print(
+        f"✅ Deleted usage rows: "
+        f"{deleted_count}"
+    )
+
+    print(
+        "========================="
+        "====================\n"
+    )
+
+    # ==================================================
+    # RESPONSE
+    # ==================================================
+
+    return {
+
+        "message":
+            (
+                "OC Reading used questions "
+                "reset successfully"
+            ),
+
+        "center_code":
+            payload.center_code,
+
+        "class_year":
+            class_year_clean,
+
+        "deleted_count":
+            deleted_count
+    }
+
 @app.post("/api/admin/reset-used-questions")
 def reset_used_questions(
     payload: ResetUsedQuestionsRequest,
@@ -14565,6 +14804,7 @@ def start_homework_exam(
                 * 60
             )
     } 
+
 @app.get("/api/student/exam-attempts/oc-mathematical-reasoning")
 def get_exam_attempts(student_id: str, db: Session = Depends(get_db)):
 
@@ -24442,115 +24682,369 @@ def get_reading_question_bank_summary_oc(
     subject: str = Query("reading_comprehension"),
     class_name: str = Query("oc"),
     class_year: str = Query(...),
+    center_code: str = Query(...),
     db: Session = Depends(get_db),
 ):
     """
-    Debug-enabled OC Reading question bank summary
-    Returns ONLY unused rows (is_used = False)
-    Filters by class_year
+    OC Reading Question Bank Summary
+
+    Returns ONLY unused reading sets
+    for the specified center using
+    OCReadingQuestionUsage instead
+    of QuestionReading.is_used.
     """
 
-    print("\n================ OC QUESTION BANK SUMMARY START ================")
-    print(f"📥 Incoming subject: '{subject}'")
-    print(f"📥 Incoming class_name: '{class_name}'")
-    print(f"📥 Incoming class_year: {class_year}")
-
-    class_year_clean = class_year.strip()
-    subject_clean = subject.strip().lower()
-    class_clean = class_name.strip().lower()
-
-    print(f"🧹 Cleaned class_year: '{class_year_clean}'")
-    print(f"🧹 Cleaned subject: '{subject_clean}'")
-    print(f"🧹 Cleaned class_name: '{class_clean}'")
+    print(
+        "\n================ "
+        "OC READING QUESTION BANK FETCH "
+        "================="
+    )
 
     try:
-        # ---------------------------------------
-        # DEBUG COUNTS
-        # ---------------------------------------
-        total_rows = db.query(QuestionReading).count()
-        print(f"📊 Total rows in QuestionReading: {total_rows}")
 
-        unused_rows = db.query(QuestionReading).filter(
-            QuestionReading.is_used == False
-        ).count()
-        print(f"📊 Total unused rows: {unused_rows}")
+        # ==================================================
+        # RAW INPUTS
+        # ==================================================
 
-        # ---------------------------------------
-        # NORMALIZATION
-        # ---------------------------------------
+        print("\n📥 RAW INPUTS:")
+
+        print(
+            f"   subject      = '{subject}'"
+        )
+
+        print(
+            f"   class_name   = '{class_name}'"
+        )
+
+        print(
+            f"   class_year   = '{class_year}'"
+        )
+
+        print(
+            f"   center_code  = '{center_code}'"
+        )
+
+        if not class_year:
+
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
+            )
+
+        if not center_code:
+
+            raise HTTPException(
+                status_code=400,
+                detail="center_code is required"
+            )
+
+        # ==================================================
+        # FIND CENTER
+        # ==================================================
+
+        center = (
+            db.query(Center)
+            .filter(
+                Center.center_code.ilike(
+                    center_code
+                )
+            )
+            .first()
+        )
+
+        print("\n🔍 Center Lookup Result:")
+        print(center)
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"✅ Center Found | "
+            f"ID={center.id}"
+        )
+
+        # ==================================================
+        # FETCH USED QUESTION IDS
+        # ==================================================
+
+        raw_used_question_rows = (
+            db.query(
+                OCReadingQuestionUsage.question_reading_id
+            )
+            .filter(
+                OCReadingQuestionUsage.center_id
+                == center.id
+            )
+            .all()
+        )
+
+        print(
+            "\n🧠 Raw Used Question Rows:"
+        )
+
+        print(raw_used_question_rows)
+
+        used_question_ids = [
+
+            row[0]
+
+            for row in raw_used_question_rows
+
+        ]
+
+        print(
+            "\n🧠 Used Question IDs:"
+        )
+
+        print(used_question_ids)
+
+        print(
+            f"\n📊 Total Used Questions: "
+            f"{len(used_question_ids)}"
+        )
+
+        # ==================================================
+        # NORMALIZE INPUTS
+        # ==================================================
+
+        subject_clean = (
+            subject.strip().lower()
+        )
+
+        class_name_clean = (
+            class_name.strip().lower()
+        )
+
+        class_year_clean = (
+            class_year.strip()
+            .lower()
+            .replace("year", "")
+            .strip()
+        )
+
+        print(
+            "\n🔧 NORMALIZED INPUTS:"
+        )
+
+        print(
+            f"   subject_clean    = "
+            f"'{subject_clean}'"
+        )
+
+        print(
+            f"   class_name_clean = "
+            f"'{class_name_clean}'"
+        )
+
+        print(
+            f"   class_year_clean = "
+            f"'{class_year_clean}'"
+        )
+
+        # ==================================================
+        # NORMALIZE DB COLUMNS
+        # ==================================================
+
         subject_norm = func.lower(
             func.replace(
-                func.trim(QuestionReading.subject),
+                func.trim(
+                    QuestionReading.subject
+                ),
                 " ",
                 "_"
             )
         )
 
-        class_norm = func.lower(
-            func.trim(QuestionReading.class_name)
+        class_name_norm = func.lower(
+            func.trim(
+                QuestionReading.class_name
+            )
         )
 
         difficulty_norm = func.lower(
-            func.trim(QuestionReading.difficulty)
+            func.trim(
+                QuestionReading.difficulty
+            )
         )
 
-        print("🔍 Executing grouped query with is_used=False ...")
+        class_year_norm = func.trim(
+            func.replace(
+                func.lower(
+                    QuestionReading.class_year
+                ),
+                "year",
+                ""
+            )
+        )
+
+        # ==================================================
+        # MAIN QUERY
+        # ==================================================
+
+        print(
+            "\n🚀 Running Main Query..."
+        )
 
         rows = (
             db.query(
-                difficulty_norm.label("difficulty"),
+
+                difficulty_norm.label(
+                    "difficulty"
+                ),
+
                 QuestionReading.topic,
-                QuestionReading.total_questions.label("set_size"),
-                func.count(QuestionReading.id).label("sets_available"),
+
+                QuestionReading.total_questions.label(
+                    "set_size"
+                ),
+
+                func.count(
+                    QuestionReading.id
+                ).label(
+                    "sets_available"
+                ),
             )
-            .filter(subject_norm == subject_clean)
-            .filter(class_norm == class_clean)
-            .filter(func.trim(QuestionReading.class_year) == class_year_clean)
-            .filter(QuestionReading.is_used == False)   # ✅ KEY FIX
-            .filter(QuestionReading.topic.isnot(None))
-            .filter(QuestionReading.topic != "")
-            .filter(QuestionReading.difficulty.isnot(None))
+
+            .filter(
+                subject_norm
+                == subject_clean
+            )
+
+            .filter(
+                class_name_norm
+                == class_name_clean
+            )
+
+            .filter(
+                class_year_norm
+                == class_year_clean
+            )
+
+            # ==============================================
+            # EXCLUDE USED QUESTIONS
+            # FOR THIS CENTER
+            # ==============================================
+
+            .filter(
+
+                (
+                    ~QuestionReading.id.in_(
+                        used_question_ids
+                    )
+                    if used_question_ids
+                    else True
+                )
+
+            )
+
+            .filter(
+                QuestionReading.topic.isnot(None)
+            )
+
+            .filter(
+                QuestionReading.topic != ""
+            )
+
+            .filter(
+                QuestionReading.difficulty
+                .isnot(None)
+            )
+
             .group_by(
+
                 difficulty_norm,
+
                 QuestionReading.topic,
+
                 QuestionReading.total_questions,
             )
+
             .order_by(
+
                 difficulty_norm,
+
                 QuestionReading.topic,
+
                 QuestionReading.total_questions,
             )
+
             .all()
         )
 
-        print(f"📦 Raw grouped rows: {rows}")
+        print("\n✅ Query Finished")
 
-        formatted_rows = [
-            {
-                "difficulty": row.difficulty.capitalize(),
-                "topic": row.topic,
-                "set_size": row.set_size,
-                "sets_available": row.sets_available,
-            }
-            for row in rows
-        ]
+        print(
+            f"📦 Grouped rows returned: "
+            f"{len(rows)}"
+        )
 
-        print(f"✅ Final formatted rows: {formatted_rows}")
-        print(f"✅ Total groups returned: {len(formatted_rows)}")
-        print("================ OC QUESTION BANK SUMMARY END ================\n")
+        for row in rows:
+
+            print(
+                f"• Difficulty: "
+                f"{row.difficulty} | "
+                f"Topic: {row.topic} | "
+                f"Set Size: {row.set_size} | "
+                f"Available Sets: "
+                f"{row.sets_available}"
+            )
+
+        print(
+            "\n================ "
+            "END OC READING QUESTION BANK "
+            "=================\n"
+        )
+
+        # ==================================================
+        # RESPONSE
+        # ==================================================
 
         return {
-            "rows": formatted_rows
+
+            "rows": [
+
+                {
+                    "difficulty":
+                        row.difficulty.capitalize(),
+
+                    "topic":
+                        row.topic,
+
+                    "set_size":
+                        row.set_size,
+
+                    "sets_available":
+                        row.sets_available,
+                }
+
+                for row in rows
+            ]
         }
 
+    except HTTPException:
+
+        raise
+
     except Exception as error:
-        print("❌ ERROR in get_reading_question_bank_summary_oc:", str(error))
+
+        print(
+            "\n💥 ERROR DURING "
+            "OC READING QUESTION BANK FETCH"
+        )
+
+        print(str(error))
 
         raise HTTPException(
             status_code=500,
-            detail=f"Error fetching OC reading question bank: {str(error)}"
+            detail=(
+                "Error fetching OC reading "
+                f"question bank: {str(error)}"
+            )
         )
- 
 @app.get("/api/admin/question-bank-reading")
 def get_question_bank_reading(
     db: Session = Depends(get_db)
@@ -31047,397 +31541,397 @@ def generate_oc_thinking_skills_exam(
         "questions": questions
 
     }
-@app.post("/api/exams/generate-oc-mathematical-reasoning-latest")
-def generate_oc_mathematical_reasoning_exam_latest(
-    payload: dict = Body(...),
-    db: Session = Depends(get_db)
-):
-    import random
-    from datetime import datetime
+    @app.post("/api/exams/generate-oc-mathematical-reasoning-latest")
+    def generate_oc_mathematical_reasoning_exam_latest(
+        payload: dict = Body(...),
+        db: Session = Depends(get_db)
+    ):
+        import random
+        from datetime import datetime
 
-    print("\n" + "=" * 70)
-    print("🚀 OC MR LATEST EXAM GENERATION START")
-    print("=" * 70)
+        print("\n" + "=" * 70)
+        print("🚀 OC MR LATEST EXAM GENERATION START")
+        print("=" * 70)
 
-    # ==========================================
-    # PARSE PAYLOAD
-    # ==========================================
+        # ==========================================
+        # PARSE PAYLOAD
+        # ==========================================
 
-    raw_class_year = payload.get(
-        "class_year"
-    )
-
-    selected_date = payload.get(
-        "selected_date"
-    )
-
-    batch_id = payload.get(
-        "batch_id"
-    )
-
-    center_code = payload.get(
-        "center_code"
-    )
-
-    if not raw_class_year:
-
-        raise HTTPException(
-            400,
-            "class_year is required"
+        raw_class_year = payload.get(
+            "class_year"
         )
 
-    if not selected_date:
-
-        raise HTTPException(
-            400,
-            "selected_date is required"
+        selected_date = payload.get(
+            "selected_date"
         )
 
-    if not batch_id:
-
-        raise HTTPException(
-            400,
-            "batch_id is required"
+        batch_id = payload.get(
+            "batch_id"
         )
 
-    if not center_code:
-
-        raise HTTPException(
-            400,
-            "center_code is required"
+        center_code = payload.get(
+            "center_code"
         )
 
-    # ==========================================
-    # PARSE CLASS YEAR
-    # ==========================================
+        if not raw_class_year:
 
-    try:
+            raise HTTPException(
+                400,
+                "class_year is required"
+            )
 
-        if isinstance(
-            raw_class_year,
-            str
+        if not selected_date:
+
+            raise HTTPException(
+                400,
+                "selected_date is required"
+            )
+
+        if not batch_id:
+
+            raise HTTPException(
+                400,
+                "batch_id is required"
+            )
+
+        if not center_code:
+
+            raise HTTPException(
+                400,
+                "center_code is required"
+            )
+
+        # ==========================================
+        # PARSE CLASS YEAR
+        # ==========================================
+
+        try:
+
+            if isinstance(
+                raw_class_year,
+                str
+            ):
+
+                class_year = int(
+                    raw_class_year
+                    .strip()
+                    .split()[-1]
+                )
+
+            else:
+
+                class_year = int(
+                    raw_class_year
+                )
+
+        except:
+
+            raise HTTPException(
+
+                400,
+
+                f"Invalid class_year: "
+                f"{raw_class_year}"
+
+            )
+
+        print(
+            f"🎓 Parsed class_year: "
+            f"{class_year}"
+        )
+
+        # ==========================================
+        # PARSE SELECTED DATE
+        # ==========================================
+
+        try:
+
+            parsed_date = datetime.strptime(
+
+                selected_date,
+
+                "%Y-%m-%d"
+
+            ).date()
+
+        except:
+
+            raise HTTPException(
+
+                400,
+
+                f"Invalid selected_date: "
+                f"{selected_date}"
+
+            )
+
+        print(
+            f"📅 Parsed selected_date: "
+            f"{parsed_date}"
+        )
+
+        print(
+            f"📦 Batch ID: "
+            f"{batch_id}"
+        )
+
+        print(
+            f"🏫 Center Code: "
+            f"{center_code}"
+        )
+
+        # ==========================================
+        # FIND CENTER
+        # ==========================================
+
+        center = (
+            db.query(Center)
+            .filter(
+                Center.center_code.ilike(
+                    center_code
+                )
+            )
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                404,
+                "Center not found"
+            )
+
+        # ==========================================
+        # USED QUESTIONS
+        # FOR THIS CENTER
+        # ==========================================
+
+        used_question_ids = (
+            db.query(
+                QuestionUsage.question_id
+            )
+            .filter(
+                QuestionUsage.center_id
+                == center.id
+            )
+            .subquery()
+        )
+
+        # ==========================================
+        # FETCH UNUSED QUESTIONS
+        # FOR THIS CENTER
+        # ==========================================
+
+        questions_from_db = (
+            db.query(Question)
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        Question.class_name
+                    )
+                ) == "oc",
+
+                func.lower(
+                    func.trim(
+                        Question.subject
+                    )
+                ) == "mathematical reasoning",
+
+                Question.class_year
+                == class_year,
+
+                # selected upload date
+                func.date(
+                    Question.created_at
+                ) == parsed_date,
+
+                # selected upload batch
+                Question.batch_id
+                == batch_id,
+
+                # exclude already used
+                # by THIS center
+                ~Question.id.in_(
+                    used_question_ids
+                )
+
+            )
+            .order_by(
+                Question.created_at.asc()
+            )
+            .all()
+        )
+
+        print(
+            f"\n📦 Questions Found: "
+            f"{len(questions_from_db)}"
+        )
+
+        if not questions_from_db:
+
+            raise HTTPException(
+
+                404,
+
+                "No unused questions found "
+                "for selected date and batch"
+
+            )
+
+        # ==========================================
+        # BUILD QUESTION STRUCTURE
+        # ==========================================
+
+        questions = []
+
+        for index, q in enumerate(
+            questions_from_db,
+            start=1
         ):
 
-            class_year = int(
-                raw_class_year
-                .strip()
-                .split()[-1]
-            )
+            questions.append({
 
-        else:
+                "id": q.id,
 
-            class_year = int(
-                raw_class_year
-            )
+                "q_id": index,
 
-    except:
+                "topic": q.topic,
 
-        raise HTTPException(
+                "difficulty": q.difficulty,
 
-            400,
+                "batch_id": q.batch_id,
 
-            f"Invalid class_year: "
-            f"{raw_class_year}"
+                "blocks":
+                    q.question_blocks or [],
 
+                "options":
+                    q.options,
+
+                "correct":
+                    q.correct_answer
+
+            })
+
+        print(
+            f"✅ Generated "
+            f"{len(questions)} questions"
         )
 
-    print(
-        f"🎓 Parsed class_year: "
-        f"{class_year}"
-    )
+        # ==========================================
+        # STORE QUESTION USAGE
+        # ==========================================
 
-    # ==========================================
-    # PARSE SELECTED DATE
-    # ==========================================
+        used_ids = [
 
-    try:
+            q["id"]
 
-        parsed_date = datetime.strptime(
+            for q in questions
 
-            selected_date,
-
-            "%Y-%m-%d"
-
-        ).date()
-
-    except:
-
-        raise HTTPException(
-
-            400,
-
-            f"Invalid selected_date: "
-            f"{selected_date}"
-
-        )
-
-    print(
-        f"📅 Parsed selected_date: "
-        f"{parsed_date}"
-    )
-
-    print(
-        f"📦 Batch ID: "
-        f"{batch_id}"
-    )
-
-    print(
-        f"🏫 Center Code: "
-        f"{center_code}"
-    )
-
-    # ==========================================
-    # FIND CENTER
-    # ==========================================
-
-    center = (
-        db.query(Center)
-        .filter(
-            Center.center_code.ilike(
-                center_code
-            )
-        )
-        .first()
-    )
-
-    if not center:
-
-        raise HTTPException(
-            404,
-            "Center not found"
-        )
-
-    # ==========================================
-    # USED QUESTIONS
-    # FOR THIS CENTER
-    # ==========================================
-
-    used_question_ids = (
-        db.query(
-            QuestionUsage.question_id
-        )
-        .filter(
-            QuestionUsage.center_id
-            == center.id
-        )
-        .subquery()
-    )
-
-    # ==========================================
-    # FETCH UNUSED QUESTIONS
-    # FOR THIS CENTER
-    # ==========================================
-
-    questions_from_db = (
-        db.query(Question)
-        .filter(
-
-            func.lower(
-                func.trim(
-                    Question.class_name
-                )
-            ) == "oc",
-
-            func.lower(
-                func.trim(
-                    Question.subject
-                )
-            ) == "mathematical reasoning",
-
-            Question.class_year
-            == class_year,
-
-            # selected upload date
-            func.date(
-                Question.created_at
-            ) == parsed_date,
-
-            # selected upload batch
-            Question.batch_id
-            == batch_id,
-
-            # exclude already used
-            # by THIS center
-            ~Question.id.in_(
-                used_question_ids
-            )
-
-        )
-        .order_by(
-            Question.created_at.asc()
-        )
-        .all()
-    )
-
-    print(
-        f"\n📦 Questions Found: "
-        f"{len(questions_from_db)}"
-    )
-
-    if not questions_from_db:
-
-        raise HTTPException(
-
-            404,
-
-            "No unused questions found "
-            "for selected date and batch"
-
-        )
-
-    # ==========================================
-    # BUILD QUESTION STRUCTURE
-    # ==========================================
-
-    questions = []
-
-    for index, q in enumerate(
-        questions_from_db,
-        start=1
-    ):
-
-        questions.append({
-
-            "id": q.id,
-
-            "q_id": index,
-
-            "topic": q.topic,
-
-            "difficulty": q.difficulty,
-
-            "batch_id": q.batch_id,
-
-            "blocks":
-                q.question_blocks or [],
-
-            "options":
-                q.options,
-
-            "correct":
-                q.correct_answer
-
-        })
-
-    print(
-        f"✅ Generated "
-        f"{len(questions)} questions"
-    )
-
-    # ==========================================
-    # STORE QUESTION USAGE
-    # ==========================================
-
-    used_ids = [
-
-        q["id"]
-
-        for q in questions
-
-        if q.get("id")
-
-    ]
-
-    if used_ids:
-
-        usage_rows = [
-
-            QuestionUsage(
-
-                question_id=q_id,
-
-                center_id=center.id
-
-            )
-
-            for q_id in used_ids
+            if q.get("id")
 
         ]
 
-        db.add_all(usage_rows)
+        if used_ids:
 
-        print(
-            f"🏷️ Added "
-            f"{len(usage_rows)} "
-            f"QuestionUsage rows"
+            usage_rows = [
+
+                QuestionUsage(
+
+                    question_id=q_id,
+
+                    center_id=center.id
+
+                )
+
+                for q_id in used_ids
+
+            ]
+
+            db.add_all(usage_rows)
+
+            print(
+                f"🏷️ Added "
+                f"{len(usage_rows)} "
+                f"QuestionUsage rows"
+            )
+
+        # ==========================================
+        # SHUFFLE QUESTIONS
+        # ==========================================
+
+        random.shuffle(questions)
+
+        # ==========================================
+        # SAVE EXAM
+        # ==========================================
+
+        new_exam = Exam(
+
+            quiz_id=None,
+
+            class_name="oc",
+
+            subject=
+                "mathematical_reasoning",
+
+            class_year=
+                class_year,
+
+            center_code=
+                center_code,
+
+            questions=
+                questions
+
         )
 
-    # ==========================================
-    # SHUFFLE QUESTIONS
-    # ==========================================
+        db.add(new_exam)
 
-    random.shuffle(questions)
+        db.commit()
 
-    # ==========================================
-    # SAVE EXAM
-    # ==========================================
+        db.refresh(new_exam)
 
-    new_exam = Exam(
+        print(
+            f"💾 Exam saved: "
+            f"{new_exam.id}"
+        )
 
-        quiz_id=None,
+        print("=" * 70 + "\n")
 
-        class_name="oc",
+        # ==========================================
+        # RESPONSE
+        # ==========================================
 
-        subject=
-            "mathematical_reasoning",
+        return {
 
-        class_year=
-            class_year,
+            "message": (
 
-        center_code=
-            center_code,
+                "OC Mathematical "
+                "Reasoning latest "
+                "exam generated successfully"
 
-        questions=
-            questions
+            ),
 
-    )
+            "exam_id":
+                new_exam.id,
 
-    db.add(new_exam)
+            "batch_id":
+                batch_id,
 
-    db.commit()
+            "center_code":
+                center_code,
 
-    db.refresh(new_exam)
+            "selected_date":
+                selected_date,
 
-    print(
-        f"💾 Exam saved: "
-        f"{new_exam.id}"
-    )
+            "total_questions":
+                len(questions),
 
-    print("=" * 70 + "\n")
+            "questions":
+                questions
 
-    # ==========================================
-    # RESPONSE
-    # ==========================================
-
-    return {
-
-        "message": (
-
-            "OC Mathematical "
-            "Reasoning latest "
-            "exam generated successfully"
-
-        ),
-
-        "exam_id":
-            new_exam.id,
-
-        "batch_id":
-            batch_id,
-
-        "center_code":
-            center_code,
-
-        "selected_date":
-            selected_date,
-
-        "total_questions":
-            len(questions),
-
-        "questions":
-            questions
-
-    }
+        }
 
 @app.post("/api/exams/generate-oc-mathematical-reasoning")
 def generate_oc_mathematical_reasoning_exam(
@@ -32044,7 +32538,7 @@ def generate_oc_mathematical_reasoning_homework(
                 "oc",
 
             class_year=
-                str(class_year),
+                class_year,
 
             subject=
                 "mathematical_reasoning",
@@ -32093,6 +32587,7 @@ def generate_oc_mathematical_reasoning_homework(
             questions
 
     }
+
 @app.post("/api/exams/generate-oc-mathematical-reasoning-homework-latest")
 def generate_oc_mathematical_reasoning_homework_latest(
     payload: dict = Body(...),
@@ -40835,28 +41330,107 @@ def start_exam_oc_reading_homework(
     req: StartHomeworkExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n================ START-OC-READING-HOMEWORK ==================")
-    print("📘 Incoming request payload:", req.dict())
+
+    print(
+        "\n================ "
+        "START OC READING HOMEWORK "
+        "================="
+    )
+
+    print(
+        "📘 Incoming request payload:",
+        req.dict()
+    )
+
+    # ==================================================
+    # 1️⃣ Validate student_id
+    # ==================================================
+
     student_id = req.student_id.strip()
-    
+
     if not student_id:
-        raise HTTPException(status_code=400, detail="Invalid student_id")
+
+        print("❌ Invalid student_id")
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid student_id"
+        )
+
+    # ==================================================
+    # 2️⃣ Resolve Student
+    # ==================================================
 
     student = (
         db.query(Student)
-        .filter(func.lower(Student.student_id) == student_id.lower())
+        .filter(
+            func.lower(Student.student_id)
+            ==
+            func.lower(student_id)
+        )
         .first()
     )
-    
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
-    
-    raw_year = str(student.student_year).strip()
 
-    # Extract number (handles "Year 4", "4", etc.)
-    # --------------------------------------------------
-    # ✅ NORMALIZE CLASS YEAR (consistent everywhere)
-    # --------------------------------------------------
+    if not student:
+
+        print(
+            "❌ Student not found:",
+            student_id
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id}"
+    )
+
+    # ==================================================
+    # 3️⃣ Validate center_code
+    # ==================================================
+
+    if not student.center_code:
+
+        print(
+            "❌ Student missing center_code"
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "center assigned"
+            )
+        )
+
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 Student center_code: "
+        f"{normalized_center_code}"
+    )
+
+    # ==================================================
+    # 4️⃣ Resolve class_year
+    # ==================================================
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
+        )
+
     class_year = (
         str(student.student_year)
         .strip()
@@ -40865,112 +41439,382 @@ def start_exam_oc_reading_homework(
         .strip()
     )
 
-    print("🧪 Normalized class_year:", class_year)
-
-    # --------------------------------------------------
-    # ✅ FETCH HOMEWORK (FIXED TABLE + NORMALIZATION)
-    # --------------------------------------------------
-    exam = (
-        db.query(GeneratedHomeworkReading)   # ✅ FIXED TABLE
-        .filter(
-            func.lower(func.trim(GeneratedHomeworkReading.class_name)) == "oc",
-
-            func.trim(
-                func.replace(
-                    func.lower(GeneratedHomeworkReading.class_year),
-                    "year",
-                    ""
-                )
-            ) == class_year
-        )
-        .order_by(GeneratedHomeworkReading.id.desc())
-        .first()
+    print(
+        f"📘 Normalized class_year: "
+        f"{class_year}"
     )
 
-    print("🔎 Found exam:", exam)
+    # ==================================================
+    # 5️⃣ Fetch CENTER-SPECIFIC Homework Exam
+    # ==================================================
+
+    print(
+        "🔍 Searching OC homework exam with:",
+        {
+            "class_name": "oc",
+            "class_year": class_year,
+            "center_code": normalized_center_code
+        }
+    )
+
+    exam_query = (
+        db.query(
+            GeneratedHomeworkReading
+        )
+        .filter(
+
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkReading.class_name
+                )
+            ) == "oc",
+
+            GeneratedHomeworkReading.class_year
+                == class_year,
+
+            func.upper(
+                func.trim(
+                    GeneratedHomeworkReading.center_code
+                )
+            ) == normalized_center_code
+        )
+    )
+
+    exam_count = exam_query.count()
+
+    print(
+        f"📊 Matching OC homework exams "
+        f"for class_year="
+        f"{class_year} "
+        f"and center="
+        f"{normalized_center_code}: "
+        f"{exam_count}"
+    )
+
+    if exam_count == 0:
+
+        print(
+            "❌ No OC homework exam found "
+            "for this center"
+        )
+
+        rows = (
+            db.query(
+                GeneratedHomeworkReading
+            )
+            .all()
+        )
+
+        print(
+            "🧪 Existing homework exams in DB:"
+        )
+
+        for row in rows:
+
+            print({
+                "id": row.id,
+                "class_name": row.class_name,
+                "class_year": row.class_year,
+                "center_code": getattr(
+                    row,
+                    "center_code",
+                    None
+                )
+            })
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No OC homework exam found "
+                f"for class_year="
+                f"{class_year} "
+                f"and center="
+                f"{normalized_center_code}"
+            )
+        )
+
+    # ==================================================
+    # 6️⃣ Select Latest Homework Exam
+    # ==================================================
+
+    exam = (
+        exam_query
+        .order_by(
+            GeneratedHomeworkReading.id.desc()
+        )
+        .first()
+    )
 
     if not exam:
-        rows = db.query(GeneratedHomeworkReading).all()
-        print("🧪 All homework exams in DB:")
-        for r in rows:
-            print(r.id, r.class_name, r.class_year)
-    
-    # --------------------------------------------------
-    # 2️⃣ Fetch existing attempt (ONE per exam)
-    # --------------------------------------------------
-    attempt = (
-        db.query(StudentHomeworkReadingOC)
-        .filter(
-            func.lower(StudentHomeworkReadingOC.student_id) == student_id.lower(),
-            StudentHomeworkReadingOC.exam_id == exam.id
+
+        raise HTTPException(
+            status_code=404,
+            detail="OC homework exam not found"
         )
-        .order_by(StudentHomeworkReadingOC.started_at.desc())
+
+    print(
+        "✅ Selected homework exam:",
+        {
+            "exam_id": exam.id,
+            "class_year": exam.class_year,
+            "center_code": exam.center_code
+        }
+    )
+
+    duration_minutes = (
+        exam.exam_json.get(
+            "duration_minutes",
+            40
+        )
+    )
+
+    now = datetime.now(timezone.utc)
+
+    # ==================================================
+    # 7️⃣ Fetch Existing Attempt
+    # ==================================================
+
+    attempt = (
+        db.query(
+            StudentHomeworkReadingOC
+        )
+        .filter(
+
+            func.lower(
+                StudentHomeworkReadingOC.student_id
+            )
+            ==
+            func.lower(student_id),
+
+            StudentHomeworkReadingOC.exam_id
+            == exam.id
+        )
+        .order_by(
+            StudentHomeworkReadingOC.started_at
+            .desc()
+        )
         .first()
     )
 
-    # --------------------------------------------------
-    # 🚫 Already finished
-    # --------------------------------------------------
+    if attempt:
+
+        print(
+            "🧪 Found existing attempt:",
+            {
+                "attempt_id": attempt.id,
+                "exam_id": attempt.exam_id,
+                "started_at": attempt.started_at,
+                "finished": attempt.finished
+            }
+        )
+
+    else:
+
+        print(
+            "🆕 No previous attempt found"
+        )
+
+    # ==================================================
+    # 8️⃣ Already Finished
+    # ==================================================
+
     if attempt and attempt.finished:
-        return {
+
+        payload = {
+
             "completed": True,
-            "attempt_id": attempt.id
+
+            "attempt_id": attempt.id,
+
+            "exam_id": exam.id
         }
 
-    duration_minutes = exam.exam_json.get("duration_minutes", 40)
+        print(
+            "🚫 Attempt already finished "
+            "→ returning:",
+            payload
+        )
 
-    # --------------------------------------------------
-    # 🔁 Resume attempt
-    # --------------------------------------------------
+        print(
+            "=========================="
+            "======================\n"
+        )
+
+        return payload
+
+    # ==================================================
+    # 9️⃣ Resume Existing Attempt
+    # ==================================================
+
     if attempt and not attempt.finished:
-        now = datetime.now(timezone.utc)
+
         started_at = attempt.started_at
 
         if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
 
-        elapsed = int((now - started_at).total_seconds())
-        remaining = max(0, duration_minutes * 60 - elapsed)
+            started_at = (
+                started_at.replace(
+                    tzinfo=timezone.utc
+                )
+            )
+
+        elapsed = int(
+            (now - started_at)
+            .total_seconds()
+        )
+
+        remaining = max(
+            0,
+            duration_minutes * 60
+            - elapsed
+        )
+
+        print(
+            "⏱ Resume timing:",
+            {
+                "attempt_id": attempt.id,
+                "elapsed_seconds": elapsed,
+                "remaining_seconds": remaining
+            }
+        )
+
+        # ==============================================
+        # ⌛ Time Expired
+        # ==============================================
 
         if remaining == 0:
+
+            print(
+                "⌛ Time expired "
+                "→ auto submit"
+            )
+
             auto_submit_oc_reading_homework(
                 session=attempt,
                 db=db
             )
 
-            return {
+            payload = {
+
                 "completed": True,
-                "attempt_id": attempt.id
+
+                "attempt_id": attempt.id,
+
+                "exam_id": exam.id
             }
 
-        return {
+            print(
+                "🟢 Auto-submit complete "
+                "→ returning:",
+                payload
+            )
+
+            print(
+                "======================"
+                "==================\n"
+            )
+
+            return payload
+
+        payload = {
+
             "completed": False,
+
             "attempt_id": attempt.id,
+
             "exam_id": exam.id,
+
             "remaining_time": remaining
         }
 
-    # --------------------------------------------------
-    # 🆕 Create new attempt
-    # --------------------------------------------------
-    new_attempt = StudentHomeworkReadingOC(
-        student_id=student_id,
-        exam_id=exam.id,
-        class_year=class_year,   # ✅ IMPORTANT
-        started_at=datetime.now(timezone.utc),
-        finished=False
+        print(
+            "🔁 Resuming attempt "
+            "→ returning:",
+            payload
+        )
+
+        print(
+            "======================"
+            "==================\n"
+        )
+
+        return payload
+
+    # ==================================================
+    # 🔟 Create NEW Attempt
+    # ==================================================
+
+    print(
+        "🆕 Creating new attempt"
+    )
+
+    new_attempt = (
+        StudentHomeworkReadingOC(
+
+            student_id=
+                student_id,
+
+            exam_id=
+                exam.id,
+
+            class_year=
+                class_year,
+
+            started_at=
+                now,
+
+            finished=False
+        )
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
-    return {
+    payload = {
+
         "completed": False,
-        "attempt_id": new_attempt.id,
-        "exam_id": exam.id,
-        "remaining_time": duration_minutes * 60
+
+        "attempt_id":
+            new_attempt.id,
+
+        "exam_id":
+            exam.id,
+
+        "remaining_time":
+            duration_minutes * 60
     }
+
+    print(
+        "🆕 New homework attempt created:",
+        {
+            "attempt_id":
+                new_attempt.id,
+
+            "exam_id":
+                exam.id,
+
+            "class_year":
+                class_year,
+
+            "center_code":
+                normalized_center_code
+        }
+    )
+
+    print(
+        "📤 Returning payload:",
+        payload
+    )
+
+    print(
+        "======================"
+        "==================\n"
+    )
+
+    return payload
 
 
 @app.post("/api/exams/start-oc-reading")
@@ -40978,195 +41822,484 @@ def start_exam_oc_reading(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n================ START-OC-READING ==================")
-    print("📘 Incoming request payload:", req.dict())
+
+    print(
+        "\n================ "
+        "START OC READING "
+        "================="
+    )
+
+    print(
+        "📘 Incoming request payload:",
+        req.dict()
+    )
+
+    # ==================================================
+    # 1️⃣ Validate student_id
+    # ==================================================
 
     student_id = req.student_id.strip()
 
     if not student_id:
-        print("❌ Invalid student_id")
-        raise HTTPException(status_code=400, detail="Invalid student_id")
 
-    # --------------------------------------------------
-    # 0️⃣ Resolve student + class year
-    # --------------------------------------------------
+        print("❌ Invalid student_id")
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid student_id"
+        )
+
+    # ==================================================
+    # 2️⃣ Resolve Student
+    # ==================================================
+
     student = (
         db.query(Student)
-        .filter(func.lower(Student.student_id) == student_id.lower())
+        .filter(
+            func.lower(Student.student_id)
+            ==
+            func.lower(student_id)
+        )
         .first()
     )
 
     if not student:
-        print("❌ Student not found")
-        raise HTTPException(status_code=404, detail="Student not found")
 
-    raw_year = str(student.student_year).strip()
+        print(
+            "❌ Student not found:",
+            student_id
+        )
 
-    # Handles:
-    # "Year 4" -> 4
-    # "4" -> 4
-    class_year = raw_year.split()[-1]
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
 
-    print("✅ Using:", {
-        "student_id": student_id,
-        "student_year_raw": raw_year,
-        "class_year": class_year
-    })
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id}"
+    )
 
-    # --------------------------------------------------
-    # 1️⃣ Get latest OC exam for SAME class_year
-    # --------------------------------------------------
-    print("🔍 Searching OC exam with:", {
-        "class_name": "oc",
-        "class_year": class_year
-    })
+    # ==================================================
+    # 3️⃣ Validate center_code
+    # ==================================================
+
+    if not student.center_code:
+
+        print(
+            "❌ Student missing center_code"
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "center assigned"
+            )
+        )
+
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 Student center_code: "
+        f"{normalized_center_code}"
+    )
+
+    # ==================================================
+    # 4️⃣ Resolve class_year
+    # ==================================================
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
+        )
+
+    raw_year = str(student.student_year)
+
+    class_year = (
+        raw_year
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{class_year}"
+    )
+
+    # ==================================================
+    # 5️⃣ Fetch CENTER-SPECIFIC Exam
+    # ==================================================
+
+    print(
+        "🔍 Searching OC reading exam with:",
+        {
+            "class_name": "oc",
+            "class_year": class_year,
+            "center_code": normalized_center_code
+        }
+    )
+
+    exam_query = (
+        db.query(
+            GeneratedExamReading
+        )
+        .filter(
+
+            func.lower(
+                func.trim(
+                    GeneratedExamReading.class_name
+                )
+            ) == "oc",
+
+            func.trim(
+                func.replace(
+
+                    func.lower(
+                        GeneratedExamReading.class_year
+                    ),
+
+                    "year",
+
+                    ""
+                )
+            ) == class_year,
+
+            func.upper(
+                func.trim(
+                    GeneratedExamReading.center_code
+                )
+            ) == normalized_center_code
+
+        )
+    )
+
+    exam_count = exam_query.count()
+
+    print(
+        f"📊 Matching OC reading exams "
+        f"for class_year="
+        f"{class_year} "
+        f"and center="
+        f"{normalized_center_code}: "
+        f"{exam_count}"
+    )
+
+    if exam_count == 0:
+
+        print(
+            "❌ No OC reading exam found "
+            "for this center"
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No OC reading exam found "
+                f"for class_year="
+                f"{class_year} "
+                f"and center="
+                f"{normalized_center_code}"
+            )
+        )
+
+    # ==================================================
+    # 6️⃣ Select Latest Exam
+    # ==================================================
 
     exam = (
-        db.query(GeneratedExamReading)
-        .filter(
-            func.lower(GeneratedExamReading.class_name) == "oc",
-            GeneratedExamReading.class_year == class_year
+        exam_query
+        .order_by(
+            GeneratedExamReading.id.desc()
         )
-        .order_by(GeneratedExamReading.id.desc())
         .first()
     )
 
     if not exam:
-        print("❌ No OC reading exam found for class year:", class_year)
+
         raise HTTPException(
             status_code=404,
-            detail=f"OC reading exam not found for Year {class_year}"
+            detail="OC reading exam not found"
         )
 
-    print("✅ Matched exam:", {
-        "exam_id": exam.id,
-        "class_year": exam.class_year
-    })
+    print(
+        "✅ Selected exam:",
+        {
+            "exam_id": exam.id,
+            "class_year": exam.class_year,
+            "center_code": exam.center_code,
+            "difficulty": exam.difficulty
+        }
+    )
 
-    # --------------------------------------------------
-    # 2️⃣ Existing attempt for THIS student + THIS exam
-    # --------------------------------------------------
+    duration_minutes = (
+        exam.exam_json.get(
+            "duration_minutes",
+            30
+        )
+    )
+
+    now = datetime.now(timezone.utc)
+
+    # ==================================================
+    # 7️⃣ Fetch Existing Attempt
+    # ==================================================
+
     attempt = (
-        db.query(StudentExamReadingOC)
-        .filter(
-            func.lower(StudentExamReadingOC.student_id) == student_id.lower(),
-            StudentExamReadingOC.exam_id == exam.id
+        db.query(
+            StudentExamReadingOC
         )
-        .order_by(StudentExamReadingOC.started_at.desc())
+        .filter(
+
+            func.lower(
+                StudentExamReadingOC.student_id
+            )
+            ==
+            func.lower(student_id),
+
+            StudentExamReadingOC.exam_id
+            == exam.id
+        )
+        .order_by(
+            StudentExamReadingOC.started_at
+            .desc()
+        )
         .first()
     )
 
     if attempt:
-        print("🧪 Found existing attempt:", {
-            "attempt_id": attempt.id,
-            "exam_id": attempt.exam_id,
-            "finished": attempt.finished,
-            "started_at": attempt.started_at
-        })
-    else:
-        print("🆕 No previous attempt found")
 
-    # --------------------------------------------------
-    # 🚫 Already finished
-    # --------------------------------------------------
+        print(
+            "🧪 Found existing attempt:",
+            {
+                "attempt_id": attempt.id,
+                "exam_id": attempt.exam_id,
+                "started_at": attempt.started_at,
+                "finished": attempt.finished
+            }
+        )
+
+    else:
+
+        print(
+            "🆕 No previous attempt found"
+        )
+
+    # ==================================================
+    # 8️⃣ Already Finished
+    # ==================================================
+
     if attempt and attempt.finished:
+
         payload = {
+
             "completed": True,
-            "attempt_id": attempt.id
+
+            "attempt_id": attempt.id,
+
+            "exam_id": exam.id
         }
 
-        print("🚫 Already finished →", payload)
-        print("================================================\n")
+        print(
+            "🚫 Attempt already finished "
+            "→ returning:",
+            payload
+        )
+
+        print(
+            "=========================="
+            "======================\n"
+        )
+
         return payload
 
-    duration_minutes = exam.exam_json.get("duration_minutes", 30)
+    # ==================================================
+    # 9️⃣ Resume Existing Attempt
+    # ==================================================
 
-    print("📘 Active exam:", {
-        "exam_id": exam.id,
-        "duration_minutes": duration_minutes
-    })
-
-    # --------------------------------------------------
-    # 🔁 Resume unfinished attempt
-    # --------------------------------------------------
     if attempt and not attempt.finished:
-        now = datetime.now(timezone.utc)
+
         started_at = attempt.started_at
 
         if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
 
-        elapsed = int((now - started_at).total_seconds())
-        remaining = max(0, duration_minutes * 60 - elapsed)
-
-        print("⏱ Resume attempt:", {
-            "attempt_id": attempt.id,
-            "elapsed": elapsed,
-            "remaining": remaining
-        })
-
-        # ⌛ Time expired
-        if remaining == 0:
-            print("⌛ Time expired → auto submit")
-
-            auto_submit_oc_reading_exam(
-                session=attempt,
-                db=db
+            started_at = (
+                started_at.replace(
+                    tzinfo=timezone.utc
+                )
             )
 
+        elapsed = int(
+            (now - started_at)
+            .total_seconds()
+        )
+
+        remaining = max(
+            0,
+            duration_minutes * 60
+            - elapsed
+        )
+
+        print(
+            "⏱ Resume timing:",
+            {
+                "attempt_id": attempt.id,
+                "elapsed_seconds": elapsed,
+                "remaining_seconds": remaining
+            }
+        )
+
+        # ==============================================
+        # ⌛ Time Expired
+        # ==============================================
+
+        if remaining == 0:
+
+            print(
+                "⌛ Time expired "
+                "→ auto submit"
+            )
+
+            if not attempt.finished:
+
+                auto_submit_oc_reading_exam(
+                    session=attempt,
+                    db=db
+                )
+
             payload = {
+
                 "completed": True,
-                "attempt_id": attempt.id
+
+                "attempt_id": attempt.id,
+
+                "exam_id": exam.id
             }
 
-            print("🟢 Auto submitted:", payload)
-            print("================================================\n")
+            print(
+                "🟢 Auto-submit complete "
+                "→ returning:",
+                payload
+            )
+
+            print(
+                "======================"
+                "==================\n"
+            )
+
             return payload
 
         payload = {
+
             "completed": False,
+
             "attempt_id": attempt.id,
+
             "exam_id": exam.id,
+
             "remaining_time": remaining
         }
 
-        print("🔁 Resuming attempt:", payload)
-        print("================================================\n")
+        print(
+            "🔁 Resuming attempt "
+            "→ returning:",
+            payload
+        )
+
+        print(
+            "======================"
+            "==================\n"
+        )
+
         return payload
 
-    # --------------------------------------------------
-    # 🆕 Create new attempt
-    # --------------------------------------------------
-    new_attempt = StudentExamReadingOC(
-        student_id=student_id,
-        exam_id=exam.id,
-        class_year=class_year,
-        started_at=datetime.now(timezone.utc),
-        finished=False
+    # ==================================================
+    # 🔟 Create NEW Attempt
+    # ==================================================
+
+    print(
+        "🆕 Creating new attempt"
+    )
+
+    new_attempt = (
+        StudentExamReadingOC(
+
+            student_id=
+                student_id,
+
+            exam_id=
+                exam.id,
+
+            class_year=
+                class_year,
+
+            started_at=
+                now,
+
+            finished=False
+        )
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
     payload = {
+
         "completed": False,
-        "attempt_id": new_attempt.id,
-        "exam_id": new_attempt.exam_id,
-        "remaining_time": duration_minutes * 60
+
+        "attempt_id":
+            new_attempt.id,
+
+        "exam_id":
+            exam.id,
+
+        "remaining_time":
+            duration_minutes * 60
     }
 
-    print("🆕 New attempt created:", {
-        "attempt_id": new_attempt.id,
-        "exam_id": new_attempt.exam_id,
-        "class_year": class_year
-    })
+    print(
+        "🆕 New attempt created:",
+        {
+            "attempt_id":
+                new_attempt.id,
 
-    print("📤 Returning payload:", payload)
-    print("================================================\n")
+            "exam_id":
+                exam.id,
+
+            "class_year":
+                class_year,
+
+            "center_code":
+                normalized_center_code
+        }
+    )
+
+    print(
+        "📤 Returning payload:",
+        payload
+    )
+
+    print(
+        "======================"
+        "==================\n"
+    )
 
     return payload
- 
+
+
 @app.post("/api/student/start-homework-reading")
 def start_homework_reading(
     req: StartExamRequest = Body(...),
@@ -47334,842 +48467,1949 @@ def generate_exam_oc_reading_homework(
     payload: ReadingHomeworkExamRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n================ GENERATE OC READING HOMEWORK =================")
 
-    used_bundle_ids = []
-
-    # --------------------------------------------------
-    # 0️⃣ NORMALIZATION
-    # --------------------------------------------------
-    class_name = payload.class_name.strip().lower()
-    class_year = str(payload.class_year).lower().replace("year", "").strip()
-
-    print(f"📥 class_name={class_name}, class_year={class_year}")
-
-    # --------------------------------------------------
-    # 1️⃣ LOAD CONFIG
-    # --------------------------------------------------
-    cfg = (
-        db.query(ReadingHomeworkExamConfig)
-        .filter(
-            func.lower(func.trim(ReadingHomeworkExamConfig.class_name)) == class_name,
-            func.trim(
-                func.replace(
-                    func.lower(ReadingHomeworkExamConfig.class_year),
-                    "year",
-                    ""
-                )
-            ) == class_year
-        )
-        .order_by(ReadingHomeworkExamConfig.id.desc())
-        .first()
+    print(
+        "\n================ "
+        "GENERATE OC READING HOMEWORK "
+        "================="
     )
 
-    if not cfg:
-        raise HTTPException(404, "No OC reading homework config found")
+    try:
 
-    subject = cfg.subject
-    topics = cfg.topics
-    warnings = []
-    sections = []
+        print(
+            "📥 RAW PAYLOAD:",
+            payload.dict()
+        )
 
-    print("\n📦 CONFIG LOADED")
+        used_bundle_ids = []
 
-    # --------------------------------------------------
-    # 2️⃣ PROCESS TOPICS (PER-TOPIC DIFFICULTY)
-    # --------------------------------------------------
-    for section_index, topic_spec in enumerate(topics, start=1):
+        sections = []
 
-        topic_name = topic_spec["name"].strip()
-        topic_lower = topic_name.lower()
-        required = int(topic_spec["num_questions"])
-        topic_difficulty = topic_spec.get("difficulty", "").strip().lower()
+        warnings = []
 
-        print(f"\n➡️ Section {section_index}")
-        print(f"   topic       = {topic_name}")
-        print(f"   difficulty  = {topic_difficulty}")
-        print(f"   questions   = {required}")
+        # ==================================================
+        # 0️⃣ NORMALIZE INPUT
+        # ==================================================
 
-        if not topic_difficulty:
+        class_name = (
+            payload.class_name
+            .strip()
+            .lower()
+        )
+
+        class_year = (
+            payload.class_year
+            .lower()
+            .replace("year", "")
+            .strip()
+        )
+
+        center_code = (
+            payload.center_code
+            .strip()
+            .upper()
+        )
+
+        if not class_year:
+
             raise HTTPException(
                 400,
-                f"Missing difficulty for topic '{topic_name}'"
+                "class_year is required"
             )
 
-        section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
+        if not center_code:
 
-        # --------------------------------------------------
-        # 🔎 MATCH BUNDLE (FIXED)
-        # --------------------------------------------------
-        bundle_query = (
-            db.query(QuestionReading)
+            raise HTTPException(
+                400,
+                "center_code is required"
+            )
+
+        print(
+            f"🔧 class_name={class_name}, "
+            f"class_year={class_year}, "
+            f"center_code={center_code}"
+        )
+
+        # ==================================================
+        # 1️⃣ FIND CENTER
+        # ==================================================
+
+        center = (
+            db.query(Center)
             .filter(
-                func.lower(func.trim(QuestionReading.class_name)) == class_name,
+                Center.center_code.ilike(
+                    center_code
+                )
+            )
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"✅ Center Found | "
+            f"ID={center.id}"
+        )
+
+        # ==================================================
+        # 2️⃣ FETCH USED READING BUNDLES
+        # ==================================================
+
+        used_question_ids = (
+            db.query(
+                OCReadingQuestionUsage
+                .question_reading_id
+            )
+            .filter(
+                OCReadingQuestionUsage.center_id
+                == center.id
+            )
+            .all()
+        )
+
+        used_question_ids = [
+
+            row[0]
+
+            for row in used_question_ids
+
+        ]
+
+        print(
+            f"📚 Used reading bundles: "
+            f"{len(used_question_ids)}"
+        )
+
+        # ==================================================
+        # 3️⃣ LOAD CONFIG
+        # ==================================================
+
+        cfg = (
+            db.query(
+                ReadingHomeworkExamConfig
+            )
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        ReadingHomeworkExamConfig
+                        .class_name
+                    )
+                ) == class_name,
 
                 func.trim(
                     func.replace(
-                        func.lower(QuestionReading.class_year),
+
+                        func.lower(
+                            ReadingHomeworkExamConfig
+                            .class_year
+                        ),
+
                         "year",
+
                         ""
                     )
                 ) == class_year,
 
-                # ✅ FIXED SUBJECT MATCH
-                func.replace(
-                    func.lower(func.trim(QuestionReading.subject)),
-                    "_",
-                    " "
-                ) == subject.lower().replace("_", " "),
-
-                func.lower(func.trim(QuestionReading.difficulty)) == topic_difficulty,
-
-                func.lower(func.trim(QuestionReading.topic)) == topic_lower,
-
-                QuestionReading.total_questions == required,
-
-                QuestionReading.is_used == False,
-
-                # ✅ CRITICAL FIX: prevent reuse
-                ~QuestionReading.id.in_(used_bundle_ids)
+                func.upper(
+                    func.trim(
+                        ReadingHomeworkExamConfig
+                        .center_code
+                    )
+                ) == center_code
             )
-        )
-
-        bundle_count = bundle_query.count()
-        print(f"   📊 Matching bundles: {bundle_count}")
-
-        matched_bundle = (
-            bundle_query
-            .order_by(QuestionReading.id.desc())
+            .order_by(
+                ReadingHomeworkExamConfig
+                .id.desc()
+            )
             .first()
         )
 
-        if not matched_bundle:
+        if not cfg:
+
             raise HTTPException(
-                400,
-                f"No matching homework bundle for "
-                f"{topic_name} ({topic_difficulty}, {required})"
+                404,
+                (
+                    "No OC reading homework "
+                    "config found"
+                )
             )
 
-        print(f"   ✅ Bundle selected ID: {matched_bundle.id}")
-
-        used_bundle_ids.append(matched_bundle.id)
-
-        bundle_json = matched_bundle.exam_bundle or {}
-
-        question_type = bundle_json.get("question_type")
-        reading_material = bundle_json.get("reading_material")
-        answer_options = bundle_json.get("answer_options")
-
-        # --------------------------------------------------
-        # BUILD QUESTIONS
-        # --------------------------------------------------
-        collected_questions = [
-            copy.deepcopy(q)
-            for q in bundle_json.get("questions", [])
-        ]
-
-        for idx, q in enumerate(collected_questions, start=1):
-            q["question_number"] = idx
-            q["question_id"] = f"{section_id}_Q{idx}"
-
-        passage_style = (
-            "literary"
-            if question_type in ("main_idea", "literary_analysis")
-            else "informational"
+        print(
+            f"✅ Config loaded "
+            f"ID={cfg.id}"
         )
 
-        render_hint = (
-            "gapped_text"
-            if question_type == "gapped_text"
-            else "standard"
+        subject = (
+            cfg.subject
+            .strip()
+            .lower()
         )
 
-        options_scope = "shared" if answer_options else "per_question"
+        topics = cfg.topics
 
-        section = {
-            "section_id": section_id,
-            "section_index": section_index,
-            "question_type": question_type,
-            "topic": topic_name,
-            "difficulty": topic_difficulty,
-            "reading_material": reading_material,
-            "passage_style": passage_style,
-            "render_hint": render_hint,
-            "options_scope": options_scope,
-            "questions": collected_questions,
+        # ==================================================
+        # 4️⃣ PROCESS TOPICS
+        # ==================================================
+
+        print(
+            "\n================ "
+            "PROCESSING TOPICS "
+            "================="
+        )
+
+        for section_index, topic_spec in enumerate(
+            topics,
+            start=1
+        ):
+
+            topic_name = (
+                topic_spec["name"]
+                .strip()
+            )
+
+            topic_lower = (
+                topic_name.lower()
+            )
+
+            required = int(
+                topic_spec["num_questions"]
+            )
+
+            topic_difficulty_raw = (
+                topic_spec.get(
+                    "difficulty"
+                )
+            )
+
+            topic_difficulty = (
+
+                topic_difficulty_raw
+                .strip()
+                .lower()
+
+                if isinstance(
+                    topic_difficulty_raw,
+                    str
+                )
+
+                else ""
+            )
+
+            if not topic_difficulty:
+
+                raise HTTPException(
+                    400,
+                    (
+                        "Missing or invalid "
+                        f"difficulty for "
+                        f"topic '{topic_name}'"
+                    )
+                )
+
+            print(
+                f"\n➡️ Section "
+                f"{section_index}"
+            )
+
+            print(
+                f"   topic       = "
+                f"{topic_name}"
+            )
+
+            print(
+                f"   difficulty  = "
+                f"{topic_difficulty}"
+            )
+
+            print(
+                f"   questions   = "
+                f"{required}"
+            )
+
+            section_id = (
+                f"{topic_lower.replace(' ', '_')}"
+                f"_{section_index}"
+            )
+
+            # ==================================================
+            # QUERY UNUSED BUNDLE
+            # ==================================================
+
+            bundle_query = (
+                db.query(
+                    QuestionReading
+                )
+                .filter(
+
+                    func.lower(
+                        func.trim(
+                            QuestionReading
+                            .class_name
+                        )
+                    ) == class_name,
+
+                    func.lower(
+                        func.replace(
+                            QuestionReading
+                            .subject,
+                            " ",
+                            "_"
+                        )
+                    ) == subject.lower(),
+
+                    func.lower(
+                        func.trim(
+                            QuestionReading
+                            .difficulty
+                        )
+                    ) == topic_difficulty,
+
+                    func.replace(
+
+                        func.lower(
+                            QuestionReading
+                            .topic
+                        ),
+
+                        " ",
+
+                        "_"
+
+                    ) == topic_lower.replace(
+                        " ",
+                        "_"
+                    ),
+
+                    QuestionReading
+                    .total_questions
+                    == required,
+
+                    func.trim(
+                        func.replace(
+
+                            func.lower(
+                                QuestionReading
+                                .class_year
+                            ),
+
+                            "year",
+
+                            ""
+                        )
+                    ) == class_year,
+
+                    # ==========================================
+                    # EXCLUDE USED BUNDLES
+                    # FOR THIS CENTER
+                    # ==========================================
+
+                    (
+                        ~QuestionReading.id.in_(
+                            used_question_ids
+                        )
+                        if used_question_ids
+                        else True
+                    ),
+
+                    # ==========================================
+                    # PREVENT DUPLICATES
+                    # INSIDE SAME HOMEWORK
+                    # ==========================================
+
+                    ~QuestionReading.id.in_(
+                        used_bundle_ids
+                    )
+                )
+            )
+
+            bundle_count = (
+                bundle_query.count()
+            )
+
+            print(
+                f"   📊 Available bundles: "
+                f"{bundle_count}"
+            )
+
+            matched_bundle = (
+                bundle_query
+                .order_by(
+                    QuestionReading
+                    .id.desc()
+                )
+                .first()
+            )
+
+            if not matched_bundle:
+
+                raise HTTPException(
+                    400,
+                    (
+                        f"No unused homework "
+                        f"bundle found for "
+                        f"{topic_name} "
+                        f"({topic_difficulty}, "
+                        f"{required})"
+                    )
+                )
+
+            print(
+                f"   ✅ Bundle ID: "
+                f"{matched_bundle.id}"
+            )
+
+            used_bundle_ids.append(
+                matched_bundle.id
+            )
+
+            bundle_json = (
+                matched_bundle.exam_bundle
+                or {}
+            )
+
+            question_type = (
+                bundle_json.get(
+                    "question_type"
+                )
+            )
+
+            reading_material = (
+                bundle_json.get(
+                    "reading_material"
+                )
+            )
+
+            answer_options = (
+                bundle_json.get(
+                    "answer_options"
+                )
+            )
+
+            # ==================================================
+            # PREP QUESTIONS
+            # ==================================================
+
+            collected_questions = [
+
+                copy.deepcopy(q)
+
+                for q in bundle_json.get(
+                    "questions",
+                    []
+                )
+            ]
+
+            for idx, q in enumerate(
+                collected_questions,
+                start=1
+            ):
+
+                q["question_number"] = idx
+
+                q["question_id"] = (
+                    f"{section_id}_Q{idx}"
+                )
+
+            print(
+                f"   ✅ Questions collected: "
+                f"{len(collected_questions)}"
+            )
+
+            # ==================================================
+            # BUILD SECTION
+            # ==================================================
+
+            passage_style = (
+
+                "literary"
+
+                if question_type in (
+                    "main_idea",
+                    "literary_analysis"
+                )
+
+                else "informational"
+            )
+
+            render_hint = (
+
+                "gapped_text"
+
+                if question_type
+                == "gapped_text"
+
+                else "standard"
+            )
+
+            options_scope = (
+
+                "shared"
+
+                if answer_options
+
+                else "per_question"
+            )
+
+            section = {
+
+                "section_id":
+                    section_id,
+
+                "section_index":
+                    section_index,
+
+                "topic":
+                    topic_name,
+
+                "difficulty":
+                    topic_difficulty,
+
+                "question_type":
+                    question_type,
+
+                "reading_material":
+                    reading_material,
+
+                "passage_style":
+                    passage_style,
+
+                "render_hint":
+                    render_hint,
+
+                "options_scope":
+                    options_scope,
+
+                "questions":
+                    collected_questions,
+            }
+
+            if answer_options:
+
+                section[
+                    "answer_options"
+                ] = answer_options
+
+            sections.append(section)
+
+        # ==================================================
+        # 5️⃣ FINALIZE
+        # ==================================================
+
+        if not sections:
+
+            raise HTTPException(
+                400,
+                "No homework sections generated"
+            )
+
+        total_questions = sum(
+            len(s["questions"])
+            for s in sections
+        )
+
+        homework_json = {
+
+            "class_name":
+                class_name,
+
+            "class_year":
+                class_year,
+
+            "center_code":
+                center_code,
+
+            "subject":
+                subject,
+
+            "difficulty":
+                "mixed",
+
+            "total_questions":
+                total_questions,
+
+            "sections":
+                sections,
         }
 
-        if answer_options:
-            section["answer_options"] = answer_options
-
-        sections.append(section)
-
-    # --------------------------------------------------
-    # 3️⃣ FINALIZE
-    # --------------------------------------------------
-    if not sections:
-        raise HTTPException(
-            400,
-            "Not enough data to generate OC reading homework"
+        print(
+            f"📊 Total questions: "
+            f"{total_questions}"
         )
 
-    total_questions = sum(len(s["questions"]) for s in sections)
+        # ==================================================
+        # 6️⃣ SAVE HOMEWORK
+        # ==================================================
 
-    exam_json = {
-        "class_name": class_name,
-        "class_year": class_year,
-        "subject": subject,
-        "difficulty": "mixed",
-        "duration_minutes": 40,
-        "total_questions": total_questions,
-        "sections": sections,
-    }
-
-    # --------------------------------------------------
-    # 🏷️ MARK USED
-    # --------------------------------------------------
-    if used_bundle_ids:
-        db.query(QuestionReading).filter(
-            QuestionReading.id.in_(used_bundle_ids)
-        ).update(
-            {QuestionReading.is_used: True},
-            synchronize_session=False
-        )
-
-    # --------------------------------------------------
-    # 💾 SAVE
-    # --------------------------------------------------
         saved = GeneratedHomeworkReading(
-            config_id=cfg.id,
-            class_name=class_name,
-            class_year=class_year,
-            center_code=center_code,
-            subject=subject,
-            difficulty="mixed",
-            total_questions=total_questions,
-            exam_json=exam_json,
+
+            config_id=
+                cfg.id,
+
+            class_name=
+                class_name,
+
+            class_year=
+                class_year,
+
+            center_code=
+                center_code,
+
+            subject=
+                subject,
+
+            difficulty=
+                "mixed",
+
+            total_questions=
+                total_questions,
+
+            exam_json=
+                homework_json,
         )
 
-    db.add(saved)
-    db.commit()
-    db.refresh(saved)
+        db.add(saved)
 
-    print(f"✅ OC Reading Homework generated ID: {saved.id}")
+        db.commit()
 
-    return {
-        "generated_exam_id": saved.id,
-        "total_questions": total_questions,
-        "warnings": warnings,
-        "exam_json": exam_json,
-    }
+        db.refresh(saved)
 
+        print(
+            f"✅ Homework saved "
+            f"ID={saved.id}"
+        )
+
+        # ==================================================
+        # 7️⃣ STORE USAGE ROWS
+        # ==================================================
+
+        usage_rows = []
+
+        for question_id in used_bundle_ids:
+
+            usage_rows.append(
+
+                OCReadingQuestionUsage(
+
+                    question_reading_id=
+                        question_id,
+
+                    center_id=
+                        center.id
+                )
+            )
+
+        if usage_rows:
+
+            db.add_all(usage_rows)
+
+            db.commit()
+
+        print(
+            f"✅ Stored usage rows: "
+            f"{len(usage_rows)}"
+        )
+
+        # ==================================================
+        # 8️⃣ RESPONSE
+        # ==================================================
+
+        return {
+
+            "generated_exam_id":
+                saved.id,
+
+            "center_code":
+                center_code,
+
+            "total_questions":
+                total_questions,
+
+            "warnings":
+                warnings,
+
+            "exam_json":
+                homework_json,
+        }
+
+    except Exception as e:
+
+        print(
+            "\n💥 ERROR IN "
+            "OC READING HOMEWORK"
+        )
+
+        print(str(e))
+
+        raise
 
 @app.post("/api/exams/generate-oc-reading-homework-latest")
 def generate_exam_oc_reading_homework_latest(
     payload: ReadingHomeworkExamRequest,
     db: Session = Depends(get_db)
 ):
+
     print(
         "\n================ "
-        "GENERATE OC READING HOMEWORK (LATEST) "
+        "GENERATE OC READING HOMEWORK "
+        "(DATE + BATCH MODE) "
         "================="
     )
 
-    # --------------------------------------------------
-    # 0️⃣ VALIDATE INPUT
-    # --------------------------------------------------
-    selected_date = getattr(
-        payload,
-        "selected_date",
-        None
-    )
-
-    batch_id = getattr(
-        payload,
-        "batch_id",
-        None
-    )
-
-    if not selected_date:
-        raise HTTPException(
-            status_code=400,
-            detail="selected_date is required"
-        )
-
-    if batch_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="batch_id is required"
-        )
-
-    print(f"📅 selected_date={selected_date}")
-    print(f"📦 batch_id={batch_id}")
-
-    # --------------------------------------------------
-    # 1️⃣ NORMALIZATION
-    # --------------------------------------------------
-    class_name = (
-        payload.class_name
-        .strip()
-        .lower()
-    )
-
-    class_year = (
-        str(payload.class_year)
-        .lower()
-        .replace("year", "")
-        .strip()
-    )
-
-    print(f"📥 class_name={class_name}")
-    print(f"📥 class_year={class_year}")
-
-    warnings = []
-
-    sections = []
-
-    # --------------------------------------------------
-    # 2️⃣ FETCH BUNDLES
-    # Filter using BOTH:
-    # - selected_date
-    # - batch_id
-    # --------------------------------------------------
-    bundles = (
-        db.query(QuestionReading)
-        .filter(
-
-            func.lower(
-                func.trim(
-                    QuestionReading.class_name
-                )
-            ) == class_name,
-
-            func.trim(
-                func.replace(
-                    func.lower(
-                        QuestionReading.class_year
-                    ),
-                    "year",
-                    ""
-                )
-            ) == class_year,
-
-            func.lower(
-                func.trim(
-                    QuestionReading.subject
-                )
-            ).like("%reading comprehension%"),
-
-            func.date(
-                QuestionReading.created_at
-            ) == selected_date,
-
-            QuestionReading.batch_id == batch_id,
-
-            QuestionReading.is_used == False
-
-        )
-        .order_by(
-            QuestionReading.created_at.asc()
-        )
-        .all()
-    )
-
-    print(f"\n📦 FOUND BUNDLES: {len(bundles)}")
-
-    if not bundles:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "No reading homework bundles found "
-                "for selected date and batch"
-            )
-        )
-
-    # --------------------------------------------------
-    # 3️⃣ BUILD SECTIONS
-    # --------------------------------------------------
-    for section_index, matched_bundle in enumerate(
-        bundles,
-        start=1
-    ):
+    try:
 
         print(
-            f"\n➡️ Processing bundle "
-            f"ID={matched_bundle.id}"
+            "📥 RAW PAYLOAD:",
+            payload.dict()
         )
 
-        bundle_json = (
-            matched_bundle.exam_bundle or {}
+        # ==================================================
+        # 0️⃣ NORMALIZE INPUT
+        # ==================================================
+
+        class_name = (
+            payload.class_name
+            .strip()
+            .lower()
         )
 
-        question_type = (
-            bundle_json.get("question_type")
+        class_year = (
+            payload.class_year
+            .lower()
+            .replace("year", "")
+            .strip()
         )
 
-        reading_material = (
-            bundle_json.get("reading_material")
+        center_code = (
+            payload.center_code
+            .strip()
+            .upper()
         )
 
-        answer_options = (
-            bundle_json.get("answer_options")
+        subject = (
+            "reading_comprehension"
         )
 
-        topic_name = matched_bundle.topic
-
-        topic_difficulty = (
-            matched_bundle.difficulty
+        selected_date = (
+            payload.selected_date
         )
 
-        section_id = (
-            f"{topic_name.lower().replace(' ', '_')}"
-            f"_{section_index}"
+        batch_id = (
+            payload.batch_id
         )
 
-        # --------------------------------------------------
-        # BUILD QUESTIONS
-        # --------------------------------------------------
-        collected_questions = [
-            copy.deepcopy(q)
-            for q in bundle_json.get(
-                "questions",
-                []
+        if not class_year:
+
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
             )
+
+        if not center_code:
+
+            raise HTTPException(
+                status_code=400,
+                detail="center_code is required"
+            )
+
+        if not selected_date:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "selected_date "
+                    "is required"
+                )
+            )
+
+        if batch_id is None:
+
+            raise HTTPException(
+                status_code=400,
+                detail="batch_id is required"
+            )
+
+        print("\n🔧 NORMALIZED INPUTS:")
+
+        print(
+            f"class_name = "
+            f"'{class_name}'"
+        )
+
+        print(
+            f"class_year = "
+            f"'{class_year}'"
+        )
+
+        print(
+            f"center_code = "
+            f"'{center_code}'"
+        )
+
+        print(
+            f"selected_date = "
+            f"'{selected_date}'"
+        )
+
+        print(
+            f"batch_id = "
+            f"'{batch_id}'"
+        )
+
+        sections = []
+
+        used_bundle_ids = []
+
+        warnings = []
+
+        # ==================================================
+        # 1️⃣ FIND CENTER
+        # ==================================================
+
+        center = (
+            db.query(Center)
+            .filter(
+                Center.center_code.ilike(
+                    center_code
+                )
+            )
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"✅ Center Found | "
+            f"ID={center.id}"
+        )
+
+        # ==================================================
+        # 2️⃣ FETCH USED READING BUNDLES
+        # ==================================================
+
+        used_question_ids = (
+            db.query(
+                OCReadingQuestionUsage
+                .question_reading_id
+            )
+            .filter(
+                OCReadingQuestionUsage.center_id
+                == center.id
+            )
+            .all()
+        )
+
+        used_question_ids = [
+
+            row[0]
+
+            for row in used_question_ids
+
         ]
 
-        for idx, q in enumerate(
-            collected_questions,
+        print(
+            f"📚 Reading bundles "
+            f"already used by center: "
+            f"{len(used_question_ids)}"
+        )
+
+        # ==================================================
+        # 3️⃣ FETCH UNUSED BUNDLES
+        # ==================================================
+
+        rows = (
+            db.query(QuestionReading)
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        QuestionReading.class_name
+                    )
+                ) == class_name,
+
+                func.trim(
+                    func.replace(
+
+                        func.lower(
+                            QuestionReading.class_year
+                        ),
+
+                        "year",
+
+                        ""
+                    )
+                ) == class_year,
+
+                func.date(
+                    QuestionReading.created_at
+                ) == selected_date,
+
+                QuestionReading.batch_id
+                == batch_id,
+
+                # ==========================================
+                # EXCLUDE USED BUNDLES
+                # FOR THIS CENTER
+                # ==========================================
+
+                (
+                    ~QuestionReading.id.in_(
+                        used_question_ids
+                    )
+                    if used_question_ids
+                    else True
+                )
+            )
+            .order_by(
+                QuestionReading.id.asc()
+            )
+            .all()
+        )
+
+        print(
+            f"📦 FETCHED UNUSED "
+            f"BUNDLES: "
+            f"{len(rows)}"
+        )
+
+        for row in rows:
+
+            print(
+                f"   ID={row.id} | "
+                f"topic={row.topic} | "
+                f"batch_id={row.batch_id}"
+            )
+
+        if not rows:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No unused reading bundles "
+                    "found for selected "
+                    "date + batch"
+                )
+            )
+
+        # ==================================================
+        # 4️⃣ BUILD SECTIONS
+        # ==================================================
+
+        for idx, row in enumerate(
+            rows,
             start=1
         ):
 
-            q["question_number"] = idx
-
-            q["question_id"] = (
-                f"{section_id}_Q{idx}"
+            bundle_json = (
+                row.exam_bundle
+                or {}
             )
 
-        # --------------------------------------------------
-        # RENDER META
-        # --------------------------------------------------
-        passage_style = (
-            "literary"
-            if question_type in (
-                "main_idea",
-                "literary_analysis"
+            question_type = (
+                bundle_json.get(
+                    "question_type"
+                )
             )
-            else "informational"
+
+            reading_material = (
+                bundle_json.get(
+                    "reading_material"
+                )
+            )
+
+            answer_options = (
+                bundle_json.get(
+                    "answer_options"
+                )
+            )
+
+            questions = [
+
+                copy.deepcopy(q)
+
+                for q in bundle_json.get(
+                    "questions",
+                    []
+                )
+            ]
+
+            for q_index, q in enumerate(
+                questions,
+                start=1
+            ):
+
+                q["question_number"] = (
+                    q_index
+                )
+
+                q["question_id"] = (
+                    f"hw_date_{idx}_Q"
+                    f"{q_index}"
+                )
+
+            passage_style = (
+
+                "literary"
+
+                if question_type in (
+                    "main_idea",
+                    "literary_analysis"
+                )
+
+                else "informational"
+            )
+
+            render_hint = (
+
+                "gapped_text"
+
+                if question_type
+                == "gapped_text"
+
+                else "standard"
+            )
+
+            options_scope = (
+
+                "shared"
+
+                if answer_options
+
+                else "per_question"
+            )
+
+            section = {
+
+                "section_id":
+                    (
+                        f"hw_date_section_"
+                        f"{idx}"
+                    ),
+
+                "section_index":
+                    idx,
+
+                "topic":
+                    row.topic,
+
+                "difficulty":
+                    row.difficulty,
+
+                "question_type":
+                    question_type,
+
+                "reading_material":
+                    reading_material,
+
+                "passage_style":
+                    passage_style,
+
+                "render_hint":
+                    render_hint,
+
+                "options_scope":
+                    options_scope,
+
+                "questions":
+                    questions,
+            }
+
+            if answer_options:
+
+                section[
+                    "answer_options"
+                ] = answer_options
+
+            sections.append(section)
+
+            used_bundle_ids.append(
+                row.id
+            )
+
+        # ==================================================
+        # 5️⃣ FINALIZE HOMEWORK
+        # ==================================================
+
+        total_questions = sum(
+
+            len(section["questions"])
+
+            for section in sections
         )
 
-        render_hint = (
-            "gapped_text"
-            if question_type == "gapped_text"
-            else "standard"
-        )
+        homework_json = {
 
-        options_scope = (
-            "shared"
-            if answer_options
-            else "per_question"
-        )
+            "class_name":
+                class_name,
 
-        section = {
-            "section_id": section_id,
+            "class_year":
+                class_year,
 
-            "section_index": section_index,
+            "center_code":
+                center_code,
 
-            "question_type": question_type,
+            "subject":
+                subject,
 
-            "topic": topic_name,
+            "difficulty":
+                "mixed",
 
-            "difficulty": topic_difficulty,
+            "selected_date":
+                str(selected_date),
 
-            "reading_material": reading_material,
+            "batch_id":
+                batch_id,
 
-            "passage_style": passage_style,
+            "total_questions":
+                total_questions,
 
-            "render_hint": render_hint,
-
-            "options_scope": options_scope,
-
-            "questions": collected_questions,
+            "sections":
+                sections,
         }
 
-        if answer_options:
-
-            section["answer_options"] = (
-                answer_options
-            )
-
-        sections.append(section)
-
-    # --------------------------------------------------
-    # 4️⃣ FINALIZE
-    # --------------------------------------------------
-    if not sections:
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Not enough data to generate "
-                "OC reading homework"
-            )
-        )
-
-    total_questions = sum(
-        len(s["questions"])
-        for s in sections
-    )
-
-    exam_json = {
-        "class_name": class_name,
-
-        "class_year": class_year,
-
-        "subject": "Reading Comprehension",
-
-        "difficulty": "mixed",
-
-        "duration_minutes": 40,
-
-        "selected_date": str(
-            selected_date
-        ),
-
-        "batch_id": batch_id,
-
-        "total_questions": total_questions,
-
-        "sections": sections,
-    }
-
-    print(
-        f"\n🧠 TOTAL QUESTIONS: "
-        f"{total_questions}"
-    )
-
-    # --------------------------------------------------
-    # 🏷️ MARK USED (TRACKING ONLY)
-    # --------------------------------------------------
-    used_bundle_ids = [
-        b.id for b in bundles
-    ]
-
-    if used_bundle_ids:
-
-        updated = (
-            db.query(QuestionReading)
-            .filter(
-                QuestionReading.id.in_(
-                    used_bundle_ids
-                ),
-
-                QuestionReading.is_used.is_(False)
-            )
-            .update(
-                {
-                    QuestionReading.is_used: True
-                },
-                synchronize_session=False
-            )
+        print(
+            f"📊 Sections: "
+            f"{len(sections)}"
         )
 
         print(
-            f"🔒 Marked {updated} "
-            f"bundles as used"
+            f"📊 Total questions: "
+            f"{total_questions}"
         )
 
-    # --------------------------------------------------
-    # 💾 SAVE
-    # --------------------------------------------------
-    saved = GeneratedHomeworkReading(
-        config_id=None,
+        # ==================================================
+        # 6️⃣ SAVE GENERATED HOMEWORK
+        # ==================================================
 
-        class_name=class_name,
+        saved = (
+            GeneratedHomeworkReading(
 
-        class_year=class_year,
+                config_id=None,
 
-        subject="Reading Comprehension",
+                class_name=
+                    class_name,
 
-        difficulty="mixed",
+                class_year=
+                    class_year,
 
-        total_questions=total_questions,
+                center_code=
+                    center_code,
 
-        exam_json=exam_json,
-    )
+                subject=
+                    subject,
 
-    db.add(saved)
+                difficulty=
+                    "mixed",
 
-    db.commit()
+                total_questions=
+                    total_questions,
 
-    db.refresh(saved)
+                exam_json=
+                    homework_json,
+            )
+        )
 
-    print(
-        f"✅ OC Reading Homework "
-        f"Latest generated ID: {saved.id}"
-    )
+        db.add(saved)
 
-    # --------------------------------------------------
-    # 5️⃣ RESPONSE
-    # --------------------------------------------------
-    return {
-        "generated_exam_id": saved.id,
+        db.commit()
 
-        "selected_date": selected_date,
+        db.refresh(saved)
 
-        "batch_id": batch_id,
+        print(
+            f"💾 Homework saved "
+            f"ID={saved.id}"
+        )
 
-        "total_questions": total_questions,
+        # ==================================================
+        # 7️⃣ STORE USAGE ROWS
+        # ==================================================
 
-        "warnings": warnings,
+        usage_rows = []
 
-        "exam_json": exam_json,
-    }
+        for question_id in used_bundle_ids:
 
+            usage_rows.append(
+
+                OCReadingQuestionUsage(
+
+                    question_reading_id=
+                        question_id,
+
+                    center_id=
+                        center.id
+                )
+            )
+
+        if usage_rows:
+
+            db.add_all(
+                usage_rows
+            )
+
+            db.commit()
+
+        print(
+            f"✅ Stored usage rows: "
+            f"{len(usage_rows)}"
+        )
+
+        print(
+            "================ "
+            "END "
+            "=================\n"
+        )
+
+        # ==================================================
+        # 8️⃣ RESPONSE
+        # ==================================================
+
+        return {
+
+            "generated_exam_id":
+                saved.id,
+
+            "center_code":
+                center_code,
+
+            "selected_date":
+                selected_date,
+
+            "batch_id":
+                batch_id,
+
+            "total_questions":
+                total_questions,
+
+            "warnings":
+                warnings,
+
+            "exam_json":
+                homework_json,
+        }
+
+    except Exception as e:
+
+        print(
+            "\n💥 ERROR IN "
+            "OC READING HOMEWORK "
+            "(DATE + BATCH MODE)"
+        )
+
+        print(str(e))
+
+        raise
+    
 @app.post("/api/exams/generate-oc-reading")
 def generate_exam_oc_reading(
     payload: ReadingExamRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n================ GENERATE OC READING EXAM =================")
 
-    print("\n🧪 DEBUG BUNDLES FOR THIS TOPIC:")
-
-    all_bundles = db.query(QuestionReading).filter(
-        func.lower(func.trim(QuestionReading.topic)).like("%comparative%")
-    ).all()
-
-    for b in all_bundles:
-        print(
-            f"ID={b.id}, topic={b.topic}, "
-            f"difficulty={b.difficulty}, "
-            f"questions={b.total_questions}, "
-            f"used={b.is_used}"
-        )
-
-    # --------------------------------------------------
-    # 0️⃣ NORMALIZATION
-    # --------------------------------------------------
-    class_name = payload.class_name.strip().lower()
-    class_year = payload.class_year.lower().replace("year", "").strip()
-
-    print(f"📥 class_name={class_name}, class_year={class_year}")
-
-    used_bundle_ids = []
-    sections = []
-    warnings = []
-
-    # --------------------------------------------------
-    # 1️⃣ LOAD CONFIG
-    # --------------------------------------------------
-    cfg = (
-        db.query(ReadingExamConfig)
-        .filter(
-            func.lower(func.trim(ReadingExamConfig.class_name)) == class_name,
-            func.trim(
-                func.replace(
-                    func.lower(ReadingExamConfig.class_year),
-                    "year",
-                    ""
-                )
-            ) == class_year
-        )
-        .order_by(ReadingExamConfig.id.desc())
-        .first()
+    print(
+        "\n================ "
+        "GENERATE OC READING EXAM "
+        "================="
     )
 
-    if not cfg:
-        raise HTTPException(404, "No OC reading exam config found")
+    try:
 
-    subject = (
-        cfg.subject
-        .strip()
-        .lower()
-    )
-    topics = cfg.topics
+        # ==================================================
+        # 0️⃣ INPUT NORMALIZATION
+        # ==================================================
 
-    print("\n📦 CONFIG LOADED")
-    print(f"📚 Normalized subject = {subject}")
+        print("\n📥 RAW PAYLOAD:")
 
-    # --------------------------------------------------
-    # 2️⃣ PROCESS EACH TOPIC (LIKE SELECTIVE)
-    # --------------------------------------------------
-    for section_index, topic_spec in enumerate(topics, start=1):
+        print(payload.dict())
 
-        topic_name = topic_spec["name"].strip()
-        topic_lower = topic_name.lower()
-        required = int(topic_spec["num_questions"])
-        topic_difficulty = topic_spec.get("difficulty", "").strip().lower()
+        class_name = (
+            payload.class_name
+            .strip()
+            .lower()
+        )
 
-        print(f"\n➡️ Section {section_index}")
-        print(f"   topic       = {topic_name}")
-        print(f"   difficulty  = {topic_difficulty}")
-        print(f"   questions   = {required}")
+        class_year = (
+            payload.class_year
+            .lower()
+            .replace("year", "")
+            .strip()
+        )
 
-        if not topic_difficulty:
+        center_code = (
+            payload.center_code
+            .strip()
+            .upper()
+        )
+
+        if not class_year:
+
             raise HTTPException(
                 400,
-                f"Missing difficulty for topic '{topic_name}'"
+                "class_year is required"
             )
 
-        section_id = f"{topic_lower.replace(' ', '_')}_{section_index}"
+        if not center_code:
 
-        # --------------------------------------------------
-        # 🔎 MATCH BUNDLE (FIXED)
-        # --------------------------------------------------
-        bundle_query = (
-            db.query(QuestionReading)
+            raise HTTPException(
+                400,
+                "center_code is required"
+            )
+
+        print(
+            "\n🔧 NORMALIZED INPUTS:"
+        )
+
+        print(
+            f"   class_name = "
+            f"{class_name}"
+        )
+
+        print(
+            f"   class_year = "
+            f"{class_year}"
+        )
+
+        print(
+            f"   center_code = "
+            f"{center_code}"
+        )
+
+        used_bundle_ids = []
+
+        sections = []
+
+        warnings = []
+
+        # ==================================================
+        # 1️⃣ FIND CENTER
+        # ==================================================
+
+        center = (
+            db.query(Center)
             .filter(
-                func.lower(func.trim(QuestionReading.class_name)) == class_name,
+                Center.center_code.ilike(
+                    center_code
+                )
+            )
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"✅ Center Found | "
+            f"ID={center.id}"
+        )
+
+        # ==================================================
+        # 2️⃣ FETCH USED QUESTION IDS
+        # ==================================================
+
+        used_question_ids = (
+            db.query(
+                OCReadingQuestionUsage
+                .question_reading_id
+            )
+            .filter(
+                OCReadingQuestionUsage.center_id
+                == center.id
+            )
+            .all()
+        )
+
+        used_question_ids = [
+
+            row[0]
+
+            for row in used_question_ids
+
+        ]
+
+        print(
+            f"📚 Questions already used "
+            f"by center: "
+            f"{len(used_question_ids)}"
+        )
+
+        # ==================================================
+        # 3️⃣ LOAD CONFIG
+        # ==================================================
+
+        print(
+            "\n🔎 Fetching config..."
+        )
+
+        cfg = (
+            db.query(
+                ReadingExamConfig
+            )
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        ReadingExamConfig.class_name
+                    )
+                ) == class_name,
 
                 func.trim(
                     func.replace(
-                        func.lower(QuestionReading.class_year),
+
+                        func.lower(
+                            ReadingExamConfig.class_year
+                        ),
+
                         "year",
+
                         ""
                     )
                 ) == class_year,
 
-                func.lower(func.trim(QuestionReading.subject)).like("%reading%"),
-
-                func.lower(func.trim(QuestionReading.difficulty)) == topic_difficulty,
-
-                func.lower(func.trim(QuestionReading.topic)) == topic_lower,
-
-                QuestionReading.total_questions == required,
-
-                QuestionReading.is_used == False,
-
-                # ✅ THIS IS THE FIX
-                ~QuestionReading.id.in_(used_bundle_ids)
+                func.upper(
+                    func.trim(
+                        ReadingExamConfig.center_code
+                    )
+                ) == center_code
             )
-        )
-
-        bundle_count = bundle_query.count()
-        print(f"   📊 Matching bundles: {bundle_count}")
-
-        matched_bundle = (
-            bundle_query
-            .order_by(QuestionReading.id.desc())
+            .order_by(
+                ReadingExamConfig.id.desc()
+            )
             .first()
         )
 
-        if not matched_bundle:
+        if not cfg:
+
             raise HTTPException(
-                400,
-                f"No matching bundle for "
-                f"{topic_name} ({topic_difficulty}, {required})"
+                404,
+                (
+                    "No OC reading exam "
+                    "config found for "
+                    "this center"
+                )
             )
 
-        print(f"   ✅ Bundle selected ID: {matched_bundle.id}")
-        used_bundle_ids.append(matched_bundle.id)
-
-        bundle_json = matched_bundle.exam_bundle or {}
-
-        question_type = bundle_json.get("question_type")
-        reading_material = bundle_json.get("reading_material")
-        answer_options = bundle_json.get("answer_options")
-
-        # --------------------------------------------------
-        # BUILD QUESTIONS
-        # --------------------------------------------------
-        collected_questions = [
-            copy.deepcopy(q)
-            for q in bundle_json.get("questions", [])
-        ]
-
-        for idx, q in enumerate(collected_questions, start=1):
-            q["question_number"] = idx
-            q["question_id"] = f"{section_id}_Q{idx}"
-
-        # --------------------------------------------------
-        # RENDER META
-        # --------------------------------------------------
-        passage_style = (
-            "literary"
-            if question_type in ("main_idea", "literary_analysis")
-            else "informational"
+        print(
+            f"✅ Config loaded: "
+            f"ID={cfg.id}"
         )
 
-        render_hint = (
-            "gapped_text"
-            if question_type == "gapped_text"
-            else "standard"
+        subject = (
+            cfg.subject
+            .strip()
+            .lower()
         )
 
-        options_scope = "shared" if answer_options else "per_question"
+        topics = cfg.topics
 
-        section = {
-            "section_id": section_id,
-            "section_index": section_index,
-            "question_type": question_type,
-            "topic": topic_name,
-            "difficulty": topic_difficulty,  # ✅ NEW
-            "reading_material": reading_material,
-            "passage_style": passage_style,
-            "render_hint": render_hint,
-            "options_scope": options_scope,
-            "questions": collected_questions,
+        # ==================================================
+        # 4️⃣ PROCESS TOPICS
+        # ==================================================
+
+        print(
+            "\n================ "
+            "PROCESSING TOPICS "
+            "================="
+        )
+
+        for section_index, topic_spec in enumerate(
+            topics,
+            start=1
+        ):
+
+            topic_name = (
+                topic_spec["name"]
+                .strip()
+            )
+
+            topic_lower = (
+                topic_name.lower()
+            )
+
+            required = int(
+                topic_spec["num_questions"]
+            )
+
+            topic_difficulty = (
+                topic_spec
+                .get("difficulty", "")
+                .strip()
+                .lower()
+            )
+
+            print(
+                f"\n➡️ Section "
+                f"{section_index}"
+            )
+
+            print(
+                f"   topic = "
+                f"{topic_name}"
+            )
+
+            print(
+                f"   difficulty = "
+                f"{topic_difficulty}"
+            )
+
+            print(
+                f"   questions = "
+                f"{required}"
+            )
+
+            if not topic_difficulty:
+
+                raise HTTPException(
+                    400,
+                    (
+                        f"Missing difficulty "
+                        f"for topic "
+                        f"{topic_name}"
+                    )
+                )
+
+            section_id = (
+                f"{topic_lower.replace(' ', '_')}"
+                f"_{section_index}"
+            )
+
+            # ==================================================
+            # FETCH UNUSED BUNDLE
+            # ==================================================
+
+            bundle_query = (
+                db.query(
+                    QuestionReading
+                )
+                .filter(
+
+                    func.lower(
+                        func.trim(
+                            QuestionReading.class_name
+                        )
+                    ) == class_name,
+
+                    func.lower(
+                        func.replace(
+                            QuestionReading.subject,
+                            " ",
+                            "_"
+                        )
+                    ) == subject.lower(),
+
+                    func.lower(
+                        func.trim(
+                            QuestionReading.difficulty
+                        )
+                    ) == topic_difficulty,
+
+                    func.replace(
+                        func.lower(
+                            QuestionReading.topic
+                        ),
+                        " ",
+                        "_"
+                    ) == topic_lower.replace(
+                        " ",
+                        "_"
+                    ),
+
+                    QuestionReading.total_questions
+                    == required,
+
+                    func.trim(
+                        func.replace(
+
+                            func.lower(
+                                QuestionReading.class_year
+                            ),
+
+                            "year",
+
+                            ""
+                        )
+                    ) == class_year,
+
+                    # ==========================================
+                    # EXCLUDE USED BUNDLES
+                    # FOR THIS CENTER
+                    # ==========================================
+
+                    (
+                        ~QuestionReading.id.in_(
+                            used_question_ids
+                        )
+                        if used_question_ids
+                        else True
+                    ),
+
+                    # ==========================================
+                    # AVOID DUPLICATES
+                    # INSIDE SAME EXAM
+                    # ==========================================
+
+                    ~QuestionReading.id.in_(
+                        used_bundle_ids
+                    )
+                )
+            )
+
+            bundle_count = (
+                bundle_query.count()
+            )
+
+            print(
+                f"   📊 Available bundles: "
+                f"{bundle_count}"
+            )
+
+            matched_bundle = (
+                bundle_query
+                .order_by(
+                    QuestionReading.id.desc()
+                )
+                .first()
+            )
+
+            if not matched_bundle:
+
+                raise HTTPException(
+                    400,
+                    (
+                        f"No unused bundles "
+                        f"available for "
+                        f"{topic_name} "
+                        f"({topic_difficulty}, "
+                        f"{required})"
+                    )
+                )
+
+            print(
+                f"   ✅ Bundle selected "
+                f"ID={matched_bundle.id}"
+            )
+
+            used_bundle_ids.append(
+                matched_bundle.id
+            )
+
+            bundle_json = (
+                matched_bundle.exam_bundle
+                or {}
+            )
+
+            question_type = (
+                bundle_json.get(
+                    "question_type"
+                )
+            )
+
+            reading_material = (
+                bundle_json.get(
+                    "reading_material"
+                )
+            )
+
+            answer_options = (
+                bundle_json.get(
+                    "answer_options"
+                )
+            )
+
+            # ==================================================
+            # BUILD QUESTIONS
+            # ==================================================
+
+            collected_questions = [
+
+                copy.deepcopy(q)
+
+                for q in bundle_json.get(
+                    "questions",
+                    []
+                )
+            ]
+
+            for idx, q in enumerate(
+                collected_questions,
+                start=1
+            ):
+
+                q["question_number"] = idx
+
+                q["question_id"] = (
+                    f"{section_id}_Q{idx}"
+                )
+
+            print(
+                f"   ✅ Questions collected: "
+                f"{len(collected_questions)}"
+            )
+
+            # ==================================================
+            # RENDER HELPERS
+            # ==================================================
+
+            passage_style = (
+
+                "literary"
+
+                if question_type in (
+                    "main_idea",
+                    "literary_analysis"
+                )
+
+                else "informational"
+            )
+
+            render_hint = (
+
+                "gapped_text"
+
+                if question_type
+                == "gapped_text"
+
+                else "standard"
+            )
+
+            options_scope = (
+
+                "shared"
+
+                if answer_options
+
+                else "per_question"
+            )
+
+            section = {
+
+                "section_id":
+                    section_id,
+
+                "section_index":
+                    section_index,
+
+                "question_type":
+                    question_type,
+
+                "topic":
+                    topic_name,
+
+                "difficulty":
+                    topic_difficulty,
+
+                "reading_material":
+                    reading_material,
+
+                "passage_style":
+                    passage_style,
+
+                "render_hint":
+                    render_hint,
+
+                "options_scope":
+                    options_scope,
+
+                "questions":
+                    collected_questions,
+            }
+
+            if answer_options:
+
+                section[
+                    "answer_options"
+                ] = answer_options
+
+            sections.append(section)
+
+        # ==================================================
+        # 5️⃣ FINALIZE EXAM
+        # ==================================================
+
+        print(
+            "\n================ "
+            "FINALIZING EXAM "
+            "================="
+        )
+
+        if not sections:
+
+            raise HTTPException(
+                400,
+                "No exam sections generated"
+            )
+
+        total_questions = sum(
+            len(s["questions"])
+            for s in sections
+        )
+
+        print(
+            f"📊 Total sections: "
+            f"{len(sections)}"
+        )
+
+        print(
+            f"📊 Total questions: "
+            f"{total_questions}"
+        )
+
+        exam_json = {
+
+            "class_name":
+                class_name,
+
+            "class_year":
+                class_year,
+
+            "center_code":
+                center_code,
+
+            "subject":
+                subject,
+
+            "difficulty":
+                "mixed",
+
+            "duration_minutes":
+                40,
+
+            "total_questions":
+                total_questions,
+
+            "sections":
+                sections,
         }
 
-        if answer_options:
-            section["answer_options"] = answer_options
+        # ==================================================
+        # 6️⃣ SAVE EXAM
+        # ==================================================
 
-        sections.append(section)
-
-    # --------------------------------------------------
-    # 3️⃣ FINALIZE
-    # --------------------------------------------------
-    if not sections:
-        raise HTTPException(400, "No sections generated")
-
-    total_questions = sum(len(s["questions"]) for s in sections)
-
-    exam_json = {
-        "class_name": class_name,
-        "class_year": class_year,
-        "subject": subject,
-        "difficulty": "mixed",  # ✅ ALWAYS MIXED
-        "duration_minutes": 40,
-        "total_questions": total_questions,
-        "sections": sections,
-    }
-
-    # --------------------------------------------------
-    # 🏷️ MARK USED
-    # --------------------------------------------------
-    if used_bundle_ids:
-        db.query(QuestionReading).filter(
-            QuestionReading.id.in_(used_bundle_ids)
-        ).update(
-            {QuestionReading.is_used: True},
-            synchronize_session=False
+        print(
+            "\n💾 Saving exam..."
         )
 
-    # --------------------------------------------------
-    # 💾 SAVE
-    # --------------------------------------------------
-    saved = GeneratedExamReading(
-        config_id=cfg.id,
-        class_name=class_name,
-        class_year=class_year,
-        subject=subject,
-        difficulty="mixed",
-        total_questions=total_questions,
-        exam_json=exam_json,
-    )
+        saved = GeneratedExamReading(
 
-    db.add(saved)
-    db.commit()
-    db.refresh(saved)
+            config_id=
+                cfg.id,
 
-    print(f"✅ OC Reading Exam generated ID: {saved.id}")
+            class_name=
+                class_name,
 
-    return {
-        "generated_exam_id": saved.id,
-        "total_questions": total_questions,
-        "warnings": warnings,
-        "exam_json": exam_json,
-    }
+            class_year=
+                class_year,
+
+            center_code=
+                center_code,
+
+            subject=
+                subject,
+
+            difficulty=
+                "mixed",
+
+            total_questions=
+                total_questions,
+
+            exam_json=
+                exam_json,
+        )
+
+        db.add(saved)
+
+        db.commit()
+
+        db.refresh(saved)
+
+        print(
+            f"✅ Exam saved ID: "
+            f"{saved.id}"
+        )
+
+        # ==================================================
+        # 7️⃣ STORE QUESTION USAGE
+        # ==================================================
+
+        usage_rows = []
+
+        for question_id in used_bundle_ids:
+
+            usage_rows.append(
+
+                OCReadingQuestionUsage(
+
+                    question_reading_id=
+                        question_id,
+
+                    center_id=
+                        center.id
+                )
+            )
+
+        if usage_rows:
+
+            db.add_all(usage_rows)
+
+            db.commit()
+
+        print(
+            f"✅ Stored usage rows: "
+            f"{len(usage_rows)}"
+        )
+
+        print(
+            "================ "
+            "END =================\n"
+        )
+
+        # ==================================================
+        # 8️⃣ RESPONSE
+        # ==================================================
+
+        return {
+
+            "generated_exam_id":
+                saved.id,
+
+            "center_code":
+                center_code,
+
+            "total_questions":
+                total_questions,
+
+            "warnings":
+                warnings,
+
+            "exam_json":
+                exam_json,
+        }
+
+    except Exception as e:
+
+        print(
+            "\n💥 ERROR IN "
+            "GENERATE OC READING EXAM"
+        )
+
+        print(
+            f"❗ Exception: "
+            f"{str(e)}"
+        )
+
+        raise
 
 
 @app.post("/api/exams/generate-oc-reading-latest")
@@ -48177,346 +50417,517 @@ def generate_exam_oc_reading_latest(
     payload: ReadingExamRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n================ GENERATE OC READING EXAM (LATEST) =================")
 
-    # --------------------------------------------------
-    # 0️⃣ VALIDATE INPUT
-    # --------------------------------------------------
-    selected_date = getattr(
-        payload,
-        "selected_date",
-        None
+    print(
+        "\n================ "
+        "GENERATE OC READING "
+        "(DATE + BATCH MODE) "
+        "================="
     )
 
-    batch_id = getattr(
-        payload,
-        "batch_id",
-        None
-    )
+    try:
 
-    if not selected_date:
-        raise HTTPException(
-            status_code=400,
-            detail="selected_date is required"
-        )
-
-    if batch_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="batch_id is required"
-        )
-
-    print(f"📅 selected_date={selected_date}")
-    print(f"📦 batch_id={batch_id}")
-
-    # --------------------------------------------------
-    # 1️⃣ NORMALIZATION
-    # --------------------------------------------------
-    class_name = (
-        payload.class_name
-        .strip()
-        .lower()
-    )
-
-    class_year = (
-        payload.class_year
-        .lower()
-        .replace("year", "")
-        .strip()
-    )
-
-    print(f"📥 class_name={class_name}")
-    print(f"📥 class_year={class_year}")
-
-    sections = []
-    warnings = []
-
-    # --------------------------------------------------
-    # 2️⃣ FETCH BUNDLES
-    # Filter using BOTH:
-    # - selected_date
-    # - batch_id
-    # --------------------------------------------------
-    bundles = (
-        db.query(QuestionReading)
-        .filter(
-
-            func.lower(
-                func.trim(
-                    QuestionReading.class_name
-                )
-            ) == class_name,
-
-            func.trim(
-                func.replace(
-                    func.lower(
-                        QuestionReading.class_year
-                    ),
-                    "year",
-                    ""
-                )
-            ) == class_year,
-
-            func.lower(
-                func.trim(
-                    QuestionReading.subject
-                )
-            ).like("%reading comprehension%"),
-
-            func.date(
-                QuestionReading.created_at
-            ) == selected_date,
-
-            QuestionReading.batch_id == batch_id,
-
-            QuestionReading.is_used == False
-
-        )
-        .order_by(
-            QuestionReading.created_at.asc()
-        )
-        .all()
-    )
-
-    print(f"\n📦 FOUND BUNDLES: {len(bundles)}")
-
-    if not bundles:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "No reading bundles found "
-                "for selected date and batch"
-            )
-        )
-
-    # --------------------------------------------------
-    # 3️⃣ BUILD SECTIONS
-    # --------------------------------------------------
-    for section_index, matched_bundle in enumerate(
-        bundles,
-        start=1
-    ):
+        # ==================================================
+        # 0️⃣ INPUT NORMALIZATION
+        # ==================================================
 
         print(
-            f"\n➡️ Processing bundle "
-            f"ID={matched_bundle.id}"
+            "📥 RAW PAYLOAD:",
+            payload.dict()
         )
 
-        bundle_json = (
-            matched_bundle.exam_bundle or {}
+        class_name = (
+            payload.class_name
+            .strip()
+            .lower()
         )
 
-        question_type = (
-            bundle_json.get("question_type")
+        class_year = (
+            payload.class_year
+            .lower()
+            .replace("year", "")
+            .strip()
         )
 
-        reading_material = (
-            bundle_json.get("reading_material")
+        center_code = (
+            payload.center_code
+            .strip()
+            .upper()
         )
 
-        answer_options = (
-            bundle_json.get("answer_options")
+        subject = (
+            "reading_comprehension"
         )
 
-        topic_name = matched_bundle.topic
-
-        topic_difficulty = (
-            matched_bundle.difficulty
+        selected_date = (
+            payload.selected_date
         )
 
-        section_id = (
-            f"{topic_name.lower().replace(' ', '_')}"
-            f"_{section_index}"
+        batch_id = (
+            payload.batch_id
         )
 
-        # --------------------------------------------------
-        # BUILD QUESTIONS
-        # --------------------------------------------------
-        collected_questions = [
-            copy.deepcopy(q)
-            for q in bundle_json.get(
-                "questions",
-                []
+        if not class_year:
+
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
             )
+
+        if not center_code:
+
+            raise HTTPException(
+                status_code=400,
+                detail="center_code is required"
+            )
+
+        if not selected_date:
+
+            raise HTTPException(
+                status_code=400,
+                detail="date is required"
+            )
+
+        if batch_id is None:
+
+            raise HTTPException(
+                status_code=400,
+                detail="batch_id is required"
+            )
+
+        print("\n🔧 NORMALIZED INPUTS:")
+
+        print(
+            f"class_name = "
+            f"'{class_name}'"
+        )
+
+        print(
+            f"class_year = "
+            f"'{class_year}'"
+        )
+
+        print(
+            f"center_code = "
+            f"'{center_code}'"
+        )
+
+        print(
+            f"selected_date = "
+            f"'{selected_date}'"
+        )
+
+        print(
+            f"batch_id = "
+            f"'{batch_id}'"
+        )
+
+        # ==================================================
+        # 1️⃣ FIND CENTER
+        # ==================================================
+
+        center = (
+            db.query(Center)
+            .filter(
+                Center.center_code.ilike(
+                    center_code
+                )
+            )
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"✅ Center Found | "
+            f"ID={center.id}"
+        )
+
+        # ==================================================
+        # 2️⃣ FETCH USED READING BUNDLES
+        # ==================================================
+
+        used_question_ids = (
+            db.query(
+                OCReadingQuestionUsage
+                .question_reading_id
+            )
+            .filter(
+                OCReadingQuestionUsage.center_id
+                == center.id
+            )
+            .all()
+        )
+
+        used_question_ids = [
+
+            row[0]
+
+            for row in used_question_ids
+
         ]
 
-        for idx, q in enumerate(
-            collected_questions,
+        print(
+            f"📚 Reading bundles "
+            f"already used by center: "
+            f"{len(used_question_ids)}"
+        )
+
+        # ==================================================
+        # 3️⃣ FETCH UNUSED BUNDLES
+        # ==================================================
+
+        rows = (
+            db.query(QuestionReading)
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        QuestionReading.class_name
+                    )
+                ) == class_name,
+
+                func.trim(
+                    func.replace(
+
+                        func.lower(
+                            QuestionReading.class_year
+                        ),
+
+                        "year",
+
+                        ""
+                    )
+                ) == class_year,
+
+                func.date(
+                    QuestionReading.created_at
+                ) == selected_date,
+
+                QuestionReading.batch_id
+                == batch_id,
+
+                # ==========================================
+                # EXCLUDE USED BUNDLES
+                # FOR THIS CENTER
+                # ==========================================
+
+                (
+                    ~QuestionReading.id.in_(
+                        used_question_ids
+                    )
+                    if used_question_ids
+                    else True
+                )
+            )
+            .order_by(
+                QuestionReading.id.asc()
+            )
+            .all()
+        )
+
+        print(
+            f"📦 FETCHED UNUSED "
+            f"BUNDLES: "
+            f"{len(rows)}"
+        )
+
+        for row in rows:
+
+            print(
+                f"   ID={row.id} | "
+                f"topic={row.topic} | "
+                f"batch_id={row.batch_id}"
+            )
+
+        if not rows:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No unused reading bundles "
+                    "found for selected "
+                    "date and batch"
+                )
+            )
+
+        # ==================================================
+        # 4️⃣ BUILD SECTIONS
+        # ==================================================
+
+        sections = []
+
+        used_bundle_ids = []
+
+        for idx, row in enumerate(
+            rows,
             start=1
         ):
 
-            q["question_number"] = idx
-
-            q["question_id"] = (
-                f"{section_id}_Q{idx}"
+            bundle_json = (
+                row.exam_bundle
+                or {}
             )
 
-        # --------------------------------------------------
-        # RENDER META
-        # --------------------------------------------------
-        passage_style = (
-            "literary"
-            if question_type in (
-                "main_idea",
-                "literary_analysis"
+            question_type = (
+                bundle_json.get(
+                    "question_type"
+                )
             )
-            else "informational"
+
+            reading_material = (
+                bundle_json.get(
+                    "reading_material"
+                )
+            )
+
+            answer_options = (
+                bundle_json.get(
+                    "answer_options"
+                )
+            )
+
+            questions = [
+
+                copy.deepcopy(q)
+
+                for q in bundle_json.get(
+                    "questions",
+                    []
+                )
+            ]
+
+            for q_index, q in enumerate(
+                questions,
+                start=1
+            ):
+
+                q["question_number"] = (
+                    q_index
+                )
+
+                q["question_id"] = (
+                    f"date_{idx}_Q"
+                    f"{q_index}"
+                )
+
+            section = {
+
+                "section_id":
+                    (
+                        f"date_section_"
+                        f"{idx}"
+                    ),
+
+                "section_index":
+                    idx,
+
+                "question_type":
+                    question_type,
+
+                "topic":
+                    row.topic,
+
+                "difficulty":
+                    row.difficulty,
+
+                "reading_material":
+                    reading_material,
+
+                "questions":
+                    questions,
+            }
+
+            if answer_options:
+
+                section[
+                    "answer_options"
+                ] = answer_options
+
+            sections.append(section)
+
+            used_bundle_ids.append(
+                row.id
+            )
+
+        # ==================================================
+        # 5️⃣ FINALIZE EXAM
+        # ==================================================
+
+        total_questions = sum(
+
+            len(section["questions"])
+
+            for section in sections
         )
 
-        render_hint = (
-            "gapped_text"
-            if question_type == "gapped_text"
-            else "standard"
-        )
+        exam_json = {
 
-        options_scope = (
-            "shared"
-            if answer_options
-            else "per_question"
-        )
+            "class_name":
+                class_name,
 
-        section = {
-            "section_id": section_id,
+            "class_year":
+                class_year,
 
-            "section_index": section_index,
+            "center_code":
+                center_code,
 
-            "question_type": question_type,
+            "subject":
+                subject,
 
-            "topic": topic_name,
+            "difficulty":
+                "mixed",
 
-            "difficulty": topic_difficulty,
+            "duration_minutes":
+                40,
 
-            "reading_material": reading_material,
+            "selected_date":
+                str(selected_date),
 
-            "passage_style": passage_style,
+            "batch_id":
+                batch_id,
 
-            "render_hint": render_hint,
+            "total_questions":
+                total_questions,
 
-            "options_scope": options_scope,
-
-            "questions": collected_questions,
+            "sections":
+                sections,
         }
 
-        if answer_options:
-
-            section["answer_options"] = (
-                answer_options
-            )
-
-        sections.append(section)
-
-    # --------------------------------------------------
-    # 4️⃣ FINALIZE EXAM
-    # --------------------------------------------------
-    total_questions = sum(
-        len(s["questions"])
-        for s in sections
-    )
-
-    exam_json = {
-        "class_name": class_name,
-
-        "class_year": class_year,
-
-        "subject": "Reading Comprehension",
-
-        "difficulty": "mixed",
-
-        "duration_minutes": 40,
-
-        "selected_date": str(
-            selected_date
-        ),
-
-        "batch_id": batch_id,
-
-        "total_questions": total_questions,
-
-        "sections": sections,
-    }
-
-    print(
-        f"\n🧠 TOTAL QUESTIONS: "
-        f"{total_questions}"
-    )
-
-    # --------------------------------------------------
-    # 5️⃣ MARK USED (TRACKING ONLY)
-    # --------------------------------------------------
-    used_bundle_ids = [
-        b.id for b in bundles
-    ]
-
-    if used_bundle_ids:
-
-        updated = (
-            db.query(QuestionReading)
-            .filter(
-                QuestionReading.id.in_(
-                    used_bundle_ids
-                ),
-
-                QuestionReading.is_used.is_(False)
-            )
-            .update(
-                {
-                    QuestionReading.is_used: True
-                },
-                synchronize_session=False
-            )
+        print(
+            f"📊 Sections: "
+            f"{len(sections)}"
         )
 
         print(
-            f"🔒 Marked {updated} "
-            f"bundles as used"
+            f"📊 Total questions: "
+            f"{total_questions}"
         )
 
-    # --------------------------------------------------
-    # 6️⃣ SAVE GENERATED EXAM
-    # --------------------------------------------------
-    saved = GeneratedExamReading(
-        config_id=None,
+        # ==================================================
+        # 6️⃣ SAVE EXAM
+        # ==================================================
 
-        class_name=class_name,
+        saved = GeneratedExamReading(
 
-        class_year=class_year,
+            config_id=None,
 
-        subject="Reading Comprehension",
+            class_name=
+                class_name,
 
-        difficulty="mixed",
+            class_year=
+                class_year,
 
-        total_questions=total_questions,
+            center_code=
+                center_code,
 
-        exam_json=exam_json,
-    )
+            subject=
+                subject,
 
-    db.add(saved)
+            difficulty=
+                "mixed",
 
-    db.commit()
+            total_questions=
+                total_questions,
 
-    db.refresh(saved)
+            exam_json=
+                exam_json,
+        )
 
-    print(
-        f"✅ OC Reading Latest Exam "
-        f"generated ID: {saved.id}"
-    )
+        db.add(saved)
 
-    # --------------------------------------------------
-    # 7️⃣ RESPONSE
-    # --------------------------------------------------
-    return {
-        "generated_exam_id": saved.id,
+        db.commit()
 
-        "selected_date": selected_date,
+        db.refresh(saved)
 
-        "batch_id": batch_id,
+        print(
+            f"💾 Saved exam ID: "
+            f"{saved.id}"
+        )
 
-        "total_questions": total_questions,
+        # ==================================================
+        # 7️⃣ STORE USAGE ROWS
+        # ==================================================
 
-        "warnings": warnings,
+        usage_rows = []
 
-        "exam_json": exam_json,
-    }
+        for question_id in used_bundle_ids:
+
+            usage_rows.append(
+
+                OCReadingQuestionUsage(
+
+                    question_reading_id=
+                        question_id,
+
+                    center_id=
+                        center.id
+                )
+            )
+
+        if usage_rows:
+
+            db.add_all(
+                usage_rows
+            )
+
+            db.commit()
+
+        print(
+            f"✅ Stored usage rows: "
+            f"{len(usage_rows)}"
+        )
+
+        print(
+            "================ "
+            "END "
+            "=================\n"
+        )
+
+        # ==================================================
+        # 8️⃣ RESPONSE
+        # ==================================================
+
+        return {
+
+            "generated_exam_id":
+                saved.id,
+
+            "center_code":
+                center_code,
+
+            "selected_date":
+                selected_date,
+
+            "batch_id":
+                batch_id,
+
+            "total_questions":
+                total_questions,
+
+            "exam_json":
+                exam_json,
+        }
+
+    except Exception as e:
+
+        print(
+            "\n💥 ERROR IN "
+            "GENERATE OC READING "
+            "(DATE + BATCH MODE)"
+        )
+
+        print(
+            f"❗ Exception: "
+            f"{str(e)}"
+        )
+
+        raise
 
 @app.post("/api/exams/generate-reading-homework-latest")
 def generate_exam_reading_homework_latest(
@@ -50163,6 +52574,7 @@ def generate_exam_reading_latest(
         )
 
         raise
+
 @app.post("/api/exams/generate-reading")
 def generate_exam_reading(
     payload: ReadingExamRequest,
@@ -55700,132 +58112,394 @@ def create_reading_homework(
         "created_at": new_config.created_at
     }
 
-@app.post("/api/admin/create-reading-homework-config")
+@app.post("/api/admin/create-oc-reading-homework-config")
 def create_reading_homework_config(
     payload: ReadingHomeworkExamConfigCreate,
     db: Session = Depends(get_db)
 ):
-    print("\n================ CREATE READING HOMEWORK CONFIG =================")
+    print(
+        "\n================ "
+        "CREATE OC READING HOMEWORK CONFIG "
+        "================="
+    )
 
-    # ---------------------------------------
-    # NORMALIZATION
-    # ---------------------------------------
-    class_name_clean = payload.class_name.strip().lower()
-    subject_clean = payload.subject.strip().lower()
-    class_year_clean = payload.class_year.strip().lower().replace("year", "").strip()
-
-    print("📥 Incoming Homework Config:")
-    print(f"   class_name = {class_name_clean}")
-    print(f"   subject    = {subject_clean}")
-    print(f"   class_year = {class_year_clean}")
-    print(f"   topics     = {len(payload.topics or [])}")
-
-    # ---------------------------------------
+    # ==================================================
     # VALIDATION
-    # ---------------------------------------
+    # ==================================================
+
     if not payload.topics:
+
         raise HTTPException(
             status_code=400,
-            detail="At least one topic must be provided."
+            detail=(
+                "At least one topic "
+                "must be provided."
+            )
         )
 
-    VALID_DIFFICULTIES = {"easy", "medium", "hard"}
+    if not payload.center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    if not payload.class_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail="class_year is required"
+        )
+
+    # ==================================================
+    # NORMALIZATION
+    # ==================================================
+
+    class_name_clean = (
+        payload.class_name
+        .strip()
+        .lower()
+    )
+
+    subject_clean = (
+        payload.subject
+        .strip()
+        .lower()
+    )
+
+    class_year_clean = (
+        payload.class_year
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    center_code_clean = (
+        payload.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        "📥 Incoming Homework Config:"
+    )
+
+    print(
+        f"   class_name = "
+        f"{class_name_clean}"
+    )
+
+    print(
+        f"   subject    = "
+        f"{subject_clean}"
+    )
+
+    print(
+        f"   class_year = "
+        f"{class_year_clean}"
+    )
+
+    print(
+        f"   center_code = "
+        f"{center_code_clean}"
+    )
+
+    print(
+        f"   topics     = "
+        f"{len(payload.topics or [])}"
+    )
+
+    # ==================================================
+    # FIND CENTER
+    # ==================================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code_clean
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"✅ Center Found | "
+        f"ID={center.id}"
+    )
+
+    # ==================================================
+    # VALIDATE TOPICS
+    # ==================================================
+
+    VALID_DIFFICULTIES = {
+
+        "easy",
+
+        "medium",
+
+        "hard"
+
+    }
 
     topics_json = []
+
     total_questions = 0
 
-    for idx, t in enumerate(payload.topics):
+    for idx, t in enumerate(
+        payload.topics
+    ):
 
-        name = (t.name or "").strip()
-        difficulty = (t.difficulty or "").strip().lower()
-        num_q = int(t.num_questions or 0)
+        name = (
+            (t.name or "")
+            .strip()
+        )
+
+        difficulty = (
+            (t.difficulty or "")
+            .strip()
+            .lower()
+        )
+
+        num_q = int(
+            t.num_questions or 0
+        )
 
         if not name:
-            raise HTTPException(400, f"Topic {idx + 1} is missing a name.")
+
+            raise HTTPException(
+
+                400,
+
+                f"Topic "
+                f"{idx + 1} "
+                f"is missing a name."
+
+            )
 
         if num_q <= 0:
+
             raise HTTPException(
+
                 400,
-                f"Topic '{name}' must have a valid number of questions."
+
+                f"Topic '{name}' "
+                f"must have a valid "
+                f"number of questions."
+
             )
 
         if difficulty not in VALID_DIFFICULTIES:
+
             raise HTTPException(
+
                 400,
-                f"Invalid difficulty '{t.difficulty}' for topic '{name}'."
+
+                f"Invalid difficulty "
+                f"'{t.difficulty}' "
+                f"for topic '{name}'."
+
             )
 
         topic_entry = {
+
             "name": name,
+
             "difficulty": difficulty,
+
             "num_questions": num_q
+
         }
 
-        topics_json.append(topic_entry)
-        total_questions += num_q
-
-    # ---------------------------------------
-    # GLOBAL VALIDATION (OC RANGE)
-    # ---------------------------------------
-    MIN_TOTAL = 28
-    MAX_TOTAL = 38
-
-    if total_questions < MIN_TOTAL or total_questions > MAX_TOTAL:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Total questions must be between {MIN_TOTAL} and {MAX_TOTAL}. Got {total_questions}."
+        topics_json.append(
+            topic_entry
         )
 
-    # ---------------------------------------
-    # DELETE EXISTING CONFIG (SCOPED)
-    # ---------------------------------------
-    print("\n🗑️ Deleting previous homework configs (scoped)...")
+        total_questions += num_q
 
-    db.query(ReadingHomeworkExamConfig).filter(
-        func.lower(func.trim(ReadingHomeworkExamConfig.class_name)) == class_name_clean,
-        func.lower(func.trim(ReadingHomeworkExamConfig.subject)) == subject_clean,
+    # ==================================================
+    # GLOBAL VALIDATION
+    # ==================================================
+
+    MIN_TOTAL = 28
+
+    MAX_TOTAL = 38
+
+    if (
+
+        total_questions < MIN_TOTAL
+
+        or
+
+        total_questions > MAX_TOTAL
+
+    ):
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail=(
+                f"Total questions must "
+                f"be between "
+                f"{MIN_TOTAL} and "
+                f"{MAX_TOTAL}. "
+                f"Got {total_questions}."
+            )
+        )
+
+    # ==================================================
+    # DELETE EXISTING CONFIG
+    # SCOPED BY CENTER
+    # ==================================================
+
+    print(
+        "\n🗑️ Deleting previous "
+        "homework configs "
+        "(scoped)..."
+    )
+
+    db.query(
+        ReadingHomeworkExamConfig
+    ).filter(
+
+        func.lower(
+            func.trim(
+                ReadingHomeworkExamConfig
+                .class_name
+            )
+        ) == class_name_clean,
+
+        func.lower(
+            func.trim(
+                ReadingHomeworkExamConfig
+                .subject
+            )
+        ) == subject_clean,
+
         func.trim(
             func.replace(
-                func.lower(ReadingHomeworkExamConfig.class_year),
+                func.lower(
+                    ReadingHomeworkExamConfig
+                    .class_year
+                ),
                 "year",
                 ""
             )
-        ) == class_year_clean
-    ).delete(synchronize_session=False)
+        ) == class_year_clean,
+
+        func.upper(
+            func.trim(
+                ReadingHomeworkExamConfig
+                .center_code
+            )
+        ) == center_code_clean
+
+    ).delete(
+        synchronize_session=False
+    )
 
     db.commit()
-    print("✅ Previous homework configs deleted")
 
-    # ---------------------------------------
+    print(
+        "✅ Previous homework "
+        "configs deleted"
+    )
+
+    # ==================================================
     # CREATE NEW CONFIG
-    # ---------------------------------------
-    print("\n🚀 Creating new homework config...")
+    # ==================================================
 
-    new_config = ReadingHomeworkExamConfig(
-        class_name=payload.class_name.strip(),
-        subject=payload.subject.strip(),
-        class_year=payload.class_year.strip(),
-        difficulty="mixed",  # enforce consistency
-        num_topics=len(topics_json),
-        topics=topics_json
+    print(
+        "\n🚀 Creating new "
+        "homework config..."
+    )
+
+    new_config = (
+        ReadingHomeworkExamConfig(
+
+            class_name=
+                payload.class_name
+                .strip(),
+
+            subject=
+                payload.subject
+                .strip(),
+
+            class_year=
+                payload.class_year
+                .strip(),
+
+            center_code=
+                center_code_clean,
+
+            difficulty=
+                "mixed",
+
+            num_topics=
+                len(topics_json),
+
+            topics=
+                topics_json
+
+        )
     )
 
     db.add(new_config)
+
     db.commit()
+
     db.refresh(new_config)
 
-    print(f"✅ Homework Config Created ID = {new_config.id}")
-    print("======================================================\n")
+    print(
+        f"✅ Homework Config "
+        f"Created ID = "
+        f"{new_config.id}"
+    )
+
+    print(
+        "======================="
+        "=======================\n"
+    )
 
     return {
-        "status": "success",
-        "config_id": new_config.id,
-        "total_questions": total_questions,
-        "topics": topics_json,
-        "message": f"{payload.class_name} reading homework configuration saved successfully.",
-        "created_at": new_config.created_at
-    }
 
+        "status":
+            "success",
+
+        "config_id":
+            new_config.id,
+
+        "center_code":
+            center_code_clean,
+
+        "total_questions":
+            total_questions,
+
+        "topics":
+            topics_json,
+
+        "message": (
+
+            f"{payload.class_name} "
+            f"reading homework "
+            f"configuration saved "
+            f"successfully."
+
+        ),
+
+        "created_at":
+            new_config.created_at
+
+    }
 
 @app.post("/api/admin/create-reading-config")
 def create_reading_config(
@@ -56642,58 +59316,239 @@ def start_exam(
 
 @app.post("/api/student/start-homework-oc-mathematical-reasoning")
 def start_homework_oc_mathematical_reasoning(
-    req: dict = Body(...),
+    req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n🚀 START OC MR HOMEWORK REQUEST")
-    print("➡ payload:", req)
 
-    student_id = req.get("student_id")
-    if not student_id:
-        raise HTTPException(status_code=400, detail="student_id required")
-    # --------------------------------------------------
+    print(
+        "\n================ START OC "
+        "HOMEWORK MATHEMATICAL "
+        "REASONING ================="
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
+
+    # ==================================================
     # 1️⃣ Resolve student
-    # --------------------------------------------------
+    # ==================================================
+
     student = (
         db.query(Student)
-        .filter(func.lower(Student.student_id) == student_id.lower().strip())
+        .filter(
+            func.lower(Student.student_id)
+            ==
+            func.lower(
+                req.student_id.strip()
+            )
+        )
         .first()
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
-    # normalize student year
-    if isinstance(student.student_year, str):
-        class_year_int = int(student.student_year.strip().split()[-1])
-    else:
-        class_year_int = int(student.student_year)
 
-    class_year_str = str(class_year_int)
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
 
-    print("🎯 Normalized class_year:", class_year_int)
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
+    )
+
+    print(
+        f"🏢 Student center_code: "
+        f"{student.center_code}"
+    )
+
+    # ==================================================
+    # 2️⃣ Validate center_code
+    # ==================================================
+
+    if not student.center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "center assigned"
+            )
+        )
+
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 Normalized center_code: "
+        f"{normalized_center_code}"
+    )
+
+    # ==================================================
+    # 3️⃣ Extract class_year
+    # ==================================================
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
+        )
+
+    class_year = (
+        str(student.student_year)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{class_year}"
+    )
+
+    now = datetime.now(timezone.utc)
+
+    MAX_DURATION = timedelta(minutes=40)
+
+    # ==================================================
+    # 4️⃣ Fetch latest CENTER-SPECIFIC
+    # HOMEWORK exam
+    # ==================================================
+
+    print(
+        "🔍 Searching OC homework MR with:",
+        {
+            "class_name": "oc",
+            "subject": "mathematical_reasoning",
+            "class_year": class_year,
+            "center_code": normalized_center_code
+        }
+    )
+
+    homework_query = (
+        db.query(
+            HomeworkExamOCMathematicalReasoning
+        )
+        .filter(
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCMathematicalReasoning
+                    .class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCMathematicalReasoning
+                    .subject
+                )
+            ) == "mathematical_reasoning",
+
+            func.trim(
+                func.replace(
+
+                    func.lower(
+                        HomeworkExamOCMathematicalReasoning
+                        .class_year
+                    ),
+
+                    "year",
+
+                    ""
+                )
+            ) == class_year,
+
+            func.upper(
+                func.trim(
+                    HomeworkExamOCMathematicalReasoning
+                    .center_code
+                )
+            ) == normalized_center_code
+        )
+    )
+
+    homework_count = (
+        homework_query.count()
+    )
+
+    print(
+        f"📊 Matching OC MR homework exams "
+        f"for class_year="
+        f"{class_year} "
+        f"and center="
+        f"{normalized_center_code}: "
+        f"{homework_count}"
+    )
+
+    if homework_count == 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No OC Mathematical Reasoning "
+                f"homework found for "
+                f"class_year={class_year} "
+                f"and center="
+                f"{normalized_center_code}"
+            )
+        )
 
     homework_exam = (
-        db.query(HomeworkExamOCMathematicalReasoning)
-        .filter(
-            func.lower(func.trim(HomeworkExamOCMathematicalReasoning.class_name)) == "oc",
-            func.lower(func.trim(HomeworkExamOCMathematicalReasoning.subject)) == "mathematical_reasoning",
-            HomeworkExamOCMathematicalReasoning.class_year == class_year_str   # ✅ FIX
+        homework_query
+        .order_by(
+            HomeworkExamOCMathematicalReasoning
+            .id.desc()
         )
-        .order_by(HomeworkExamOCMathematicalReasoning.created_at.desc())
         .first()
     )
 
     if not homework_exam:
-        raise HTTPException(status_code=404, detail="Homework exam not generated")
 
-    # --------------------------------------------------
-    # 🔧 NORMALIZER (same as exam)
-    # --------------------------------------------------
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "OC Mathematical Reasoning "
+                "homework not found"
+            )
+        )
+
+    print(
+        "✅ Homework selected:",
+        {
+            "homework_id": homework_exam.id,
+            "class_year": homework_exam.class_year,
+            "center_code": homework_exam.center_code,
+            "subject": homework_exam.subject
+        }
+    )
+
+    # ==================================================
+    # 5️⃣ Normalize Questions
+    # ==================================================
+
     def normalize_questions(raw_questions):
+
         normalized = []
 
         for q in raw_questions or []:
+
             fixed = dict(q)
+
+            # ==========================================
+            # QUESTION BLOCKS
+            # ==========================================
 
             raw_blocks = (
                 fixed.get("question_blocks")
@@ -56702,127 +59557,397 @@ def start_homework_oc_mathematical_reasoning(
             )
 
             fixed["blocks"] = raw_blocks
-            resolve_images(fixed["blocks"], db, "start-homework-oc-mr")
+
+            resolve_images(
+                fixed["blocks"],
+                db,
+                "start-homework-oc-mr"
+            )
+
+            # ==========================================
+            # OPTIONS
+            # ==========================================
 
             opts = fixed.get("options")
 
             if isinstance(opts, dict):
+
                 fixed["options"] = {
-                    k: {"content": v} for k, v in opts.items()
+                    k: {"content": v}
+                    for k, v in opts.items()
                 }
+
             elif isinstance(opts, list):
+
                 fixed["options"] = {
                     chr(65 + i): {"content": v}
                     for i, v in enumerate(opts)
                 }
+
             else:
+
                 fixed["options"] = {}
 
-            resolve_option_images(fixed["options"], db, "start-homework-oc-mr")
+            resolve_option_images(
+                fixed["options"],
+                db,
+                "start-homework-oc-mr"
+            )
 
             normalized.append(fixed)
 
         return normalized
 
-    # --------------------------------------------------
-    # 🔍 CHECK ATTEMPT
-    # --------------------------------------------------
-    attempt = (
-        db.query(StudentHomeworkOCMathematicalReasoning)
-        .filter(
-            StudentHomeworkOCMathematicalReasoning.student_id == student.id,
-            StudentHomeworkOCMathematicalReasoning.homework_exam_id == homework_exam.id
+    # ==================================================
+    # 6️⃣ Check ACTIVE attempt
+    # ==================================================
+
+    active_attempt = (
+        db.query(
+            StudentHomeworkOCMathematicalReasoning
         )
-        .order_by(StudentHomeworkOCMathematicalReasoning.started_at.desc())
+        .filter(
+
+            StudentHomeworkOCMathematicalReasoning
+            .student_id == student.id,
+
+            StudentHomeworkOCMathematicalReasoning
+            .homework_exam_id
+            == homework_exam.id,
+
+            StudentHomeworkOCMathematicalReasoning
+            .completed_at.is_(None)
+
+        )
+        .order_by(
+            StudentHomeworkOCMathematicalReasoning
+            .started_at.desc()
+        )
         .first()
     )
 
-    # --------------------------------------------------
-    # 🟢 COMPLETED
-    # --------------------------------------------------
-    if attempt and attempt.completed_at is not None:
-        return {"completed": True}
+    if active_attempt:
 
-    # --------------------------------------------------
-    # 🟡 ACTIVE → RESUME
-    # --------------------------------------------------
-    if attempt and attempt.completed_at is None:
+        print(
+            f"🧠 Active homework "
+            f"attempt found | "
+            f"attempt_id={active_attempt.id}"
+        )
+
+        started_at = (
+            active_attempt.started_at
+        )
+
+        if started_at.tzinfo is None:
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        expires_at = (
+            started_at + MAX_DURATION
+        )
+
+        elapsed = int(
+            (now - started_at)
+            .total_seconds()
+        )
+
+        print(
+            "⏱️ Timer evaluation:",
+            {
+                "attempt_id": active_attempt.id,
+                "started_at": started_at,
+                "expires_at": expires_at,
+                "elapsed_seconds": elapsed
+            }
+        )
+
+        # ==========================================
+        # TIMEOUT
+        # ==========================================
+
+        if now > expires_at:
+
+            print(
+                "⛔ Homework expired "
+                "→ auto submit"
+            )
+
+            active_attempt.completed_at = (
+                expires_at
+            )
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        remaining = max(
+            0,
+            40 * 60 - elapsed
+        )
+
+        if remaining <= 0:
+
+            print(
+                "⛔ Homework expired via "
+                "remaining_time guard"
+            )
+
+            active_attempt.completed_at = now
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        # ==========================================
+        # REHYDRATE RESPONSES
+        # ==========================================
 
         existing_count = (
-            db.query(StudentHomeworkResponseOCMathematicalReasoning)
+            db.query(
+                StudentHomeworkResponseOCMathematicalReasoning
+            )
             .filter(
-                StudentHomeworkResponseOCMathematicalReasoning.homework_attempt_id == attempt.id
+                StudentHomeworkResponseOCMathematicalReasoning
+                .homework_attempt_id
+                == active_attempt.id
             )
             .count()
         )
 
         if existing_count == 0:
+
+            print(
+                "⚠️ No response rows found "
+                "→ rehydrating"
+            )
+
             for q in homework_exam.questions or []:
+
                 db.add(
+
                     StudentHomeworkResponseOCMathematicalReasoning(
-                        student_id=student.id,
-                        homework_exam_id=homework_exam.id,
-                        homework_attempt_id=attempt.id,
-                        q_id=q["q_id"],
-                        topic=q.get("topic"),
-                        selected_option=None,
-                        correct_option=q.get("correct"),
-                        is_correct=None
+
+                        student_id=
+                            student.id,
+
+                        homework_exam_id=
+                            homework_exam.id,
+
+                        homework_attempt_id=
+                            active_attempt.id,
+
+                        q_id=
+                            q["q_id"],
+
+                        topic=
+                            q.get("topic"),
+
+                        selected_option=
+                            None,
+
+                        correct_option=
+                            q.get("correct"),
+
+                        is_correct=
+                            None
                     )
                 )
+
             db.commit()
 
-        started_at = attempt.started_at
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
+        normalized_questions = (
+            normalize_questions(
+                homework_exam.questions or []
+            )
+        )
 
-        now = datetime.now(timezone.utc)
-        elapsed = int((now - started_at).total_seconds())
-        remaining = max(0, 40 * 60 - elapsed)
-
-        if remaining == 0:
-            attempt.completed_at = now
-            db.commit()
-            return {"completed": True}
+        print(
+            "🔁 Resuming homework:",
+            {
+                "attempt_id": active_attempt.id,
+                "remaining_seconds": remaining,
+                "questions_count": (
+                    len(normalized_questions)
+                )
+            }
+        )
 
         return {
+
             "completed": False,
-            "questions": normalize_questions(homework_exam.questions),
-            "remaining_time": remaining
+
+            "exam_attempt_id":
+                active_attempt.id,
+
+            "questions":
+                jsonable_encoder(
+                    normalized_questions
+                ),
+
+            "remaining_time":
+                remaining
         }
 
-    # --------------------------------------------------
-    # 🔵 NEW ATTEMPT
-    # --------------------------------------------------
-    new_attempt = StudentHomeworkOCMathematicalReasoning(
-        student_id=student.id,
-        homework_exam_id=homework_exam.id,
-        started_at=datetime.now(timezone.utc)
+    # ==================================================
+    # 7️⃣ Check COMPLETED attempt
+    # ==================================================
+
+    completed_attempt = (
+        db.query(
+            StudentHomeworkOCMathematicalReasoning
+        )
+        .filter(
+
+            StudentHomeworkOCMathematicalReasoning
+            .student_id == student.id,
+
+            StudentHomeworkOCMathematicalReasoning
+            .homework_exam_id
+            == homework_exam.id,
+
+            StudentHomeworkOCMathematicalReasoning
+            .completed_at.isnot(None)
+
+        )
+        .first()
+    )
+
+    if completed_attempt:
+
+        print(
+            f"🚫 Homework already "
+            f"completed | "
+            f"attempt_id="
+            f"{completed_attempt.id}"
+        )
+
+        return {
+
+            "completed": True,
+
+            "exam_attempt_id":
+                completed_attempt.id,
+
+            "message":
+                "Homework already attempted"
+        }
+
+    # ==================================================
+    # 8️⃣ Create NEW attempt
+    # ==================================================
+
+    print(
+        "🆕 Creating new "
+        "homework attempt"
+    )
+
+    normalized_questions = (
+        normalize_questions(
+            homework_exam.questions or []
+        )
+    )
+
+    new_attempt = (
+        StudentHomeworkOCMathematicalReasoning(
+
+            student_id=
+                student.id,
+
+            homework_exam_id=
+                homework_exam.id,
+
+            started_at=
+                now
+        )
     )
 
     db.add(new_attempt)
+
     db.commit()
 
+    db.refresh(new_attempt)
+
+    print(
+        f"🆕 New homework attempt "
+        f"created | "
+        f"attempt_id={new_attempt.id}"
+    )
+
+    # ==================================================
+    # 9️⃣ Pre-create responses
+    # ==================================================
+
     for q in homework_exam.questions or []:
+
         db.add(
+
             StudentHomeworkResponseOCMathematicalReasoning(
-                student_id=student.id,
-                homework_exam_id=homework_exam.id,
-                homework_attempt_id=new_attempt.id,
-                q_id=q["q_id"],
-                topic=q.get("topic"),
-                selected_option=None,
-                correct_option=q.get("correct"),
-                is_correct=None
+
+                student_id=
+                    student.id,
+
+                homework_exam_id=
+                    homework_exam.id,
+
+                homework_attempt_id=
+                    new_attempt.id,
+
+                q_id=
+                    q["q_id"],
+
+                topic=
+                    q.get("topic"),
+
+                selected_option=
+                    None,
+
+                correct_option=
+                    q.get("correct"),
+
+                is_correct=
+                    None
             )
         )
 
     db.commit()
 
+    print(
+        "🧱 Response rows created:",
+        db.query(
+            StudentHomeworkResponseOCMathematicalReasoning
+        )
+        .filter(
+            StudentHomeworkResponseOCMathematicalReasoning
+            .homework_attempt_id
+            == new_attempt.id
+        )
+        .count()
+    )
+
+    # ==================================================
+    # 🔟 Response
+    # ==================================================
+
     return {
+
         "completed": False,
-        "questions": normalize_questions(homework_exam.questions),
-        "remaining_time": 40 * 60
+
+        "exam_attempt_id":
+            new_attempt.id,
+
+        "questions":
+            jsonable_encoder(
+                normalized_questions
+            ),
+
+        "remaining_time":
+            40 * 60
     }
 
 @app.post("/api/student/start-exam-oc-mathematical-reasoning")
@@ -56830,82 +59955,226 @@ def start_exam_oc_mathematical_reasoning(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n🚀 START OC MR EXAM REQUEST")
-    print("➡ payload:", req.dict())
 
-    # --------------------------------------------------
+    print(
+        "\n================ START OC "
+        "MATHEMATICAL REASONING "
+        "EXAM ================="
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
+
+    # ==================================================
     # 1️⃣ Resolve student
-    # --------------------------------------------------
+    # ==================================================
+
     student = (
         db.query(Student)
         .filter(
-            func.lower(Student.student_id) ==
-            func.lower(req.student_id.strip())
+            func.lower(Student.student_id)
+            ==
+            func.lower(
+                req.student_id.strip()
+            )
         )
         .first()
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"✅ Student resolved: id={student.id}")
-
-    # --------------------------------------------------
-    # 2️⃣ Extract + normalize student year
-    # --------------------------------------------------
-    print("\n🎓 Extracting student year")
-    
-    raw_student_year = student.student_year
-    print(f"➡ Raw student.student_year = {raw_student_year}")
-    
-    try:
-        if isinstance(raw_student_year, str):
-            class_year = int(raw_student_year.strip().split()[-1])  # "Year 4" → 4
-        else:
-            class_year = int(raw_student_year)
-    
-        print(f"✅ Parsed class_year = {class_year}")
-    
-    except Exception as e:
-        print(f"❌ Failed to parse student_year: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid student_year: {raw_student_year}"
-        )
-    
-    # --------------------------------------------------
-    # 3️⃣ Load exam (FILTER BY YEAR)
-    # --------------------------------------------------
-    print("\n📘 Fetching exam based on class_year")
-    
-    exam = (
-        db.query(Exam)
-        .filter(
-            func.lower(func.trim(Exam.class_name)) == "oc",
-            func.lower(func.trim(Exam.subject)) == "mathematical_reasoning",
-            Exam.class_year == class_year   # ✅ CRITICAL FIX
-        )
-        .order_by(Exam.created_at.desc())
-        .first()
-    )
-    
-    if not exam:
-        print("❌ No exam found for this class_year")
         raise HTTPException(
             status_code=404,
-            detail=f"No exam found for class_year={class_year}"
+            detail="Student not found"
         )
-    
-    print(f"✅ Using exam ID: {exam.id}")
-    print(f"📘 Exam.class_year = {exam.class_year}")
-    # --------------------------------------------------
-    # 🔧 NORMALIZER
-    # --------------------------------------------------
+
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
+    )
+
+    print(
+        f"🏢 Student center_code: "
+        f"{student.center_code}"
+    )
+
+    # ==================================================
+    # 2️⃣ Validate center_code
+    # ==================================================
+
+    if not student.center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "center assigned"
+            )
+        )
+
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 Normalized center_code: "
+        f"{normalized_center_code}"
+    )
+
+    # ==================================================
+    # 3️⃣ Extract class_year
+    # ==================================================
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
+        )
+
+    class_year = (
+        str(student.student_year)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{class_year}"
+    )
+
+    now = datetime.now(timezone.utc)
+
+    MAX_DURATION = timedelta(minutes=40)
+
+    # ==================================================
+    # 4️⃣ Fetch latest CENTER-SPECIFIC exam
+    # ==================================================
+
+    print(
+        "🔍 Searching OC MR exam with:",
+        {
+            "class_name": "oc",
+            "subject": "mathematical_reasoning",
+            "class_year": class_year,
+            "center_code": normalized_center_code
+        }
+    )
+
+    exam_query = (
+        db.query(Exam)
+        .filter(
+
+            func.lower(
+                func.trim(
+                    Exam.class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.trim(
+                    Exam.subject
+                )
+            ) == "mathematical_reasoning",
+
+            func.trim(
+                func.replace(
+
+                    func.lower(
+                        Exam.class_year
+                    ),
+
+                    "year",
+
+                    ""
+                )
+            ) == class_year,
+
+            func.upper(
+                func.trim(
+                    Exam.center_code
+                )
+            ) == normalized_center_code
+        )
+    )
+
+    exam_count = exam_query.count()
+
+    print(
+        f"📊 Matching OC MR exams "
+        f"for class_year="
+        f"{class_year} "
+        f"and center="
+        f"{normalized_center_code}: "
+        f"{exam_count}"
+    )
+
+    if exam_count == 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No OC Mathematical Reasoning "
+                f"exam found for "
+                f"class_year={class_year} "
+                f"and center="
+                f"{normalized_center_code}"
+            )
+        )
+
+    exam = (
+        exam_query
+        .order_by(
+            Exam.id.desc()
+        )
+        .first()
+    )
+
+    if not exam:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "OC Mathematical Reasoning "
+                "exam not found"
+            )
+        )
+
+    print(
+        "✅ Selected exam:",
+        {
+            "exam_id": exam.id,
+            "class_year": exam.class_year,
+            "center_code": exam.center_code,
+            "subject": exam.subject
+        }
+    )
+
+    # ==================================================
+    # 5️⃣ Normalize Questions
+    # ==================================================
+
     def normalize_questions(raw_questions):
+
         normalized = []
 
         for q in raw_questions or []:
+
             fixed = dict(q)
+
+            # ==========================================
+            # QUESTION BLOCKS
+            # ==========================================
 
             raw_blocks = (
                 fixed.get("question_blocks")
@@ -56914,137 +60183,394 @@ def start_exam_oc_mathematical_reasoning(
             )
 
             fixed["blocks"] = raw_blocks
-            resolve_images(fixed["blocks"], db, "start-exam-oc-mr")
+
+            resolve_images(
+                fixed["blocks"],
+                db,
+                "start-exam-oc-mr"
+            )
+
+            # ==========================================
+            # OPTIONS
+            # ==========================================
 
             opts = fixed.get("options")
 
             if isinstance(opts, dict):
+
                 fixed["options"] = {
-                    k: {"content": v} for k, v in opts.items()
+                    k: {"content": v}
+                    for k, v in opts.items()
                 }
+
             elif isinstance(opts, list):
+
                 fixed["options"] = {
                     chr(65 + i): {"content": v}
                     for i, v in enumerate(opts)
                 }
+
             else:
+
                 fixed["options"] = {}
 
-            resolve_option_images(fixed["options"], db, "start-exam-oc-mr")
+            resolve_option_images(
+                fixed["options"],
+                db,
+                "start-exam-oc-mr"
+            )
 
             normalized.append(fixed)
 
         return normalized
 
-    # --------------------------------------------------
-    # 🔍 CHECK OC MR ATTEMPTS
-    # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamOCMathematicalReasoning)
-        .filter(
-            StudentExamOCMathematicalReasoning.student_id == student.id,
-            StudentExamOCMathematicalReasoning.exam_id == exam.id   # ✅ FIX
+    # ==================================================
+    # 6️⃣ Check ACTIVE attempt
+    # ==================================================
+
+    active_attempt = (
+        db.query(
+            StudentExamOCMathematicalReasoning
         )
-        .order_by(StudentExamOCMathematicalReasoning.started_at.desc())
+        .filter(
+
+            StudentExamOCMathematicalReasoning
+            .student_id == student.id,
+
+            StudentExamOCMathematicalReasoning
+            .exam_id == exam.id,
+
+            StudentExamOCMathematicalReasoning
+            .completed_at.is_(None)
+
+        )
+        .order_by(
+            StudentExamOCMathematicalReasoning
+            .started_at.desc()
+        )
         .first()
     )
 
-    # --------------------------------------------------
-    # 🟢 CASE A — COMPLETED
-    # --------------------------------------------------
-    if attempt and attempt.completed_at is not None:
-        print("✅ Completed OC MR attempt exists")
-        return {"completed": True}
+    if active_attempt:
 
-    # --------------------------------------------------
-    # 🟡 CASE B — ACTIVE → RESUME
-    # --------------------------------------------------
-    if attempt and attempt.completed_at is None:
-        print("⏳ Resuming OC MR attempt")
+        print(
+            f"🧠 Active attempt found | "
+            f"attempt_id={active_attempt.id}"
+        )
+
+        started_at = (
+            active_attempt.started_at
+        )
+
+        if started_at.tzinfo is None:
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        expires_at = (
+            started_at + MAX_DURATION
+        )
+
+        elapsed = int(
+            (now - started_at)
+            .total_seconds()
+        )
+
+        print(
+            "⏱️ Timer evaluation:",
+            {
+                "attempt_id": active_attempt.id,
+                "started_at": started_at,
+                "expires_at": expires_at,
+                "elapsed_seconds": elapsed
+            }
+        )
+
+        # ==========================================
+        # TIMEOUT
+        # ==========================================
+
+        if now > expires_at:
+
+            print(
+                "⛔ Attempt expired "
+                "→ auto submit"
+            )
+
+            active_attempt.completed_at = (
+                expires_at
+            )
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        remaining = max(
+            0,
+            40 * 60 - elapsed
+        )
+
+        if remaining <= 0:
+
+            print(
+                "⛔ Attempt expired via "
+                "remaining_time guard"
+            )
+
+            active_attempt.completed_at = now
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        # ==========================================
+        # REHYDRATE RESPONSES
+        # ==========================================
 
         existing_count = (
-            db.query(StudentExamResponseOCMathematicalReasoning)
+            db.query(
+                StudentExamResponseOCMathematicalReasoning
+            )
             .filter(
-                StudentExamResponseOCMathematicalReasoning.exam_attempt_id == attempt.id
+                StudentExamResponseOCMathematicalReasoning
+                .exam_attempt_id
+                == active_attempt.id
             )
             .count()
         )
 
         if existing_count == 0:
-            print("⚠️ Rehydrating responses")
+
+            print(
+                "⚠️ No response rows found "
+                "→ rehydrating"
+            )
+
             for q in exam.questions or []:
+
                 db.add(
+
                     StudentExamResponseOCMathematicalReasoning(
-                        student_id=student.id,
-                        exam_id=exam.id,
-                        exam_attempt_id=attempt.id,
-                        q_id=q["q_id"],
-                        topic=q.get("topic"),
-                        selected_option=None,
-                        correct_option=q.get("correct"),
-                        is_correct=None
+
+                        student_id=
+                            student.id,
+
+                        exam_id=
+                            exam.id,
+
+                        exam_attempt_id=
+                            active_attempt.id,
+
+                        q_id=
+                            q["q_id"],
+
+                        topic=
+                            q.get("topic"),
+
+                        selected_option=
+                            None,
+
+                        correct_option=
+                            q.get("correct"),
+
+                        is_correct=
+                            None
                     )
                 )
+
             db.commit()
 
-        started_at = attempt.started_at
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
+        normalized_questions = (
+            normalize_questions(
+                exam.questions or []
+            )
+        )
 
-        now = datetime.now(timezone.utc)
-        elapsed = int((now - started_at).total_seconds())
-        remaining = max(0, 40 * 60 - elapsed)
-
-        if remaining == 0:
-            attempt.completed_at = now
-            db.commit()
-            return {"completed": True}
+        print(
+            "🔁 Resuming attempt:",
+            {
+                "attempt_id": active_attempt.id,
+                "remaining_seconds": remaining,
+                "questions_count": (
+                    len(normalized_questions)
+                )
+            }
+        )
 
         return {
+
             "completed": False,
-            "questions": normalize_questions(exam.questions),
-            "remaining_time": remaining
+
+            "exam_attempt_id":
+                active_attempt.id,
+
+            "questions":
+                jsonable_encoder(
+                    normalized_questions
+                ),
+
+            "remaining_time":
+                remaining
         }
 
-    # --------------------------------------------------
-    # 🔵 CASE C — NEW ATTEMPT
-    # --------------------------------------------------
-    print("🆕 Starting new OC MR attempt")
+    # ==================================================
+    # 7️⃣ Check COMPLETED attempt
+    # ==================================================
 
-    new_attempt = StudentExamOCMathematicalReasoning(
-        student_id=student.id,
-        exam_id=exam.id,
-        started_at=datetime.now(timezone.utc)
+    completed_attempt = (
+        db.query(
+            StudentExamOCMathematicalReasoning
+        )
+        .filter(
+
+            StudentExamOCMathematicalReasoning
+            .student_id == student.id,
+
+            StudentExamOCMathematicalReasoning
+            .exam_id == exam.id,
+
+            StudentExamOCMathematicalReasoning
+            .completed_at.isnot(None)
+
+        )
+        .first()
+    )
+
+    if completed_attempt:
+
+        print(
+            f"🚫 Already completed "
+            f"exam_id={exam.id} | "
+            f"attempt_id="
+            f"{completed_attempt.id}"
+        )
+
+        return {
+
+            "completed": True,
+
+            "exam_attempt_id":
+                completed_attempt.id,
+
+            "message":
+                "Exam already attempted"
+        }
+
+    # ==================================================
+    # 8️⃣ Create NEW attempt
+    # ==================================================
+
+    print(
+        "🆕 Creating new attempt"
+    )
+
+    normalized_questions = (
+        normalize_questions(
+            exam.questions or []
+        )
+    )
+
+    new_attempt = (
+        StudentExamOCMathematicalReasoning(
+
+            student_id=
+                student.id,
+
+            exam_id=
+                exam.id,
+
+            started_at=
+                now
+        )
     )
 
     db.add(new_attempt)
+
     db.commit()
 
-    # --------------------------------------------------
-    # 🧱 CREATE RESPONSES
-    # --------------------------------------------------
+    db.refresh(new_attempt)
+
+    print(
+        f"🆕 New attempt created | "
+        f"attempt_id={new_attempt.id}"
+    )
+
+    # ==================================================
+    # 9️⃣ Pre-create responses
+    # ==================================================
+
     for q in exam.questions or []:
+
         db.add(
+
             StudentExamResponseOCMathematicalReasoning(
-                student_id=student.id,
-                exam_id=exam.id,
-                exam_attempt_id=new_attempt.id,
-                q_id=q["q_id"],
-                topic=q.get("topic"),
-                selected_option=None,
-                correct_option=q.get("correct"),
-                is_correct=None
+
+                student_id=
+                    student.id,
+
+                exam_id=
+                    exam.id,
+
+                exam_attempt_id=
+                    new_attempt.id,
+
+                q_id=
+                    q["q_id"],
+
+                topic=
+                    q.get("topic"),
+
+                selected_option=
+                    None,
+
+                correct_option=
+                    q.get("correct"),
+
+                is_correct=
+                    None
             )
         )
 
     db.commit()
 
+    print(
+        "🧱 Response rows created:",
+        db.query(
+            StudentExamResponseOCMathematicalReasoning
+        )
+        .filter(
+            StudentExamResponseOCMathematicalReasoning
+            .exam_attempt_id
+            == new_attempt.id
+        )
+        .count()
+    )
+
+    # ==================================================
+    # 🔟 Response
+    # ==================================================
+
     return {
+
         "completed": False,
-        "questions": normalize_questions(exam.questions),
-        "remaining_time": 40 * 60
+
+        "exam_attempt_id":
+            new_attempt.id,
+
+        "questions":
+            jsonable_encoder(
+                normalized_questions
+            ),
+
+        "remaining_time":
+            40 * 60
     }
- 
+
 def normalize_naplan_numeracy_questions_live(raw_questions):
     """
     Prepare questions for live exam delivery.
@@ -59181,500 +62707,1133 @@ def start_homework_oc_thinking_skills(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n================ START OC HOMEWORK =================")
-    print("📥 Incoming payload:", req.dict())
+
+    print(
+        "\n================ START OC HOMEWORK "
+        "THINKING SKILLS ================="
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
 
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
+
     student = (
         db.query(Student)
         .filter(
-            func.lower(Student.student_id) ==
-            func.lower(req.student_id.strip())
+            func.lower(Student.student_id)
+            ==
+            func.lower(
+                req.student_id.strip()
+            )
         )
         .first()
     )
 
     if not student:
-        print("❌ Student not found:", repr(req.student_id))
-        raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
-
-    # --------------------------------------------------
-    # 2️⃣ Fetch latest homework exam
-    # --------------------------------------------------
-    homework = (
-        db.query(HomeworkExamOCThinkingSkills)
-        .filter(
-            func.lower(HomeworkExamOCThinkingSkills.class_name) == "oc",
-            HomeworkExamOCThinkingSkills.subject == "thinking_skills"
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
         )
-        .order_by(HomeworkExamOCThinkingSkills.created_at.desc())
+
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
+    )
+
+    print(
+        f"🏢 Student center_code: "
+        f"{student.center_code}"
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ Validate center_code
+    # --------------------------------------------------
+
+    if not student.center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "center assigned"
+            )
+        )
+
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 Normalized center_code: "
+        f"{normalized_center_code}"
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Extract class_year
+    # --------------------------------------------------
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
+        )
+
+    class_year = (
+        str(student.student_year)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{class_year}"
+    )
+
+    now = datetime.now(timezone.utc)
+
+    MAX_DURATION = timedelta(minutes=40)
+
+    # --------------------------------------------------
+    # 4️⃣ Fetch latest CENTER-SPECIFIC
+    # HOMEWORK exam
+    # --------------------------------------------------
+
+    print(
+        "🔍 Searching OC homework exam with:",
+        {
+            "class_name": "oc",
+            "subject": "thinking_skills",
+            "class_year": class_year,
+            "center_code": normalized_center_code
+        }
+    )
+
+    homework_query = (
+        db.query(
+            HomeworkExamOCThinkingSkills
+        )
+        .filter(
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCThinkingSkills.subject
+                )
+            ) == "thinking_skills",
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCThinkingSkills.class_name
+                )
+            ) == "oc",
+
+            func.trim(
+                func.replace(
+
+                    func.lower(
+                        HomeworkExamOCThinkingSkills.class_year
+                    ),
+
+                    "year",
+
+                    ""
+                )
+            ) == class_year,
+
+            func.upper(
+                func.trim(
+                    HomeworkExamOCThinkingSkills.center_code
+                )
+            ) == normalized_center_code
+        )
+    )
+
+    homework_count = (
+        homework_query.count()
+    )
+
+    print(
+        f"📊 Matching OC homework exams "
+        f"for class_year="
+        f"{class_year} "
+        f"and center="
+        f"{normalized_center_code}: "
+        f"{homework_count}"
+    )
+
+    if homework_count == 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No OC Thinking Skills "
+                f"homework found for "
+                f"class_year={class_year} "
+                f"and center="
+                f"{normalized_center_code}"
+            )
+        )
+
+    homework = (
+        homework_query
+        .order_by(
+            HomeworkExamOCThinkingSkills.id
+            .desc()
+        )
         .first()
     )
 
     if not homework:
+
         raise HTTPException(
             status_code=404,
-            detail="OC Thinking Skills homework not found"
+            detail=(
+                "OC Thinking Skills "
+                "homework not found"
+            )
         )
 
-    print(f"📘 Homework loaded | homework_id={homework.id}")
+    print(
+        "✅ Homework selected:",
+        {
+            "homework_id": homework.id,
+            "class_year": homework.class_year,
+            "center_code": homework.center_code,
+            "subject": homework.subject
+        }
+    )
 
     # --------------------------------------------------
-    # 3️⃣ Fetch latest attempt
+    # 5️⃣ Check ACTIVE attempt
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentHomeworkOCThinkingSkills)
+
+    active_attempt = (
+        db.query(
+            StudentHomeworkOCThinkingSkills
+        )
         .filter(
-            StudentHomeworkOCThinkingSkills.student_id == student.id,
-            StudentHomeworkOCThinkingSkills.homework_exam_id == homework.id
+
+            StudentHomeworkOCThinkingSkills
+            .student_id
+            == student.id,
+
+            StudentHomeworkOCThinkingSkills
+            .homework_exam_id
+            == homework.id,
+
+            StudentHomeworkOCThinkingSkills
+            .completed_at
+            .is_(None)
+
         )
-        .order_by(StudentHomeworkOCThinkingSkills.started_at.desc())
+        .order_by(
+            StudentHomeworkOCThinkingSkills
+            .started_at.desc()
+        )
         .first()
     )
 
-    MAX_DURATION = timedelta(minutes=40)
-    now = datetime.now(timezone.utc)
+    if active_attempt:
 
-    # --------------------------------------------------
-    # Normalize questions
-    # --------------------------------------------------
-    normalized_questions = normalize_thinking_skills_questions(
-        homework.questions or [],
-        db
-    )
-
-    # --------------------------------------------------
-    # 4️⃣ Existing attempt logic (SAME AS EXAM)
-    # --------------------------------------------------
-    if attempt:
         print(
-            "🧠 Existing homework attempt found | "
-            f"attempt_id={attempt.id} | "
-            f"started_at={attempt.started_at} | "
-            f"completed_at={attempt.completed_at}"
+            f"🧠 Active homework "
+            f"attempt found | "
+            f"attempt_id={active_attempt.id}"
         )
 
-        started_at = attempt.started_at
+        started_at = (
+            active_attempt.started_at
+        )
+
         if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
 
-        expires_at = started_at + MAX_DURATION
-        elapsed = int((now - started_at).total_seconds())
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
 
-        print(
-            "⏱️ Timer evaluation | "
-            f"now={now} | "
-            f"expires_at={expires_at} | "
-            f"elapsed_seconds={elapsed}"
+        expires_at = (
+            started_at + MAX_DURATION
         )
 
-        # ⛔ Timeout
-        if attempt.completed_at is None and now > expires_at:
-            print("⛔ Homework attempt expired")
+        elapsed = int(
+            (now - started_at)
+            .total_seconds()
+        )
 
-            attempt.completed_at = expires_at
+        print(
+            "⏱️ Timer evaluation:",
+            {
+                "attempt_id": active_attempt.id,
+                "started_at": started_at,
+                "expires_at": expires_at,
+                "elapsed_seconds": elapsed
+            }
+        )
+
+        # ----------------------------------------------
+        # ⛔ Timeout
+        # ----------------------------------------------
+
+        if now > expires_at:
+
+            print(
+                "⛔ Homework attempt "
+                "expired → auto submit"
+            )
+
+            active_attempt.completed_at = (
+                expires_at
+            )
+
             db.commit()
 
-            return {"completed": True}
+            return {
+                "completed": True
+            }
 
-        # ✅ Already completed
-        if attempt.completed_at is not None:
-            print("✅ Homework already completed")
-            return {"completed": True}
+        remaining = max(
 
-        # ▶ Resume
-        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+            0,
+
+            active_attempt.duration_minutes
+            * 60
+            - elapsed
+        )
+
+        if remaining <= 0:
+
+            print(
+                "⛔ Homework expired via "
+                "remaining_time guard"
+            )
+
+            active_attempt.completed_at = now
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        normalized_questions = (
+            normalize_thinking_skills_questions(
+                homework.questions or [],
+                db
+            )
+        )
 
         print(
-            "▶ Resuming homework | "
-            f"remaining_seconds={remaining}"
+            "🔁 Resuming homework:",
+            {
+                "attempt_id": active_attempt.id,
+                "remaining_seconds": remaining,
+                "questions_count": (
+                    len(normalized_questions)
+                )
+            }
         )
 
         return {
+
             "completed": False,
-            "questions": jsonable_encoder(normalized_questions),
-            "remaining_time": remaining
+
+            "exam_attempt_id":
+                active_attempt.id,
+
+            "questions":
+                jsonable_encoder(
+                    normalized_questions
+                ),
+
+            "remaining_time":
+                remaining
         }
 
     # --------------------------------------------------
-    # 🆕 Create new attempt
+    # 6️⃣ Check COMPLETED attempt
     # --------------------------------------------------
-    print("🆕 Creating new homework attempt")
 
-    new_attempt = StudentHomeworkOCThinkingSkills(
-        student_id=student.id,
-        homework_exam_id=homework.id,
-        started_at=now,
-        duration_minutes=40
+    completed_attempt = (
+        db.query(
+            StudentHomeworkOCThinkingSkills
+        )
+        .filter(
+
+            StudentHomeworkOCThinkingSkills
+            .student_id
+            == student.id,
+
+            StudentHomeworkOCThinkingSkills
+            .homework_exam_id
+            == homework.id,
+
+            StudentHomeworkOCThinkingSkills
+            .completed_at
+            .isnot(None)
+
+        )
+        .first()
+    )
+
+    if completed_attempt:
+
+        print(
+            f"🚫 Homework already "
+            f"completed | "
+            f"attempt_id="
+            f"{completed_attempt.id}"
+        )
+
+        return {
+
+            "completed": True,
+
+            "exam_attempt_id":
+                completed_attempt.id,
+
+            "message":
+                "Homework already attempted"
+        }
+
+    # --------------------------------------------------
+    # 7️⃣ Create NEW attempt
+    # --------------------------------------------------
+
+    print(
+        "🆕 Creating new "
+        "homework attempt"
+    )
+
+    normalized_questions = (
+        normalize_thinking_skills_questions(
+            homework.questions or [],
+            db
+        )
+    )
+
+    new_attempt = (
+        StudentHomeworkOCThinkingSkills(
+
+            student_id=
+                student.id,
+
+            homework_exam_id=
+                homework.id,
+
+            started_at=
+                now,
+
+            duration_minutes=40
+        )
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
     print(
-        "🆕 New homework attempt created | "
+        f"🆕 New homework attempt "
+        f"created | "
         f"attempt_id={new_attempt.id}"
     )
 
-    
-    # 5️⃣ Pre-create response rows (DEEP DEBUG MODE)
     # --------------------------------------------------
-    print("\n🧪 ===== RESPONSE INSERT DEBUG START =====")
-    
-    print("🧪 normalized_questions count:", len(normalized_questions))
-    
-    if not normalized_questions:
-        print("❌ CRITICAL: normalized_questions is EMPTY")
-    
+    # 8️⃣ Pre-create responses
+    # --------------------------------------------------
+
+    print(
+        "\n🧪 ===== RESPONSE "
+        "INSERT DEBUG START ====="
+    )
+
     inserted_count = 0
-    
-    for idx, q in enumerate(normalized_questions):
-        print(f"\n🔍 Processing question #{idx}")
-    
+
+    for q in normalized_questions:
+
         try:
-            print("   raw q:", q)
-    
+
             q_id_raw = q.get("q_id")
-            q_id = str(q_id_raw) if q_id_raw is not None else None
-    
-            correct_option = q.get("correct") or q.get("correct_answer")
-    
-            print(f"   q_id_raw: {q_id_raw} | q_id(str): {q_id}")
-            print(f"   correct_option: {correct_option}")
-            print(f"   topic: {q.get('topic')}")
-    
-            # 🚨 VALIDATION
-            if not q_id:
-                print("❌ SKIP: q_id is missing")
-                continue
-    
-            if correct_option is None:
-                print("⚠️ WARNING: correct_option is NULL")
-    
-            row = StudentHomeworkResponseOCThinkingSkills(
-                student_id=student.id,
-                homework_id=homework.id,
-                homework_attempt_id=new_attempt.id,
-                q_id=q_id,  # ✅ FORCE STRING
-                topic=q.get("topic"),
-                selected_option=None,
-                correct_option=correct_option,
-                is_correct=None
+
+            q_id = (
+                str(q_id_raw)
+                if q_id_raw is not None
+                else None
             )
-    
+
+            correct_option = (
+                q.get("correct")
+                or q.get("correct_answer")
+            )
+
+            if not q_id:
+
+                print(
+                    "❌ SKIP: missing q_id"
+                )
+
+                continue
+
+            row = (
+                StudentHomeworkResponseOCThinkingSkills(
+
+                    student_id=
+                        student.id,
+
+                    homework_exam_id=
+                        homework.id,
+
+                    homework_attempt_id=
+                        new_attempt.id,
+
+                    q_id=
+                        q_id,
+
+                    topic=
+                        q.get("topic"),
+
+                    selected_option=
+                        None,
+
+                    correct_option=
+                        correct_option,
+
+                    is_correct=
+                        None
+                )
+            )
+
             db.add(row)
+
             inserted_count += 1
-    
-            print(f"   ✅ Row prepared for insert (q_id={q_id})")
-    
+
         except Exception as e:
-            print("❌ EXCEPTION during row creation")
-            print("   q:", q)
-            print("   error:", repr(e))
-    
-    
-    print("\n🧪 Attempting DB COMMIT...")
-    
+
+            print(
+                "⚠️ Failed response row:",
+                repr(e)
+            )
+
+    print(
+        "🧪 Attempting DB commit..."
+    )
+
     try:
+
         db.commit()
-        print("✅ DB COMMIT SUCCESS")
-    
+
+        print(
+            "✅ DB commit successful"
+        )
+
     except Exception as e:
-        print("❌ DB COMMIT FAILED")
-        print("   error:", repr(e))
+
+        print(
+            "❌ DB commit failed:",
+            repr(e)
+        )
+
         db.rollback()
+
         raise
-    
+
     # --------------------------------------------------
-    # VERIFY INSERTION (VERY IMPORTANT)
+    # Verify insertion
     # --------------------------------------------------
-    print("\n🧪 Verifying inserted rows...")
-    
+
     rows = (
-        db.query(StudentHomeworkResponseOCThinkingSkills)
+        db.query(
+            StudentHomeworkResponseOCThinkingSkills
+        )
         .filter(
-            StudentHomeworkResponseOCThinkingSkills.homework_attempt_id == new_attempt.id
+            StudentHomeworkResponseOCThinkingSkills
+            .homework_attempt_id
+            == new_attempt.id
         )
         .all()
     )
-    
-    print(f"📊 Rows found in DB: {len(rows)} (expected: {inserted_count})")
-    
-    if len(rows) != inserted_count:
-        print("❌ MISMATCH: Some rows were NOT inserted!")
-    
-    print("🧪 ===== RESPONSE INSERT DEBUG END =====\n")
 
-    print("================ END START OC HOMEWORK =================\n")
+    print(
+        f"📊 Inserted rows: "
+        f"{len(rows)} / "
+        f"{inserted_count}"
+    )
+
+    print(
+        "🧪 ===== RESPONSE "
+        "INSERT DEBUG END =====\n"
+    )
+
+    # --------------------------------------------------
+    # 9️⃣ Response
+    # --------------------------------------------------
+
+    print(
+        "📤 Returning new OC homework:",
+        {
+            "attempt_id": new_attempt.id,
+            "questions_count": (
+                len(normalized_questions)
+            ),
+            "remaining_seconds": (
+                new_attempt.duration_minutes
+                * 60
+            )
+        }
+    )
+
+    print(
+        "================ END START OC "
+        "HOMEWORK THINKING SKILLS "
+        "=================\n"
+    )
 
     return {
+
         "completed": False,
-        "questions": jsonable_encoder(normalized_questions),
-        "remaining_time": int(new_attempt.duration_minutes * 60)
+
+        "exam_attempt_id":
+            new_attempt.id,
+
+        "questions":
+            jsonable_encoder(
+                normalized_questions
+            ),
+
+        "remaining_time":
+            int(
+                new_attempt.duration_minutes
+                * 60
+            )
     }
- 
+
 @app.post("/api/student/start-exam-oc-thinking-skills")
 def start_exam_oc_thinking_skills(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
-    print("\n================ START OC THINKING SKILLS EXAM =================")
-    print("📥 Incoming payload:", req.dict())
-    
+
+    print(
+        "\n================ START OC THINKING "
+        "SKILLS EXAM ================="
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
+
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
+
     student = (
         db.query(Student)
         .filter(
-            func.lower(Student.student_id) ==
-            func.lower(req.student_id.strip())
+            func.lower(Student.student_id)
+            ==
+            func.lower(
+                req.student_id.strip()
+            )
         )
         .first()
     )
 
     if not student:
-        print("❌ Student not found:", repr(req.student_id))
-        raise HTTPException(status_code=404, detail="Student not found")
 
-    print(f"✅ Student resolved | student_id={student.student_id} | internal_id={student.id}")
-    # --------------------------------------------------
-    # 🔥 RESOLVE STUDENT CLASS YEAR
-    # --------------------------------------------------
-    raw_student_year = student.student_year
-    print(f"🎓 Raw student.student_year = {raw_student_year} | type = {type(raw_student_year)}")
-    
-    try:
-        # Handle both integer and legacy string like "Year 4"
-        if isinstance(raw_student_year, str):
-            cleaned = raw_student_year.strip()
-            
-            if cleaned.isdigit():
-                class_year = int(cleaned)
-            else:
-                # fallback for "Year 4"
-                class_year = int(cleaned.split()[-1])
-        else:
-            class_year = int(raw_student_year)
-    
-        print(f"🔢 Final class_year = {class_year}")
-    
-    except Exception as e:
-        print("❌ Failed to normalize student_year:", raw_student_year, "| Error:", repr(e))
-        raise HTTPException(status_code=400, detail="Invalid student_year format")
-    
-    # --------------------------------------------------
-    # 🔥 FETCH LATEST EXAM FOR THIS CLASS YEAR ONLY
-    # --------------------------------------------------
-    exam = (
-        db.query(Exam)
-        .filter(
-            func.lower(Exam.class_name) == "oc",
-            func.lower(Exam.subject) == "thinking_skills",
-            Exam.class_year == class_year   # ✅ CRITICAL FIX
-        )
-        .order_by(Exam.created_at.desc())
-        .first()
-    )
-    
-    if not exam:
-        print(f"❌ No exam found for class_year={class_year}")
         raise HTTPException(
             status_code=404,
-            detail=f"OC Thinking Skills exam not found for class_year={class_year}"
+            detail="Student not found"
         )
-    
+
     print(
-        "✅ Exam selected | "
-        f"exam_id={exam.id} | "
-        f"class_year={exam.class_year} | "
-        f"created_at={exam.created_at}"
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
     )
 
+    print(
+        f"🏢 Student center_code: "
+        f"{student.center_code}"
+    )
 
     # --------------------------------------------------
-    # 2️⃣ Fetch the ONE (and only) OC Thinking Skills attempt 
+    # 2️⃣ Validate center_code
     # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamOCThinkingSkills)
-        .filter(
-            StudentExamOCThinkingSkills.student_id == student.id,
-            StudentExamOCThinkingSkills.exam_id == exam.id   # ✅ KEY FIX
+
+    if not student.center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "center assigned"
+            )
         )
-        .order_by(StudentExamOCThinkingSkills.started_at.desc())
+
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 Normalized center_code: "
+        f"{normalized_center_code}"
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Extract class_year
+    # --------------------------------------------------
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student does not have "
+                "class_year assigned"
+            )
+        )
+
+    class_year = (
+        str(student.student_year)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{class_year}"
+    )
+
+    now = datetime.now(timezone.utc)
+
+    MAX_DURATION = timedelta(minutes=40)
+
+    # --------------------------------------------------
+    # 4️⃣ Fetch latest CENTER-SPECIFIC exam
+    # --------------------------------------------------
+
+    print(
+        "🔍 Searching OC Thinking Skills exam with:",
+        {
+            "class_name": "oc",
+            "subject": "thinking_skills",
+            "class_year": class_year,
+            "center_code": normalized_center_code
+        }
+    )
+
+    exam_query = (
+        db.query(Exam)
+        .filter(
+
+            func.lower(
+                func.trim(
+                    Exam.subject
+                )
+            ) == "thinking_skills",
+
+            func.lower(
+                func.trim(
+                    Exam.class_name
+                )
+            ) == "oc",
+
+            func.trim(
+                func.replace(
+
+                    func.lower(
+                        Exam.class_year
+                    ),
+
+                    "year",
+
+                    ""
+                )
+            ) == class_year,
+
+            func.upper(
+                func.trim(
+                    Exam.center_code
+                )
+            ) == normalized_center_code
+        )
+    )
+
+    exam_count = exam_query.count()
+
+    print(
+        f"📊 Matching OC Thinking Skills exams "
+        f"for class_year="
+        f"{class_year} "
+        f"and center="
+        f"{normalized_center_code}: "
+        f"{exam_count}"
+    )
+
+    if exam_count == 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No OC Thinking Skills exam found "
+                f"for class_year="
+                f"{class_year} "
+                f"and center="
+                f"{normalized_center_code}"
+            )
+        )
+
+    exam = (
+        exam_query
+        .order_by(
+            Exam.id.desc()
+        )
         .first()
     )
 
-    MAX_DURATION = timedelta(minutes=40)
-    now = datetime.now(timezone.utc)
+    if not exam:
 
-    if attempt:
-        print(
-            "🧠 Existing OC attempt found | "
-            f"attempt_id={attempt.id} | "
-            f"started_at={attempt.started_at} | "
-            f"completed_at={attempt.completed_at} | "
-            f"duration_minutes={attempt.duration_minutes}"
+        raise HTTPException(
+            status_code=404,
+            detail="OC Thinking Skills exam not found"
         )
 
-        started_at = attempt.started_at
+    print(
+        "✅ Selected exam:",
+        {
+            "exam_id": exam.id,
+            "class_year": exam.class_year,
+            "center_code": exam.center_code,
+            "subject": exam.subject
+        }
+    )
+
+    print(
+        f"📘 Using exam_id={exam.id}"
+    )
+
+    # --------------------------------------------------
+    # 5️⃣ Check ACTIVE attempt
+    # --------------------------------------------------
+
+    active_attempt = (
+        db.query(
+            StudentExamOCThinkingSkills
+        )
+        .filter(
+
+            StudentExamOCThinkingSkills.student_id
+            == student.id,
+
+            StudentExamOCThinkingSkills.exam_id
+            == exam.id,
+
+            StudentExamOCThinkingSkills.completed_at
+            .is_(None)
+
+        )
+        .order_by(
+            StudentExamOCThinkingSkills.started_at
+            .desc()
+        )
+        .first()
+    )
+
+    if active_attempt:
+
+        print(
+            f"🧠 Active attempt found | "
+            f"attempt_id={active_attempt.id}"
+        )
+
+        started_at = active_attempt.started_at
+
         if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
 
         expires_at = started_at + MAX_DURATION
-        elapsed = int((now - started_at).total_seconds())
 
-        print(
-            "⏱️ Timer evaluation | "
-            f"now={now} | "
-            f"started_at={started_at} | "
-            f"expires_at={expires_at} | "
-            f"elapsed_seconds={elapsed}"
+        elapsed = int(
+            (now - started_at).total_seconds()
         )
 
-        # --------------------------------------------------
-        # ⛔ Timeout → FINAL completion
-        # --------------------------------------------------
-        if attempt.completed_at is None and now > expires_at:
+        print(
+            "⏱️ Timer evaluation:",
+            {
+                "attempt_id": active_attempt.id,
+                "started_at": started_at,
+                "expires_at": expires_at,
+                "elapsed_seconds": elapsed
+            }
+        )
+
+        # ----------------------------------------------
+        # ⛔ Timeout
+        # ----------------------------------------------
+
+        if now > expires_at:
+
             print(
-                "⛔ OC attempt expired | "
-                f"attempt_id={attempt.id} | "
-                f"auto_completed_at={expires_at}"
+                "⛔ Attempt expired "
+                "→ auto submit"
             )
 
-            attempt.completed_at = expires_at
+            active_attempt.completed_at = (
+                expires_at
+            )
+
             db.commit()
 
-            print("➡️ Returning: completed=true (timeout)")
-            return {"completed": True}
+            return {
+                "completed": True
+            }
 
-        # --------------------------------------------------
-        # ✅ Already completed → show report
-        # --------------------------------------------------
-        if attempt.completed_at is not None:
-            print(
-                "✅ OC attempt already completed | "
-                f"attempt_id={attempt.id} | "
-                f"completed_at={attempt.completed_at}"
-            )
-
-            print("➡️ Returning: completed=true (already completed)")
-            return {"completed": True}
-
-        # --------------------------------------------------
-        # ▶ Resume active attempt
-        # --------------------------------------------------
-        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
+        remaining = max(
+            0,
+            active_attempt.duration_minutes
+            * 60
+            - elapsed
+        )
 
         if remaining <= 0:
-            print("⛔ OC attempt expired via remaining_time guard")
 
-            attempt.completed_at = now
+            print(
+                "⛔ Attempt expired via "
+                "remaining_time guard"
+            )
+
+            active_attempt.completed_at = now
+
             db.commit()
 
-            return {"completed": True}
+            return {
+                "completed": True
+            }
 
-        print(
-            "▶ Resuming OC attempt | "
-            f"attempt_id={attempt.id} | "
-            f"remaining_seconds={remaining}"
-        )
-
-        
-        normalized_questions = normalize_thinking_skills_questions(
-            exam.questions or [],
-            db
+        normalized_questions = (
+            normalize_thinking_skills_questions(
+                exam.questions or [],
+                db
+            )
         )
 
         print(
-            "➡️ Returning: resume OC exam | "
-            f"questions={len(normalized_questions)} | "
-            f"remaining_seconds={remaining}"
+            "🔁 Resuming attempt:",
+            {
+                "attempt_id": active_attempt.id,
+                "remaining_seconds": remaining,
+                "questions_count": len(normalized_questions)
+            }
         )
 
         return {
+
             "completed": False,
-            "questions": jsonable_encoder(normalized_questions),
-            "remaining_time": remaining
+
+            "exam_attempt_id":
+                active_attempt.id,
+
+            "questions":
+                jsonable_encoder(
+                    normalized_questions
+                ),
+
+            "remaining_time":
+                remaining
         }
 
     # --------------------------------------------------
-    # 🆕 FIRST AND ONLY ATTEMPT
+    # 6️⃣ Check COMPLETED attempt
     # --------------------------------------------------
-    print("🆕 No existing OC attempt → creating FIRST attempt")
 
-        
-    
-    normalized_questions = normalize_thinking_skills_questions(
-        exam.questions or [],
-        db
+    completed_attempt = (
+        db.query(
+            StudentExamOCThinkingSkills
+        )
+        .filter(
+
+            StudentExamOCThinkingSkills.student_id
+            == student.id,
+
+            StudentExamOCThinkingSkills.exam_id
+            == exam.id,
+
+            StudentExamOCThinkingSkills.completed_at
+            .isnot(None)
+
+        )
+        .first()
     )
 
-    new_attempt = StudentExamOCThinkingSkills(
-        student_id=student.id,
-        exam_id=exam.id,
-        started_at=now,
-        duration_minutes=40
-    )
+    if completed_attempt:
 
-    db.add(new_attempt)
-    db.commit()
-    db.refresh(new_attempt)
+        print(
+            f"🚫 Already completed | "
+            f"exam_id={exam.id} | "
+            f"attempt_id={completed_attempt.id}"
+        )
+
+        return {
+
+            "completed": True,
+
+            "exam_attempt_id":
+                completed_attempt.id,
+
+            "message":
+                "Exam already attempted"
+        }
+
+    # --------------------------------------------------
+    # 7️⃣ Create NEW attempt
+    # --------------------------------------------------
 
     print(
-        "🆕 New OC attempt created | "
-        f"attempt_id={new_attempt.id} | "
-        f"started_at={new_attempt.started_at}"
+        "🆕 Creating new attempt"
     )
 
-    # --------------------------------------------------
-    # Pre-create response rows
-    # --------------------------------------------------
-    for q in normalized_questions:
-        try:
-            db.add(
-                StudentExamResponseOCThinkingSkills(
-                    student_id=student.id,
-                    exam_id=exam.id,
-                    exam_attempt_id=new_attempt.id,
-                    q_id=q["q_id"],
-                    topic=q.get("topic"),
-                    selected_option=None,
-                    correct_option=q["correct_answer"],
-                    is_correct=None
-                )
-            )
-        except Exception as e:
-            print("⚠️ Skipping OC response row:", q["q_id"], repr(e))
-
-    db.commit()
-
-    print(
-        "➡️ Returning: new OC exam started | "
-        f"attempt_id={new_attempt.id} | "
-        f"questions={len(normalized_questions)} | "
-        f"remaining_seconds={new_attempt.duration_minutes * 60}"
-    )
-
-    print("🧪 SERIALIZED PREVIEW:")
-    print(
-        json.dumps(
-            jsonable_encoder(normalized_questions),
-            indent=2
+    normalized_questions = (
+        normalize_thinking_skills_questions(
+            exam.questions or [],
+            db
         )
     )
 
-    print("================ END START OC THINKING SKILLS EXAM ================\n")
+    new_attempt = (
+        StudentExamOCThinkingSkills(
+
+            student_id=
+                student.id,
+
+            exam_id=
+                exam.id,
+
+            started_at=
+                now,
+
+            duration_minutes=40
+        )
+    )
+
+    db.add(new_attempt)
+
+    db.commit()
+
+    db.refresh(new_attempt)
+
+    print(
+        f"🆕 New attempt created | "
+        f"attempt_id={new_attempt.id}"
+    )
+
+    # --------------------------------------------------
+    # 8️⃣ Pre-create responses
+    # --------------------------------------------------
+
+    for q in normalized_questions:
+
+        try:
+
+            db.add(
+
+                StudentExamResponseOCThinkingSkills(
+
+                    student_id=
+                        student.id,
+
+                    exam_id=
+                        exam.id,
+
+                    exam_attempt_id=
+                        new_attempt.id,
+
+                    q_id=
+                        q["q_id"],
+
+                    topic=
+                        q.get("topic"),
+
+                    selected_option=
+                        None,
+
+                    correct_option=
+                        q["correct_answer"],
+
+                    is_correct=
+                        None
+                )
+            )
+
+        except Exception as e:
+
+            print(
+                "⚠️ Skipping response row:",
+                q["q_id"],
+                repr(e)
+            )
+
+    db.commit()
+
+    # --------------------------------------------------
+    # 9️⃣ Response
+    # --------------------------------------------------
+
+    print(
+        "📤 Returning new OC Thinking Skills exam:",
+        {
+            "attempt_id": new_attempt.id,
+            "questions_count": len(normalized_questions),
+            "remaining_seconds": (
+                new_attempt.duration_minutes * 60
+            )
+        }
+    )
+
+    print(
+        "================ END START OC "
+        "THINKING SKILLS EXAM ================\n"
+    )
 
     return {
+
         "completed": False,
-        "questions": jsonable_encoder(normalized_questions),
-        "remaining_time": int(new_attempt.duration_minutes * 60)
+
+        "exam_attempt_id":
+            new_attempt.id,
+
+        "questions":
+            jsonable_encoder(
+                normalized_questions
+            ),
+
+        "remaining_time":
+            int(
+                new_attempt.duration_minutes
+                * 60
+            )
     }
 
 @app.get("/api/student/oc-available-subjects")
