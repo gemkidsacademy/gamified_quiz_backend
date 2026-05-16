@@ -257,6 +257,60 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class QuestionUsageWriting(Base):
+
+    __tablename__ = "question_usage_writing"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    question_id = Column(
+        Integer,
+        nullable=False
+    )
+
+    center_code = Column(
+        String,
+        nullable=False
+    )
+
+    used_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+class WritingQuestionUsage(Base):
+
+    __tablename__ = (
+        "writing_question_usage"
+    )
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_id = Column(
+        Integer,
+        ForeignKey("centers.id"),
+        nullable=False
+    )
+
+    question_id = Column(
+        Integer,
+        ForeignKey(
+            "writing_question_bank.id"
+        ),
+        nullable=False
+    )
+
+    used_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
 class NaplanQuestionUsage(Base):
 
     __tablename__ = "naplan_question_usage"
@@ -276,6 +330,36 @@ class NaplanQuestionUsage(Base):
     question_id = Column(
         Integer,
         ForeignKey("questions_numeracy_lc.id"),
+        nullable=False
+    )
+
+    used_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+class NaplanReadingQuestionUsage(Base):
+
+    __tablename__ = (
+        "naplan_reading_question_usage"
+    )
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_id = Column(
+        Integer,
+        ForeignKey("centers.id"),
+        nullable=False
+    )
+
+    question_id = Column(
+        Integer,
+        ForeignKey(
+            "questions_naplan_reading.id"
+        ),
         nullable=False
     )
 
@@ -399,12 +483,14 @@ class GenerateNaplanReadingHomeworkLatestRequest(BaseModel):
     year: int
     selected_date: date
     batch_id: int
+    center_code: str
 
 
 class GenerateNaplanReadingLatestRequest(BaseModel):
     year: int
     selected_date: date
     batch_id: int
+    center_code: str
 
 class GenerateNaplanLCHomeworkLatestRequest(BaseModel):
     year: int
@@ -833,6 +919,10 @@ class GeneratedHomeworkWriting(Base):
     subject = Column(String, nullable=False)
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
+    center_code = Column(
+        String,
+        nullable=False
+    )
 
     # ----------------------------------
     # Content
@@ -922,8 +1012,10 @@ class GeneratedHomeworkReading(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
  
 class WritingGenerateSchemaHomeWork(BaseModel):
-    
-    class_year: str   # ✅ REQUIRED
+
+    class_year: str
+
+    center_code: str
     
 class QuizSetupWritingHomework(Base):
     __tablename__ = "quiz_setup_writing_homework"
@@ -934,6 +1026,7 @@ class QuizSetupWritingHomework(Base):
     class_year = Column(String, nullable=False)   # ✅ NEW FIELD
 
     subject = Column(String, nullable=False)
+    center_code = Column(String, nullable=False)
 
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
@@ -946,6 +1039,7 @@ class WritingQuizSchemaHomeWork(BaseModel):
     subject: str
     topic: str
     difficulty: str
+    center_code: str
  
 class HomeworkExamMathematicalReasoning(Base):
     __tablename__ = "homework_exam_mathematical_reasoning"
@@ -2990,6 +3084,10 @@ class QuizNaplanReading(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)   # e.g. "Reading"
     year = Column(Integer, nullable=False)
+    center_code = Column(
+        String,
+        nullable=False
+    )
     difficulty = Column(String, nullable=False)
 
     num_topics = Column(Integer, nullable=False)
@@ -3006,6 +3104,10 @@ class QuizNaplanReadingHomework(Base):
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)   # e.g. "Reading"
     year = Column(Integer, nullable=False)
+    center_code = Column(
+        String,
+        nullable=False
+    )
     difficulty = Column(String, nullable=False)
 
     num_topics = Column(Integer, nullable=False)
@@ -3020,6 +3122,7 @@ class QuizNaplanLanguageConventions(Base):
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)  
+    center_code = Column(String, nullable=False)
     year = Column(Integer, nullable=False)
     difficulty = Column(String, nullable=False)
 
@@ -3036,6 +3139,7 @@ class QuizNaplanLanguageConventionsHomework(Base):
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
+    center_code = Column(String, nullable=False)
     year = Column(Integer, nullable=False)
     difficulty = Column(String, nullable=False)
 
@@ -3319,8 +3423,10 @@ class StudentExamReadingOC(Base):
     report_json = Column(JSON, nullable=True)
  
 class WritingGenerateSchema(BaseModel):
-    
+
     class_year: str
+
+    center_code: str
     
 class StudentExamWriting(Base):
     __tablename__ = "student_exam_writing"
@@ -3422,6 +3528,7 @@ class GeneratedExamWriting(Base):
     class_name = Column(String, nullable=False)
     class_year = Column(String, nullable=False)
     subject = Column(String, nullable=False)
+    center_code = Column(String, nullable=False)
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
 
@@ -3457,6 +3564,10 @@ class WritingQuestionBank(Base):
     __tablename__ = "writing_question_bank"
 
     id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(
+        Integer,
+        nullable=True
+    )
 
     # -----------------------------
     # FILTER / METADATA FIELDS
@@ -3496,6 +3607,7 @@ class WritingQuizSchema(BaseModel):
     subject: str
     topic: str
     difficulty: str
+    center_code: str
  
 class GeneratedExamFoundational(Base):
     __tablename__ = "generated_exam_foundational"
@@ -3548,6 +3660,7 @@ class QuizSetupWriting(Base):
     class_name = Column(String, nullable=False)
     class_year = Column(String, nullable=False)
     subject = Column(String, nullable=False)
+    center_code = Column(String, nullable=False)
 
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
@@ -4388,6 +4501,10 @@ class ExamNaplanReading(Base):
     # just a number, NO foreign key
     quiz_id = Column(Integer, nullable=True)
     year = Column(Integer, nullable=False)
+    center_code = Column(
+        String,
+        nullable=False
+    )
     class_name = Column(String, nullable=False)   # e.g. "year 3"
     subject = Column(String, nullable=False)      # "reading"
     difficulty = Column(String, nullable=False)   # easy | medium | hard
@@ -4412,7 +4529,10 @@ class ExamNaplanReadingHomework(Base):
         String,
         nullable=False
     )   # e.g. "year 3"
-
+    center_code = Column(
+        String,
+        nullable=False
+    )
     subject = Column(
         String,
         nullable=False
@@ -4443,6 +4563,7 @@ class ExamNaplanLanguageConventions(Base):
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
+    center_code = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
     year = Column(Integer, nullable=False, index=True)
 
@@ -4462,6 +4583,7 @@ class ExamNaplanLanguageConventionsHomework(Base):
 
     class_name = Column(String, nullable=False)
     subject = Column(String, nullable=False)
+    center_code = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
     year = Column(Integer, nullable=False, index=True)
 
@@ -11300,64 +11422,292 @@ def get_available_subjects_naplan(
     # ==================================================
     # 📖 READING
     # ==================================================
+
     reading_exam_enabled = False
     reading_homework_enabled = False
+
     print("\n📘 STUDENT DEBUG")
-    print(f"class_name={class_name}")
-    print(f"student_year={student_year}")
-    print(f"student_id={student.id}")
+
+    print(
+        f"class_name={class_name}"
+    )
+
+    print(
+        f"student_year={student_year}"
+    )
+
+    print(
+        f"student_id={student.id}"
+    )
+
+    # --------------------------------------------------
+    # Normalize student center code
+    # --------------------------------------------------
+
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 normalized_center_code="
+        f"{normalized_center_code}"
+    )
+
+    # ==================================================
+    # 📘 READING EXAM
+    # ==================================================
+
+    print(
+        "\n================ "
+        "READING EXAM "
+        "AVAILABILITY "
+        "================"
+    )
 
     reading_exam = (
-        db.query(ExamNaplanReading)
-        .filter(
-            ExamNaplanReading.year == student_year,
-            func.lower(ExamNaplanReading.subject) == "reading"
+        db.query(
+            ExamNaplanReading
         )
-        .order_by(ExamNaplanReading.created_at.desc())
+        .filter(
+
+            ExamNaplanReading.year
+            ==
+            student_year,
+
+            func.lower(
+                func.trim(
+                    ExamNaplanReading
+                    .subject
+                )
+            )
+            ==
+            "reading",
+
+            func.upper(
+                func.trim(
+                    ExamNaplanReading
+                    .center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .order_by(
+            ExamNaplanReading
+            .created_at.desc()
+        )
         .first()
     )
+
     print(
-        f"📘 reading_exam found = "
+        "📘 reading_exam found = "
         f"{reading_exam.id if reading_exam else None}"
     )
+
     if reading_exam:
-        
+
+        print(
+            f"✅ Reading exam found | "
+            f"exam_id={reading_exam.id}"
+        )
+
         attempt = (
-            db.query(StudentExamNaplanReading)
-            .filter(
-                StudentExamNaplanReading.student_id == student.id,
-                StudentExamNaplanReading.exam_id == reading_exam.id
+            db.query(
+                StudentExamNaplanReading
             )
-            .order_by(StudentExamNaplanReading.started_at.desc())
+            .filter(
+
+                StudentExamNaplanReading
+                .student_id
+                ==
+                student.id,
+
+                StudentExamNaplanReading
+                .exam_id
+                ==
+                reading_exam.id
+            )
+            .order_by(
+                StudentExamNaplanReading
+                .started_at.desc()
+            )
             .first()
         )
 
-        if not attempt or attempt.completed_at is None:
+        print(
+            f"📦 Reading attempt = "
+            f"{attempt.id if attempt else None}"
+        )
+
+        if not attempt:
+
+            print(
+                "🟢 No attempt found "
+                "→ enable"
+            )
+
             reading_exam_enabled = True
 
-    reading_homework_exam = (
-        db.query(ExamNaplanReadingHomework)
-        .filter(
-            ExamNaplanReadingHomework.year == student_year,
-            func.lower(ExamNaplanReadingHomework.subject) == "reading"
+        elif (
+            attempt.completed_at
+            is None
+        ):
+
+            print(
+                "🟡 In progress "
+                "→ enable resume"
+            )
+
+            reading_exam_enabled = True
+
+        else:
+
+            print(
+                "🔴 Current exam "
+                "already completed "
+                "→ disable"
+            )
+
+            reading_exam_enabled = False
+
+    else:
+
+        print(
+            "❌ No reading exam "
+            "found"
         )
-        .order_by(ExamNaplanReadingHomework.created_at.desc())
+
+    # ==================================================
+    # 📘 READING HOMEWORK
+    # ==================================================
+
+    print(
+        "\n================ "
+        "READING HOMEWORK "
+        "AVAILABILITY "
+        "================"
+    )
+
+    reading_homework_exam = (
+        db.query(
+            ExamNaplanReadingHomework
+        )
+        .filter(
+
+            ExamNaplanReadingHomework
+            .year
+            ==
+            student_year,
+
+            func.lower(
+                func.trim(
+                    ExamNaplanReadingHomework
+                    .subject
+                )
+            )
+            ==
+            "reading",
+
+            func.upper(
+                func.trim(
+                    ExamNaplanReadingHomework
+                    .center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .order_by(
+            ExamNaplanReadingHomework
+            .created_at.desc()
+        )
         .first()
+    )
+
+    print(
+        "📘 reading_homework_exam "
+        f"found = "
+        f"{reading_homework_exam.id if reading_homework_exam else None}"
     )
 
     if reading_homework_exam:
+
+        print(
+            f"✅ Reading homework "
+            f"exam found | "
+            f"exam_id="
+            f"{reading_homework_exam.id}"
+        )
+
         attempt = (
-            db.query(StudentExamNaplanReadingHomework)
-            .filter(
-                StudentExamNaplanReadingHomework.student_id == student.id,
-                StudentExamNaplanReadingHomework.exam_id == reading_homework_exam.id
+            db.query(
+                StudentExamNaplanReadingHomework
             )
-            .order_by(StudentExamNaplanReadingHomework.started_at.desc())
+            .filter(
+
+                StudentExamNaplanReadingHomework
+                .student_id
+                ==
+                student.id,
+
+                StudentExamNaplanReadingHomework
+                .exam_id
+                ==
+                reading_homework_exam.id
+            )
+            .order_by(
+                StudentExamNaplanReadingHomework
+                .started_at.desc()
+            )
             .first()
         )
 
-        if not attempt or attempt.completed_at is None:
+        print(
+            f"📦 Homework attempt = "
+            f"{attempt.id if attempt else None}"
+        )
+
+        if not attempt:
+
+            print(
+                "🟢 No homework "
+                "attempt found "
+                "→ enable"
+            )
+
             reading_homework_enabled = True
+
+        elif (
+            attempt.completed_at
+            is None
+        ):
+
+            print(
+                "🟡 Homework "
+                "in progress "
+                "→ enable resume"
+            )
+
+            reading_homework_enabled = True
+
+        else:
+
+            print(
+                "🔴 Current homework "
+                "already completed "
+                "→ disable"
+            )
+
+            reading_homework_enabled = False
+
+    else:
+
+        print(
+            "❌ No reading "
+            "homework exam found"
+        )
 
     # ==================================================
     # 🧾 LANGUAGE CONVENTIONS
@@ -12237,51 +12587,183 @@ def generate_naplan_reading_homework_latest(
     payload: GenerateNaplanReadingHomeworkLatestRequest,
     db: Session = Depends(get_db)
 ):
-    print("\n=== START: Generate NAPLAN Reading Homework Latest ===")
+
+    print(
+        "\n=== START: Generate "
+        "NAPLAN Reading Homework Latest ==="
+    )
 
     requested_year = payload.year
-    selected_date = payload.selected_date
 
-    print(f"📘 Requested year: {requested_year}")
-    print(f"📅 Selected date: {selected_date}")
+    selected_date = (
+        payload.selected_date
+    )
+
+    center_code = (
+        payload.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"📘 Requested year: "
+        f"{requested_year}"
+    )
+
+    print(
+        f"📅 Selected date: "
+        f"{selected_date}"
+    )
+
+    print(
+        f"🏢 Center code: "
+        f"{center_code}"
+    )
+
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
 
     normalized_subject = "reading"
 
     # --------------------------------------------------
-    # Fetch questions directly from Question table
+    # Resolve center
+    # --------------------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(
+            func.upper(
+                func.trim(
+                    Center.center_code
+                )
+            )
+            ==
+            center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"🏢 Center resolved | "
+        f"center_id={center.id}"
+    )
+
+    # --------------------------------------------------
+    # Fetch used question ids
+    # --------------------------------------------------
+
+    used_question_ids_subquery = (
+        db.query(
+            NaplanReadingQuestionUsage
+            .question_id
+        )
+        .join(
+            QuestionNaplanReading,
+            QuestionNaplanReading.id
+            ==
+            NaplanReadingQuestionUsage
+            .question_id
+        )
+        .filter(
+
+            NaplanReadingQuestionUsage
+            .center_id
+            ==
+            center.id,
+
+            QuestionNaplanReading.year
+            ==
+            requested_year
+        )
+        .subquery()
+    )
+
+    used_count = (
+        db.query(
+            NaplanReadingQuestionUsage
+        )
+        .filter(
+            NaplanReadingQuestionUsage
+            .center_id
+            ==
+            center.id
+        )
+        .count()
+    )
+
+    print(
+        f"📚 Used question count = "
+        f"{used_count}"
+    )
+
+    # --------------------------------------------------
+    # Fetch available questions
     # --------------------------------------------------
 
     db_rows = (
-        db.query(QuestionNaplanReading)
+        db.query(
+            QuestionNaplanReading
+        )
         .filter(
-            QuestionNaplanReading.year == requested_year,
 
-            QuestionNaplanReading.is_used == False,
+            QuestionNaplanReading.year
+            ==
+            requested_year,
 
             func.lower(
                 func.trim(
-                    QuestionNaplanReading.subject
+                    QuestionNaplanReading
+                    .subject
                 )
-            ) == normalized_subject,
+            )
+            ==
+            normalized_subject,
 
             func.date(
-                QuestionNaplanReading.created_at
-            ) == selected_date
+                QuestionNaplanReading
+                .created_at
+            )
+            ==
+            selected_date,
+
+            ~QuestionNaplanReading
+            .id.in_(
+                used_question_ids_subquery
+            )
         )
         .order_by(
-            QuestionNaplanReading.id.asc()
+            QuestionNaplanReading
+            .id.asc()
         )
         .all()
     )
 
-    print(f"🔎 Found {len(db_rows)} unused reading rows")
+    print(
+        f"🔎 Found "
+        f"{len(db_rows)} "
+        f"unused reading rows"
+    )
 
     if not db_rows:
+
         raise HTTPException(
             status_code=404,
             detail=(
-                f"No unused Reading homework questions found "
-                f"for year {requested_year} "
+                "No unused Reading "
+                "homework questions found "
+                f"for year "
+                f"{requested_year} "
                 f"on {selected_date}"
             )
         )
@@ -12294,259 +12776,739 @@ def generate_naplan_reading_homework_latest(
 
     for row in db_rows:
 
-        row.is_used = True
-
         assembled_questions.append({
-            "question_id": str(uuid.uuid4()),
-            "passage_id": row.passage_id,
-            "topic": row.topic,
-            "difficulty": row.difficulty,
-            "question_type": row.question_type,
-            "exam_bundle": row.exam_bundle,
+
+            "question_id":
+                str(uuid.uuid4()),
+
+            "passage_id":
+                row.passage_id,
+
+            "topic":
+                row.topic,
+
+            "difficulty":
+                row.difficulty,
+
+            "question_type":
+                row.question_type,
+
+            "exam_bundle":
+                row.exam_bundle,
         })
 
-    print(f"✅ Assembled {len(assembled_questions)} questions")
+        # --------------------------------------------------
+        # Save usage row
+        # --------------------------------------------------
+
+        usage_row = (
+            NaplanReadingQuestionUsage(
+
+                center_id=
+                    center.id,
+
+                question_id=
+                    row.id
+            )
+        )
+
+        db.add(usage_row)
+
+    print(
+        f"✅ Assembled "
+        f"{len(assembled_questions)} "
+        f"questions"
+    )
 
     # --------------------------------------------------
     # Save generated homework
     # --------------------------------------------------
 
     exam = ExamNaplanReadingHomework(
-        quiz_id=None,   # IMPORTANT
-        year=requested_year,
-        class_name="NAPLAN",
-        subject="reading",
-        difficulty="latest",
-        questions=assembled_questions,
+
+        quiz_id=
+            None,
+
+        year=
+            requested_year,
+
+        class_name=
+            "NAPLAN",
+
+        subject=
+            "reading",
+
+        center_code=
+            center_code,
+
+        difficulty=
+            "latest",
+
+        questions=
+            assembled_questions,
     )
 
     db.add(exam)
+
     db.commit()
+
     db.refresh(exam)
 
     print(
-        f"🎉 SUCCESS: Reading latest homework generated | "
+        f"🎉 SUCCESS: Reading "
+        f"latest homework generated | "
         f"exam_id={exam.id}"
     )
 
-    print("=== END: Generate Reading Homework Latest ===\n")
+    print(
+        "=== END: Generate "
+        "Reading Homework Latest ===\n"
+    )
 
     return {
-        "message": "NAPLAN Reading latest homework generated successfully",
-        "exam_id": exam.id,
-        "year": requested_year,
-        "selected_date": str(selected_date),
-        "total_questions": len(assembled_questions),
-        "questions": assembled_questions
-    }
 
+        "message":
+            "NAPLAN Reading latest "
+            "homework generated "
+            "successfully",
+
+        "exam_id":
+            exam.id,
+
+        "year":
+            requested_year,
+
+        "center_code":
+            center_code,
+
+        "selected_date":
+            str(selected_date),
+
+        "total_questions":
+            len(assembled_questions),
+
+        "questions":
+            assembled_questions
+    }
 @app.post("/naplan/reading/generate-homework")
 def generate_naplan_reading_homework(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
+
     requested_year = payload.get("year")
 
+    center_code = (
+        payload.get("center_code", "")
+        .strip()
+        .upper()
+    )
+
     if not requested_year:
+
         raise HTTPException(
             status_code=400,
-            detail="Year is required to generate homework"
+            detail=(
+                "Year is required "
+                "to generate homework"
+            )
         )
 
-    print(f"📘 Requested year: {requested_year}")
-    print("\n=== START: Generate NAPLAN Reading Homework ===")
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print(
+        f"📘 Requested year: "
+        f"{requested_year}"
+    )
+
+    print(
+        f"🏢 Center code: "
+        f"{center_code}"
+    )
+
+    print(
+        "\n=== START: Generate "
+        "NAPLAN Reading Homework ==="
+    )
 
     # ----------------------------------------
-    # 1. Load latest homework config
+    # 1. Resolve center
     # ----------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(
+            func.upper(
+                func.trim(
+                    Center.center_code
+                )
+            )
+            ==
+            center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"🏢 Center resolved | "
+        f"center_id={center.id}"
+    )
+
+    # ----------------------------------------
+    # 2. Load latest homework config
+    # ----------------------------------------
+
     quiz = (
-        db.query(QuizNaplanReadingHomework)
-        .filter(QuizNaplanReadingHomework.year == requested_year)
-        .order_by(QuizNaplanReadingHomework.id.desc())
+        db.query(
+            QuizNaplanReadingHomework
+        )
+        .filter(
+
+            QuizNaplanReadingHomework
+            .year
+            ==
+            requested_year,
+
+            func.upper(
+                func.trim(
+                    QuizNaplanReadingHomework
+                    .center_code
+                )
+            )
+            ==
+            center_code
+        )
+        .order_by(
+            QuizNaplanReadingHomework
+            .id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
             status_code=404,
-            detail="NAPLAN Reading homework quiz not found"
+            detail=(
+                "NAPLAN Reading "
+                "homework quiz "
+                "not found"
+            )
         )
 
-    print(f"✅ Homework quiz loaded | id={quiz.id}, year={quiz.year}")
-    print(f"📘 Topics config: {quiz.topics}")
-    print(f"📌 Expected total questions: {quiz.total_questions}")
+    print(
+        f"✅ Homework quiz loaded | "
+        f"id={quiz.id}, "
+        f"year={quiz.year}"
+    )
+
+    print(
+        f"📘 Topics config: "
+        f"{quiz.topics}"
+    )
+
+    print(
+        f"📌 Expected total "
+        f"questions: "
+        f"{quiz.total_questions}"
+    )
 
     assembled_questions = []
 
     # ----------------------------------------
-    # 2. Iterate topics
+    # 3. Iterate topics
     # ----------------------------------------
-    for idx, topic_cfg in enumerate(quiz.topics):
-        print(f"\n--- Processing topic {idx + 1} ---")
 
-        topic_name = topic_cfg.get("name")
-        difficulty_map = topic_cfg.get("difficulty", {})
+    for idx, topic_cfg in enumerate(
+        quiz.topics
+    ):
 
-        if not topic_name or not difficulty_map:
-            print("⚠️ Skipping invalid topic config")
+        print(
+            f"\n--- Processing "
+            f"topic {idx + 1} ---"
+        )
+
+        topic_name = (
+            topic_cfg.get("name")
+        )
+
+        difficulty_map = (
+            topic_cfg.get(
+                "difficulty",
+                {}
+            )
+        )
+
+        if (
+            not topic_name
+            or
+            not difficulty_map
+        ):
+
+            print(
+                "⚠️ Skipping invalid "
+                "topic config"
+            )
+
             continue
 
-        print(f"➡️ Topic: {topic_name}")
+        print(
+            f"➡️ Topic: "
+            f"{topic_name}"
+        )
 
         # ----------------------------------------
-        # 3. Iterate difficulty levels
+        # 4. Iterate difficulty levels
         # ----------------------------------------
-        for level, counts in difficulty_map.items():
 
-            db_count = counts.get("db", 0)
+        for level, counts in (
+            difficulty_map.items()
+        ):
+
+            db_count = (
+                counts.get("db", 0)
+            )
 
             if db_count == 0:
                 continue
 
-            normalized_level = level.lower().strip()
+            normalized_level = (
+                level
+                .lower()
+                .strip()
+            )
 
-            print(f"  ➤ Difficulty: {level}")
-            print(f"     DB={db_count}")
+            print(
+                f"  ➤ Difficulty: "
+                f"{level}"
+            )
+
+            print(
+                f"     DB={db_count}"
+            )
 
             # ----------------------------------------
-            # 4. Fetch DB questions (STRICT)
+            # 5. Fetch used question ids
             # ----------------------------------------
-            db_rows = (
-                db.query(QuestionNaplanReading)
+
+            used_question_ids_subquery = (
+                db.query(
+                    NaplanReadingQuestionUsage
+                    .question_id
+                )
+                .join(
+                    QuestionNaplanReading,
+                    QuestionNaplanReading.id
+                    ==
+                    NaplanReadingQuestionUsage
+                    .question_id
+                )
                 .filter(
-                    QuestionNaplanReading.topic == topic_name,
-                    QuestionNaplanReading.year == quiz.year,
-                    QuestionNaplanReading.is_used == False,
-                    func.lower(func.trim(QuestionNaplanReading.subject)) == "reading",
-                    func.lower(func.trim(QuestionNaplanReading.difficulty)) == normalized_level,
+
+                    NaplanReadingQuestionUsage
+                    .center_id
+                    ==
+                    center.id,
+
+                    QuestionNaplanReading
+                    .year
+                    ==
+                    quiz.year
+                )
+                .subquery()
+            )
+
+            # ----------------------------------------
+            # 6. Fetch DB questions
+            # ----------------------------------------
+
+            db_rows = (
+                db.query(
+                    QuestionNaplanReading
+                )
+                .filter(
+
+                    QuestionNaplanReading
+                    .topic
+                    ==
+                    topic_name,
+
+                    QuestionNaplanReading
+                    .year
+                    ==
+                    quiz.year,
+
+                    func.lower(
+                        func.trim(
+                            QuestionNaplanReading
+                            .subject
+                        )
+                    )
+                    ==
+                    "reading",
+
+                    func.lower(
+                        func.trim(
+                            QuestionNaplanReading
+                            .difficulty
+                        )
+                    )
+                    ==
+                    normalized_level,
+
+                    ~QuestionNaplanReading
+                    .id.in_(
+                        used_question_ids_subquery
+                    )
                 )
                 .all()
             )
 
-            print(f"     Found DB rows: {len(db_rows)}")
+            print(
+                f"     Found DB rows: "
+                f"{len(db_rows)}"
+            )
 
             # ----------------------------------------
-            # 5. STRICT MODE — NO FALLBACK
+            # 7. STRICT MODE
             # ----------------------------------------
+
             if len(db_rows) < db_count:
+
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough DB questions for topic '{topic_name}' "
-                        f"({level}). Required={db_count}, Found={len(db_rows)}"
+                        "Not enough DB "
+                        f"questions for "
+                        f"topic '{topic_name}' "
+                        f"({level}). "
+                        f"Required={db_count}, "
+                        f"Found={len(db_rows)}"
                     )
                 )
 
             # ----------------------------------------
-            # 6. Random selection
+            # 8. Random selection
             # ----------------------------------------
-            selected_rows = random.sample(db_rows, db_count)
 
-            print(f"     Selected {len(selected_rows)} DB questions")
+            selected_rows = random.sample(
+                db_rows,
+                db_count
+            )
+
+            print(
+                f"     Selected "
+                f"{len(selected_rows)} "
+                f"DB questions"
+            )
 
             # ----------------------------------------
-            # 7. Add to exam
+            # 9. Save usage rows
             # ----------------------------------------
+
             for row in selected_rows:
-                row.is_used = True
+
+                usage_row = (
+                    NaplanReadingQuestionUsage(
+
+                        center_id=
+                            center.id,
+
+                        question_id=
+                            row.id
+                    )
+                )
+
+                db.add(usage_row)
 
                 assembled_questions.append({
-                    "question_id": str(uuid.uuid4()),
-                    "passage_id": row.passage_id,
-                    "topic": row.topic,
-                    "difficulty": row.difficulty,
-                    "question_type": row.question_type,
-                    "exam_bundle": row.exam_bundle,
+
+                    "question_id":
+                        str(uuid.uuid4()),
+
+                    "passage_id":
+                        row.passage_id,
+
+                    "topic":
+                        row.topic,
+
+                    "difficulty":
+                        row.difficulty,
+
+                    "question_type":
+                        row.question_type,
+
+                    "exam_bundle":
+                        row.exam_bundle,
                 })
 
     # ----------------------------------------
-    # 8. Final validation
+    # 10. Final validation
     # ----------------------------------------
-    total_question_count = len(assembled_questions)
 
-    print(f"Total assembled question items: {total_question_count}")
+    total_question_count = len(
+        assembled_questions
+    )
 
-    if total_question_count != quiz.total_questions:
+    print(
+        f"Total assembled "
+        f"question items: "
+        f"{total_question_count}"
+    )
+
+    if (
+        total_question_count
+        !=
+        quiz.total_questions
+    ):
+
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Question count mismatch | "
-                f"Expected={quiz.total_questions}, "
-                f"Got={total_question_count}"
+                "Question count mismatch | "
+                f"Expected="
+                f"{quiz.total_questions}, "
+                f"Got="
+                f"{total_question_count}"
             )
         )
 
-    print("✅ Question count validated")
+    print(
+        "✅ Question count validated"
+    )
 
     # ----------------------------------------
-    # 9. Save homework exam
+    # 11. Save homework exam
     # ----------------------------------------
+
     exam = ExamNaplanReadingHomework(
-        quiz_id=quiz.id,
-        year=quiz.year,
-        class_name=quiz.class_name,
-        subject="reading",
-        difficulty=quiz.difficulty,
-        questions=assembled_questions,
+
+        quiz_id=
+            quiz.id,
+
+        year=
+            quiz.year,
+
+        class_name=
+            quiz.class_name,
+
+        subject=
+            "reading",
+
+        center_code=
+            center_code,
+
+        difficulty=
+            quiz.difficulty,
+
+        questions=
+            assembled_questions,
     )
 
     db.add(exam)
+
     db.commit()
+
     db.refresh(exam)
 
-    print(f"🎉 SUCCESS: Reading homework generated | exam_id={exam.id}")
-    print("=== END: Generate NAPLAN Reading Homework ===\n")
+    print(
+        f"🎉 SUCCESS: Reading "
+        f"homework generated | "
+        f"exam_id={exam.id}"
+    )
+
+    print(
+        "=== END: Generate "
+        "NAPLAN Reading Homework ===\n"
+    )
 
     return {
-        "message": "NAPLAN Reading homework generated successfully",
-        "exam_id": exam.id,
-        "total_questions": total_question_count,
+
+        "message":
+            "NAPLAN Reading "
+            "homework generated "
+            "successfully",
+
+        "exam_id":
+            exam.id,
+
+        "center_code":
+            center_code,
+
+        "total_questions":
+            total_question_count,
     }
 
-
-@app.put("/api/admin/reuse-used-questions-naplan-reading")
+@app.put(
+    "/api/admin/reuse-used-questions-naplan-reading"
+)
 def reuse_used_questions_naplan_reading(
     year: int = Query(...),
+    center_code: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    print("\n=== RESET USED QUESTIONS: NAPLAN READING ===")
 
-    print(f"[INPUT] year={year}")
+    print(
+        "\n=== RESET USED QUESTIONS: "
+        "NAPLAN READING ==="
+    )
+
+    print(
+        f"[INPUT] year={year}"
+    )
+
+    print(
+        f"[INPUT] center_code="
+        f"{center_code}"
+    )
 
     try:
-        updated_count = (
-            db.query(QuestionNaplanReading)
+
+        # --------------------------------------------------
+        # Resolve center
+        # --------------------------------------------------
+
+        center = (
+            db.query(Center)
             .filter(
-                func.lower(QuestionNaplanReading.subject) == "reading",
-                QuestionNaplanReading.year == year,
-                QuestionNaplanReading.is_used == True,
+                func.upper(
+                    func.trim(
+                        Center.center_code
+                    )
+                )
+                ==
+                center_code.strip().upper()
             )
-            .update(
-                {"is_used": False},
-                synchronize_session=False,
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"🏢 Center resolved | "
+            f"center_id={center.id}"
+        )
+
+        # --------------------------------------------------
+        # Find question ids to reset
+        # --------------------------------------------------
+
+        question_ids_to_reset = (
+            db.query(
+                QuestionNaplanReading.id
+            )
+            .filter(
+
+                func.lower(
+                    func.trim(
+                        QuestionNaplanReading
+                        .subject
+                    )
+                )
+                ==
+                "reading",
+
+                QuestionNaplanReading.year
+                ==
+                year
+            )
+            .all()
+        )
+
+        question_ids_to_reset = [
+
+            row[0]
+
+            for row in question_ids_to_reset
+        ]
+
+        print(
+            "\n🧠 Question IDs To Reset:"
+        )
+
+        print(
+            question_ids_to_reset
+        )
+
+        # --------------------------------------------------
+        # Delete usage rows
+        # --------------------------------------------------
+
+        deleted_count = (
+            db.query(
+                NaplanReadingQuestionUsage
+            )
+            .filter(
+
+                NaplanReadingQuestionUsage
+                .center_id
+                == center.id,
+
+                NaplanReadingQuestionUsage
+                .question_id.in_(
+                    question_ids_to_reset
+                )
+            )
+            .delete(
+                synchronize_session=False
             )
         )
 
         db.commit()
 
-        print(f"[SUCCESS] reset_count={updated_count}")
-        print("=== RESET COMPLETE ===\n")
+        print(
+            f"✅ Reset "
+            f"{deleted_count} "
+            f"question usages"
+        )
+
+        print(
+            "=== RESET COMPLETE ===\n"
+        )
 
         return {
-            "message": f"{updated_count} used question(s) are now reusable.",
-            "updated_count": updated_count,
+
+            "message":
+                "Used questions reset "
+                "successfully",
+
+            "deleted_count":
+                deleted_count
         }
 
     except Exception as e:
+
         db.rollback()
 
-        print("[ERROR]", str(e))
+        print(
+            "[ERROR]",
+            str(e)
+        )
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to reset used questions.",
+            detail=(
+                "Failed to reset "
+                "used questions."
+            ),
         )
-
 
 
 # --------------------------------------------------
@@ -13606,257 +14568,234 @@ def generate_writing_homework(
     db: Session = Depends(get_db)
 ):
     try:
-        print("\n=========== GENERATE WRITING HOMEWORK ===========")
 
-        
-        # ----------------------------------
-        # 1️⃣ Normalize inputs
-        # ----------------------------------
-        class_name = "selective"
-        class_year = payload.class_year.strip().lower()
-
-        print("📥 Payload:", {
-            "class_name": class_name,
-            "class_year": class_year
-        })
-
-        # ----------------------------------
-        # 2️⃣ Load homework setup (BY CLASS YEAR)
-        # ----------------------------------
-        setup = (
-            db.query(QuizSetupWritingHomework)
-            .filter(
-                func.lower(func.trim(QuizSetupWritingHomework.class_year)) == class_year
-            )
-            .first()
+        print(
+            "\n=========== GENERATE WRITING HOMEWORK ==========="
         )
 
-        if not setup:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No homework writing setup found for year '{class_year}'"
-            )
-
-        topic = setup.topic.strip().lower()
-        difficulty = setup.difficulty.strip().lower()
-
-        print("✅ Setup found:", {
-            "topic": topic,
-            "difficulty": difficulty
-        })
-
-        # ----------------------------------
-        # 3️⃣ RESET STUDENT ATTEMPTS + DELETE OLD HOMEWORK
-        # ----------------------------------
-        print("🗑 Resetting student homework attempts for year:", class_year)
-        
-        homework_ids = db.query(GeneratedHomeworkWriting.id).filter(
-            func.lower(func.trim(GeneratedHomeworkWriting.class_year)) == class_year
-        ).all()
-        
-        homework_ids = [h[0] for h in homework_ids]
-        
-        if homework_ids:
-            db.query(StudentHomeworkResponseWriting).filter(
-                StudentHomeworkResponseWriting.homework_id.in_(homework_ids)
-            ).delete(synchronize_session=False)
-        
-            db.query(StudentHomeworkWriting).filter(
-                StudentHomeworkWriting.homework_id.in_(homework_ids)
-            ).delete(synchronize_session=False)
-        
-            # 🔥 ADD THIS
-            db.query(GeneratedHomeworkWriting).filter(
-                GeneratedHomeworkWriting.id.in_(homework_ids)
-            ).delete(synchronize_session=False)
-        
-        db.commit()
-        # ----------------------------------
-        # 4️⃣ Fetch ONE random writing question
-        # ----------------------------------
-        question = (
-            db.query(WritingQuestionBank)
-            .filter(
-                func.lower(func.trim(WritingQuestionBank.class_name)) == class_name.lower(),
-                func.lower(func.trim(WritingQuestionBank.difficulty)) == difficulty,
-                func.lower(func.trim(WritingQuestionBank.topic)) == topic
-            )
-            .order_by(func.random())
-            .first()
-        )
-
-        if not question:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No writing question found for year '{class_year}', topic '{topic}', difficulty '{difficulty}'"
-            )
-
-        print("📝 Question selected:", {
-            "topic": question.topic
-        })
-
-        # ----------------------------------
-        # 5️⃣ Build exam text (UI-ready)
-        # ----------------------------------
-        exam_text_parts = []
-
-        if question.title:
-            exam_text_parts.append(f"TITLE:\n{question.title}\n")
-
-        exam_text_parts.append(
-            f"TASK:\n{question.question_text}\n"
-        )
-
-        if question.statement:
-            exam_text_parts.append(
-                f"STATEMENT:\n{question.statement}\n"
-            )
-
-        exam_text_parts.append(
-            f"INSTRUCTIONS:\n{question.question_prompt}\n"
-        )
-
-        if question.opening_sentence:
-            exam_text_parts.append(
-                f"OPENING SENTENCE:\n{question.opening_sentence}\n"
-            )
-
-        if question.guidelines:
-            formatted_guidelines = "\n".join(
-                f"- {line.strip()}"
-                for line in question.guidelines.splitlines()
-                if line.strip()
-            )
-
-            exam_text_parts.append(
-                f"GUIDELINES:\n{formatted_guidelines}\n"
-            )
-
-        full_exam_text = "\n".join(exam_text_parts).strip()
-
-        # ----------------------------------
-        # 6️⃣ Save homework exam
-        # ----------------------------------
-        exam = GeneratedHomeworkWriting(
-            class_name=class_name,
-            class_year=payload.class_year,  # keep original casing
-            subject="writing",
-            topic=question.topic,
-            difficulty=difficulty.capitalize(),
-            question_text=full_exam_text,
-            duration_minutes=30,
-            is_current=True
-        )
-
-        db.add(exam)
-        db.commit()
-        db.refresh(exam)
-
-        print("✅ Homework exam created:", {
-            "exam_id": exam.id,
-            "class_year": exam.class_year
-        })
-
-        # ----------------------------------
-        # 7️⃣ Response
-        # ----------------------------------
-        return {
-            "exam_id": exam.id,
-            "class_name": exam.class_name,
-            "class_year": exam.class_year,
-            "difficulty": exam.difficulty,
-            "topic": exam.topic,
-            "duration_minutes": exam.duration_minutes,
-            "exam_text": full_exam_text,
-        }
-
-    except Exception as e:
-        print("❌ ERROR:", str(e))
-        db.rollback()
-        raise e
-
-
-@app.post("/api/exams/generate-writing-homework-latest")
-def generate_writing_homework_latest(
-    payload: dict = Body(...),
-    db: Session = Depends(get_db)
-):
-    try:
-        print("\n" + "=" * 70)
-        print("🚀 GENERATE WRITING HOMEWORK (LATEST MODE)")
-        print("=" * 70)
-
-        # ----------------------------------
+        # -------------------------------------------------
         # Helpers
-        # ----------------------------------
-        def normalize_text(value: str) -> str:
+        # -------------------------------------------------
+        def normalize_text_helper(
+            value: str
+        ) -> str:
             return value.strip().lower()
 
-        def normalize_year_digits(value: str) -> str:
+        def normalize_year_digits_helper(
+            value: str
+        ) -> str:
             return "".join(
-                ch for ch in value if ch.isdigit()
+                ch for ch in value
+                if ch.isdigit()
             )
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Inputs
-        # ----------------------------------
+        # -------------------------------------------------
         class_name = "selective"
 
-        class_year_raw = payload.get("class_year")
-        selected_date = payload.get("selected_date")
-
-        if not class_year_raw:
-            raise HTTPException(
-                status_code=400,
-                detail="class_year is required"
+        class_name_norm = (
+            normalize_text_helper(
+                class_name
             )
-
-        if not selected_date:
-            raise HTTPException(
-                status_code=400,
-                detail="selected_date is required"
-            )
-
-        class_name_norm = normalize_text(class_name)
-
-        class_year_digits = normalize_year_digits(
-            class_year_raw
         )
 
-        print("\n📥 INPUTS:")
-        print(f"   class_name     = '{class_name}'")
-        print(f"   class_year_raw = '{class_year_raw}'")
-        print(f"   selected_date  = '{selected_date}'")
-        print(f"   year_digits    = '{class_year_digits}'")
+        class_year_raw = payload.class_year
 
-        # ----------------------------------
-        # Debug question pool
-        # ----------------------------------
-        all_questions = (
-            db.query(WritingQuestionBank)
-            .all()
+        class_year_norm = (
+            normalize_text_helper(
+                class_year_raw
+            )
+        )
+
+        class_year_digits = (
+            normalize_year_digits_helper(
+                class_year_raw
+            )
+        )
+
+        center_code = payload.center_code
+
+        print("\n📥 INPUTS:")
+
+        print(
+            f"   class_name     = '{class_name}'"
         )
 
         print(
-            f"\n📊 TOTAL QUESTIONS: {len(all_questions)}"
+            f"   class_year     = '{class_year_raw}'"
         )
 
-        for q in all_questions[:10]:
-            print(
-                f"""
-🧩 QUESTION
-   id={q.id}
-   class_year={q.class_year}
-   topic={q.topic}
-   difficulty={q.difficulty}
-   created_at={q.created_at}
-                """.strip()
+        print(
+            f"   center_code    = '{center_code}'"
+        )
+
+        # -------------------------------------------------
+        # Load setup using center code
+        # -------------------------------------------------
+        setup = (
+            db.query(
+                QuizSetupWritingHomework
+            )
+            .filter(
+                func.lower(
+                    func.trim(
+                        QuizSetupWritingHomework.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        QuizSetupWritingHomework.class_year
+                    )
+                ) == class_year_norm,
+
+                QuizSetupWritingHomework.center_code
+                == center_code
+            )
+            .order_by(
+                QuizSetupWritingHomework.id.desc()
+            )
+            .first()
+        )
+
+        print(
+            f"\n🔍 MATCHED SETUP: {setup}"
+        )
+
+        if not setup:
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No homework writing setup "
+                    f"found for year="
+                    f"'{class_year_raw}' "
+                    f"and center="
+                    f"'{center_code}'"
+                )
             )
 
-        # ----------------------------------
-        # Fetch UNUSED question by upload date
-        # ----------------------------------
-        question = (
+        topic = normalize_text_helper(
+            setup.topic
+        )
+
+        difficulty = normalize_text_helper(
+            setup.difficulty
+        )
+
+        print("\n✅ USING SETUP:")
+
+        print(
+            f"   topic       = '{topic}'"
+        )
+
+        print(
+            f"   difficulty  = '{difficulty}'"
+        )
+
+        # -------------------------------------------------
+        # Reset previous homework for THIS center
+        # -------------------------------------------------
+        print(
+            "\n🗑 Resetting previous "
+            "homework for center..."
+        )
+
+        homework_ids = (
+            db.query(
+                GeneratedHomeworkWriting.id
+            )
+            .filter(
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.class_year
+                    )
+                ) == class_year_norm,
+
+                GeneratedHomeworkWriting.center_code
+                == center_code
+            )
+            .all()
+        )
+
+        homework_ids = [
+            h[0]
+            for h in homework_ids
+        ]
+
+        print(
+            f"🧾 Homework IDs to delete: "
+            f"{homework_ids}"
+        )
+
+        if homework_ids:
+
+            db.query(
+                StudentHomeworkResponseWriting
+            ).filter(
+                StudentHomeworkResponseWriting.homework_id.in_(
+                    homework_ids
+                )
+            ).delete(
+                synchronize_session=False
+            )
+
+            db.query(
+                StudentHomeworkWriting
+            ).filter(
+                StudentHomeworkWriting.homework_id.in_(
+                    homework_ids
+                )
+            ).delete(
+                synchronize_session=False
+            )
+
+            db.query(
+                GeneratedHomeworkWriting
+            ).filter(
+                GeneratedHomeworkWriting.id.in_(
+                    homework_ids
+                )
+            ).delete(
+                synchronize_session=False
+            )
+
+        db.commit()
+
+        print(
+            "✅ Previous homework cleaned"
+        )
+
+        # -------------------------------------------------
+        # Previously used questions
+        # SAME TABLE AS ACTUAL EXAMS
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                QuestionUsageWriting.center_code
+                == center_code
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        print(
+            f"\n🚫 USED QUESTION IDS: "
+            f"{used_question_ids}"
+        )
+
+        # -------------------------------------------------
+        # Fetch UNUSED question
+        # -------------------------------------------------
+        question_query = (
             db.query(WritingQuestionBank)
             .filter(
                 func.lower(
@@ -13865,6 +14804,18 @@ def generate_writing_homework_latest(
                     )
                 ) == class_name_norm,
 
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.difficulty
+                    )
+                ) == difficulty,
+
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.topic
+                    )
+                ) == topic,
+
                 func.regexp_replace(
                     func.trim(
                         WritingQuestionBank.class_year
@@ -13872,56 +14823,90 @@ def generate_writing_homework_latest(
                     "[^0-9]",
                     "",
                     "g"
-                ) == class_year_digits,
-
-                func.date(
-                    WritingQuestionBank.created_at
-                ) == selected_date,
-
-                WritingQuestionBank.is_used == False
+                ) == class_year_digits
             )
+        )
+
+        # -------------------------------------------------
+        # Exclude previously used questions
+        # -------------------------------------------------
+        if used_question_ids:
+
+            question_query = (
+                question_query.filter(
+                    ~WritingQuestionBank.id.in_(
+                        used_question_ids
+                    )
+                )
+            )
+
+        question = (
+            question_query
             .order_by(func.random())
             .first()
         )
 
-        print(f"\n🔍 MATCHED QUESTION: {question}")
+        print(
+            f"\n🔍 MATCHED UNUSED QUESTION: "
+            f"{question}"
+        )
 
         if not question:
+
             raise HTTPException(
                 status_code=404,
                 detail=(
-                    f"No unused writing homework question found for "
-                    f"class_year='{class_year_raw}' "
-                    f"and selected_date='{selected_date}'"
+                    "No unused homework writing "
+                    "question available for "
+                    "this center."
                 )
             )
 
-        # ----------------------------------
-        # Build homework text
-        # ----------------------------------
-        print("\n📝 Building homework text...")
+        print(
+            "\n📝 Question selected:"
+        )
+
+        print(
+            f"   question_id = {question.id}"
+        )
+
+        print(
+            f"   topic       = {question.topic}"
+        )
+
+        # -------------------------------------------------
+        # Build exam text
+        # -------------------------------------------------
+        print("\n📝 Building exam text...")
 
         exam_text_parts = []
 
         if question.title:
+
             exam_text_parts.append(
-                f"TITLE:\n{question.title}\n"
+                f"TITLE:\n"
+                f"{question.title}\n"
             )
 
         exam_text_parts.append(
-            f"TASK:\n{question.question_text}\n"
+            f"TASK:\n"
+            f"{question.question_text}\n"
         )
 
         if question.statement:
+
             exam_text_parts.append(
-                f"STATEMENT:\n{question.statement}\n"
+                f"STATEMENT:\n"
+                f"{question.statement}\n"
             )
 
         exam_text_parts.append(
-            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+            f"INSTRUCTIONS:\n"
+            f"{question.question_prompt}\n"
         )
 
         if question.opening_sentence:
+
             exam_text_parts.append(
                 f"OPENING SENTENCE:\n"
                 f"{question.opening_sentence}\n"
@@ -13941,35 +14926,33 @@ def generate_writing_homework_latest(
             )
 
         full_exam_text = (
-            "\n".join(exam_text_parts).strip()
+            "\n".join(
+                exam_text_parts
+            ).strip()
         )
-
-        print("✅ Homework text built successfully")
-
-        # ----------------------------------
-        # Mark question as used
-        # ----------------------------------
-        question.is_used = True
 
         print(
-            f"🏷️ Marked question "
-            f"{question.id} as used"
+            "✅ Homework text built"
         )
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Save homework exam
-        # ----------------------------------
-        print("\n💾 Saving homework exam...")
+        # -------------------------------------------------
+        print(
+            "\n💾 Saving generated "
+            "homework exam..."
+        )
 
         exam = GeneratedHomeworkWriting(
             class_name=class_name,
             class_year=class_year_raw,
             subject="writing",
             topic=question.topic,
-            difficulty=question.difficulty.capitalize(),
+            difficulty=difficulty.capitalize(),
             question_text=full_exam_text,
             duration_minutes=30,
-            is_current=True
+            is_current=True,
+            center_code=center_code
         )
 
         db.add(exam)
@@ -13979,14 +14962,401 @@ def generate_writing_homework_latest(
         db.refresh(exam)
 
         print(
-            f"✅ Homework saved with ID: {exam.id}"
+            f"✅ Homework exam saved "
+            f"with ID: {exam.id}"
+        )
+
+        # -------------------------------------------------
+        # Register question usage
+        # SAME TABLE AS ACTUAL EXAMS
+        # -------------------------------------------------
+        print(
+            "\n📝 Registering "
+            "question usage..."
+        )
+
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+
+        db.commit()
+
+        print(
+            "✅ Question usage registered"
+        )
+
+        # -------------------------------------------------
+        # Response
+        # -------------------------------------------------
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "center_code": exam.center_code,
+            "exam_text": full_exam_text,
+        }
+
+    except Exception as e:
+
+        print(
+            "\n❌ ERROR:",
+            str(e)
+        )
+
+        db.rollback()
+
+        traceback.print_exc()
+
+        raise e
+@app.post("/api/exams/generate-writing-homework-latest")
+def generate_writing_homework_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    try:
+
+        print("\n" + "=" * 70)
+
+        print(
+            "🚀 GENERATE WRITING HOMEWORK "
+            "(LATEST MODE)"
+        )
+
+        print("=" * 70)
+
+        # -------------------------------------------------
+        # Helpers
+        # -------------------------------------------------
+        def normalize_text_helper(
+            value: str
+        ) -> str:
+            return value.strip().lower()
+
+        def normalize_year_digits_helper(
+            value: str
+        ) -> str:
+            return "".join(
+                ch for ch in value
+                if ch.isdigit()
+            )
+
+        # -------------------------------------------------
+        # Inputs
+        # -------------------------------------------------
+        class_name = "selective"
+
+        class_year_raw = payload.get(
+            "class_year"
+        )
+
+        selected_date = payload.get(
+            "selected_date"
+        )
+
+        center_code = payload.get(
+            "center_code"
+        )
+
+        if not class_year_raw:
+
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
+            )
+
+        if not selected_date:
+
+            raise HTTPException(
+                status_code=400,
+                detail="selected_date is required"
+            )
+
+        if not center_code:
+
+            raise HTTPException(
+                status_code=400,
+                detail="center_code is required"
+            )
+
+        class_name_norm = (
+            normalize_text_helper(
+                class_name
+            )
+        )
+
+        class_year_digits = (
+            normalize_year_digits_helper(
+                class_year_raw
+            )
+        )
+
+        print("\n📥 INPUTS:")
+
+        print(
+            f"   class_name     = '{class_name}'"
+        )
+
+        print(
+            f"   class_year_raw = '{class_year_raw}'"
+        )
+
+        print(
+            f"   selected_date  = '{selected_date}'"
+        )
+
+        print(
+            f"   center_code    = '{center_code}'"
+        )
+
+        print(
+            f"   year_digits    = '{class_year_digits}'"
+        )
+
+        # -------------------------------------------------
+        # Previously used questions
+        # SAME TABLE AS ACTUAL EXAMS
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                QuestionUsageWriting.center_code
+                == center_code
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        print(
+            f"\n🚫 USED QUESTION IDS: "
+            f"{used_question_ids}"
+        )
+
+        # -------------------------------------------------
+        # Debug question pool
+        # -------------------------------------------------
+        all_questions = (
+            db.query(WritingQuestionBank)
+            .all()
+        )
+
+        print(
+            f"\n📊 TOTAL QUESTIONS: "
+            f"{len(all_questions)}"
+        )
+
+        for q in all_questions[:10]:
+
+            print(
+                f"""
+🧩 QUESTION
+   id={q.id}
+   class_year={q.class_year}
+   topic={q.topic}
+   difficulty={q.difficulty}
+   created_at={q.created_at}
+                """.strip()
+            )
+
+        # -------------------------------------------------
+        # Fetch UNUSED question
+        # -------------------------------------------------
+        question_query = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits,
+
+                func.date(
+                    WritingQuestionBank.created_at
+                ) == selected_date
+            )
+        )
+
+        # -------------------------------------------------
+        # Exclude previously used questions
+        # -------------------------------------------------
+        if used_question_ids:
+
+            question_query = (
+                question_query.filter(
+                    ~WritingQuestionBank.id.in_(
+                        used_question_ids
+                    )
+                )
+            )
+
+        question = (
+            question_query
+            .order_by(func.random())
+            .first()
+        )
+
+        print(
+            f"\n🔍 MATCHED UNUSED QUESTION: "
+            f"{question}"
+        )
+
+        if not question:
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No unused writing "
+                    f"homework question found "
+                    f"for class_year="
+                    f"'{class_year_raw}', "
+                    f"selected_date="
+                    f"'{selected_date}', "
+                    f"center_code="
+                    f"'{center_code}'"
+                )
+            )
+
+        # -------------------------------------------------
+        # Build homework text
+        # -------------------------------------------------
+        print(
+            "\n📝 Building homework text..."
+        )
+
+        exam_text_parts = []
+
+        if question.title:
+
+            exam_text_parts.append(
+                f"TITLE:\n"
+                f"{question.title}\n"
+            )
+
+        exam_text_parts.append(
+            f"TASK:\n"
+            f"{question.question_text}\n"
+        )
+
+        if question.statement:
+
+            exam_text_parts.append(
+                f"STATEMENT:\n"
+                f"{question.statement}\n"
+            )
+
+        exam_text_parts.append(
+            f"INSTRUCTIONS:\n"
+            f"{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+
+            exam_text_parts.append(
+                f"OPENING SENTENCE:\n"
+                f"{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+
+            formatted_guidelines = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            exam_text_parts.append(
+                f"GUIDELINES:\n"
+                f"{formatted_guidelines}\n"
+            )
+
+        full_exam_text = (
+            "\n".join(
+                exam_text_parts
+            ).strip()
+        )
+
+        print(
+            "✅ Homework text built "
+            "successfully"
+        )
+
+        # -------------------------------------------------
+        # Save homework exam
+        # -------------------------------------------------
+        print(
+            "\n💾 Saving homework exam..."
+        )
+
+        exam = GeneratedHomeworkWriting(
+            class_name=class_name,
+            class_year=class_year_raw,
+            subject="writing",
+            topic=question.topic,
+            difficulty=question.difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            is_current=True,
+            center_code=center_code
+        )
+
+        db.add(exam)
+
+        db.commit()
+
+        db.refresh(exam)
+
+        print(
+            f"✅ Homework saved with ID: "
+            f"{exam.id}"
+        )
+
+        # -------------------------------------------------
+        # Register question usage
+        # SAME TABLE AS ACTUAL EXAMS
+        # -------------------------------------------------
+        print(
+            "\n📝 Registering "
+            "question usage..."
+        )
+
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+
+        db.commit()
+
+        print(
+            "✅ Question usage registered"
         )
 
         print("=" * 70 + "\n")
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Response
-        # ----------------------------------
+        # -------------------------------------------------
         return {
             "exam_id": exam.id,
             "class_name": exam.class_name,
@@ -13995,11 +15365,14 @@ def generate_writing_homework_latest(
             "topic": exam.topic,
             "duration_minutes": exam.duration_minutes,
             "selected_date": selected_date,
+            "center_code": exam.center_code,
             "exam_text": full_exam_text,
         }
 
     except HTTPException:
+
         db.rollback()
+
         raise
 
     except Exception as e:
@@ -14007,13 +15380,13 @@ def generate_writing_homework_latest(
         db.rollback()
 
         print("\n🔥 FULL ERROR TRACE:")
+
         traceback.print_exc()
 
         raise HTTPException(
             status_code=500,
             detail=str(e)
         )
-    
 def normalize_questions_for_homework(raw_questions, db: Session):
     normalized = []
 
@@ -18725,25 +20098,71 @@ def delete_all_reading_questions_selective(db: Session = Depends(get_db)):
 # Generate LC Homework Latest
 # --------------------------------------------------
 
+class GenerateNaplanLCHomeworkLatestRequest(BaseModel):
+    year: int
+    selected_date: date
+    batch_id: int
+    center_code: str
+
+
 @app.post("/naplan/language-conventions/generate-homework-latest")
 def generate_naplan_language_conventions_homework_latest(
     payload: GenerateNaplanLCHomeworkLatestRequest,
     db: Session = Depends(get_db)
 ):
+
     print("\n" + "=" * 80)
-    print("🚀 START: Generate NAPLAN Language Conventions Homework Latest")
+
+    print(
+        "🚀 START: Generate "
+        "NAPLAN Language Conventions Homework Latest"
+    )
+
     print("=" * 80)
 
+    # --------------------------------------------------
+    # 1. Normalize inputs
+    # --------------------------------------------------
+
     year = payload.year
+
     selected_date = payload.selected_date
+
     batch_id = payload.batch_id
 
-    print(f"📥 Incoming payload:")
-    print(f"   year          = {year}")
-    print(f"   selected_date = {selected_date}")
-    print(f"   batch_id      = {batch_id}")
+    center_code = (
+        payload.center_code or ""
+    ).strip().upper()
 
-    normalized_subject = "language conventions"
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print(f"📥 Incoming payload:")
+
+    print(f"   year          = {year}")
+
+    print(
+        f"   selected_date = "
+        f"{selected_date}"
+    )
+
+    print(
+        f"   batch_id      = "
+        f"{batch_id}"
+    )
+
+    print(
+        f"   center_code   = "
+        f"{center_code}"
+    )
+
+    normalized_subject = (
+        "language conventions"
+    )
 
     print(
         f"📚 Normalized subject = "
@@ -18753,24 +20172,70 @@ def generate_naplan_language_conventions_homework_latest(
     try:
 
         # --------------------------------------------------
-        # STEP 1: Debug rows matching selected date
+        # 2. Resolve center
         # --------------------------------------------------
-        print("\n🔍 STEP 1: Checking rows matching date")
+
+        center = (
+            db.query(Center)
+            .filter(
+                func.upper(
+                    func.trim(
+                        Center.center_code
+                    )
+                )
+                == center_code
+            )
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"🏢 Center resolved | "
+            f"center_id={center.id}"
+        )
+
+        # --------------------------------------------------
+        # 3. Debug rows matching date
+        # --------------------------------------------------
+
+        print(
+            "\n🔍 STEP 1: "
+            "Checking rows matching date"
+        )
 
         rows_matching_date = (
-            db.query(QuestionNumeracyLC)
+            db.query(
+                QuestionNumeracyLC
+            )
             .filter(
-                QuestionNumeracyLC.year == year,
+
+                QuestionNumeracyLC.year
+                == year,
 
                 func.lower(
                     func.trim(
-                        QuestionNumeracyLC.subject
+                        QuestionNumeracyLC
+                        .subject
                     )
-                ) == normalized_subject,
+                )
+                ==
+                normalized_subject,
 
                 func.date(
-                    QuestionNumeracyLC.created_at
-                ) == selected_date,
+                    QuestionNumeracyLC
+                    .created_at
+                )
+                ==
+                selected_date,
+
+                QuestionNumeracyLC.batch_id
+                == batch_id
             )
             .all()
         )
@@ -18780,69 +20245,123 @@ def generate_naplan_language_conventions_homework_latest(
             f"{len(rows_matching_date)}"
         )
 
-        for idx, row in enumerate(rows_matching_date[:10], start=1):
+        for idx, row in enumerate(
+            rows_matching_date[:10],
+            start=1
+        ):
+
             print(
                 f"   ROW {idx} | "
                 f"id={row.id} | "
                 f"batch_id={row.batch_id} | "
-                f"is_used={row.is_used} | "
                 f"created_at={row.created_at}"
             )
 
         # --------------------------------------------------
-        # STEP 2: Fetch homework questions using batch_id
+        # 4. Get used question ids
         # --------------------------------------------------
-        print("\n🔍 STEP 2: Fetching questions using batch_id")
+
+        used_question_ids = (
+            db.query(
+                NaplanQuestionUsage
+                .question_id
+            )
+            .filter(
+                NaplanQuestionUsage
+                .center_id
+                == center.id
+            )
+            .subquery()
+        )
+
+        print(
+            "\n🧠 Used question ids "
+            "fetched for center"
+        )
+
+        # --------------------------------------------------
+        # 5. Fetch unused homework questions
+        # --------------------------------------------------
+
+        print(
+            "\n🔍 STEP 2: "
+            "Fetching homework questions "
+            "using batch_id"
+        )
 
         questions = (
-            db.query(QuestionNumeracyLC)
+            db.query(
+                QuestionNumeracyLC
+            )
             .filter(
-                QuestionNumeracyLC.year == year,
+
+                QuestionNumeracyLC.year
+                == year,
 
                 func.lower(
                     func.trim(
-                        QuestionNumeracyLC.subject
+                        QuestionNumeracyLC
+                        .subject
                     )
-                ) == normalized_subject,
+                )
+                ==
+                normalized_subject,
 
                 func.date(
-                    QuestionNumeracyLC.created_at
-                ) == selected_date,
+                    QuestionNumeracyLC
+                    .created_at
+                )
+                ==
+                selected_date,
 
-                QuestionNumeracyLC.batch_id == batch_id,
+                QuestionNumeracyLC.batch_id
+                ==
+                batch_id,
 
-                QuestionNumeracyLC.is_used == False
+                ~QuestionNumeracyLC.id.in_(
+                    used_question_ids
+                )
             )
             .order_by(
-                QuestionNumeracyLC.id.asc()
+                QuestionNumeracyLC
+                .id.asc()
             )
             .all()
         )
 
         print(
-            f"✅ Questions fetched after batch filter = "
+            f"✅ Questions fetched "
+            f"after batch filter = "
             f"{len(questions)}"
         )
 
-        for idx, q in enumerate(questions[:10], start=1):
+        for idx, q in enumerate(
+            questions[:10],
+            start=1
+        ):
+
             print(
                 f"   QUESTION {idx} | "
                 f"id={q.id} | "
-                f"batch_id={q.batch_id} | "
-                f"is_used={q.is_used}"
+                f"batch_id={q.batch_id}"
             )
 
         # --------------------------------------------------
-        # STEP 3: Validation
+        # 6. Validation
         # --------------------------------------------------
+
         if not questions:
 
-            print("❌ No homework questions found after filtering")
+            print(
+                "❌ No homework questions "
+                "found after filtering"
+            )
 
             raise HTTPException(
                 status_code=404,
                 detail=(
-                    f"No unused Language Conventions "
+                    f"No unused "
+                    f"Language Conventions "
                     f"homework questions found for "
                     f"year={year}, "
                     f"date={selected_date}, "
@@ -18851,93 +20370,177 @@ def generate_naplan_language_conventions_homework_latest(
             )
 
         # --------------------------------------------------
-        # STEP 4: Assemble homework questions
+        # 7. Assemble homework questions
         # --------------------------------------------------
-        print("\n🧩 STEP 4: Assembling homework questions")
+
+        print(
+            "\n🧩 STEP 4: "
+            "Assembling homework questions"
+        )
 
         assembled_questions = []
 
         for q in questions:
 
             assembled_questions.append({
-                "id": q.id,
-                "question_type": q.question_type,
-                "topic": q.topic,
-                "difficulty": q.difficulty,
-                "question_text": q.question_text,
-                "question_blocks": build_question_blocks(q, db),
-                "options": q.options,
-                "correct_answer": q.correct_answer,
+
+                "id":
+                    q.id,
+
+                "question_type":
+                    q.question_type,
+
+                "topic":
+                    q.topic,
+
+                "difficulty":
+                    q.difficulty,
+
+                "question_text":
+                    q.question_text,
+
+                "question_blocks":
+                    build_question_blocks(
+                        q,
+                        db
+                    ),
+
+                "options":
+                    q.options,
+
+                "correct_answer":
+                    q.correct_answer,
             })
 
             # --------------------------------------------------
-            # Mark question used
+            # Save usage row
             # --------------------------------------------------
-            q.is_used = True
+
+            usage = NaplanQuestionUsage(
+                center_id=center.id,
+                question_id=q.id
+            )
+
+            db.add(usage)
 
             print(
-                f"✅ Marked question used | "
-                f"id={q.id}"
+                f"✅ Usage saved | "
+                f"question_id={q.id}"
             )
 
         print(
-            f"✅ Total assembled homework questions = "
+            f"✅ Total assembled "
+            f"homework questions = "
             f"{len(assembled_questions)}"
         )
 
         # --------------------------------------------------
-        # STEP 5: Save generated homework exam
+        # 8. Save generated homework exam
         # --------------------------------------------------
-        print("\n💾 STEP 5: Saving generated homework exam")
 
-        exam = ExamNaplanLanguageConventionsHomework(
-            quiz_id=None,
-            class_name="NAPLAN",
-            subject="Language Conventions",
-            difficulty="latest",
-            year=year,
-            questions=assembled_questions,
+        print(
+            "\n💾 STEP 5: "
+            "Saving generated homework exam"
+        )
+
+        exam = (
+            ExamNaplanLanguageConventionsHomework(
+
+                quiz_id=None,
+
+                class_name="NAPLAN",
+
+                subject="Language Conventions",
+
+                center_code=center_code,
+
+                difficulty="latest",
+
+                year=year,
+
+                questions=assembled_questions,
+            )
         )
 
         db.add(exam)
 
-        print("💾 Homework exam added to session")
+        print(
+            "💾 Homework exam "
+            "added to session"
+        )
 
         db.commit()
 
-        print("✅ Database commit successful")
+        print(
+            "✅ Database commit successful"
+        )
 
         db.refresh(exam)
 
         print(
-            f"🎉 SUCCESS homework exam created | "
+            f"🎉 SUCCESS homework "
+            f"exam created | "
             f"exam_id={exam.id}"
         )
 
         response_payload = {
-            "message": (
-                "LC homework latest generated successfully"
-            ),
-            "exam_id": exam.id,
-            "year": year,
-            "selected_date": str(selected_date),
-            "batch_id": batch_id,
-            "total_questions": len(assembled_questions),
-            "questions": assembled_questions
+
+            "message":
+                (
+                    "LC homework latest "
+                    "generated successfully"
+                ),
+
+            "exam_id":
+                exam.id,
+
+            "center_code":
+                center_code,
+
+            "year":
+                year,
+
+            "selected_date":
+                str(selected_date),
+
+            "batch_id":
+                batch_id,
+
+            "total_questions":
+                len(assembled_questions),
+
+            "questions":
+                assembled_questions
         }
 
-        print("\n📤 RESPONSE PAYLOAD PREVIEW")
-
         print(
-            {
-                "exam_id": exam.id,
-                "total_questions": len(assembled_questions),
-                "batch_id": batch_id,
-            }
+            "\n📤 RESPONSE "
+            "PAYLOAD PREVIEW"
         )
 
+        print({
+
+            "exam_id":
+                exam.id,
+
+            "center_code":
+                center_code,
+
+            "total_questions":
+                len(assembled_questions),
+
+            "batch_id":
+                batch_id,
+        })
+
         print("\n" + "=" * 80)
-        print("🏁 END: Generate NAPLAN Language Conventions Homework Latest")
+
+        print(
+            "🏁 END: Generate "
+            "NAPLAN Language Conventions "
+            "Homework Latest"
+        )
+
         print("=" * 80)
 
         return response_payload
@@ -18948,13 +20551,24 @@ def generate_naplan_language_conventions_homework_latest(
     except Exception as e:
 
         print("\n" + "=" * 80)
-        print("❌ FAILED: Generate NAPLAN Language Conventions Homework Latest")
+
+        print(
+            "❌ FAILED: Generate "
+            "NAPLAN Language Conventions "
+            "Homework Latest"
+        )
+
         print("=" * 80)
 
-        print(f"❌ Exception type: {type(e)}")
+        print(
+            f"❌ Exception type: "
+            f"{type(e)}"
+        )
+
         print(f"❌ Exception: {e}")
 
         import traceback
+
         traceback.print_exc()
 
         print("=" * 80)
@@ -18963,119 +20577,320 @@ def generate_naplan_language_conventions_homework_latest(
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to generate latest LC homework exam"
-        )
-    
+            detail=(
+                "Failed to generate "
+                "latest LC homework exam"
+            )
+        )   
+class GenerateNaplanLCHomeworkRequest(BaseModel):
+    year: int
+    center_code: str
+
+
 @app.post("/naplan/language-conventions/generate-homework")
-async def generate_naplan_language_conventions_homework(
-    request: Request,
+def generate_naplan_language_conventions_homework(
+    payload: GenerateNaplanLCHomeworkRequest,
     db: Session = Depends(get_db)
 ):
     import random
-    from sqlalchemy import func
 
-    print("\n=== START: Generate NAPLAN LC Homework ===")
+    print(
+        "\n=== START: "
+        "Generate NAPLAN LC Homework ==="
+    )
 
-    body = await request.json()
-    year = int(body.get("year"))
+    # --------------------------------------------------
+    # 1. Normalize inputs
+    # --------------------------------------------------
 
-    if not year:
-        raise HTTPException(status_code=400, detail="Year is required")
+    year = payload.year
+
+    center_code = (
+        payload.center_code or ""
+    ).strip().upper()
+
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
 
     print(f"📅 Requested year: {year}")
 
+    print(
+        f"🏢 Requested center_code: "
+        f"{center_code}"
+    )
+
     # --------------------------------------------------
-    # 1. Load latest homework config
+    # 2. Resolve center
     # --------------------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(
+            func.upper(
+                func.trim(
+                    Center.center_code
+                )
+            ) == center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"✅ Center resolved | "
+        f"center_id={center.id}"
+    )
+
+    # --------------------------------------------------
+    # 3. Load latest homework config
+    # --------------------------------------------------
+
     quiz = (
-        db.query(QuizNaplanLanguageConventionsHomework)
-        .filter(QuizNaplanLanguageConventionsHomework.year == year)
-        .order_by(QuizNaplanLanguageConventionsHomework.id.desc())
+        db.query(
+            QuizNaplanLanguageConventionsHomework
+        )
+        .filter(
+
+            QuizNaplanLanguageConventionsHomework
+            .year
+            == year,
+
+            func.upper(
+                func.trim(
+                    QuizNaplanLanguageConventionsHomework
+                    .center_code
+                )
+            )
+            == center_code
+        )
+        .order_by(
+            QuizNaplanLanguageConventionsHomework
+            .id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
             status_code=404,
-            detail=f"No LC homework config found for year {year}"
+            detail=(
+                f"No LC homework config found "
+                f"for year {year}"
+            )
         )
 
-    print(f"📘 Loaded homework config ID: {quiz.id}")
-    print(f"📊 Expected total: {quiz.total_questions}")
+    print(
+        f"📘 Loaded homework config ID: "
+        f"{quiz.id}"
+    )
 
-    normalized_subject = "language conventions"
+    print(
+        f"📊 Expected total: "
+        f"{quiz.total_questions}"
+    )
+
+    normalized_subject = (
+        "language conventions"
+    )
+
     assembled_questions = []
 
     # --------------------------------------------------
-    # 2. Loop topics
+    # 4. Loop topics
     # --------------------------------------------------
-    for idx, topic_cfg in enumerate(quiz.topics):
+
+    for idx, topic_cfg in enumerate(
+        quiz.topics
+    ):
 
         print(f"\n--- Topic {idx + 1} ---")
+
         print("Raw config:", topic_cfg)
 
         topic_name = topic_cfg.get("name")
-        difficulty_cfg = topic_cfg.get("difficulty", {})
+
+        difficulty_cfg = topic_cfg.get(
+            "difficulty",
+            {}
+        )
 
         if not topic_name:
-            print("⚠️ Skipping topic (no name)")
+
+            print(
+                "⚠️ Skipping topic "
+                "(no name)"
+            )
+
             continue
 
         # --------------------------------------------------
-        # 3. Loop difficulty levels
+        # 5. Loop difficulty levels
         # --------------------------------------------------
-        for level in ["easy", "medium", "hard"]:
 
-            level_cfg = difficulty_cfg.get(level, {})
-            db_count = int(level_cfg.get("db", 0))
+        for level in [
+            "easy",
+            "medium",
+            "hard"
+        ]:
+
+            level_cfg = difficulty_cfg.get(
+                level,
+                {}
+            )
+
+            db_count = int(
+                level_cfg.get("db", 0)
+            )
 
             if db_count <= 0:
                 continue
 
             print(f"➡️ Topic: {topic_name}")
-            print(f"➡️ Difficulty: {level}")
-            print(f"➡️ Required: {db_count}")
+
+            print(
+                f"➡️ Difficulty: {level}"
+            )
+
+            print(
+                f"➡️ Required: {db_count}"
+            )
 
             # --------------------------------------------------
-            # 4. Fetch questions (strict)
+            # 6. Get used question ids
             # --------------------------------------------------
-            questions = (
-                db.query(QuestionNumeracyLC)
+
+            used_question_ids = (
+                db.query(
+                    NaplanQuestionUsage
+                    .question_id
+                )
                 .filter(
-                    func.lower(func.trim(QuestionNumeracyLC.topic)) == topic_name.lower().strip(),
-                    QuestionNumeracyLC.year == year,
-                    QuestionNumeracyLC.is_used == False,
-                    func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject,
-                    func.lower(func.trim(QuestionNumeracyLC.difficulty)) == level
+                    NaplanQuestionUsage
+                    .center_id
+                    == center.id
+                )
+                .subquery()
+            )
+
+            # --------------------------------------------------
+            # 7. Fetch unused questions
+            # --------------------------------------------------
+
+            questions = (
+                db.query(
+                    QuestionNumeracyLC
+                )
+                .filter(
+
+                    func.lower(
+                        func.trim(
+                            QuestionNumeracyLC
+                            .topic
+                        )
+                    )
+                    ==
+                    topic_name.lower().strip(),
+
+                    QuestionNumeracyLC.year
+                    == year,
+
+                    func.lower(
+                        func.trim(
+                            QuestionNumeracyLC
+                            .subject
+                        )
+                    )
+                    ==
+                    normalized_subject,
+
+                    func.lower(
+                        func.trim(
+                            QuestionNumeracyLC
+                            .difficulty
+                        )
+                    )
+                    ==
+                    level,
+
+                    ~QuestionNumeracyLC.id.in_(
+                        used_question_ids
+                    )
                 )
                 .all()
             )
 
-            print(f"🔎 Found {len(questions)} for {level}")
+            print(
+                f"🔎 Found "
+                f"{len(questions)} "
+                f"unused questions "
+                f"for {level}"
+            )
 
             # --------------------------------------------------
-            # 5. Fallback (any difficulty)
+            # 8. Fallback (any difficulty)
             # --------------------------------------------------
+
             if len(questions) < db_count:
 
-                print("⚠️ Not enough in level → fallback")
+                print(
+                    "⚠️ Not enough in level "
+                    "→ fallback"
+                )
 
                 fallback_questions = (
-                    db.query(QuestionNumeracyLC)
+                    db.query(
+                        QuestionNumeracyLC
+                    )
                     .filter(
-                        func.lower(func.trim(QuestionNumeracyLC.topic)) == topic_name.lower().strip(),
-                        QuestionNumeracyLC.year == year,
-                        QuestionNumeracyLC.is_used == False,
-                        func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
+
+                        func.lower(
+                            func.trim(
+                                QuestionNumeracyLC
+                                .topic
+                            )
+                        )
+                        ==
+                        topic_name.lower().strip(),
+
+                        QuestionNumeracyLC.year
+                        == year,
+
+                        func.lower(
+                            func.trim(
+                                QuestionNumeracyLC
+                                .subject
+                            )
+                        )
+                        ==
+                        normalized_subject,
+
+                        ~QuestionNumeracyLC.id.in_(
+                            used_question_ids
+                        )
                     )
                     .all()
                 )
 
                 if len(fallback_questions) < db_count:
+
                     raise HTTPException(
                         status_code=400,
                         detail=(
-                            f"Not enough LC homework questions for topic '{topic_name}' "
+                            f"Not enough LC "
+                            f"homework questions "
+                            f"for topic "
+                            f"'{topic_name}' "
                             f"(level={level})"
                         )
                     )
@@ -19083,62 +20898,131 @@ async def generate_naplan_language_conventions_homework(
                 questions = fallback_questions
 
             # --------------------------------------------------
-            # 6. Sample + mark used
+            # 9. Sample questions
             # --------------------------------------------------
-            selected = random.sample(questions, db_count)
+
+            selected = random.sample(
+                questions,
+                db_count
+            )
+
+            # --------------------------------------------------
+            # 10. Save usage rows
+            # --------------------------------------------------
 
             for q in selected:
-                q.is_used = True
+
+                usage = NaplanQuestionUsage(
+                    center_id=center.id,
+                    question_id=q.id
+                )
+
+                db.add(usage)
 
                 assembled_questions.append({
-                    "id": q.id,
-                    "question_type": q.question_type,
-                    "topic": q.topic,
-                    "difficulty": q.difficulty,
-                    "question_blocks": build_question_blocks(q, db),
-                    "options": q.options,
-                    "correct_answer": q.correct_answer,
+
+                    "id":
+                        q.id,
+
+                    "question_type":
+                        q.question_type,
+
+                    "topic":
+                        q.topic,
+
+                    "difficulty":
+                        q.difficulty,
+
+                    "question_blocks":
+                        build_question_blocks(
+                            q,
+                            db
+                        ),
+
+                    "options":
+                        q.options,
+
+                    "correct_answer":
+                        q.correct_answer,
                 })
 
     # --------------------------------------------------
-    # 7. Final validation
+    # 11. Final validation
     # --------------------------------------------------
-    print("\n=== FINAL CHECK ===")
-    print("Total assembled:", len(assembled_questions))
 
-    if len(assembled_questions) != quiz.total_questions:
+    print("\n=== FINAL CHECK ===")
+
+    print(
+        "Total assembled:",
+        len(assembled_questions)
+    )
+
+    if (
+        len(assembled_questions)
+        !=
+        quiz.total_questions
+    ):
+
         raise HTTPException(
             status_code=400,
-            detail="Generated count mismatch"
+            detail=(
+                "Generated count mismatch"
+            )
         )
 
     print("✅ Count validated")
 
     # --------------------------------------------------
-    # 8. Save homework exam
+    # 12. Save homework exam
     # --------------------------------------------------
-    exam = ExamNaplanLanguageConventionsHomework(
-        quiz_id=quiz.id,
-        class_name="NAPLAN",
-        subject="Language Conventions",
-        difficulty=quiz.difficulty,
-        year=quiz.year,
-        questions=assembled_questions,
+
+    exam = (
+        ExamNaplanLanguageConventionsHomework(
+
+            quiz_id=quiz.id,
+
+            class_name="NAPLAN",
+
+            subject="Language Conventions",
+
+            center_code=center_code,
+
+            difficulty=quiz.difficulty,
+
+            year=quiz.year,
+
+            questions=assembled_questions,
+        )
     )
 
     db.add(exam)
+
     db.commit()
+
     db.refresh(exam)
 
-    print(f"🎉 SUCCESS homework_exam_id={exam.id}")
+    print(
+        f"🎉 SUCCESS "
+        f"homework_exam_id={exam.id}"
+    )
+
     print("=== END ===\n")
 
     return {
-        "message": "LC homework generated successfully",
-        "exam_id": exam.id,
-        "total_questions": len(assembled_questions),
-    }
 
+        "message":
+            "LC homework generated "
+            "successfully",
+
+        "exam_id":
+            exam.id,
+
+        "center_code":
+            center_code,
+
+        "total_questions":
+            len(assembled_questions),
+    }
 
 from datetime import date
 from pydantic import BaseModel
@@ -19157,25 +21041,71 @@ class GenerateNaplanLCExamLatestRequest(BaseModel):
 # Generate LC Exam Latest
 # --------------------------------------------------
 
+class GenerateNaplanLCLatestExamRequest(BaseModel):
+    year: int
+    selected_date: date
+    batch_id: int
+    center_code: str
+
+
 @app.post("/naplan/language-conventions/generate-exam-latest")
 def generate_naplan_language_conventions_exam_latest(
-    payload: GenerateNaplanLCExamLatestRequest,
+    payload: GenerateNaplanLCLatestExamRequest,
     db: Session = Depends(get_db)
 ):
+
     print("\n" + "=" * 80)
-    print("🚀 START: Generate NAPLAN Language Conventions Latest Exam")
+
+    print(
+        "🚀 START: Generate "
+        "NAPLAN Language Conventions Latest Exam"
+    )
+
     print("=" * 80)
 
+    # --------------------------------------------------
+    # 1. Normalize inputs
+    # --------------------------------------------------
+
     year = payload.year
+
     selected_date = payload.selected_date
+
     batch_id = payload.batch_id
 
-    print(f"📥 Incoming payload:")
-    print(f"   year          = {year}")
-    print(f"   selected_date = {selected_date}")
-    print(f"   batch_id      = {batch_id}")
+    center_code = (
+        payload.center_code or ""
+    ).strip().upper()
 
-    normalized_subject = "language conventions"
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print(f"📥 Incoming payload:")
+
+    print(f"   year          = {year}")
+
+    print(
+        f"   selected_date = "
+        f"{selected_date}"
+    )
+
+    print(
+        f"   batch_id      = "
+        f"{batch_id}"
+    )
+
+    print(
+        f"   center_code   = "
+        f"{center_code}"
+    )
+
+    normalized_subject = (
+        "language conventions"
+    )
 
     print(
         f"📚 Normalized subject = "
@@ -19185,24 +21115,70 @@ def generate_naplan_language_conventions_exam_latest(
     try:
 
         # --------------------------------------------------
-        # STEP 1: Debug rows matching selected date
+        # 2. Resolve center
         # --------------------------------------------------
-        print("\n🔍 STEP 1: Checking rows matching date")
+
+        center = (
+            db.query(Center)
+            .filter(
+                func.upper(
+                    func.trim(
+                        Center.center_code
+                    )
+                )
+                == center_code
+            )
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"🏢 Center resolved | "
+            f"center_id={center.id}"
+        )
+
+        # --------------------------------------------------
+        # 3. Debug rows matching date
+        # --------------------------------------------------
+
+        print(
+            "\n🔍 STEP 1: "
+            "Checking rows matching date"
+        )
 
         rows_matching_date = (
-            db.query(QuestionNumeracyLC)
+            db.query(
+                QuestionNumeracyLC
+            )
             .filter(
-                QuestionNumeracyLC.year == year,
+
+                QuestionNumeracyLC.year
+                == year,
 
                 func.lower(
                     func.trim(
-                        QuestionNumeracyLC.subject
+                        QuestionNumeracyLC
+                        .subject
                     )
-                ) == normalized_subject,
+                )
+                ==
+                normalized_subject,
 
                 func.date(
-                    QuestionNumeracyLC.created_at
-                ) == selected_date,
+                    QuestionNumeracyLC
+                    .created_at
+                )
+                ==
+                selected_date,
+
+                QuestionNumeracyLC.batch_id
+                == batch_id
             )
             .all()
         )
@@ -19212,69 +21188,122 @@ def generate_naplan_language_conventions_exam_latest(
             f"{len(rows_matching_date)}"
         )
 
-        for idx, row in enumerate(rows_matching_date[:10], start=1):
+        for idx, row in enumerate(
+            rows_matching_date[:10],
+            start=1
+        ):
+
             print(
                 f"   ROW {idx} | "
                 f"id={row.id} | "
                 f"batch_id={row.batch_id} | "
-                f"is_used={row.is_used} | "
                 f"created_at={row.created_at}"
             )
 
         # --------------------------------------------------
-        # STEP 2: Fetch questions using batch_id
+        # 4. Get used question ids
         # --------------------------------------------------
-        print("\n🔍 STEP 2: Fetching questions using batch_id")
+
+        used_question_ids = (
+            db.query(
+                NaplanQuestionUsage
+                .question_id
+            )
+            .filter(
+                NaplanQuestionUsage
+                .center_id
+                == center.id
+            )
+            .subquery()
+        )
+
+        print(
+            "\n🧠 Used question ids "
+            "fetched for center"
+        )
+
+        # --------------------------------------------------
+        # 5. Fetch unused questions
+        # --------------------------------------------------
+
+        print(
+            "\n🔍 STEP 2: "
+            "Fetching questions using batch_id"
+        )
 
         questions = (
-            db.query(QuestionNumeracyLC)
+            db.query(
+                QuestionNumeracyLC
+            )
             .filter(
-                QuestionNumeracyLC.year == year,
+
+                QuestionNumeracyLC.year
+                == year,
 
                 func.lower(
                     func.trim(
-                        QuestionNumeracyLC.subject
+                        QuestionNumeracyLC
+                        .subject
                     )
-                ) == normalized_subject,
+                )
+                ==
+                normalized_subject,
 
                 func.date(
-                    QuestionNumeracyLC.created_at
-                ) == selected_date,
+                    QuestionNumeracyLC
+                    .created_at
+                )
+                ==
+                selected_date,
 
-                QuestionNumeracyLC.batch_id == batch_id,
+                QuestionNumeracyLC.batch_id
+                ==
+                batch_id,
 
-                QuestionNumeracyLC.is_used == False
+                ~QuestionNumeracyLC.id.in_(
+                    used_question_ids
+                )
             )
             .order_by(
-                QuestionNumeracyLC.id.asc()
+                QuestionNumeracyLC
+                .id.asc()
             )
             .all()
         )
 
         print(
-            f"✅ Questions fetched after batch filter = "
+            f"✅ Questions fetched "
+            f"after batch filter = "
             f"{len(questions)}"
         )
 
-        for idx, q in enumerate(questions[:10], start=1):
+        for idx, q in enumerate(
+            questions[:10],
+            start=1
+        ):
+
             print(
                 f"   QUESTION {idx} | "
                 f"id={q.id} | "
-                f"batch_id={q.batch_id} | "
-                f"is_used={q.is_used}"
+                f"batch_id={q.batch_id}"
             )
 
         # --------------------------------------------------
-        # STEP 3: Validation
+        # 6. Validation
         # --------------------------------------------------
+
         if not questions:
 
-            print("❌ No questions found after filtering")
+            print(
+                "❌ No questions found "
+                "after filtering"
+            )
 
             raise HTTPException(
                 status_code=404,
                 detail=(
-                    f"No unused Language Conventions "
+                    f"No unused "
+                    f"Language Conventions "
                     f"questions found for "
                     f"year={year}, "
                     f"date={selected_date}, "
@@ -19283,33 +21312,62 @@ def generate_naplan_language_conventions_exam_latest(
             )
 
         # --------------------------------------------------
-        # STEP 4: Assemble questions
+        # 7. Assemble questions
         # --------------------------------------------------
-        print("\n🧩 STEP 4: Assembling questions")
+
+        print(
+            "\n🧩 STEP 4: "
+            "Assembling questions"
+        )
 
         assembled_questions = []
 
         for q in questions:
 
             assembled_questions.append({
-                "id": q.id,
-                "question_type": q.question_type,
-                "topic": q.topic,
-                "difficulty": q.difficulty,
-                "question_text": q.question_text,
-                "question_blocks": build_question_blocks(q, db),
-                "options": q.options,
-                "correct_answer": q.correct_answer,
+
+                "id":
+                    q.id,
+
+                "question_type":
+                    q.question_type,
+
+                "topic":
+                    q.topic,
+
+                "difficulty":
+                    q.difficulty,
+
+                "question_text":
+                    q.question_text,
+
+                "question_blocks":
+                    build_question_blocks(
+                        q,
+                        db
+                    ),
+
+                "options":
+                    q.options,
+
+                "correct_answer":
+                    q.correct_answer,
             })
 
             # --------------------------------------------------
-            # Mark question used
+            # Save usage row
             # --------------------------------------------------
-            q.is_used = True
+
+            usage = NaplanQuestionUsage(
+                center_id=center.id,
+                question_id=q.id
+            )
+
+            db.add(usage)
 
             print(
-                f"✅ Marked question used | "
-                f"id={q.id}"
+                f"✅ Usage saved | "
+                f"question_id={q.id}"
             )
 
         print(
@@ -19318,26 +21376,44 @@ def generate_naplan_language_conventions_exam_latest(
         )
 
         # --------------------------------------------------
-        # STEP 5: Save generated exam
+        # 8. Save generated exam
         # --------------------------------------------------
-        print("\n💾 STEP 5: Saving generated exam")
 
-        exam = ExamNaplanLanguageConventions(
-            quiz_id=None,
-            class_name="NAPLAN",
-            subject="Language Conventions",
-            difficulty="latest",
-            year=year,
-            questions=assembled_questions,
+        print(
+            "\n💾 STEP 5: "
+            "Saving generated exam"
+        )
+
+        exam = (
+            ExamNaplanLanguageConventions(
+
+                quiz_id=None,
+
+                class_name="NAPLAN",
+
+                subject="Language Conventions",
+
+                center_code=center_code,
+
+                difficulty="latest",
+
+                year=year,
+
+                questions=assembled_questions,
+            )
         )
 
         db.add(exam)
 
-        print("💾 Exam added to session")
+        print(
+            "💾 Exam added to session"
+        )
 
         db.commit()
 
-        print("✅ Database commit successful")
+        print(
+            "✅ Database commit successful"
+        )
 
         db.refresh(exam)
 
@@ -19347,29 +21423,63 @@ def generate_naplan_language_conventions_exam_latest(
         )
 
         response_payload = {
-            "message": (
-                "LC exam latest generated successfully"
-            ),
-            "exam_id": exam.id,
-            "year": year,
-            "selected_date": str(selected_date),
-            "batch_id": batch_id,
-            "total_questions": len(assembled_questions),
-            "questions": assembled_questions
+
+            "message":
+                (
+                    "LC exam latest "
+                    "generated successfully"
+                ),
+
+            "exam_id":
+                exam.id,
+
+            "center_code":
+                center_code,
+
+            "year":
+                year,
+
+            "selected_date":
+                str(selected_date),
+
+            "batch_id":
+                batch_id,
+
+            "total_questions":
+                len(assembled_questions),
+
+            "questions":
+                assembled_questions
         }
 
-        print("\n📤 RESPONSE PAYLOAD PREVIEW")
-
         print(
-            {
-                "exam_id": exam.id,
-                "total_questions": len(assembled_questions),
-                "batch_id": batch_id,
-            }
+            "\n📤 RESPONSE "
+            "PAYLOAD PREVIEW"
         )
 
+        print({
+
+            "exam_id":
+                exam.id,
+
+            "center_code":
+                center_code,
+
+            "total_questions":
+                len(assembled_questions),
+
+            "batch_id":
+                batch_id,
+        })
+
         print("\n" + "=" * 80)
-        print("🏁 END: Generate NAPLAN Language Conventions Latest Exam")
+
+        print(
+            "🏁 END: Generate "
+            "NAPLAN Language Conventions "
+            "Latest Exam"
+        )
+
         print("=" * 80)
 
         return response_payload
@@ -19380,13 +21490,24 @@ def generate_naplan_language_conventions_exam_latest(
     except Exception as e:
 
         print("\n" + "=" * 80)
-        print("❌ FAILED: Generate NAPLAN Language Conventions Latest Exam")
+
+        print(
+            "❌ FAILED: Generate "
+            "NAPLAN Language Conventions "
+            "Latest Exam"
+        )
+
         print("=" * 80)
 
-        print(f"❌ Exception type: {type(e)}")
+        print(
+            f"❌ Exception type: "
+            f"{type(e)}"
+        )
+
         print(f"❌ Exception: {e}")
 
         import traceback
+
         traceback.print_exc()
 
         print("=" * 80)
@@ -19395,120 +21516,315 @@ def generate_naplan_language_conventions_exam_latest(
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to generate latest LC exam"
-        )
-    
+            detail=(
+                "Failed to generate "
+                "latest LC exam"
+            )
+        ) 
+
+class GenerateNaplanLCExamRequest(BaseModel):
+    year: int
+    center_code: str
+
 
 @app.post("/naplan/language-conventions/generate-exam")
-async def generate_naplan_language_conventions_exam(
-    request: Request,
+def generate_naplan_language_conventions_exam(
+    payload: GenerateNaplanLCExamRequest,
     db: Session = Depends(get_db)
 ):
     import random
-    from sqlalchemy import func
 
-    print("\n=== START: Generate NAPLAN Language Conventions Exam ===")
+    print(
+        "\n=== START: "
+        "Generate NAPLAN Language Conventions Exam ==="
+    )
 
-    body = await request.json()
-    year = int(body.get("year"))
+    # --------------------------------------------------
+    # 1. Normalize center code
+    # --------------------------------------------------
 
-    if not year:
-        raise HTTPException(status_code=400, detail="Year is required")
+    center_code = (
+        payload.center_code or ""
+    ).strip().upper()
+
+    if not center_code:
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    year = payload.year
 
     print(f"📅 Requested year: {year}")
 
+    print(
+        f"🏢 Requested center_code: "
+        f"{center_code}"
+    )
+
     # --------------------------------------------------
-    # 1. Load latest config
+    # 2. Resolve center
     # --------------------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(
+            func.upper(
+                func.trim(
+                    Center.center_code
+                )
+            ) == center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"✅ Center resolved | "
+        f"center_id={center.id}"
+    )
+
+    # --------------------------------------------------
+    # 3. Load latest config
+    # --------------------------------------------------
+
     quiz = (
-        db.query(QuizNaplanLanguageConventions)
-        .filter(QuizNaplanLanguageConventions.year == year)
-        .order_by(QuizNaplanLanguageConventions.id.desc())
+        db.query(
+            QuizNaplanLanguageConventions
+        )
+        .filter(
+
+            QuizNaplanLanguageConventions.year
+            == year,
+
+            func.upper(
+                func.trim(
+                    QuizNaplanLanguageConventions
+                    .center_code
+                )
+            ) == center_code
+        )
+        .order_by(
+            QuizNaplanLanguageConventions
+            .id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
             status_code=404,
-            detail=f"No LC config found for year {year}"
+            detail=(
+                f"No LC config found "
+                f"for year {year}"
+            )
         )
 
-    print(f"📘 Loaded config ID: {quiz.id}")
-    print(f"📊 Expected total: {quiz.total_questions}")
+    print(
+        f"📘 Loaded config ID: "
+        f"{quiz.id}"
+    )
+
+    print(
+        f"📊 Expected total: "
+        f"{quiz.total_questions}"
+    )
 
     normalized_subject = "language conventions"
+
     assembled_questions = []
 
     # --------------------------------------------------
-    # 2. Loop topics
+    # 4. Loop topics
     # --------------------------------------------------
-    for idx, topic_cfg in enumerate(quiz.topics):
+
+    for idx, topic_cfg in enumerate(
+        quiz.topics
+    ):
 
         print(f"\n--- Topic {idx + 1} ---")
+
         print("Raw config:", topic_cfg)
 
         topic_name = topic_cfg.get("name")
-        difficulty_cfg = topic_cfg.get("difficulty", {})
+
+        difficulty_cfg = topic_cfg.get(
+            "difficulty",
+            {}
+        )
 
         if not topic_name:
-            print("⚠️ Skipping topic (no name)")
+
+            print(
+                "⚠️ Skipping topic "
+                "(no name)"
+            )
+
             continue
 
         # --------------------------------------------------
-        # 3. Loop difficulty levels
+        # 5. Loop difficulty levels
         # --------------------------------------------------
-        for level in ["easy", "medium", "hard"]:
 
-            level_cfg = difficulty_cfg.get(level, {})
-            db_count = int(level_cfg.get("db", 0))
+        for level in [
+            "easy",
+            "medium",
+            "hard"
+        ]:
+
+            level_cfg = difficulty_cfg.get(
+                level,
+                {}
+            )
+
+            db_count = int(
+                level_cfg.get("db", 0)
+            )
 
             if db_count <= 0:
                 continue
 
             print(f"➡️ Topic: {topic_name}")
-            print(f"➡️ Difficulty: {level}")
-            print(f"➡️ Required: {db_count}")
+
+            print(
+                f"➡️ Difficulty: {level}"
+            )
+
+            print(
+                f"➡️ Required: {db_count}"
+            )
 
             # --------------------------------------------------
-            # 4. Fetch questions (strict)
+            # 6. Get used question ids
             # --------------------------------------------------
-            questions = (
-                db.query(QuestionNumeracyLC)
+
+            used_question_ids = (
+                db.query(
+                    NaplanQuestionUsage
+                    .question_id
+                )
                 .filter(
-                    func.lower(func.trim(QuestionNumeracyLC.topic)) == topic_name.lower().strip(),
-                    QuestionNumeracyLC.year == year,
-                    QuestionNumeracyLC.is_used == False,
-                    func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject,
-                    func.lower(func.trim(QuestionNumeracyLC.difficulty)) == level
+                    NaplanQuestionUsage
+                    .center_id
+                    == center.id
+                )
+                .subquery()
+            )
+
+            # --------------------------------------------------
+            # 7. Fetch unused questions
+            # --------------------------------------------------
+
+            questions = (
+                db.query(
+                    QuestionNumeracyLC
+                )
+                .filter(
+
+                    func.lower(
+                        func.trim(
+                            QuestionNumeracyLC
+                            .topic
+                        )
+                    )
+                    ==
+                    topic_name.lower().strip(),
+
+                    QuestionNumeracyLC.year
+                    == year,
+
+                    func.lower(
+                        func.trim(
+                            QuestionNumeracyLC
+                            .subject
+                        )
+                    )
+                    ==
+                    normalized_subject,
+
+                    func.lower(
+                        func.trim(
+                            QuestionNumeracyLC
+                            .difficulty
+                        )
+                    )
+                    ==
+                    level,
+
+                    ~QuestionNumeracyLC.id.in_(
+                        used_question_ids
+                    )
                 )
                 .all()
             )
 
-            print(f"🔎 Found {len(questions)} for {level}")
+            print(
+                f"🔎 Found "
+                f"{len(questions)} "
+                f"unused questions "
+                f"for {level}"
+            )
 
             # --------------------------------------------------
-            # 5. Fallback (any difficulty)
+            # 8. Fallback (any difficulty)
             # --------------------------------------------------
+
             if len(questions) < db_count:
 
-                print("⚠️ Not enough in level → fallback")
+                print(
+                    "⚠️ Not enough in level "
+                    "→ fallback"
+                )
 
                 fallback_questions = (
-                    db.query(QuestionNumeracyLC)
+                    db.query(
+                        QuestionNumeracyLC
+                    )
                     .filter(
-                        func.lower(func.trim(QuestionNumeracyLC.topic)) == topic_name.lower().strip(),
-                        QuestionNumeracyLC.year == year,
-                        QuestionNumeracyLC.is_used == False,
-                        func.lower(func.trim(QuestionNumeracyLC.subject)) == normalized_subject
+
+                        func.lower(
+                            func.trim(
+                                QuestionNumeracyLC
+                                .topic
+                            )
+                        )
+                        ==
+                        topic_name.lower().strip(),
+
+                        QuestionNumeracyLC.year
+                        == year,
+
+                        func.lower(
+                            func.trim(
+                                QuestionNumeracyLC
+                                .subject
+                            )
+                        )
+                        ==
+                        normalized_subject,
+
+                        ~QuestionNumeracyLC.id.in_(
+                            used_question_ids
+                        )
                     )
                     .all()
                 )
 
                 if len(fallback_questions) < db_count:
+
                     raise HTTPException(
                         status_code=400,
                         detail=(
-                            f"Not enough LC questions for topic '{topic_name}' "
+                            f"Not enough LC "
+                            f"questions for "
+                            f"topic '{topic_name}' "
                             f"(level={level})"
                         )
                     )
@@ -19516,62 +21832,128 @@ async def generate_naplan_language_conventions_exam(
                 questions = fallback_questions
 
             # --------------------------------------------------
-            # 6. Sample + mark used
+            # 9. Sample questions
             # --------------------------------------------------
-            selected = random.sample(questions, db_count)
+
+            selected = random.sample(
+                questions,
+                db_count
+            )
+
+            # --------------------------------------------------
+            # 10. Save usage rows
+            # --------------------------------------------------
 
             for q in selected:
-                q.is_used = True
+
+                usage = NaplanQuestionUsage(
+                    center_id=center.id,
+                    question_id=q.id
+                )
+
+                db.add(usage)
 
                 assembled_questions.append({
-                    "id": q.id,
-                    "question_type": q.question_type,
-                    "topic": q.topic,
-                    "difficulty": q.difficulty,
-                    "question_blocks": build_question_blocks(q, db),
-                    "options": q.options,
-                    "correct_answer": q.correct_answer,
+
+                    "id":
+                        q.id,
+
+                    "question_type":
+                        q.question_type,
+
+                    "topic":
+                        q.topic,
+
+                    "difficulty":
+                        q.difficulty,
+
+                    "question_blocks":
+                        build_question_blocks(
+                            q,
+                            db
+                        ),
+
+                    "options":
+                        q.options,
+
+                    "correct_answer":
+                        q.correct_answer,
                 })
 
     # --------------------------------------------------
-    # 7. Final validation
+    # 11. Final validation
     # --------------------------------------------------
-    print("\n=== FINAL CHECK ===")
-    print("Total assembled:", len(assembled_questions))
 
-    if len(assembled_questions) != quiz.total_questions:
+    print("\n=== FINAL CHECK ===")
+
+    print(
+        "Total assembled:",
+        len(assembled_questions)
+    )
+
+    if (
+        len(assembled_questions)
+        !=
+        quiz.total_questions
+    ):
+
         raise HTTPException(
             status_code=400,
-            detail="Generated count mismatch"
+            detail=(
+                "Generated count mismatch"
+            )
         )
 
     print("✅ Count validated")
 
     # --------------------------------------------------
-    # 8. Save exam
+    # 12. Save generated exam
     # --------------------------------------------------
+
     exam = ExamNaplanLanguageConventions(
+
         quiz_id=quiz.id,
+
         class_name="NAPLAN",
+
         subject="Language Conventions",
+
+        center_code=center_code,
+
         difficulty=quiz.difficulty,
+
         year=quiz.year,
+
         questions=assembled_questions,
     )
 
     db.add(exam)
+
     db.commit()
+
     db.refresh(exam)
 
-    print(f"🎉 SUCCESS exam_id={exam.id}")
+    print(
+        f"🎉 SUCCESS "
+        f"exam_id={exam.id}"
+    )
+
     print("=== END ===\n")
 
     return {
-        "message": "LC exam generated successfully",
-        "exam_id": exam.id,
-        "total_questions": len(assembled_questions),
-    }
 
+        "message":
+            "LC exam generated successfully",
+
+        "exam_id":
+            exam.id,
+
+        "center_code":
+            center_code,
+
+        "total_questions":
+            len(assembled_questions),
+    }
 
 def clean_question_blocks(blocks, correct_answer):
     # ✅ ALWAYS normalize first
@@ -20033,8 +22415,14 @@ def generate_naplan_reading_exam_latest(
     payload: GenerateNaplanReadingLatestRequest,
     db: Session = Depends(get_db)
 ):
+
     print("\n" + "=" * 80)
-    print("📘 GENERATE NAPLAN READING LATEST EXAM START")
+
+    print(
+        "📘 GENERATE NAPLAN "
+        "READING LATEST EXAM START"
+    )
+
     print("=" * 80)
 
     try:
@@ -20042,72 +22430,226 @@ def generate_naplan_reading_exam_latest(
         # --------------------------------------------------
         # 0️⃣ VALIDATE INPUT
         # --------------------------------------------------
+
         requested_year = payload.year
-        selected_date = payload.selected_date
+
+        selected_date = (
+            payload.selected_date
+        )
+
         batch_id = payload.batch_id
 
+        center_code = (
+            payload.center_code
+            .strip()
+            .upper()
+        )
+
         print("\n📥 INCOMING REQUEST")
-        print(f"   requested_year = {requested_year}")
-        print(f"   selected_date = {selected_date}")
-        print(f"   batch_id      = {batch_id}")
+
+        print(
+            f"   requested_year = "
+            f"{requested_year}"
+        )
+
+        print(
+            f"   selected_date = "
+            f"{selected_date}"
+        )
+
+        print(
+            f"   batch_id = "
+            f"{batch_id}"
+        )
+
+        print(
+            f"   center_code = "
+            f"{center_code}"
+        )
 
         if not requested_year:
+
             raise HTTPException(
                 status_code=400,
                 detail="year is required"
             )
 
         if not selected_date:
+
             raise HTTPException(
                 status_code=400,
-                detail="selected_date is required"
+                detail=(
+                    "selected_date "
+                    "is required"
+                )
             )
 
         if batch_id is None:
+
             raise HTTPException(
                 status_code=400,
-                detail="batch_id is required"
+                detail=(
+                    "batch_id "
+                    "is required"
+                )
             )
 
-        normalized_subject = "reading"
+        if not center_code:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "center_code "
+                    "is required"
+                )
+            )
+
+        normalized_subject = (
+            "reading"
+        )
 
         print("\n🔧 NORMALIZED VALUES")
-        print(f"   normalized_subject = {normalized_subject}")
+
+        print(
+            f"   normalized_subject = "
+            f"{normalized_subject}"
+        )
 
         # --------------------------------------------------
-        # 1️⃣ DEBUG MATCHING ROWS
+        # 1️⃣ Resolve center
         # --------------------------------------------------
-        print("\n🔍 STEP 1: DEBUG MATCHING QUESTIONS")
+
+        center = (
+            db.query(Center)
+            .filter(
+                func.upper(
+                    func.trim(
+                        Center.center_code
+                    )
+                )
+                ==
+                center_code
+            )
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"🏢 Center resolved | "
+            f"center_id={center.id}"
+        )
+
+        # --------------------------------------------------
+        # 2️⃣ Fetch used question ids
+        # --------------------------------------------------
+
+        used_question_ids_subquery = (
+            db.query(
+                NaplanReadingQuestionUsage
+                .question_id
+            )
+            .join(
+                QuestionNaplanReading,
+                QuestionNaplanReading.id
+                ==
+                NaplanReadingQuestionUsage
+                .question_id
+            )
+            .filter(
+
+                NaplanReadingQuestionUsage
+                .center_id
+                ==
+                center.id,
+
+                QuestionNaplanReading.year
+                ==
+                requested_year
+            )
+            .subquery()
+        )
+
+        used_count = (
+            db.query(
+                NaplanReadingQuestionUsage
+            )
+            .filter(
+                NaplanReadingQuestionUsage
+                .center_id
+                ==
+                center.id
+            )
+            .count()
+        )
+
+        print(
+            f"📚 Used question count = "
+            f"{used_count}"
+        )
+
+        # --------------------------------------------------
+        # 3️⃣ DEBUG MATCHING ROWS
+        # --------------------------------------------------
+
+        print(
+            "\n🔍 STEP 1: "
+            "DEBUG MATCHING QUESTIONS"
+        )
 
         debug_rows = (
-            db.query(QuestionNaplanReading)
+            db.query(
+                QuestionNaplanReading
+            )
             .filter(
-                QuestionNaplanReading.year == requested_year,
+
+                QuestionNaplanReading.year
+                ==
+                requested_year,
 
                 func.lower(
                     func.trim(
-                        QuestionNaplanReading.subject
+                        QuestionNaplanReading
+                        .subject
                     )
-                ) == normalized_subject,
+                )
+                ==
+                normalized_subject,
 
                 func.date(
-                    QuestionNaplanReading.created_at
-                ) == selected_date,
+                    QuestionNaplanReading
+                    .created_at
+                )
+                ==
+                selected_date,
 
-                QuestionNaplanReading.batch_id == batch_id
+                QuestionNaplanReading
+                .batch_id
+                ==
+                batch_id
             )
             .order_by(
-                QuestionNaplanReading.id.asc()
+                QuestionNaplanReading
+                .id.asc()
             )
             .all()
         )
 
         print(
-            f"✅ Matching rows before is_used filter = "
+            f"✅ Matching rows before "
+            f"usage filter = "
             f"{len(debug_rows)}"
         )
 
-        for idx, row in enumerate(debug_rows[:10], start=1):
+        for idx, row in enumerate(
+            debug_rows[:10],
+            start=1
+        ):
 
             print(
                 f"   ROW {idx} | "
@@ -20115,110 +22657,186 @@ def generate_naplan_reading_exam_latest(
                 f"topic={row.topic} | "
                 f"difficulty={row.difficulty} | "
                 f"batch_id={row.batch_id} | "
-                f"is_used={row.is_used} | "
                 f"created_at={row.created_at}"
             )
 
         # --------------------------------------------------
-        # 2️⃣ FETCH UNUSED QUESTIONS
+        # 4️⃣ FETCH UNUSED QUESTIONS
         # --------------------------------------------------
-        print("\n🔍 STEP 2: FETCH UNUSED QUESTIONS")
+
+        print(
+            "\n🔍 STEP 2: "
+            "FETCH UNUSED QUESTIONS"
+        )
 
         db_rows = (
-            db.query(QuestionNaplanReading)
+            db.query(
+                QuestionNaplanReading
+            )
             .filter(
-                QuestionNaplanReading.year == requested_year,
 
-                QuestionNaplanReading.is_used == False,
+                QuestionNaplanReading
+                .year
+                ==
+                requested_year,
 
                 func.lower(
                     func.trim(
-                        QuestionNaplanReading.subject
+                        QuestionNaplanReading
+                        .subject
                     )
-                ) == normalized_subject,
+                )
+                ==
+                normalized_subject,
 
                 func.date(
-                    QuestionNaplanReading.created_at
-                ) == selected_date,
+                    QuestionNaplanReading
+                    .created_at
+                )
+                ==
+                selected_date,
 
-                QuestionNaplanReading.batch_id == batch_id
+                QuestionNaplanReading
+                .batch_id
+                ==
+                batch_id,
+
+                ~QuestionNaplanReading
+                .id.in_(
+                    used_question_ids_subquery
+                )
             )
             .order_by(
-                QuestionNaplanReading.id.asc()
+                QuestionNaplanReading
+                .id.asc()
             )
             .all()
         )
 
         print(
-            f"✅ Found unused reading rows = "
+            f"✅ Found unused "
+            f"reading rows = "
             f"{len(db_rows)}"
         )
 
         if not db_rows:
 
-            print("\n❌ NO UNUSED QUESTIONS FOUND")
+            print(
+                "\n❌ NO UNUSED "
+                "QUESTIONS FOUND"
+            )
 
             raise HTTPException(
                 status_code=404,
                 detail=(
-                    f"No unused Reading questions found "
-                    f"for year {requested_year}, "
-                    f"date {selected_date}, "
-                    f"batch {batch_id}"
+                    "No unused Reading "
+                    f"questions found "
+                    f"for year "
+                    f"{requested_year}, "
+                    f"date "
+                    f"{selected_date}, "
+                    f"batch "
+                    f"{batch_id}"
                 )
             )
 
         # --------------------------------------------------
-        # 3️⃣ BUILD EXAM QUESTIONS
+        # 5️⃣ BUILD EXAM QUESTIONS
         # --------------------------------------------------
-        print("\n🧠 STEP 3: BUILD ASSEMBLED QUESTIONS")
+
+        print(
+            "\n🧠 STEP 3: "
+            "BUILD ASSEMBLED QUESTIONS"
+        )
 
         assembled_questions = []
 
-        for idx, row in enumerate(db_rows, start=1):
+        for idx, row in enumerate(
+            db_rows,
+            start=1
+        ):
 
             print(
-                f"   ➕ Adding question {idx} | "
+                f"   ➕ Adding "
+                f"question {idx} | "
                 f"id={row.id} | "
                 f"topic={row.topic}"
             )
 
             assembled_questions.append({
-                "question_id": str(uuid.uuid4()),
-                "passage_id": row.passage_id,
-                "topic": row.topic,
-                "difficulty": row.difficulty,
-                "question_type": row.question_type,
-                "exam_bundle": row.exam_bundle,
+
+                "question_id":
+                    str(uuid.uuid4()),
+
+                "passage_id":
+                    row.passage_id,
+
+                "topic":
+                    row.topic,
+
+                "difficulty":
+                    row.difficulty,
+
+                "question_type":
+                    row.question_type,
+
+                "exam_bundle":
+                    row.exam_bundle,
             })
 
             # --------------------------------------------------
-            # MARK USED
+            # SAVE USAGE ROW
             # --------------------------------------------------
-            row.is_used = True
+
+            usage_row = (
+                NaplanReadingQuestionUsage(
+
+                    center_id=
+                        center.id,
+
+                    question_id=
+                        row.id
+                )
+            )
+
+            db.add(usage_row)
 
         print(
-            f"\n✅ Assembled total questions = "
+            f"\n✅ Assembled total "
+            f"questions = "
             f"{len(assembled_questions)}"
         )
 
         # --------------------------------------------------
-        # 4️⃣ SAVE EXAM
+        # 6️⃣ SAVE EXAM
         # --------------------------------------------------
-        print("\n💾 STEP 4: SAVE EXAM")
+
+        print(
+            "\n💾 STEP 4: SAVE EXAM"
+        )
 
         exam = ExamNaplanReading(
-            quiz_id=None,
 
-            class_name="NAPLAN",
+            quiz_id=
+                None,
 
-            subject="reading",
+            class_name=
+                "NAPLAN",
 
-            year=requested_year,
+            subject=
+                "reading",
 
-            difficulty="latest",
+            year=
+                requested_year,
 
-            questions=assembled_questions,
+            center_code=
+                center_code,
+
+            difficulty=
+                "latest",
+
+            questions=
+                assembled_questions,
         )
 
         db.add(exam)
@@ -20227,29 +22845,69 @@ def generate_naplan_reading_exam_latest(
 
         db.refresh(exam)
 
-        print("\n✅ EXAM SAVED SUCCESSFULLY")
-        print(f"   exam.id         = {exam.id}")
-        print(f"   exam.subject    = {exam.subject}")
-        print(f"   exam.year       = {exam.year}")
-        print(f"   exam.class_name = {exam.class_name}")
-        print(f"   total_questions = {len(assembled_questions)}")
+        print(
+            "\n✅ EXAM SAVED "
+            "SUCCESSFULLY"
+        )
+
+        print(
+            f"   exam.id = "
+            f"{exam.id}"
+        )
+
+        print(
+            f"   exam.subject = "
+            f"{exam.subject}"
+        )
+
+        print(
+            f"   exam.year = "
+            f"{exam.year}"
+        )
+
+        print(
+            f"   exam.class_name = "
+            f"{exam.class_name}"
+        )
+
+        print(
+            f"   exam.center_code = "
+            f"{exam.center_code}"
+        )
+
+        print(
+            f"   total_questions = "
+            f"{len(assembled_questions)}"
+        )
 
         print("\n" + "=" * 80)
-        print("🎉 GENERATE NAPLAN READING LATEST EXAM SUCCESS")
+
+        print(
+            "🎉 GENERATE NAPLAN "
+            "READING LATEST EXAM "
+            "SUCCESS"
+        )
+
         print("=" * 80)
 
         # --------------------------------------------------
-        # 5️⃣ RESPONSE
+        # 7️⃣ RESPONSE
         # --------------------------------------------------
+
         return {
+
             "message":
-                "NAPLAN Reading latest exam generated successfully",
+                "NAPLAN Reading latest "
+                "exam generated successfully",
 
             "exam_id":
                 exam.id,
 
             "year":
                 requested_year,
+
+            "center_code":
+                center_code,
 
             "selected_date":
                 str(selected_date),
@@ -20266,184 +22924,492 @@ def generate_naplan_reading_exam_latest(
 
     except Exception as e:
 
+        db.rollback()
+
         print("\n" + "=" * 80)
-        print("❌ GENERATE NAPLAN READING LATEST EXAM FAILED")
+
+        print(
+            "❌ GENERATE NAPLAN "
+            "READING LATEST EXAM FAILED"
+        )
+
         print("=" * 80)
 
-        print(f"❌ Exception type: {type(e)}")
-        print(f"❌ Exception: {e}")
+        print(
+            f"❌ Exception type: "
+            f"{type(e)}"
+        )
+
+        print(
+            f"❌ Exception: {e}"
+        )
 
         import traceback
+
         traceback.print_exc()
 
         print("=" * 80)
 
         raise
+
 @app.post("/naplan/reading/generate-exam")
 def generate_naplan_reading_exam(
     payload: dict = Body(...),
     db: Session = Depends(get_db)
 ):
+
     requested_year = payload.get("year")
 
+    center_code = (
+        payload.get("center_code", "")
+        .strip()
+        .upper()
+    )
+
     if not requested_year:
+
         raise HTTPException(
             status_code=400,
-            detail="Year is required to generate exam"
+            detail=(
+                "Year is required "
+                "to generate exam"
+            )
         )
 
-    print(f"📘 Requested year: {requested_year}")
-    print("\n=== START: Generate NAPLAN Reading Exam ===")
+    if not center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print(
+        f"📘 Requested year: "
+        f"{requested_year}"
+    )
+
+    print(
+        f"🏢 Center code: "
+        f"{center_code}"
+    )
+
+    print(
+        "\n=== START: Generate "
+        "NAPLAN Reading Exam ==="
+    )
 
     # ----------------------------------------
-    # 1. Load latest quiz config
+    # 1. Resolve center
     # ----------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(
+            func.upper(
+                func.trim(
+                    Center.center_code
+                )
+            )
+            ==
+            center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"🏢 Center resolved | "
+        f"center_id={center.id}"
+    )
+
+    # ----------------------------------------
+    # 2. Load latest quiz config
+    # ----------------------------------------
+
     quiz = (
         db.query(QuizNaplanReading)
-        .filter(QuizNaplanReading.year == requested_year)
-        .order_by(QuizNaplanReading.id.desc())
+        .filter(
+
+            QuizNaplanReading.year
+            == requested_year,
+
+            func.upper(
+                func.trim(
+                    QuizNaplanReading
+                    .center_code
+                )
+            )
+            ==
+            center_code
+        )
+        .order_by(
+            QuizNaplanReading.id.desc()
+        )
         .first()
     )
 
     if not quiz:
+
         raise HTTPException(
             status_code=404,
-            detail="NAPLAN Reading quiz not found"
+            detail=(
+                "NAPLAN Reading quiz "
+                "not found"
+            )
         )
 
-    print(f"✅ Quiz loaded | id={quiz.id}, year={quiz.year}")
-    print(f"📘 Topics config: {quiz.topics}")
-    print(f"📌 Expected total questions: {quiz.total_questions}")
+    print(
+        f"✅ Quiz loaded | "
+        f"id={quiz.id}, "
+        f"year={quiz.year}"
+    )
+
+    print(
+        f"📘 Topics config: "
+        f"{quiz.topics}"
+    )
+
+    print(
+        f"📌 Expected total "
+        f"questions: "
+        f"{quiz.total_questions}"
+    )
 
     assembled_questions = []
 
     # ----------------------------------------
-    # 2. Iterate topics
+    # 3. Iterate topics
     # ----------------------------------------
-    for idx, topic_cfg in enumerate(quiz.topics):
-        print(f"\n--- Processing topic {idx + 1} ---")
 
-        topic_name = topic_cfg.get("name")
-        difficulty_map = topic_cfg.get("difficulty", {})
+    for idx, topic_cfg in enumerate(
+        quiz.topics
+    ):
 
-        if not topic_name or not difficulty_map:
-            print("⚠️ Skipping invalid topic config")
+        print(
+            f"\n--- Processing "
+            f"topic {idx + 1} ---"
+        )
+
+        topic_name = (
+            topic_cfg.get("name")
+        )
+
+        difficulty_map = (
+            topic_cfg.get(
+                "difficulty",
+                {}
+            )
+        )
+
+        if (
+            not topic_name
+            or
+            not difficulty_map
+        ):
+
+            print(
+                "⚠️ Skipping "
+                "invalid topic config"
+            )
+
             continue
 
-        print(f"➡️ Topic: {topic_name}")
+        print(
+            f"➡️ Topic: "
+            f"{topic_name}"
+        )
 
         # ----------------------------------------
-        # 3. Iterate difficulty levels
+        # 4. Iterate difficulty levels
         # ----------------------------------------
-        for level, counts in difficulty_map.items():
 
-            db_count = counts.get("db", 0)
+        for level, counts in (
+            difficulty_map.items()
+        ):
+
+            db_count = (
+                counts.get("db", 0)
+            )
 
             if db_count == 0:
                 continue
 
-            normalized_level = level.lower().strip()
+            normalized_level = (
+                level
+                .lower()
+                .strip()
+            )
 
-            print(f"  ➤ Difficulty: {level}")
-            print(f"     DB={db_count}")
+            print(
+                f"  ➤ Difficulty: "
+                f"{level}"
+            )
+
+            print(
+                f"     DB={db_count}"
+            )
 
             # ----------------------------------------
-            # 4. Fetch DB questions (STRICT)
+            # 5. Fetch used question ids
             # ----------------------------------------
-            db_rows = (
-                db.query(QuestionNaplanReading)
+
+            used_question_ids_subquery = (
+                db.query(
+                    NaplanReadingQuestionUsage
+                    .question_id
+                )
+                .join(
+                    QuestionNaplanReading,
+                    QuestionNaplanReading.id
+                    ==
+                    NaplanReadingQuestionUsage
+                    .question_id
+                )
                 .filter(
-                    QuestionNaplanReading.topic == topic_name,
-                    QuestionNaplanReading.year == quiz.year,
-                    QuestionNaplanReading.is_used == False,
-                    func.lower(func.trim(QuestionNaplanReading.subject)) == "reading",
-                    func.lower(func.trim(QuestionNaplanReading.difficulty)) == normalized_level,
+
+                    NaplanReadingQuestionUsage
+                    .center_id
+                    ==
+                    center.id,
+
+                    QuestionNaplanReading
+                    .year
+                    ==
+                    quiz.year
+                )
+                .subquery()
+            )
+
+            # ----------------------------------------
+            # 6. Fetch DB questions
+            # ----------------------------------------
+
+            db_rows = (
+                db.query(
+                    QuestionNaplanReading
+                )
+                .filter(
+
+                    QuestionNaplanReading
+                    .topic
+                    ==
+                    topic_name,
+
+                    QuestionNaplanReading
+                    .year
+                    ==
+                    quiz.year,
+
+                    func.lower(
+                        func.trim(
+                            QuestionNaplanReading
+                            .subject
+                        )
+                    )
+                    ==
+                    "reading",
+
+                    func.lower(
+                        func.trim(
+                            QuestionNaplanReading
+                            .difficulty
+                        )
+                    )
+                    ==
+                    normalized_level,
+
+                    ~QuestionNaplanReading
+                    .id.in_(
+                        used_question_ids_subquery
+                    )
                 )
                 .all()
             )
 
-            print(f"     Found DB rows: {len(db_rows)}")
+            print(
+                f"     Found DB rows: "
+                f"{len(db_rows)}"
+            )
 
             # ----------------------------------------
-            # 5. STRICT MODE — NO AI, NO FALLBACK
+            # 7. STRICT MODE
             # ----------------------------------------
+
             if len(db_rows) < db_count:
+
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Not enough DB questions for topic '{topic_name}' "
-                        f"({level}). Required={db_count}, Found={len(db_rows)}"
+                        "Not enough DB "
+                        f"questions for "
+                        f"topic '{topic_name}' "
+                        f"({level}). "
+                        f"Required={db_count}, "
+                        f"Found={len(db_rows)}"
                     )
                 )
 
             # ----------------------------------------
-            # 6. Random selection
+            # 8. Random selection
             # ----------------------------------------
-            selected_rows = random.sample(db_rows, db_count)
 
-            print(f"     Selected {len(selected_rows)} DB questions")
+            selected_rows = random.sample(
+                db_rows,
+                db_count
+            )
+
+            print(
+                f"     Selected "
+                f"{len(selected_rows)} "
+                f"DB questions"
+            )
 
             # ----------------------------------------
-            # 7. Add to exam
+            # 9. Save usage rows
             # ----------------------------------------
+
             for row in selected_rows:
-                row.is_used = True
+
+                usage_row = (
+                    NaplanReadingQuestionUsage(
+
+                        center_id=
+                            center.id,
+
+                        question_id=
+                            row.id
+                    )
+                )
+
+                db.add(usage_row)
 
                 assembled_questions.append({
-                    "question_id": str(uuid.uuid4()),
-                    "passage_id": row.passage_id,
-                    "topic": row.topic,
-                    "difficulty": row.difficulty,
-                    "question_type": row.question_type,
-                    "exam_bundle": row.exam_bundle,
+
+                    "question_id":
+                        str(uuid.uuid4()),
+
+                    "passage_id":
+                        row.passage_id,
+
+                    "topic":
+                        row.topic,
+
+                    "difficulty":
+                        row.difficulty,
+
+                    "question_type":
+                        row.question_type,
+
+                    "exam_bundle":
+                        row.exam_bundle,
                 })
 
     # ----------------------------------------
-    # 8. Final validation
+    # 10. Final validation
     # ----------------------------------------
-    print("\n=== FINAL CHECK ===")
 
-    total_question_count = len(assembled_questions)
+    print(
+        "\n=== FINAL CHECK ==="
+    )
 
-    print(f"Total assembled question items: {total_question_count}")
+    total_question_count = len(
+        assembled_questions
+    )
 
-    if total_question_count != quiz.total_questions:
+    print(
+        f"Total assembled "
+        f"question items: "
+        f"{total_question_count}"
+    )
+
+    if (
+        total_question_count
+        !=
+        quiz.total_questions
+    ):
+
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Question count mismatch | "
-                f"Expected={quiz.total_questions}, "
-                f"Got={total_question_count}"
+                "Question count mismatch | "
+                f"Expected="
+                f"{quiz.total_questions}, "
+                f"Got="
+                f"{total_question_count}"
             )
         )
 
-    print("✅ Question count validated")
+    print(
+        "✅ Question count "
+        "validated"
+    )
 
     # ----------------------------------------
-    # 9. Save exam
+    # 11. Save exam
     # ----------------------------------------
+
     exam = ExamNaplanReading(
-        quiz_id=quiz.id,
-        class_name=quiz.class_name,
-        subject="reading",
-        year=quiz.year,
-        difficulty=quiz.difficulty,
-        questions=assembled_questions,
+
+        quiz_id=
+            quiz.id,
+
+        class_name=
+            quiz.class_name,
+
+        subject=
+            "reading",
+
+        year=
+            quiz.year,
+
+        center_code=
+            center_code,
+
+        difficulty=
+            quiz.difficulty,
+
+        questions=
+            assembled_questions,
     )
 
     db.add(exam)
+
     db.commit()
+
     db.refresh(exam)
 
-    print(f"🎉 SUCCESS: Reading exam generated | exam_id={exam.id}")
-    print("=== END: Generate NAPLAN Reading Exam ===\n")
+    print(
+        f"🎉 SUCCESS: "
+        f"Reading exam generated | "
+        f"exam_id={exam.id}"
+    )
+
+    print(
+        "=== END: Generate "
+        "NAPLAN Reading Exam ===\n"
+    )
 
     return {
-        "message": "NAPLAN Reading exam generated successfully",
-        "exam_id": exam.id,
-        "total_questions": total_question_count,
-    }
 
+        "message":
+            "NAPLAN Reading exam "
+            "generated successfully",
+
+        "exam_id":
+            exam.id,
+
+        "center_code":
+            center_code,
+
+        "total_questions":
+            total_question_count,
+    }
 
 
 # --------------------------------------------------
@@ -21515,61 +24481,175 @@ def generate_naplan_numeracy_exam(
 
 @app.get("/api/admin/question-bank-reading/naplan")
 def get_naplan_reading_question_bank(
-    subject: str = Query(...),   # reading
+    subject: str = Query(...),
     year: int = Query(...),
+    center_code: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    print("\n=== READING QUESTION BANK DEBUG START ===")
-    print(f"[INPUT] subject (raw): {subject}")
-    print(f"[INPUT] year: {year}")
 
-    subject_key = subject.lower().strip()
-
-    if subject_key != "reading":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid subject: {subject}",
-        )
-
-    # ----------------------------------
-    # Raw rows check
-    # Only unused questions
-    # ----------------------------------
-    raw_rows = (
-        db.query(QuestionNaplanReading)
-        .filter(
-            QuestionNaplanReading.subject
-            == "reading",
-
-            QuestionNaplanReading.year
-            == year,
-
-            QuestionNaplanReading.is_used
-            == False,
-        )
-        .all()
+    print(
+        "\n=== NAPLAN READING QUESTION "
+        "BANK DEBUG START ==="
     )
 
     print(
-        f"[RAW QUERY] unused rows found: "
-        f"{len(raw_rows)}"
+        f"[INPUT] subject={subject} | "
+        f"year={year} | "
+        f"center_code={center_code}"
     )
 
-    if not raw_rows:
-        print(
-            "=== READING QUESTION BANK "
-            "DEBUG END (NO UNUSED DATA) ===\n"
-        )
-        return []
+    # --------------------------------------------------
+    # 1. Normalize subject
+    # --------------------------------------------------
 
-    # ----------------------------------
-    # Aggregated summary
-    # Only unused questions
-    # ----------------------------------
+    subject_key = (
+        subject
+        .lower()
+        .strip()
+    )
+
+    if subject_key != "reading":
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid subject: "
+                f"{subject}"
+            )
+        )
+
+    # --------------------------------------------------
+    # 2. Normalize center code
+    # --------------------------------------------------
+
+    normalized_center_code = (
+        center_code or ""
+    ).strip().upper()
+
+    if not normalized_center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    # --------------------------------------------------
+    # 3. Resolve center
+    # --------------------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(
+            func.upper(
+                func.trim(
+                    Center.center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"🏢 Center resolved | "
+        f"center_id={center.id}"
+    )
+
+    # --------------------------------------------------
+    # 4. Fetch used question ids
+    # --------------------------------------------------
+
+    used_question_ids_subquery = (
+        db.query(
+            NaplanReadingQuestionUsage.question_id
+        )
+        .join(
+            QuestionNaplanReading,
+            QuestionNaplanReading.id
+            ==
+            NaplanReadingQuestionUsage.question_id
+        )
+        .filter(
+
+            NaplanReadingQuestionUsage.center_id
+            ==
+            center.id,
+
+            QuestionNaplanReading.year
+            ==
+            year,
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading.subject
+                )
+            )
+            ==
+            "reading"
+        )
+        .subquery()
+    )
+
+    # --------------------------------------------------
+    # 5. Used count debug
+    # --------------------------------------------------
+
+    used_count = (
+        db.query(
+            NaplanReadingQuestionUsage.question_id
+        )
+        .join(
+            QuestionNaplanReading,
+            QuestionNaplanReading.id
+            ==
+            NaplanReadingQuestionUsage.question_id
+        )
+        .filter(
+
+            NaplanReadingQuestionUsage.center_id
+            ==
+            center.id,
+
+            QuestionNaplanReading.year
+            ==
+            year,
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading.subject
+                )
+            )
+            ==
+            "reading"
+        )
+        .count()
+    )
+
+    print(
+        f"📚 Used questions count: "
+        f"{used_count}"
+    )
+
+    # --------------------------------------------------
+    # 6. Main query
+    # --------------------------------------------------
+
     results = (
         db.query(
+
             func.lower(
-                QuestionNaplanReading.difficulty
+                func.trim(
+                    QuestionNaplanReading
+                    .difficulty
+                )
             ).label("difficulty"),
 
             QuestionNaplanReading.topic,
@@ -21579,49 +24659,102 @@ def get_naplan_reading_question_bank(
             ).label("total_questions"),
         )
         .filter(
-            QuestionNaplanReading.subject
-            == "reading",
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading
+                    .subject
+                )
+            )
+            ==
+            "reading",
 
             QuestionNaplanReading.year
-            == year,
+            ==
+            year,
 
-            QuestionNaplanReading.is_used
-            == False,
+            ~QuestionNaplanReading.id.in_(
+                used_question_ids_subquery
+            ),
+
+            QuestionNaplanReading.topic
+            .isnot(None),
+
+            func.trim(
+                QuestionNaplanReading.topic
+            )
+            != ""
         )
         .group_by(
+
             func.lower(
-                QuestionNaplanReading.difficulty
+                func.trim(
+                    QuestionNaplanReading
+                    .difficulty
+                )
             ),
+
             QuestionNaplanReading.topic,
         )
         .order_by(
+
             func.lower(
-                QuestionNaplanReading.difficulty
+                func.trim(
+                    QuestionNaplanReading
+                    .difficulty
+                )
             ),
+
             QuestionNaplanReading.topic,
         )
         .all()
     )
 
     print(
-        f"[AGG QUERY] grouped unused rows: "
+        f"📊 Grouped rows: "
         f"{len(results)}"
     )
 
+    # --------------------------------------------------
+    # 7. Debug grouped results
+    # --------------------------------------------------
+
+    for idx, row in enumerate(
+        results,
+        start=1
+    ):
+
+        print(
+            f"ROW {idx} | "
+            f"topic={row.topic} | "
+            f"difficulty={row.difficulty} | "
+            f"count={row.total_questions}"
+        )
+
     print(
-        "=== READING QUESTION BANK "
-        "DEBUG END (SUCCESS) ===\n"
+        "=== NAPLAN READING QUESTION "
+        "BANK DEBUG END ===\n"
     )
 
-    return [
-        {
-            "difficulty": r.difficulty,
-            "topic": r.topic,
-            "total_questions": r.total_questions,
-        }
-        for r in results
-    ]
+    # --------------------------------------------------
+    # 8. Response
+    # --------------------------------------------------
 
+    return [
+
+        {
+            "difficulty":
+                row.difficulty,
+
+            "topic":
+                row.topic,
+
+            "total_questions":
+                row.total_questions,
+        }
+
+        for row in results
+    ]
 @app.get("/api/admin/question-bank/naplan")
 def get_naplan_question_bank(
     subject: str = Query(...),
@@ -21642,11 +24775,14 @@ def get_naplan_question_bank(
     )
 
     # --------------------------------------------------
-    # Normalize subject
+    # 1. Normalize subject
     # --------------------------------------------------
 
     SUBJECT_MAP = {
-        "numeracy": "Numeracy",
+
+        "numeracy":
+            "Numeracy",
+
         "language_conventions":
             "Language Conventions",
     }
@@ -21682,7 +24818,22 @@ def get_naplan_question_bank(
         )
 
     # --------------------------------------------------
-    # Resolve center
+    # 2. Normalize center code
+    # --------------------------------------------------
+
+    normalized_center_code = (
+        center_code or ""
+    ).strip().upper()
+
+    if not normalized_center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    # --------------------------------------------------
+    # 3. Resolve center
     # --------------------------------------------------
 
     center = (
@@ -21694,7 +24845,7 @@ def get_naplan_question_bank(
                 )
             )
             ==
-            center_code.strip().upper()
+            normalized_center_code
         )
         .first()
     )
@@ -21712,42 +24863,88 @@ def get_naplan_question_bank(
     )
 
     # --------------------------------------------------
-    # Fetch used question ids
+    # 4. Fetch used question ids
     # --------------------------------------------------
 
-    used_question_ids = (
+    used_question_ids_subquery = (
         db.query(
-            NaplanQuestionUsage
-            .question_id
+            NaplanQuestionUsage.question_id
+        )
+        .join(
+            QuestionNumeracyLC,
+            QuestionNumeracyLC.id
+            ==
+            NaplanQuestionUsage.question_id
         )
         .filter(
-            NaplanQuestionUsage
-            .center_id
-            == center.id
+
+            NaplanQuestionUsage.center_id
+            == center.id,
+
+            QuestionNumeracyLC.year
+            == year,
+
+            func.lower(
+                func.trim(
+                    QuestionNumeracyLC.subject
+                )
+            )
+            ==
+            subject_db.lower()
         )
-        .all()
+        .subquery()
     )
 
-    used_question_ids = [
-        row[0]
-        for row in used_question_ids
-    ]
+    # --------------------------------------------------
+    # 5. Used count debug
+    # --------------------------------------------------
+
+    used_count = (
+        db.query(
+            NaplanQuestionUsage.question_id
+        )
+        .join(
+            QuestionNumeracyLC,
+            QuestionNumeracyLC.id
+            ==
+            NaplanQuestionUsage.question_id
+        )
+        .filter(
+
+            NaplanQuestionUsage.center_id
+            == center.id,
+
+            QuestionNumeracyLC.year
+            == year,
+
+            func.lower(
+                func.trim(
+                    QuestionNumeracyLC.subject
+                )
+            )
+            ==
+            subject_db.lower()
+        )
+        .count()
+    )
 
     print(
         f"📚 Used questions count: "
-        f"{len(used_question_ids)}"
+        f"{used_count}"
     )
 
     # --------------------------------------------------
-    # Main query
+    # 6. Main query
     # --------------------------------------------------
 
     results = (
         db.query(
 
             func.lower(
-                QuestionNumeracyLC
-                .difficulty
+                func.trim(
+                    QuestionNumeracyLC
+                    .difficulty
+                )
             ).label("difficulty"),
 
             QuestionNumeracyLC.topic,
@@ -21759,35 +24956,44 @@ def get_naplan_question_bank(
         .filter(
 
             func.lower(
-                QuestionNumeracyLC
-                .class_name
-            ) == "naplan",
+                func.trim(
+                    QuestionNumeracyLC
+                    .class_name
+                )
+            )
+            == "naplan",
 
-            QuestionNumeracyLC.subject
-            == subject_db,
+            func.lower(
+                func.trim(
+                    QuestionNumeracyLC
+                    .subject
+                )
+            )
+            ==
+            subject_db.lower(),
 
             QuestionNumeracyLC.year
             == year,
 
-            (
-                ~QuestionNumeracyLC.id.in_(
-                    used_question_ids
-                )
-                if used_question_ids
-                else True
+            ~QuestionNumeracyLC.id.in_(
+                used_question_ids_subquery
             ),
 
             QuestionNumeracyLC.topic
             .isnot(None),
 
-            QuestionNumeracyLC.topic
+            func.trim(
+                QuestionNumeracyLC.topic
+            )
             != ""
         )
         .group_by(
 
             func.lower(
-                QuestionNumeracyLC
-                .difficulty
+                func.trim(
+                    QuestionNumeracyLC
+                    .difficulty
+                )
             ),
 
             QuestionNumeracyLC.topic,
@@ -21795,8 +25001,10 @@ def get_naplan_question_bank(
         .order_by(
 
             func.lower(
-                QuestionNumeracyLC
-                .difficulty
+                func.trim(
+                    QuestionNumeracyLC
+                    .difficulty
+                )
             ),
 
             QuestionNumeracyLC.topic,
@@ -21809,26 +25017,46 @@ def get_naplan_question_bank(
         f"{len(results)}"
     )
 
+    # --------------------------------------------------
+    # 7. Debug grouped results
+    # --------------------------------------------------
+
+    for idx, row in enumerate(
+        results,
+        start=1
+    ):
+
+        print(
+            f"ROW {idx} | "
+            f"topic={row.topic} | "
+            f"difficulty={row.difficulty} | "
+            f"count={row.total_questions}"
+        )
+
     print(
         "=== NAPLAN QUESTION "
         "BANK DEBUG END ===\n"
     )
 
+    # --------------------------------------------------
+    # 8. Response
+    # --------------------------------------------------
+
     return [
 
         {
             "difficulty":
-                r.difficulty,
+                row.difficulty,
 
             "topic":
-                r.topic,
+                row.topic,
 
             "total_questions":
-                r.total_questions,
+                row.total_questions,
         }
 
-        for r in results
-    ]
+        for row in results
+    ]   
 
 @app.put("/api/admin/reuse-used-questions-naplan-numeracy")
 def reuse_used_questions_naplan_numeracy(
@@ -21981,6 +25209,245 @@ def reuse_used_questions_naplan_numeracy(
             ),
         )
 
+@app.put("/api/admin/reset-writing-questions")
+def reset_writing_questions(
+    center_code: str = Query(...),
+    db: Session = Depends(get_db),
+):
+
+    print(
+        "\n=== RESET WRITING "
+        "QUESTION USAGE START ==="
+    )
+
+    print(
+        f"[INPUT] center_code="
+        f"{center_code}"
+    )
+
+    try:
+
+        # --------------------------------------------------
+        # Normalize center code
+        # --------------------------------------------------
+
+        normalized_center_code = (
+            center_code
+            .strip()
+            .upper()
+        )
+
+        print(
+            f"🏢 Normalized center_code="
+            f"{normalized_center_code}"
+        )
+
+        # --------------------------------------------------
+        # Debug existing usage rows
+        # --------------------------------------------------
+
+        usage_rows = (
+            db.query(
+                QuestionUsageWriting
+            )
+            .filter(
+                func.upper(
+                    func.trim(
+                        QuestionUsageWriting.center_code
+                    )
+                )
+                ==
+                normalized_center_code
+            )
+            .all()
+        )
+
+        print(
+            f"📚 Usage rows found="
+            f"{len(usage_rows)}"
+        )
+
+        question_ids = [
+
+            row.question_id
+
+            for row in usage_rows
+        ]
+
+        print(
+            "\n🧠 Question IDs "
+            "To Reset:"
+        )
+
+        print(question_ids)
+
+        # --------------------------------------------------
+        # Delete usage rows
+        # --------------------------------------------------
+
+        deleted_count = (
+            db.query(
+                QuestionUsageWriting
+            )
+            .filter(
+                func.upper(
+                    func.trim(
+                        QuestionUsageWriting.center_code
+                    )
+                )
+                ==
+                normalized_center_code
+            )
+            .delete(
+                synchronize_session=False
+            )
+        )
+
+        db.commit()
+
+        print(
+            f"✅ Reset "
+            f"{deleted_count} "
+            f"writing question usages"
+        )
+
+        print(
+            "=== RESET COMPLETE ===\n"
+        )
+
+        return {
+
+            "message":
+                "Writing questions "
+                "reset successfully",
+
+            "deleted_count":
+                deleted_count
+        }
+
+    except Exception as e:
+
+        db.rollback()
+
+        print(
+            "[ERROR]",
+            str(e)
+        )
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to reset "
+                "writing questions."
+            ),
+        ) 
+@app.get("/api/writing/available-batches")
+def get_writing_available_batches(
+    class_year: str,
+    date: str,
+    db: Session = Depends(get_db)
+):
+
+    print(
+        "\n========== FETCH WRITING "
+        "AVAILABLE BATCHES =========="
+    )
+
+    print(
+        f"📥 class_year = '{class_year}'"
+    )
+
+    print(
+        f"📥 date = '{date}'"
+    )
+
+    try:
+
+        # -------------------------------------------------
+        # Helpers
+        # -------------------------------------------------
+        def normalize_year_digits_helper(
+            value: str
+        ) -> str:
+
+            return "".join(
+                ch for ch in value
+                if ch.isdigit()
+            )
+
+        class_year_digits = (
+            normalize_year_digits_helper(
+                class_year
+            )
+        )
+
+        print(
+            f"🔢 year_digits = "
+            f"'{class_year_digits}'"
+        )
+
+        # -------------------------------------------------
+        # Query distinct batch ids
+        # -------------------------------------------------
+        batch_rows = (
+            db.query(
+                WritingQuestionBank.batch_id
+            )
+            .filter(
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits,
+
+                func.date(
+                    WritingQuestionBank.created_at
+                ) == date
+            )
+            .distinct()
+            .order_by(
+                WritingQuestionBank.batch_id.asc()
+            )
+            .all()
+        )
+
+        batches = [
+
+            row[0]
+
+            for row in batch_rows
+
+            if row[0] is not None
+        ]
+
+        print(
+            f"📦 Available batches: "
+            f"{batches}"
+        )
+
+        return {
+            "batches": batches
+        }
+
+    except Exception as e:
+
+        print(
+            "\n❌ ERROR FETCHING "
+            "WRITING BATCHES"
+        )
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )  
 @app.get("/api/student/homework-review-by-session/reading")
 def review_homework_reading_by_session(
     session_id: int = Query(..., description="Homework reading session ID"),
@@ -35474,328 +38941,859 @@ def create_naplan_reading_quiz(
     quiz: NaplanQuizCreate,
     db: Session = Depends(get_db),
 ):
-    print("\n========== NAPLAN READING CONFIG SAVE START ==========")
+
+    print(
+        "\n========== NAPLAN READING "
+        "CONFIG SAVE START =========="
+    )
 
     # --------------------------------------------------
     # 1. Validate payload
     # --------------------------------------------------
+
     try:
+
         quiz_dict = quiz.dict()
-        print("📦 Parsed payload:", quiz_dict)
+
+        print(
+            "📦 Parsed payload:",
+            quiz_dict
+        )
+
     except Exception as e:
-        print("❌ Payload parsing failed:", e)
+
+        print(
+            "❌ Payload parsing failed:",
+            e
+        )
+
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail="Invalid quiz payload")
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid quiz payload"
+        )
 
     # --------------------------------------------------
     # 2. Basic validation
     # --------------------------------------------------
+
     if quiz.subject.lower() != "reading":
+
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid subject for reading quiz: {quiz.subject}",
+            detail=(
+                "Invalid subject for "
+                f"reading quiz: {quiz.subject}"
+            ),
         )
 
-    if not isinstance(quiz.topics, list):
-        raise HTTPException(status_code=400, detail="topics must be a list")
+    if not isinstance(
+        quiz.topics,
+        list
+    ):
 
-    print(f"➡️ class_name: {quiz.class_name}")
-    print(f"➡️ subject: {quiz.subject}")
-    print(f"➡️ year: {quiz.year}")
-    print(f"➡️ difficulty: {quiz.difficulty}")
-    print(f"➡️ num_topics: {quiz.num_topics}")
-    print(f"➡️ total_questions: {quiz.total_questions}")
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a list"
+        )
+
+    # --------------------------------------------------
+    # 3. Normalize center code
+    # --------------------------------------------------
+
+    normalized_center_code = (
+        quiz.center_code or ""
+    ).strip().upper()
+
+    if not normalized_center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print(
+        f"➡️ class_name: "
+        f"{quiz.class_name}"
+    )
+
+    print(
+        f"➡️ subject: "
+        f"{quiz.subject}"
+    )
+
+    print(
+        f"➡️ year: "
+        f"{quiz.year}"
+    )
+
+    print(
+        f"➡️ difficulty: "
+        f"{quiz.difficulty}"
+    )
+
+    print(
+        f"➡️ num_topics: "
+        f"{quiz.num_topics}"
+    )
+
+    print(
+        f"➡️ total_questions: "
+        f"{quiz.total_questions}"
+    )
+
+    print(
+        f"➡️ center_code: "
+        f"{normalized_center_code}"
+    )
 
     print("\n📝 Topics received:")
-    for i, t in enumerate(quiz.topics):
-        print(f"   └─ Topic {i + 1}: {t}")
 
-    try:
-        # --------------------------------------------------
-        # 3. Delete previous configs (correct scope)
-        # --------------------------------------------------
-        print("\n🧹 Deleting existing Reading configs for same year + subject...")
+    for i, t in enumerate(
+        quiz.topics
+    ):
 
-        deleted_count = (
-            db.query(QuizNaplanReading)
-            .filter(
-                QuizNaplanReading.year == quiz.year,
-                func.lower(QuizNaplanReading.subject) == "reading",
-            )
-            .delete(synchronize_session=False)
+        print(
+            f"   └─ Topic "
+            f"{i + 1}: {t}"
         )
 
-        print(f"🗑️ Deleted {deleted_count} existing config(s)")
+    try:
 
         # --------------------------------------------------
-        # 4. Create new config
+        # 4. Delete previous configs
         # --------------------------------------------------
-        print("\n--- Creating new quiz_naplan_reading row ---")
+
+        print(
+            "\n🧹 Deleting existing "
+            "Reading configs for same "
+            "year + subject + center..."
+        )
+
+        deleted_count = (
+            db.query(
+                QuizNaplanReading
+            )
+            .filter(
+
+                QuizNaplanReading.year
+                == quiz.year,
+
+                func.lower(
+                    func.trim(
+                        QuizNaplanReading
+                        .subject
+                    )
+                )
+                ==
+                "reading",
+
+                func.upper(
+                    func.trim(
+                        QuizNaplanReading
+                        .center_code
+                    )
+                )
+                ==
+                normalized_center_code
+            )
+            .delete(
+                synchronize_session=False
+            )
+        )
+
+        print(
+            f"🗑️ Deleted "
+            f"{deleted_count} "
+            f"existing config(s)"
+        )
+
+        # --------------------------------------------------
+        # 5. Create new config
+        # --------------------------------------------------
+
+        print(
+            "\n--- Creating new "
+            "quiz_naplan_reading row ---"
+        )
 
         new_quiz = QuizNaplanReading(
-            class_name=quiz.class_name,
-            subject="reading",
-            year=quiz.year,
-            difficulty=quiz.difficulty,  # informational
-            num_topics=quiz.num_topics,
-            total_questions=quiz.total_questions,
 
-            # 🔥 IMPORTANT: Save structured topics (difficulty-based)
-            topics=[t.dict() for t in quiz.topics],
+            class_name=
+                quiz.class_name,
+
+            subject=
+                "reading",
+
+            year=
+                quiz.year,
+
+            center_code=
+                normalized_center_code,
+
+            difficulty=
+                quiz.difficulty,
+
+            num_topics=
+                quiz.num_topics,
+
+            total_questions=
+                quiz.total_questions,
+
+            topics=[
+                t.dict()
+                for t in quiz.topics
+            ],
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print(f"✅ READING CONFIG SAVED (ID={new_quiz.id})")
-        print("========== NAPLAN READING CONFIG SAVE COMPLETE ==========\n")
+        print(
+            f"✅ READING CONFIG SAVED "
+            f"(ID={new_quiz.id})"
+        )
+
+        print(
+            "========== NAPLAN READING "
+            "CONFIG SAVE COMPLETE "
+            "==========\n"
+        )
 
         return {
-            "message": "NAPLAN Reading config saved successfully",
-            "quiz_id": new_quiz.id,
-            "year": quiz.year,
-            "total_questions": quiz.total_questions,
+
+            "message":
+                "NAPLAN Reading config "
+                "saved successfully",
+
+            "quiz_id":
+                new_quiz.id,
+
+            "year":
+                quiz.year,
+
+            "center_code":
+                normalized_center_code,
+
+            "total_questions":
+                quiz.total_questions,
         }
 
     except Exception as e:
-        print("\n❌ EXCEPTION DURING CONFIG SAVE ❌")
-        print("Error:", str(e))
-        traceback.print_exc()
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
 
+        print(
+            "\n❌ EXCEPTION DURING "
+            "CONFIG SAVE ❌"
+        )
+
+        print(
+            "Error:",
+            str(e)
+        )
+
+        traceback.print_exc()
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 @app.post("/api/quizzes-naplan-reading-homework")
 def create_naplan_reading_homework_quiz(
     quiz: NaplanQuizCreate,
     db: Session = Depends(get_db),
 ):
-    print("\n========== NAPLAN READING HOMEWORK CONFIG SAVE START ==========")
+
+    print(
+        "\n========== NAPLAN READING "
+        "HOMEWORK CONFIG SAVE START "
+        "=========="
+    )
 
     # --------------------------------------------------
     # 1. Validate payload
     # --------------------------------------------------
+
     try:
+
         quiz_dict = quiz.dict()
-        print("📦 Parsed payload:", quiz_dict)
+
+        print(
+            "📦 Parsed payload:",
+            quiz_dict
+        )
+
     except Exception as e:
-        print("❌ Payload parsing failed:", e)
+
+        print(
+            "❌ Payload parsing failed:",
+            e
+        )
+
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail="Invalid quiz payload")
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid quiz payload"
+        )
 
     # --------------------------------------------------
     # 2. Basic validation
     # --------------------------------------------------
+
     if quiz.subject.lower() != "reading":
+
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid subject for reading homework: {quiz.subject}",
+            detail=(
+                "Invalid subject for "
+                f"reading homework: "
+                f"{quiz.subject}"
+            ),
         )
 
-    if not isinstance(quiz.topics, list):
-        raise HTTPException(status_code=400, detail="topics must be a list")
+    if not isinstance(
+        quiz.topics,
+        list
+    ):
 
-    print(f"➡️ class_name: {quiz.class_name}")
-    print(f"➡️ subject: {quiz.subject}")
-    print(f"➡️ year: {quiz.year}")
-    print(f"➡️ difficulty: {quiz.difficulty}")
-    print(f"➡️ num_topics: {quiz.num_topics}")
-    print(f"➡️ total_questions: {quiz.total_questions}")
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a list"
+        )
+
+    # --------------------------------------------------
+    # 3. Normalize center code
+    # --------------------------------------------------
+
+    normalized_center_code = (
+        quiz.center_code or ""
+    ).strip().upper()
+
+    if not normalized_center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    print(
+        f"➡️ class_name: "
+        f"{quiz.class_name}"
+    )
+
+    print(
+        f"➡️ subject: "
+        f"{quiz.subject}"
+    )
+
+    print(
+        f"➡️ year: "
+        f"{quiz.year}"
+    )
+
+    print(
+        f"➡️ difficulty: "
+        f"{quiz.difficulty}"
+    )
+
+    print(
+        f"➡️ num_topics: "
+        f"{quiz.num_topics}"
+    )
+
+    print(
+        f"➡️ total_questions: "
+        f"{quiz.total_questions}"
+    )
+
+    print(
+        f"➡️ center_code: "
+        f"{normalized_center_code}"
+    )
 
     print("\n📝 Topics received:")
-    for i, t in enumerate(quiz.topics):
-        print(f"   └─ Topic {i + 1}: {t}")
 
-    try:
-        # --------------------------------------------------
-        # 3. Delete previous configs (correct scope)
-        # --------------------------------------------------
-        print("\n🧹 Deleting existing Reading homework configs for same year + subject...")
+    for i, t in enumerate(
+        quiz.topics
+    ):
 
-        deleted_count = (
-            db.query(QuizNaplanReadingHomework)
-            .filter(
-                QuizNaplanReadingHomework.year == quiz.year,
-                func.lower(QuizNaplanReadingHomework.subject) == "reading",
-            )
-            .delete(synchronize_session=False)
+        print(
+            f"   └─ Topic "
+            f"{i + 1}: {t}"
         )
 
-        print(f"🗑️ Deleted {deleted_count} existing homework config(s)")
+    try:
 
         # --------------------------------------------------
-        # 4. Create new config
+        # 4. Delete previous configs
         # --------------------------------------------------
-        print("\n--- Creating new quiz_naplan_reading_homework row ---")
 
-        new_quiz = QuizNaplanReadingHomework(
-            class_name=quiz.class_name,
-            subject="reading",
-            year=quiz.year,
-            difficulty=quiz.difficulty,  # informational
-            num_topics=quiz.num_topics,
-            total_questions=quiz.total_questions,
+        print(
+            "\n🧹 Deleting existing "
+            "Reading homework configs "
+            "for same year + subject + "
+            "center..."
+        )
 
-            # 🔥 IMPORTANT: Save structured topics (difficulty-based)
-            topics=[t.dict() for t in quiz.topics],
+        deleted_count = (
+            db.query(
+                QuizNaplanReadingHomework
+            )
+            .filter(
+
+                QuizNaplanReadingHomework
+                .year
+                == quiz.year,
+
+                func.lower(
+                    func.trim(
+                        QuizNaplanReadingHomework
+                        .subject
+                    )
+                )
+                ==
+                "reading",
+
+                func.upper(
+                    func.trim(
+                        QuizNaplanReadingHomework
+                        .center_code
+                    )
+                )
+                ==
+                normalized_center_code
+            )
+            .delete(
+                synchronize_session=False
+            )
+        )
+
+        print(
+            f"🗑️ Deleted "
+            f"{deleted_count} "
+            f"existing homework "
+            f"config(s)"
+        )
+
+        # --------------------------------------------------
+        # 5. Create new config
+        # --------------------------------------------------
+
+        print(
+            "\n--- Creating new "
+            "quiz_naplan_reading_"
+            "homework row ---"
+        )
+
+        new_quiz = (
+            QuizNaplanReadingHomework(
+
+                class_name=
+                    quiz.class_name,
+
+                subject=
+                    "reading",
+
+                year=
+                    quiz.year,
+
+                center_code=
+                    normalized_center_code,
+
+                difficulty=
+                    quiz.difficulty,
+
+                num_topics=
+                    quiz.num_topics,
+
+                total_questions=
+                    quiz.total_questions,
+
+                topics=[
+                    t.dict()
+                    for t in quiz.topics
+                ],
+            )
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print(f"✅ READING HOMEWORK CONFIG SAVED (ID={new_quiz.id})")
-        print("========== NAPLAN READING HOMEWORK CONFIG SAVE COMPLETE ==========\n")
+        print(
+            f"✅ READING HOMEWORK "
+            f"CONFIG SAVED "
+            f"(ID={new_quiz.id})"
+        )
+
+        print(
+            "========== NAPLAN "
+            "READING HOMEWORK "
+            "CONFIG SAVE COMPLETE "
+            "==========\n"
+        )
 
         return {
-            "message": "NAPLAN Reading homework config saved successfully",
-            "quiz_id": new_quiz.id,
-            "year": quiz.year,
-            "total_questions": quiz.total_questions,
+
+            "message":
+                "NAPLAN Reading "
+                "homework config "
+                "saved successfully",
+
+            "quiz_id":
+                new_quiz.id,
+
+            "year":
+                quiz.year,
+
+            "center_code":
+                normalized_center_code,
+
+            "total_questions":
+                quiz.total_questions,
         }
 
     except Exception as e:
-        print("\n❌ EXCEPTION DURING HOMEWORK CONFIG SAVE ❌")
-        print("Error:", str(e))
+
+        print(
+            "\n❌ EXCEPTION DURING "
+            "HOMEWORK CONFIG SAVE ❌"
+        )
+
+        print(
+            "Error:",
+            str(e)
+        )
+
         traceback.print_exc()
+
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )    
 @app.put("/api/admin/reuse-used-questions-naplan-language-conventions")
 def reuse_used_questions_naplan_language_conventions(
     year: int = Query(...),
+    center_code: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    print("\n=== RESET USED QUESTIONS: NAPLAN LANGUAGE CONVENTIONS ===")
+
+    print(
+        "\n=== RESET USED QUESTIONS: "
+        "NAPLAN LANGUAGE CONVENTIONS ==="
+    )
 
     print(f"[INPUT] year={year}")
 
+    print(
+        f"[INPUT] center_code="
+        f"{center_code}"
+    )
+
     try:
-        updated_count = (
-            db.query(QuestionNumeracyLC)
+
+        # --------------------------------------------------
+        # Resolve center
+        # --------------------------------------------------
+
+        center = (
+            db.query(Center)
             .filter(
-                func.lower(QuestionNumeracyLC.class_name) == "naplan",
-                QuestionNumeracyLC.subject == "Language Conventions",
-                QuestionNumeracyLC.year == year,
-                QuestionNumeracyLC.is_used == True,
+                func.upper(
+                    func.trim(
+                        Center.center_code
+                    )
+                )
+                ==
+                center_code.strip().upper()
             )
-            .update(
-                {"is_used": False},
-                synchronize_session=False,
+            .first()
+        )
+
+        if not center:
+
+            raise HTTPException(
+                status_code=404,
+                detail="Center not found"
+            )
+
+        print(
+            f"🏢 Center resolved | "
+            f"center_id={center.id}"
+        )
+
+        # --------------------------------------------------
+        # Find question ids to reset
+        # --------------------------------------------------
+
+        question_ids_to_reset = (
+            db.query(
+                QuestionNumeracyLC.id
+            )
+            .filter(
+
+                func.lower(
+                    QuestionNumeracyLC
+                    .class_name
+                ) == "naplan",
+
+                QuestionNumeracyLC.subject
+                == "Language Conventions",
+
+                QuestionNumeracyLC.year
+                == year
+            )
+            .all()
+        )
+
+        question_ids_to_reset = [
+
+            row[0]
+
+            for row in question_ids_to_reset
+        ]
+
+        print(
+            "\n🧠 Question IDs To Reset:"
+        )
+
+        print(question_ids_to_reset)
+
+        # --------------------------------------------------
+        # Delete usage rows
+        # --------------------------------------------------
+
+        deleted_count = (
+            db.query(
+                NaplanQuestionUsage
+            )
+            .filter(
+
+                NaplanQuestionUsage
+                .center_id
+                == center.id,
+
+                NaplanQuestionUsage
+                .question_id.in_(
+                    question_ids_to_reset
+                )
+            )
+            .delete(
+                synchronize_session=False
             )
         )
 
         db.commit()
 
-        print(f"[SUCCESS] reset_count={updated_count}")
-        print("=== RESET COMPLETE ===\n")
+        print(
+            f"✅ Reset "
+            f"{deleted_count} "
+            f"question usages"
+        )
+
+        print(
+            "=== RESET COMPLETE ===\n"
+        )
 
         return {
-            "message": f"{updated_count} used question(s) are now reusable.",
-            "updated_count": updated_count,
+
+            "message":
+                "Used questions reset "
+                "successfully",
+
+            "deleted_count":
+                deleted_count
         }
 
     except Exception as e:
+
         db.rollback()
 
-        print("[ERROR]", str(e))
+        print(
+            "[ERROR]",
+            str(e)
+        )
 
         raise HTTPException(
             status_code=500,
-            detail="Failed to reset used questions.",
+            detail=(
+                "Failed to reset "
+                "used questions."
+            ),
         )
 @app.post("/api/quizzes-naplan-language-conventions-homework")
 def create_naplan_language_conventions_homework_quiz(
     quiz: NaplanQuizCreate,
     db: Session = Depends(get_db),
 ):
-    print("\n========== NAPLAN LC HOMEWORK CONFIG SAVE START ==========")
+    print(
+        "\n========== "
+        "NAPLAN LC HOMEWORK CONFIG SAVE START "
+        "=========="
+    )
 
     # --------------------------------------------------
     # 1. Validate payload
     # --------------------------------------------------
     try:
         quiz_dict = quiz.dict()
+
         print("📦 Parsed payload:", quiz_dict)
+
     except Exception as e:
         print("❌ Payload parsing failed:", e)
+
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail="Invalid quiz payload")
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid quiz payload"
+        )
+
+    # --------------------------------------------------
+    # 2. Normalize center code
+    # --------------------------------------------------
+    center_code = (quiz.center_code or "").strip().upper()
+
+    if not center_code:
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
 
     print(f"➡️ class_name: {quiz.class_name}")
     print(f"➡️ subject: {quiz.subject}")
+    print(f"➡️ center_code: {center_code}")
     print(f"➡️ year: {quiz.year}")
     print(f"➡️ difficulty: {quiz.difficulty}")
     print(f"➡️ num_topics: {quiz.num_topics}")
     print(f"➡️ total_questions: {quiz.total_questions}")
 
     # --------------------------------------------------
-    # 2. Validate topics
+    # 3. Validate topics
     # --------------------------------------------------
     if not isinstance(quiz.topics, list):
-        raise HTTPException(status_code=400, detail="topics must be a list")
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a list"
+        )
 
     print("\n📝 Topics received:")
+
     for i, t in enumerate(quiz.topics):
         print(f"   └─ Topic {i + 1}: {t}")
 
     try:
         # --------------------------------------------------
-        # 3. Delete previous configs (correct scope)
+        # 4. Delete previous configs
         # --------------------------------------------------
-        print("\n🧹 Deleting existing LC homework configs for same year + subject...")
+        print(
+            "\n🧹 Deleting existing LC homework "
+            "configs for same center + year + subject..."
+        )
 
         deleted_count = (
             db.query(QuizNaplanLanguageConventionsHomework)
             .filter(
-                QuizNaplanLanguageConventionsHomework.year == quiz.year,
-                QuizNaplanLanguageConventionsHomework.subject == quiz.subject,
+                QuizNaplanLanguageConventionsHomework.year
+                == quiz.year,
+
+                QuizNaplanLanguageConventionsHomework.subject
+                == quiz.subject,
+
+                func.upper(
+                    func.trim(
+                        QuizNaplanLanguageConventionsHomework.center_code
+                    )
+                ) == center_code
             )
             .delete(synchronize_session=False)
         )
 
-        print(f"🗑️ Deleted {deleted_count} existing homework config(s)")
+        print(
+            f"🗑️ Deleted {deleted_count} "
+            "existing homework config(s)"
+        )
 
         # --------------------------------------------------
-        # 4. Create new config
+        # 5. Create new config
         # --------------------------------------------------
         print("\n--- Creating new LC homework config row ---")
 
         new_quiz = QuizNaplanLanguageConventionsHomework(
             class_name=quiz.class_name,
-            subject=quiz.subject,  # "Language Conventions"
+
+            subject=quiz.subject,
+
+            center_code=center_code,
+
             year=quiz.year,
+
             difficulty=quiz.difficulty,
+
             num_topics=quiz.num_topics,
+
             total_questions=quiz.total_questions,
 
-            # 🔥 IMPORTANT: Save structured topics (difficulty-based)
+            # 🔥 Save structured topics
             topics=[t.dict() for t in quiz.topics],
         )
 
         db.add(new_quiz)
+
         db.commit()
+
         db.refresh(new_quiz)
 
-        print(f"✅ HOMEWORK CONFIG SAVED (ID={new_quiz.id})")
-        print("========== NAPLAN LC HOMEWORK CONFIG SAVE COMPLETE ==========\n")
+        print(
+            f"✅ HOMEWORK CONFIG SAVED "
+            f"(ID={new_quiz.id})"
+        )
+
+        print(
+            "========== "
+            "NAPLAN LC HOMEWORK CONFIG SAVE COMPLETE "
+            "==========\n"
+        )
 
         return {
-            "message": "NAPLAN Language Conventions homework config saved successfully",
+            "message":
+                "NAPLAN Language Conventions "
+                "homework config saved successfully",
+
             "quiz_id": new_quiz.id,
+
+            "center_code": center_code,
+
             "year": quiz.year,
+
             "total_questions": quiz.total_questions,
         }
 
     except Exception as e:
         print("\n❌ EXCEPTION DURING HOMEWORK CONFIG SAVE ❌")
+
         print("Error:", str(e))
+
         traceback.print_exc()
 
         db.rollback()
 
-        raise HTTPException(status_code=500, detail=str(e))
-    
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+       
 @app.post("/api/quizzes-naplan-language-conventions")
 def create_naplan_language_conventions_quiz(
     quiz: NaplanQuizCreate,
@@ -35814,34 +39812,61 @@ def create_naplan_language_conventions_quiz(
         traceback.print_exc()
         raise HTTPException(status_code=400, detail="Invalid quiz payload")
 
+    # --------------------------------------------------
+    # 2. Normalize center code
+    # --------------------------------------------------
+    center_code = (quiz.center_code or "").strip().upper()
+
+    if not center_code:
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
     print(f"➡️ class_name: {quiz.class_name}")
     print(f"➡️ subject: {quiz.subject}")
+    print(f"➡️ center_code: {center_code}")
     print(f"➡️ year: {quiz.year}")
     print(f"➡️ difficulty: {quiz.difficulty}")
     print(f"➡️ num_topics: {quiz.num_topics}")
     print(f"➡️ total_questions: {quiz.total_questions}")
 
     # --------------------------------------------------
-    # 2. Validate topics
+    # 3. Validate topics
     # --------------------------------------------------
     if not isinstance(quiz.topics, list):
-        raise HTTPException(status_code=400, detail="topics must be a list")
+        raise HTTPException(
+            status_code=400,
+            detail="topics must be a list"
+        )
 
     print("\n📝 Topics received:")
+
     for i, t in enumerate(quiz.topics):
         print(f"   └─ Topic {i + 1}: {t}")
 
     try:
         # --------------------------------------------------
-        # 3. Delete previous configs (scoped properly)
+        # 4. Delete previous configs
         # --------------------------------------------------
-        print("\n🧹 Deleting existing LC configs for same year + subject...")
+        print(
+            "\n🧹 Deleting existing LC configs "
+            "for same center + year + subject..."
+        )
 
         deleted_count = (
             db.query(QuizNaplanLanguageConventions)
             .filter(
                 QuizNaplanLanguageConventions.year == quiz.year,
-                QuizNaplanLanguageConventions.subject == quiz.subject,
+
+                QuizNaplanLanguageConventions.subject
+                == quiz.subject,
+
+                func.upper(
+                    func.trim(
+                        QuizNaplanLanguageConventions.center_code
+                    )
+                ) == center_code
             )
             .delete(synchronize_session=False)
         )
@@ -35849,43 +39874,62 @@ def create_naplan_language_conventions_quiz(
         print(f"🗑️ Deleted {deleted_count} existing config(s)")
 
         # --------------------------------------------------
-        # 4. Create new config
+        # 5. Create new config
         # --------------------------------------------------
         print("\n--- Creating new LC config row ---")
 
         new_quiz = QuizNaplanLanguageConventions(
             class_name=quiz.class_name,
-            subject=quiz.subject,  # "Language Conventions"
+            subject=quiz.subject,
+            center_code=center_code,
             year=quiz.year,
             difficulty=quiz.difficulty,
             num_topics=quiz.num_topics,
             total_questions=quiz.total_questions,
 
-            # 🔥 IMPORTANT: Save full structured topics
+            # 🔥 save structured topics
             topics=[t.dict() for t in quiz.topics],
         )
 
         db.add(new_quiz)
+
         db.commit()
         db.refresh(new_quiz)
 
         print(f"✅ CONFIG SAVED (ID={new_quiz.id})")
-        print("========== NAPLAN LC QUIZ CONFIG SAVE COMPLETE ==========\n")
+
+        print(
+            "========== "
+            "NAPLAN LC QUIZ CONFIG SAVE COMPLETE "
+            "==========\n"
+        )
 
         return {
-            "message": "NAPLAN Language Conventions config saved successfully",
+            "message":
+                "NAPLAN Language Conventions config "
+                "saved successfully",
+
             "quiz_id": new_quiz.id,
+
+            "center_code": center_code,
+
             "year": quiz.year,
+
             "total_questions": quiz.total_questions,
         }
 
     except Exception as e:
         print("\n❌ EXCEPTION DURING CONFIG SAVE ❌")
         print("Error:", str(e))
+
         traceback.print_exc()
+
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )   
 
 @app.post("/api/quizzes-naplan-homework")
 def create_naplan_numeracy_homework_quiz(
@@ -44958,72 +49002,308 @@ def get_foundational_classes(db: Session = Depends(get_db)):
     return [{"class_name": r.class_name} for r in rows]
  
 @app.post("/api/student/start-homework-writing")
-def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
+def start_homework_writing(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+
+    print(
+        "\n================ START HOMEWORK WRITING ================="
+    )
+
+    print(
+        f"👉 Incoming student_id: "
+        f"{repr(student_id)}"
+    )
 
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
     student = (
         db.query(Student)
-        .filter(func.lower(Student.student_id) == func.lower(student_id))
+        .filter(
+            func.lower(
+                Student.student_id
+            ) == func.lower(student_id)
+        )
         .first()
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
+
+        print("❌ Student not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    student_year_raw = (
+        student.student_year
+    )
+
+    student_year_normalized = (
+        student_year_raw.strip().lower()
+        if student_year_raw
+        else None
+    )
+
+    student_class_name = (
+        student.class_name
+    )
+
+    student_center_code = (
+        student.center_code
+    )
+
+    print(
+        f"🎯 Student DB ID: "
+        f"{student.id}"
+    )
+
+    print(
+        f"🎯 student_year RAW: "
+        f"{repr(student_year_raw)}"
+    )
+
+    print(
+        f"🎯 student_year NORMALIZED: "
+        f"{repr(student_year_normalized)}"
+    )
+
+    print(
+        f"🏢 student_center_code: "
+        f"{repr(student_center_code)}"
+    )
+
+    if not student_year_normalized:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Student year is missing"
+        )
+
+    if not student_center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Student center code is missing"
+        )
 
     # --------------------------------------------------
-    # 2️⃣ Get current homework writing (class scoped)
+    # 2️⃣ Fetch homework using:
+    #     class + year + center
     # --------------------------------------------------
-    homework = (
+    all_homeworks = (
         db.query(GeneratedHomeworkWriting)
         .filter(
-            func.lower(GeneratedHomeworkWriting.class_name) == func.lower(student.class_name),
-            func.lower(GeneratedHomeworkWriting.class_year) == func.lower(student.student_year)
+            GeneratedHomeworkWriting.is_current.is_(True)
         )
-        .order_by(GeneratedHomeworkWriting.created_at.desc())
-        .first()
+        .order_by(
+            GeneratedHomeworkWriting.created_at.desc()
+        )
+        .all()
     )
-    if not homework:
-        raise HTTPException(404, "No homework writing found for this class")
+
+    print(
+        f"\n📦 Total homework exams found: "
+        f"{len(all_homeworks)}"
+    )
+
+    matched_homework = None
+
+    for hw in all_homeworks:
+
+        hw_class_normalized = (
+            hw.class_name.strip().lower()
+            if hw.class_name
+            else None
+        )
+
+        hw_year_normalized = (
+            hw.class_year.strip().lower()
+            if hw.class_year
+            else None
+        )
+
+        hw_center_normalized = (
+            hw.center_code.strip().upper()
+            if hw.center_code
+            else None
+        )
+
+        student_class_normalized = (
+            student_class_name.strip().lower()
+            if student_class_name
+            else None
+        )
+
+        student_center_normalized = (
+            student_center_code.strip().upper()
+        )
+
+        print(
+            f"""
+🔎 COMPARISON
+
+student_class='{student_class_normalized}'
+homework_class='{hw_class_normalized}'
+
+student_year='{student_year_normalized}'
+homework_year='{hw_year_normalized}'
+
+student_center='{student_center_normalized}'
+homework_center='{hw_center_normalized}'
+
+homework_id={hw.id}
+            """.strip()
+        )
+
+        # --------------------------------------------------
+        # STRICT MATCH:
+        # class + year + center
+        # --------------------------------------------------
+        if (
+
+            hw_class_normalized
+            == student_class_normalized
+
+            and
+
+            hw_year_normalized
+            == student_year_normalized
+
+            and
+
+            hw_center_normalized
+            == student_center_normalized
+        ):
+
+            print(
+                f"✅ MATCH FOUND → "
+                f"Homework ID={hw.id}"
+            )
+
+            matched_homework = hw
+
+            break
+
+    if not matched_homework:
+
+        print(
+            "\n❌ NO MATCHING HOMEWORK FOUND"
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No homework writing found "
+                f"for class="
+                f"'{student.class_name}', "
+                f"year="
+                f"'{student.student_year}', "
+                f"center="
+                f"'{student_center_code}'"
+            )
+        )
+
+    homework = matched_homework
+
+    print(
+        f"\n🎉 FINAL SELECTED HOMEWORK ID: "
+        f"{homework.id}"
+    )
+
+    print(
+        f"🎉 FINAL SELECTED HOMEWORK CENTER: "
+        f"{repr(homework.center_code)}"
+    )
 
     # --------------------------------------------------
-    # 3️⃣ Fetch latest attempt for THIS homework
+    # 3️⃣ Fetch latest attempt
     # --------------------------------------------------
     attempt = (
         db.query(StudentHomeworkWriting)
         .filter(
-            StudentHomeworkWriting.student_id == student.id,
-            StudentHomeworkWriting.homework_id == homework.id
+            StudentHomeworkWriting.student_id
+            == student.id,
+
+            StudentHomeworkWriting.homework_id
+            == homework.id
         )
-        .order_by(StudentHomeworkWriting.started_at.desc())
+        .order_by(
+            StudentHomeworkWriting.started_at.desc()
+        )
         .first()
+    )
+
+    print(
+        f"\n🧪 Attempt found: "
+        f"{bool(attempt)}"
     )
 
     # --------------------------------------------------
     # 🟥 CASE A — Already completed
     # --------------------------------------------------
     if attempt and attempt.completed_at:
-        return {"completed": True}
+
+        print(
+            "🟥 CASE A → Already completed"
+        )
+
+        return {
+            "completed": True
+        }
 
     # --------------------------------------------------
     # 🟡 CASE B — Resume active attempt
     # --------------------------------------------------
     if attempt and attempt.completed_at is None:
+
+        print(
+            "🟡 CASE B → Resuming attempt"
+        )
+
         started_at = attempt.started_at
 
         if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
 
         now = datetime.now(timezone.utc)
-        elapsed = int((now - started_at).total_seconds())
-        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
 
-        # ⏱️ auto complete if time finished
+        elapsed = int(
+            (now - started_at).total_seconds()
+        )
+
+        remaining = max(
+            0,
+            attempt.duration_minutes * 60
+            - elapsed
+        )
+
+        print(
+            f"⏱️ elapsed={elapsed}s | "
+            f"remaining={remaining}s"
+        )
+
+        # ⏱️ Auto-complete if time finished
         if remaining == 0:
+
+            print(
+                "⏹️ Time over → "
+                "marking completed"
+            )
+
             attempt.completed_at = now
+
             db.commit()
-            return {"completed": True}
+
+            return {
+                "completed": True
+            }
 
         return {
             "completed": False,
@@ -45034,6 +49314,10 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
     # --------------------------------------------------
     # 🔵 CASE C — Start new attempt
     # --------------------------------------------------
+    print(
+        "🔵 CASE C → Starting new attempt"
+    )
+
     new_attempt = StudentHomeworkWriting(
         student_id=student.id,
         homework_id=homework.id,
@@ -45042,62 +49326,152 @@ def start_homework_writing(student_id: str, db: Session = Depends(get_db)):
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
     return {
         "completed": False,
-        "remaining_time": new_attempt.duration_minutes * 60,
-        "homework_id": homework.id
+        "remaining_time":
+            new_attempt.duration_minutes * 60,
+        "homework_id":
+            homework.id
     }
- 
 
 @app.post("/api/student/start-writing-exam")
-def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
+def start_writing_exam(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
 
-    print("\n================ START WRITING EXAM =================")
-    print(f"👉 Incoming student_id: {repr(student_id)}")
+    print(
+        "\n================ START WRITING EXAM ================="
+    )
+
+    print(
+        f"👉 Incoming student_id: "
+        f"{repr(student_id)}"
+    )
 
     # --------------------------------------------------
     # 0️⃣ Fetch student
     # --------------------------------------------------
     student = (
         db.query(Student)
-        .filter(func.lower(Student.student_id) == student_id.lower())
+        .filter(
+            func.lower(
+                Student.student_id
+            ) == student_id.lower()
+        )
         .first()
     )
-    
+
     if not student:
+
         print("❌ Student not found")
-        raise HTTPException(status_code=404, detail="Student not found")
 
-    student_year_raw = student.student_year
-    student_year_normalized = student_year_raw.strip().lower() if student_year_raw else None
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
 
-    print(f"🎯 Student DB ID: {student.id}")
-    print(f"🎯 student_year RAW: {repr(student_year_raw)}")
-    print(f"🎯 student_year NORMALIZED: {repr(student_year_normalized)}")
+    student_year_raw = (
+        student.student_year
+    )
+
+    student_year_normalized = (
+        student_year_raw.strip().lower()
+        if student_year_raw
+        else None
+    )
+
+    student_center_code = (
+        student.center_code
+    )
+
+    print(
+        f"🎯 Student DB ID: "
+        f"{student.id}"
+    )
+
+    print(
+        f"🎯 student_year RAW: "
+        f"{repr(student_year_raw)}"
+    )
+
+    print(
+        f"🎯 student_year NORMALIZED: "
+        f"{repr(student_year_normalized)}"
+    )
+
+    print(
+        f"🏢 student_center_code: "
+        f"{repr(student_center_code)}"
+    )
 
     if not student_year_normalized:
-        print("❌ student_year is missing or invalid")
-        raise HTTPException(400, "Student year is missing")
+
+        print(
+            "❌ student_year is "
+            "missing or invalid"
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail="Student year is missing"
+        )
+
+    if not student_center_code:
+
+        print(
+            "❌ student_center_code "
+            "is missing"
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail="Student center code is missing"
+        )
 
     # --------------------------------------------------
     # 🔍 STEP 1: Fetch ALL active exams
     # --------------------------------------------------
     all_exams = (
         db.query(GeneratedExamWriting)
-        .filter(GeneratedExamWriting.is_current.is_(True))
-        .order_by(GeneratedExamWriting.created_at.desc())
+        .filter(
+            GeneratedExamWriting.is_current.is_(True)
+        )
+        .order_by(
+            GeneratedExamWriting.created_at.desc()
+        )
         .all()
     )
 
-    print(f"\n📦 Total active exams found: {len(all_exams)}")
+    print(
+        f"\n📦 Total active exams found: "
+        f"{len(all_exams)}"
+    )
 
     for e in all_exams:
+
         raw = e.class_year
-        normalized = raw.strip().lower() if raw else None
-        print(f"📘 Exam ID={e.id} | RAW={repr(raw)} | NORMALIZED={repr(normalized)}")
+
+        normalized = (
+            raw.strip().lower()
+            if raw
+            else None
+        )
+
+        print(
+            f"""
+📘 Exam
+   ID={e.id}
+   YEAR_RAW={repr(raw)}
+   YEAR_NORMALIZED={repr(normalized)}
+   CENTER_CODE={repr(e.center_code)}
+            """.strip()
+        )
 
     # --------------------------------------------------
     # 🔍 STEP 2: Manual strict matching
@@ -45105,32 +49479,105 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     matched_exam = None
 
     for e in all_exams:
-        exam_year_normalized = e.class_year.strip().lower() if e.class_year else None
 
-        print(
-            f"🔎 Comparing student='{student_year_normalized}' "
-            f"WITH exam='{exam_year_normalized}' (Exam ID={e.id})"
+        exam_year_normalized = (
+            e.class_year.strip().lower()
+            if e.class_year
+            else None
         )
 
-        if exam_year_normalized == student_year_normalized:
-            print(f"✅ MATCH FOUND → Exam ID={e.id}")
+        exam_center_code = (
+            e.center_code.strip().upper()
+            if e.center_code
+            else None
+        )
+
+        student_center_code_normalized = (
+            student_center_code
+            .strip()
+            .upper()
+        )
+
+        print(
+            f"""
+🔎 COMPARISON
+
+student_year='{student_year_normalized}'
+exam_year='{exam_year_normalized}'
+
+student_center='{student_center_code_normalized}'
+exam_center='{exam_center_code}'
+
+exam_id={e.id}
+            """.strip()
+        )
+
+        # --------------------------------------------------
+        # STRICT MATCH:
+        # year + center_code
+        # --------------------------------------------------
+        if (
+            exam_year_normalized
+            == student_year_normalized
+
+            and
+
+            exam_center_code
+            == student_center_code_normalized
+        ):
+
+            print(
+                f"✅ MATCH FOUND → "
+                f"Exam ID={e.id}"
+            )
+
             matched_exam = e
+
             break
 
     if not matched_exam:
-        print("\n❌ NO MATCHING EXAM FOUND")
-        print(f"Student year: {student_year_normalized}")
-        print("Available exams:", [repr(e.class_year) for e in all_exams])
+
+        print(
+            "\n❌ NO MATCHING EXAM FOUND"
+        )
+
+        print(
+            f"Student year: "
+            f"{student_year_normalized}"
+        )
+
+        print(
+            f"Student center: "
+            f"{student_center_code}"
+        )
 
         raise HTTPException(
             status_code=404,
-            detail=f"No active writing exam for {student.student_year}"
+            detail=(
+                f"No active writing exam "
+                f"found for year="
+                f"'{student.student_year}' "
+                f"and center="
+                f"'{student_center_code}'"
+            )
         )
 
     exam = matched_exam
 
-    print(f"\n🎉 FINAL SELECTED EXAM ID: {exam.id}")
-    print(f"🎉 FINAL SELECTED EXAM YEAR: {repr(exam.class_year)}")
+    print(
+        f"\n🎉 FINAL SELECTED EXAM ID: "
+        f"{exam.id}"
+    )
+
+    print(
+        f"🎉 FINAL SELECTED EXAM YEAR: "
+        f"{repr(exam.class_year)}"
+    )
+
+    print(
+        f"🎉 FINAL SELECTED EXAM CENTER: "
+        f"{repr(exam.center_code)}"
+    )
 
     # --------------------------------------------------
     # 3️⃣ Fetch latest attempt
@@ -45138,43 +49585,86 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     attempt = (
         db.query(StudentExamWriting)
         .filter(
-            StudentExamWriting.student_id == student.id,
-            StudentExamWriting.exam_id == exam.id
+            StudentExamWriting.student_id
+            == student.id,
+
+            StudentExamWriting.exam_id
+            == exam.id
         )
-        .order_by(StudentExamWriting.started_at.desc())
+        .order_by(
+            StudentExamWriting.started_at.desc()
+        )
         .first()
     )
 
-    print(f"\n🧪 Attempt found: {bool(attempt)}")
+    print(
+        f"\n🧪 Attempt found: "
+        f"{bool(attempt)}"
+    )
 
     # --------------------------------------------------
     # 🟥 CASE A — Completed
     # --------------------------------------------------
     if attempt and attempt.completed_at:
-        print("🟥 CASE A → Already completed")
-        return {"completed": True, "class_year": student.student_year}
+
+        print(
+            "🟥 CASE A → Already completed"
+        )
+
+        return {
+            "completed": True,
+            "class_year": student.student_year
+        }
 
     # --------------------------------------------------
     # 🟡 CASE B — Resume
     # --------------------------------------------------
     if attempt and attempt.completed_at is None:
-        print("🟡 CASE B → Resuming attempt")
+
+        print(
+            "🟡 CASE B → Resuming attempt"
+        )
 
         started_at = attempt.started_at
+
         if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
 
         now = datetime.now(timezone.utc)
-        elapsed = int((now - started_at).total_seconds())
-        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
 
-        print(f"⏱️ elapsed={elapsed}s | remaining={remaining}s")
+        elapsed = int(
+            (now - started_at).total_seconds()
+        )
+
+        remaining = max(
+            0,
+            attempt.duration_minutes * 60
+            - elapsed
+        )
+
+        print(
+            f"⏱️ elapsed={elapsed}s | "
+            f"remaining={remaining}s"
+        )
 
         if remaining == 0:
-            print("⏹️ Time over → marking completed")
+
+            print(
+                "⏹️ Time over → "
+                "marking completed"
+            )
+
             attempt.completed_at = now
+
             db.commit()
-            return {"completed": True, "class_year": student.student_year}
+
+            return {
+                "completed": True,
+                "class_year": student.student_year
+            }
 
         return {
             "completed": False,
@@ -45185,7 +49675,9 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     # --------------------------------------------------
     # 🔵 CASE C — New attempt
     # --------------------------------------------------
-    print("🔵 CASE C → Starting new attempt")
+    print(
+        "🔵 CASE C → Starting new attempt"
+    )
 
     new_attempt = StudentExamWriting(
         student_id=student.id,
@@ -45195,15 +49687,18 @@ def start_writing_exam(student_id: str, db: Session = Depends(get_db)):
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
     return {
         "completed": False,
-        "remaining_time": new_attempt.duration_minutes * 60,
-        "class_year": student.student_year
-    }
- 
+        "remaining_time":
+            new_attempt.duration_minutes * 60,
+        "class_year":
+            student.student_year
+    }    
 
 @app.get("/api/get-quizzes-writing")
 def get_quizzes_writing(db: Session = Depends(get_db)):
@@ -46476,165 +50971,306 @@ def generate_exam_writing(
     db: Session = Depends(get_db)
 ):
     try:
-        print("\n================= GENERATE WRITING EXAM =================")
 
-        # ----------------------------------
-        # Helpers (IMPORTANT)
-        # ----------------------------------
-        def normalize_text(value: str) -> str:
+        print(
+            "\n================= GENERATE WRITING EXAM ================="
+        )
+
+        # -------------------------------------------------
+        # Helpers
+        # -------------------------------------------------
+        def normalize_text_helper(value: str) -> str:
             return value.strip().lower()
 
-        def normalize_year(value: str) -> str:
+        def normalize_year_helper(value: str) -> str:
             return value.strip().lower().replace(" ", "")
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Inputs
-        # ----------------------------------
+        # -------------------------------------------------
         class_name = "selective"
-        class_name_norm = normalize_text(class_name)
+
+        class_name_norm = normalize_text_helper(
+            class_name
+        )
 
         class_year_raw = payload.class_year
-        class_year = normalize_text(class_year_raw)
-        class_year_digits = normalize_year_digits(class_year_raw)
+
+        class_year_norm = normalize_text_helper(
+            class_year_raw
+        )
+
+        class_year_digits = normalize_year_digits(
+            class_year_raw
+        )
+
+        center_code = payload.center_code
 
         print("\n📥 INPUTS:")
-        print(f"   class_name (fixed) = '{class_name}'")
-        print(f"   class_year (raw)   = '{class_year_raw}'")
-        print(f"   class_year (norm)  = '{class_year}'")
-        
+        print(
+            f"   class_name      = '{class_name}'"
+        )
+        print(
+            f"   class_year_raw  = '{class_year_raw}'"
+        )
+        print(
+            f"   center_code     = '{center_code}'"
+        )
 
-        # ----------------------------------
-        # Debug: show ALL setups
-        # ----------------------------------
-        all_setups = db.query(QuizSetupWriting).all()
-        print(f"\n📊 TOTAL setups in DB: {len(all_setups)}")
+        # -------------------------------------------------
+        # Debug all setups
+        # -------------------------------------------------
+        all_setups = (
+            db.query(QuizSetupWriting).all()
+        )
+
+        print(
+            f"\n📊 TOTAL setups in DB: "
+            f"{len(all_setups)}"
+        )
+
         for s in all_setups:
+
             print(
-                f"   → class='{s.class_name}', year='{s.class_year}', "
-                f"difficulty='{s.difficulty}', topic='{s.topic}'"
+                f"   → class='{s.class_name}', "
+                f"year='{s.class_year}', "
+                f"difficulty='{s.difficulty}', "
+                f"topic='{s.topic}', "
+                f"center='{s.center_code}'"
             )
 
-        # ----------------------------------
-        # Fetch setup
-        # ----------------------------------
+        # -------------------------------------------------
+        # Fetch setup using center code
+        # -------------------------------------------------
         setup = (
             db.query(QuizSetupWriting)
             .filter(
-                func.lower(func.trim(QuizSetupWriting.class_name)) == class_name_norm,
-                func.lower(func.trim(QuizSetupWriting.class_year)) == class_year
+                func.lower(
+                    func.trim(
+                        QuizSetupWriting.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        QuizSetupWriting.class_year
+                    )
+                ) == class_year_norm,
+
+                QuizSetupWriting.center_code
+                == center_code
             )
-            .order_by(QuizSetupWriting.id.desc())
+            .order_by(
+                QuizSetupWriting.id.desc()
+            )
             .first()
         )
 
         print(f"\n🔍 MATCHED SETUP: {setup}")
 
         if not setup:
+
             print("❌ No setup matched")
+
             raise HTTPException(
                 status_code=404,
-                detail=f"No setup found for class '{class_name}' and year '{class_year_raw}'."
+                detail=(
+                    f"No setup found for "
+                    f"class='{class_name}', "
+                    f"year='{class_year_raw}', "
+                    f"center='{center_code}'."
+                )
             )
 
-        # ----------------------------------
-        # Extract config
-        # ----------------------------------
-        difficulty = normalize_text(setup.difficulty)
-        topic = normalize_text(setup.topic)
+        # -------------------------------------------------
+        # Extract setup config
+        # -------------------------------------------------
+        difficulty = normalize_text_helper(
+            setup.difficulty
+        )
+
+        topic = normalize_text_helper(
+            setup.topic
+        )
 
         print("\n✅ USING SETUP:")
-        print(f"   difficulty = '{difficulty}'")
-        print(f"   topic      = '{topic}'")
+        print(
+            f"   difficulty = '{difficulty}'"
+        )
+        print(
+            f"   topic      = '{topic}'"
+        )
 
-        # ----------------------------------
-        # Reset system
-        # ----------------------------------
-        print("\n🧹 Clearing previous exams...")
-
-        
-
-        
-
-        # ----------------------------------
-        # Debug: question pool
-        # ----------------------------------
-        all_questions = db.query(WritingQuestionBank).all()
-        print(f"\n📊 TOTAL questions in bank: {len(all_questions)}")
-
-        for q in all_questions:
-            print(
-                f"   → class='{q.class_name}', year='{q.class_year}', "
-                f"difficulty='{q.difficulty}', topic='{q.topic}'"
+        # -------------------------------------------------
+        # Previously used questions
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
             )
+            .filter(
+                QuestionUsageWriting.center_code
+                == center_code
+            )
+            .all()
+        )
 
-        # ----------------------------------
-        # Fetch question (FIXED 🔥)
-        # ----------------------------------
-        question = (
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        print(
+            f"\n🚫 USED QUESTION IDS: "
+            f"{used_question_ids}"
+        )
+
+        # -------------------------------------------------
+        # Debug question bank
+        # -------------------------------------------------
+        all_questions = (
+            db.query(WritingQuestionBank).all()
+        )
+
+        print(
+            f"\n📊 TOTAL questions in bank: "
+            f"{len(all_questions)}"
+        )
+
+        # -------------------------------------------------
+        # Fetch UNUSED question
+        # -------------------------------------------------
+        question_query = (
             db.query(WritingQuestionBank)
             .filter(
-                func.lower(func.trim(WritingQuestionBank.class_name)) == class_name_norm,
-                func.lower(func.trim(WritingQuestionBank.difficulty)) == difficulty,
-                func.lower(func.trim(WritingQuestionBank.topic)) == topic,
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.difficulty
+                    )
+                ) == difficulty,
+
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.topic
+                    )
+                ) == topic,
+
                 func.regexp_replace(
-                    func.trim(WritingQuestionBank.class_year),
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
                     "[^0-9]",
                     "",
                     "g"
                 ) == class_year_digits
             )
+        )
+
+        # -------------------------------------------------
+        # Exclude previously used questions
+        # -------------------------------------------------
+        if used_question_ids:
+
+            question_query = (
+                question_query.filter(
+                    ~WritingQuestionBank.id.in_(
+                        used_question_ids
+                    )
+                )
+            )
+
+        question = (
+            question_query
             .order_by(func.random())
             .first()
         )
 
-        print(f"\n🔍 MATCHED QUESTION: {question}")
+        print(
+            f"\n🔍 MATCHED UNUSED QUESTION: "
+            f"{question}"
+        )
 
         if not question:
-            print("❌ No question matched filters")
+
+            print(
+                "❌ No unused question matched"
+            )
+
             raise HTTPException(
                 status_code=404,
                 detail=(
-                    f"No question found for class='{class_name}', "
-                    f"year='{class_year_raw}', topic='{topic}', difficulty='{difficulty}'."
+                    "No unused writing question "
+                    "available for this center."
                 )
             )
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Build exam text
-        # ----------------------------------
+        # -------------------------------------------------
         print("\n📝 Building exam text...")
 
         parts = []
 
         if question.title:
-            parts.append(f"TITLE:\n{question.title}\n")
 
-        parts.append(f"TASK:\n{question.question_text}\n")
+            parts.append(
+                f"TITLE:\n{question.title}\n"
+            )
+
+        parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
 
         if question.statement:
-            parts.append(f"STATEMENT:\n{question.statement}\n")
 
-        parts.append(f"INSTRUCTIONS:\n{question.question_prompt}\n")
+            parts.append(
+                f"STATEMENT:\n"
+                f"{question.statement}\n"
+            )
+
+        parts.append(
+            f"INSTRUCTIONS:\n"
+            f"{question.question_prompt}\n"
+        )
 
         if question.opening_sentence:
-            parts.append(f"OPENING SENTENCE:\n{question.opening_sentence}\n")
+
+            parts.append(
+                f"OPENING SENTENCE:\n"
+                f"{question.opening_sentence}\n"
+            )
 
         if question.guidelines:
-            formatted = "\n".join(
+
+            formatted_guidelines = "\n".join(
                 f"- {line.strip()}"
                 for line in question.guidelines.splitlines()
                 if line.strip()
             )
-            parts.append(f"GUIDELINES:\n{formatted}\n")
 
-        full_exam_text = "\n".join(parts).strip()
+            parts.append(
+                f"GUIDELINES:\n"
+                f"{formatted_guidelines}\n"
+            )
 
-        print("✅ Exam text built successfully")
+        full_exam_text = (
+            "\n".join(parts).strip()
+        )
 
-        # ----------------------------------
-        # Save exam
-        # ----------------------------------
-        print("\n💾 Saving exam...")
+        print(
+            "✅ Exam text built successfully"
+        )
+
+        # -------------------------------------------------
+        # Save generated exam
+        # -------------------------------------------------
+        print("\n💾 Saving generated exam...")
 
         exam = GeneratedExamWriting(
             class_name=class_name.capitalize(),
@@ -46644,19 +51280,46 @@ def generate_exam_writing(
             difficulty=difficulty.capitalize(),
             question_text=full_exam_text,
             duration_minutes=30,
+            center_code=center_code
         )
 
         db.add(exam)
+
         db.commit()
+
         db.refresh(exam)
 
-        print(f"✅ Exam saved with ID: {exam.id}")
+        print(
+            f"✅ Exam saved with ID: {exam.id}"
+        )
 
-        print("========================================================\n")
+        # -------------------------------------------------
+        # Register question usage
+        # -------------------------------------------------
+        print(
+            "\n📝 Registering question usage..."
+        )
 
-        # ----------------------------------
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+
+        db.commit()
+
+        print(
+            "✅ Question usage registered"
+        )
+
+        print(
+            "========================================================\n"
+        )
+
+        # -------------------------------------------------
         # Response
-        # ----------------------------------
+        # -------------------------------------------------
         return {
             "exam_id": exam.id,
             "class_name": exam.class_name,
@@ -46664,14 +51327,22 @@ def generate_exam_writing(
             "difficulty": exam.difficulty,
             "topic": exam.topic,
             "duration_minutes": exam.duration_minutes,
+            "center_code": exam.center_code,
             "exam_text": full_exam_text,
         }
 
     except Exception as e:
+
         db.rollback()
+
         print("\n🔥 FULL ERROR TRACE:")
+
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 @app.post("/api/exams/generate-writing-latest")
 def generate_exam_writing_latest(
@@ -46679,83 +51350,183 @@ def generate_exam_writing_latest(
     db: Session = Depends(get_db)
 ):
     try:
+
         print("\n" + "=" * 70)
-        print("🚀 GENERATE WRITING EXAM (LATEST MODE)")
+
+        print(
+            "🚀 GENERATE WRITING EXAM "
+            "(LATEST MODE)"
+        )
+
         print("=" * 70)
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Helpers
-        # ----------------------------------
-        def normalize_text(value: str) -> str:
+        # -------------------------------------------------
+        def normalize_text_helper(
+            value: str
+        ) -> str:
+
             return value.strip().lower()
 
-        def normalize_year_digits(value: str) -> str:
+        def normalize_year_digits_helper(
+            value: str
+        ) -> str:
+
             return "".join(
-                ch for ch in value if ch.isdigit()
+                ch for ch in value
+                if ch.isdigit()
             )
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Inputs
-        # ----------------------------------
+        # -------------------------------------------------
         class_name = "selective"
 
-        class_year_raw = payload.get("class_year")
-        selected_date = payload.get("selected_date")
+        class_year_raw = payload.get(
+            "class_year"
+        )
 
+        selected_date = payload.get(
+            "selected_date"
+        )
+
+        batch_id = payload.get(
+            "batch_id"
+        )
+
+        center_code = payload.get(
+            "center_code"
+        )
+
+        # -------------------------------------------------
+        # Validation
+        # -------------------------------------------------
         if not class_year_raw:
+
             raise HTTPException(
                 status_code=400,
                 detail="class_year is required"
             )
 
         if not selected_date:
+
             raise HTTPException(
                 status_code=400,
                 detail="selected_date is required"
             )
 
-        class_name_norm = normalize_text(class_name)
+        if not batch_id:
 
-        class_year_digits = normalize_year_digits(
-            class_year_raw
+            raise HTTPException(
+                status_code=400,
+                detail="batch_id is required"
+            )
+
+        if not center_code:
+
+            raise HTTPException(
+                status_code=400,
+                detail="center_code is required"
+            )
+
+        class_name_norm = (
+            normalize_text_helper(
+                class_name
+            )
+        )
+
+        class_year_digits = (
+            normalize_year_digits_helper(
+                class_year_raw
+            )
         )
 
         print("\n📥 INPUTS:")
-        print(f"   class_name     = '{class_name}'")
-        print(f"   class_year_raw = '{class_year_raw}'")
-        print(f"   selected_date  = '{selected_date}'")
-        print(f"   year_digits    = '{class_year_digits}'")
 
-        # ----------------------------------
+        print(
+            f"   class_name     = '{class_name}'"
+        )
+
+        print(
+            f"   class_year_raw = '{class_year_raw}'"
+        )
+
+        print(
+            f"   selected_date  = '{selected_date}'"
+        )
+
+        print(
+            f"   batch_id       = '{batch_id}'"
+        )
+
+        print(
+            f"   center_code    = '{center_code}'"
+        )
+
+        print(
+            f"   year_digits    = "
+            f"'{class_year_digits}'"
+        )
+
+        # -------------------------------------------------
+        # Previously used questions
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                QuestionUsageWriting.center_code
+                == center_code
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        print(
+            f"\n🚫 USED QUESTION IDS: "
+            f"{used_question_ids}"
+        )
+
+        # -------------------------------------------------
         # Debug question pool
-        # ----------------------------------
+        # -------------------------------------------------
         all_questions = (
             db.query(WritingQuestionBank)
             .all()
         )
 
         print(
-            f"\n📊 TOTAL QUESTIONS: {len(all_questions)}"
+            f"\n📊 TOTAL QUESTIONS: "
+            f"{len(all_questions)}"
         )
 
         for q in all_questions[:10]:
+
             print(
                 f"""
 🧩 QUESTION
-   id={q.id}
-   class_year={q.class_year}
-   topic={q.topic}
-   difficulty={q.difficulty}
-   created_at={q.created_at}
+id={q.id}
+class_year={q.class_year}
+topic={q.topic}
+difficulty={q.difficulty}
+batch_id={q.batch_id}
+created_at={q.created_at}
                 """.strip()
             )
 
-        # ----------------------------------
-        # Fetch UNUSED question by upload date
-        # ----------------------------------
-        question = (
+        # -------------------------------------------------
+        # Fetch UNUSED question
+        # -------------------------------------------------
+        question_query = (
             db.query(WritingQuestionBank)
             .filter(
+
                 func.lower(
                     func.trim(
                         WritingQuestionBank.class_name
@@ -46775,50 +51546,85 @@ def generate_exam_writing_latest(
                     WritingQuestionBank.created_at
                 ) == selected_date,
 
-                WritingQuestionBank.is_used == False
+                WritingQuestionBank.batch_id
+                == batch_id
             )
+        )
+
+        # -------------------------------------------------
+        # Exclude previously used questions
+        # -------------------------------------------------
+        if used_question_ids:
+
+            question_query = (
+                question_query.filter(
+                    ~WritingQuestionBank.id.in_(
+                        used_question_ids
+                    )
+                )
+            )
+
+        question = (
+            question_query
             .order_by(func.random())
             .first()
         )
 
-        print(f"\n🔍 MATCHED QUESTION: {question}")
+        print(
+            f"\n🔍 MATCHED UNUSED QUESTION: "
+            f"{question}"
+        )
 
         if not question:
+
             raise HTTPException(
                 status_code=404,
                 detail=(
-                    f"No unused writing question found for "
-                    f"class_year='{class_year_raw}' "
-                    f"and selected_date='{selected_date}'"
+                    f"No unused writing question "
+                    f"found for class_year="
+                    f"'{class_year_raw}', "
+                    f"selected_date="
+                    f"'{selected_date}', "
+                    f"batch_id="
+                    f"'{batch_id}', "
+                    f"center_code="
+                    f"'{center_code}'"
                 )
             )
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Build exam text
-        # ----------------------------------
+        # -------------------------------------------------
         print("\n📝 Building exam text...")
 
         parts = []
 
         if question.title:
+
             parts.append(
-                f"TITLE:\n{question.title}\n"
+                f"TITLE:\n"
+                f"{question.title}\n"
             )
 
         parts.append(
-            f"TASK:\n{question.question_text}\n"
+            f"TASK:\n"
+            f"{question.question_text}\n"
         )
 
         if question.statement:
+
             parts.append(
-                f"STATEMENT:\n{question.statement}\n"
+                f"STATEMENT:\n"
+                f"{question.statement}\n"
             )
 
         parts.append(
-            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+            f"INSTRUCTIONS:\n"
+            f"{question.question_prompt}\n"
         )
 
         if question.opening_sentence:
+
             parts.append(
                 f"OPENING SENTENCE:\n"
                 f"{question.opening_sentence}\n"
@@ -46837,23 +51643,17 @@ def generate_exam_writing_latest(
                 f"{formatted_guidelines}\n"
             )
 
-        full_exam_text = "\n".join(parts).strip()
-
-        print("✅ Exam text built successfully")
-
-        # ----------------------------------
-        # Mark question as used
-        # ----------------------------------
-        question.is_used = True
-
-        print(
-            f"🏷️ Marked question "
-            f"{question.id} as used"
+        full_exam_text = (
+            "\n".join(parts).strip()
         )
 
-        # ----------------------------------
+        print(
+            "✅ Exam text built successfully"
+        )
+
+        # -------------------------------------------------
         # Save generated exam
-        # ----------------------------------
+        # -------------------------------------------------
         print("\n💾 Saving exam...")
 
         exam = GeneratedExamWriting(
@@ -46864,6 +51664,7 @@ def generate_exam_writing_latest(
             difficulty=question.difficulty.capitalize(),
             question_text=full_exam_text,
             duration_minutes=30,
+            center_code=center_code
         )
 
         db.add(exam)
@@ -46873,14 +51674,36 @@ def generate_exam_writing_latest(
         db.refresh(exam)
 
         print(
-            f"✅ Exam saved with ID: {exam.id}"
+            f"✅ Exam saved with ID: "
+            f"{exam.id}"
+        )
+
+        # -------------------------------------------------
+        # Register question usage
+        # -------------------------------------------------
+        print(
+            "\n📝 Registering "
+            "question usage..."
+        )
+
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+
+        db.commit()
+
+        print(
+            "✅ Question usage registered"
         )
 
         print("=" * 70 + "\n")
 
-        # ----------------------------------
+        # -------------------------------------------------
         # Response
-        # ----------------------------------
+        # -------------------------------------------------
         return {
             "exam_id": exam.id,
             "class_name": exam.class_name,
@@ -46889,11 +51712,15 @@ def generate_exam_writing_latest(
             "topic": exam.topic,
             "duration_minutes": exam.duration_minutes,
             "selected_date": selected_date,
+            "batch_id": batch_id,
+            "center_code": exam.center_code,
             "exam_text": full_exam_text,
         }
 
     except HTTPException:
+
         db.rollback()
+
         raise
 
     except Exception as e:
@@ -46901,14 +51728,13 @@ def generate_exam_writing_latest(
         db.rollback()
 
         print("\n🔥 FULL ERROR TRACE:")
+
         traceback.print_exc()
 
         raise HTTPException(
             status_code=500,
             detail=str(e)
         )
-
-
 def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
     """
     Normalize loosely formatted writing questions into structured JSON.
@@ -47103,164 +51929,457 @@ async def upload_word_writing(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    print("\n=== 📥 UPLOAD WORD WRITING START ===")
-    print("📄 File name:", file.filename)
-    print("📄 Content type:", file.content_type)
+
+    print(
+        "\n=== 📥 UPLOAD WORD "
+        "WRITING START ==="
+    )
+
+    print(
+        "📄 File name:",
+        file.filename
+    )
+
+    print(
+        "📄 Content type:",
+        file.content_type
+    )
+
+    # -------------------------------------------------
+    # Generate batch id
+    # -------------------------------------------------
+
+    last_batch_id = db.query(
+        func.max(
+            WritingQuestionBank.batch_id
+        )
+    ).scalar()
+
+    next_batch_id = (
+        1
+        if last_batch_id is None
+        else last_batch_id + 1
+    )
+
+    print(
+        f"📦 Generated "
+        f"batch_id={next_batch_id}"
+    )
+
+    # -------------------------------------------------
+    # Validate file type
+    # -------------------------------------------------
 
     if file.content_type != (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "application/vnd.openxmlformats-"
+        "officedocument.wordprocessingml."
+        "document"
     ):
-        raise HTTPException(400, "File must be .docx")
+
+        raise HTTPException(
+            400,
+            "File must be .docx"
+        )
 
     raw = await file.read()
-    print("📦 File size (bytes):", len(raw))
 
-    extracted_text = extract_text_from_docx(raw)
-    print("🧾 Extracted text preview:", extracted_text[:300])
+    print(
+        "📦 File size (bytes):",
+        len(raw)
+    )
+
+    extracted_text = (
+        extract_text_from_docx(raw)
+    )
+
+    print(
+        "🧾 Extracted text preview:",
+        extracted_text[:300]
+    )
+
+    # -------------------------------------------------
+    # Parse writing questions
+    # -------------------------------------------------
 
     try:
-        parsed_list = parse_and_normalize_writing_with_openai(extracted_text)
-    except Exception as e:
-        print("❌ Writing normalization error:", e)
-        raise HTTPException(400, str(e))
 
-    print("📊 Total parsed items:", len(parsed_list))
+        parsed_list = (
+            parse_and_normalize_writing_with_openai(
+                extracted_text
+            )
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ Writing "
+            "normalization error:",
+            e
+        )
+
+        raise HTTPException(
+            400,
+            str(e)
+        )
+
+    print(
+        "📊 Total parsed items:",
+        len(parsed_list)
+    )
 
     if not parsed_list:
-        raise HTTPException(400, "No writing questions detected")
+
+        raise HTTPException(
+            400,
+            "No writing questions detected"
+        )
 
     saved_ids = []
 
-    for idx, parsed in enumerate(parsed_list):
-        print(f"\n================ ITEM {idx + 1} ================")
-        print("📦 FULL PARSED OBJECT:\n", parsed)
+    # =================================================
+    # PROCESS EACH QUESTION
+    # =================================================
 
-        # 🔥 Extract and debug class year
-        raw_class_year = parsed.get("class_year")
-        class_year = helper_extract_year_writing_v2(raw_class_year)
+    for idx, parsed in enumerate(
+        parsed_list
+    ):
 
-        print("➡️ Final class_year being saved:", class_year)
-
-        # 🔍 Validate required fields
-        required_fields = ["class_name", "subject", "topic", "difficulty", "question_text", "question_prompt"]
-
-        for field in required_fields:
-            if field not in parsed:
-                print(f"❌ Missing field: {field}")
-
-        obj = WritingQuestionBank(
-            class_name=parsed.get("class_name"),
-            class_year=class_year,   # ✅ FIXED (no comma)
-            subject=parsed.get("subject"),
-            topic=parsed.get("topic"),
-            difficulty=parsed.get("difficulty"),
-
-            title=parsed.get("title"),
-            question_text=parsed.get("question_text"),
-            question_prompt=parsed.get("question_prompt"),
-            statement=parsed.get("statement"),
-            opening_sentence=parsed.get("opening_sentence"),
-            guidelines=parsed.get("guidelines"),
-
-            source_file=file.filename
+        print(
+            f"\n================ "
+            f"ITEM {idx + 1} "
+            f"================"
         )
 
-        print("🧠 DB OBJECT BEFORE SAVE:")
-        print("   class_name:", obj.class_name)
-        print("   class_year:", obj.class_year)
-        print("   subject:", obj.subject)
-        print("   topic:", obj.topic)
-        print("   difficulty:", obj.difficulty)
+        print(
+            "📦 FULL PARSED OBJECT:\n",
+            parsed
+        )
+
+        # -------------------------------------------------
+        # Extract class year
+        # -------------------------------------------------
+
+        raw_class_year = (
+            parsed.get("class_year")
+        )
+
+        class_year = (
+            helper_extract_year_writing_v2(
+                raw_class_year
+            )
+        )
+
+        print(
+            "➡️ Final class_year "
+            "being saved:",
+            class_year
+        )
+
+        # -------------------------------------------------
+        # Validate required fields
+        # -------------------------------------------------
+
+        required_fields = [
+
+            "class_name",
+            "subject",
+            "topic",
+            "difficulty",
+            "question_text",
+            "question_prompt"
+        ]
+
+        for field in required_fields:
+
+            if field not in parsed:
+
+                print(
+                    f"❌ Missing field: "
+                    f"{field}"
+                )
+
+        # -------------------------------------------------
+        # Create DB object
+        # -------------------------------------------------
+
+        obj = WritingQuestionBank(
+
+            batch_id=
+                next_batch_id,
+
+            class_name=
+                parsed.get(
+                    "class_name"
+                ),
+
+            class_year=
+                class_year,
+
+            subject=
+                parsed.get(
+                    "subject"
+                ),
+
+            topic=
+                parsed.get(
+                    "topic"
+                ),
+
+            difficulty=
+                parsed.get(
+                    "difficulty"
+                ),
+
+            title=
+                parsed.get(
+                    "title"
+                ),
+
+            question_text=
+                parsed.get(
+                    "question_text"
+                ),
+
+            question_prompt=
+                parsed.get(
+                    "question_prompt"
+                ),
+
+            statement=
+                parsed.get(
+                    "statement"
+                ),
+
+            opening_sentence=
+                parsed.get(
+                    "opening_sentence"
+                ),
+
+            guidelines=
+                parsed.get(
+                    "guidelines"
+                ),
+
+            source_file=
+                file.filename
+        )
+
+        print(
+            "🧠 DB OBJECT "
+            "BEFORE SAVE:"
+        )
+
+        print(
+            "   batch_id:",
+            obj.batch_id
+        )
+
+        print(
+            "   class_name:",
+            obj.class_name
+        )
+
+        print(
+            "   class_year:",
+            obj.class_year
+        )
+
+        print(
+            "   subject:",
+            obj.subject
+        )
+
+        print(
+            "   topic:",
+            obj.topic
+        )
+
+        print(
+            "   difficulty:",
+            obj.difficulty
+        )
 
         db.add(obj)
 
         try:
+
             db.flush()
-            print("✅ Saved with ID:", obj.id)
-            saved_ids.append(obj.id)
+
+            print(
+                "✅ Saved with ID:",
+                obj.id
+            )
+
+            saved_ids.append(
+                obj.id
+            )
+
         except Exception as db_error:
-            print("❌ DB FLUSH ERROR:", db_error)
+
+            print(
+                "❌ DB FLUSH ERROR:",
+                db_error
+            )
+
             db.rollback()
+
             raise
 
+    # -------------------------------------------------
+    # Commit transaction
+    # -------------------------------------------------
+
     try:
+
         db.commit()
-        print("\n✅ DB COMMIT SUCCESSFUL")
+
+        print(
+            "\n✅ DB COMMIT "
+            "SUCCESSFUL"
+        )
+
     except Exception as commit_error:
-        print("❌ DB COMMIT ERROR:", commit_error)
+
+        print(
+            "❌ DB COMMIT ERROR:",
+            commit_error
+        )
+
         db.rollback()
+
         raise
 
-    print("\n=== 🎉 UPLOAD COMPLETE ===")
+    print(
+        "\n=== 🎉 UPLOAD "
+        "COMPLETE ==="
+    )
 
     return {
-        "message": "Writing questions uploaded successfully",
-        "count": len(saved_ids),
-        "question_ids": saved_ids
-    }
 
+        "message":
+            "Writing questions "
+            "uploaded successfully",
+
+        "batch_id":
+            next_batch_id,
+
+        "count":
+            len(saved_ids),
+
+        "question_ids":
+            saved_ids
+    }
 
 @app.post("/api/quizzes-writing-homework")
 def save_writing_homework_quiz(
     payload: WritingQuizSchemaHomeWork,
     db: Session = Depends(get_db)
 ):
-    print("\n--- Deleting existing Writing HOMEWORK quiz setup for this class/year ---")
+
+    print(
+        "\n========== SAVE WRITING HOMEWORK QUIZ =========="
+    )
+
+    print("📥 Incoming payload:", payload.dict())
+
+    print(
+        "\n--- Deleting existing Writing HOMEWORK "
+        "quiz setup for this class/year/center ---"
+    )
 
     db.query(QuizSetupWritingHomework).filter(
         QuizSetupWritingHomework.class_name == payload.class_name,
-        QuizSetupWritingHomework.class_year == payload.class_year
+        QuizSetupWritingHomework.class_year == payload.class_year,
+        QuizSetupWritingHomework.center_code == payload.center_code
     ).delete(synchronize_session=False)
 
     db.commit()
 
     print("🗑️ Existing config deleted (if any)")
-    print("\n--- Creating new Writing HOMEWORK quiz setup ---")
+
+    print(
+        "\n--- Creating new Writing HOMEWORK "
+        "quiz setup ---"
+    )
 
     quiz = QuizSetupWritingHomework(
         class_name=payload.class_name,
         class_year=payload.class_year,
         subject=payload.subject,
         topic=payload.topic,
-        difficulty=payload.difficulty
+        difficulty=payload.difficulty,
+        center_code=payload.center_code
     )
 
     db.add(quiz)
+
     db.commit()
+
     db.refresh(quiz)
+
+    print("✅ Writing homework quiz saved")
+    print("🆔 Quiz ID:", quiz.id)
 
     return {
         "message": "Writing homework quiz setup saved",
         "quiz_id": quiz.id
     }
 @app.post("/api/quizzes-writing")
-def save_writing_quiz(payload: WritingQuizSchema, db: Session = Depends(get_db)):
-    print("\n--- Deleting previous Writing quiz setups ---")
+def save_writing_quiz(
+    payload: WritingQuizSchema,
+    db: Session = Depends(get_db)
+):
 
-    db.query(QuizSetupWriting).delete(synchronize_session=False)
+    print(
+        "\n========== SAVE WRITING QUIZ =========="
+    )
+
+    print("📥 Incoming payload:", payload.dict())
+
+    print(
+        "\n--- Deleting existing Writing "
+        "quiz setup for this class/year/center ---"
+    )
+
+    db.query(QuizSetupWriting).filter(
+        QuizSetupWriting.class_name == payload.class_name,
+        QuizSetupWriting.class_year == payload.class_year,
+        QuizSetupWriting.center_code == payload.center_code
+    ).delete(synchronize_session=False)
+
     db.commit()
 
-    print("🗑️ Previous writing quiz setups deleted")
-    print("\n--- Creating new Writing quiz setup ---")
+    print("🗑️ Existing config deleted (if any)")
+
+    print(
+        "\n--- Creating new Writing "
+        "quiz setup ---"
+    )
 
     quiz = QuizSetupWriting(
         class_name=payload.class_name,
-        class_year=payload.class_year,   # ✅ ADDED
+        class_year=payload.class_year,
         subject=payload.subject,
         topic=payload.topic,
-        difficulty=payload.difficulty
+        difficulty=payload.difficulty,
+        center_code=payload.center_code
     )
 
     db.add(quiz)
+
     db.commit()
+
     db.refresh(quiz)
+
+    print("✅ Writing quiz saved")
+    print("🆔 Quiz ID:", quiz.id)
 
     return {
         "message": "Writing quiz setup saved",
         "quiz_id": quiz.id,
-        "class_year": quiz.class_year   # ✅ optional but useful for debugging
-    }
- 
+        "class_year": quiz.class_year,
+        "center_code": quiz.center_code
+    } 
 # ------------------------------------------------------------
 # 🔧 Helper: Build sections with questions (FOUNDATIONAL)
 # ------------------------------------------------------------
@@ -47623,165 +52742,370 @@ def normalize_type6_image_option_question(question: dict):
 
     question["question_blocks"] = cleaned_blocks
     return question
-@app.post("/api/student/start-homework-exam/naplan-language-conventions")
-def start_naplan_language_conventions_homework_exam(
+
+@app.post("/api/student/start-exam/naplan-language-conventions")
+def start_naplan_language_conventions_exam(
     req: StartExamRequest = Body(...),
     db: Session = Depends(get_db)
 ):
+
     print(
-        "\n========== START NAPLAN LANGUAGE "
-        "CONVENTIONS HOMEWORK EXAM =========="
+        "\n================ START NAPLAN "
+        "LANGUAGE CONVENTIONS EXAM ================="
     )
-    print("📥 Incoming payload:", req.dict())
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
 
     # --------------------------------------------------
-    # 1. Resolve student
+    # 1️⃣ Resolve student
     # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(
-            func.lower(Student.student_id)
-            == func.lower(req.student_id.strip())
+            func.lower(
+                Student.student_id
+            )
+            ==
+            func.lower(
+                req.student_id.strip()
+            )
         )
         .first()
     )
 
     if not student:
+
+        print(
+            "❌ Student not found:",
+            repr(req.student_id)
+        )
+
         raise HTTPException(
             status_code=404,
             detail="Student not found"
         )
 
-    student_year = int(
-        student.student_year
-        .replace("Year", "")
-        .strip()
-    )
-
-    if not student_year:
-        raise HTTPException(
-            status_code=400,
-            detail="Student year not set"
-        )
-
     print(
         f"✅ Student resolved | "
         f"student_id={student.student_id} | "
-        f"internal_id={student.id} | "
-        f"year={student_year}"
+        f"internal_id={student.id}"
+    )
+
+    print(
+        f"📚 Student class_name="
+        f"'{student.class_name}'"
+    )
+
+    print(
+        f"🎓 Student year="
+        f"'{student.student_year}'"
+    )
+
+    print(
+        f"🏢 Student center_code="
+        f"'{student.center_code}'"
     )
 
     # --------------------------------------------------
-    # 2. Load latest homework exam for year
+    # 2️⃣ Parse year
+    # --------------------------------------------------
+    try:
+
+        student_year = int(
+            student.student_year
+            .lower()
+            .replace("year", "")
+            .strip()
+        )
+
+    except Exception:
+
+        print(
+            "❌ Failed to parse year:",
+            student.student_year
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid student_year format"
+        )
+
+    print(
+        f"🎓 Parsed student year: "
+        f"{student_year}"
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Normalize center code
+    # --------------------------------------------------
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 normalized_center_code="
+        f"{normalized_center_code}"
+    )
+
+    # --------------------------------------------------
+    # 4️⃣ Debug available exams
+    # --------------------------------------------------
+    available_exams = (
+        db.query(
+            ExamNaplanLanguageConventions.year
+        )
+        .filter(
+            func.upper(
+                func.trim(
+                    ExamNaplanLanguageConventions
+                    .center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .distinct()
+        .all()
+    )
+
+    available_years = [
+
+        y[0]
+
+        for y in available_exams
+    ]
+
+    print(
+        "📊 Available exam years "
+        "for center:",
+        available_years
+    )
+
+    # --------------------------------------------------
+    # 5️⃣ Fetch latest CENTER-AWARE exam
     # --------------------------------------------------
     exam = (
         db.query(
-            ExamNaplanLanguageConventionsHomework
+            ExamNaplanLanguageConventions
         )
         .filter(
-            ExamNaplanLanguageConventionsHomework.year
-            == student_year
+
+            func.lower(
+                func.trim(
+                    ExamNaplanLanguageConventions
+                    .class_name
+                )
+            )
+            ==
+            func.lower(
+                student.class_name
+            ),
+
+            func.lower(
+                func.trim(
+                    ExamNaplanLanguageConventions
+                    .subject
+                )
+            )
+            ==
+            "language conventions",
+
+            ExamNaplanLanguageConventions
+            .year
+            ==
+            student_year,
+
+            func.upper(
+                func.trim(
+                    ExamNaplanLanguageConventions
+                    .center_code
+                )
+            )
+            ==
+            normalized_center_code
         )
         .order_by(
-            ExamNaplanLanguageConventionsHomework
-            .id.desc()
+            ExamNaplanLanguageConventions
+            .created_at.desc()
         )
         .first()
     )
 
     if not exam:
+
+        print(
+            "❌ No exam found "
+            f"for year={student_year} "
+            f"center={normalized_center_code}"
+        )
+
         raise HTTPException(
             status_code=404,
             detail=(
-                "NAPLAN Language Conventions "
-                "homework exam not found"
+                "NAPLAN Language "
+                "Conventions exam "
+                "not found"
             )
         )
 
-    # --------------------------------------------------
-    # 3. Timing setup
-    # --------------------------------------------------
-    MAX_DURATION = timedelta(minutes=40)
-    now = datetime.now(timezone.utc)
+    print(
+        f"📦 Latest exam ID: "
+        f"{exam.id}"
+    )
 
-    uploaded_images = db.query(
-        UploadedImage
-    ).all()
-
-    image_map = {
-        img.original_name: img.gcs_url
-        for img in uploaded_images
-    }
+    print(
+        f"🏢 Exam center_code="
+        f"{exam.center_code}"
+    )
 
     # --------------------------------------------------
-    # 4. Find latest attempt for this homework exam
+    # 6️⃣ Fetch attempt ONLY for this exam
     # --------------------------------------------------
     attempt = (
         db.query(
-            StudentExamNaplanLanguageConventionsHomework
+            StudentExamNaplanLanguageConventions
         )
         .filter(
-            StudentExamNaplanLanguageConventionsHomework.student_id
-            == student.id,
 
-            StudentExamNaplanLanguageConventionsHomework.exam_id
-            == exam.id,
+            StudentExamNaplanLanguageConventions
+            .student_id
+            ==
+            student.id,
 
-            StudentExamNaplanLanguageConventionsHomework.year
-            == student_year
+            StudentExamNaplanLanguageConventions
+            .exam_id
+            ==
+            exam.id
         )
         .order_by(
-            StudentExamNaplanLanguageConventionsHomework
+            StudentExamNaplanLanguageConventions
             .started_at.desc()
         )
         .first()
     )
 
+    print(
+        "📦 Attempt for this exam:",
+        attempt.id if attempt else None
+    )
+
+    MAX_DURATION = timedelta(
+        minutes=40
+    )
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    uploaded_images = (
+        db.query(
+            UploadedImage
+        )
+        .all()
+    )
+
+    image_map = {
+
+        img.original_name:
+            img.gcs_url
+
+        for img in uploaded_images
+    }
+
     # --------------------------------------------------
-    # 5. Existing attempt logic
+    # 7️⃣ Existing attempt
     # --------------------------------------------------
     if attempt:
 
         print(
-            f"♻️ Existing homework attempt found | "
-            f"id={attempt.id}"
+            "🔢 Existing attempt found | "
+            f"attempt_id={attempt.id} | "
+            f"started_at={attempt.started_at} | "
+            f"completed_at={attempt.completed_at}"
         )
 
         started_at = attempt.started_at
 
         if started_at.tzinfo is None:
-            started_at = started_at.replace(
-                tzinfo=timezone.utc
+
+            started_at = (
+                started_at.replace(
+                    tzinfo=timezone.utc
+                )
             )
 
-        expires_at = started_at + MAX_DURATION
-
-        elapsed = int(
-            (now - started_at).total_seconds()
+        expires_at = (
+            started_at
+            + MAX_DURATION
         )
 
-        # timeout
+        elapsed = int(
+            (
+                now - started_at
+            ).total_seconds()
+        )
+
+        print(
+            "⏱️ Timer evaluation | "
+            f"now={now} | "
+            f"expires_at={expires_at} | "
+            f"elapsed_seconds={elapsed}"
+        )
+
+        # --------------------------------------------------
+        # ⛔ Expired attempt
+        # --------------------------------------------------
         if (
             attempt.completed_at is None
-            and now > expires_at
+            and
+            now > expires_at
         ):
-            attempt.completed_at = expires_at
+
+            attempt.completed_at = (
+                expires_at
+            )
+
             db.commit()
 
+            print(
+                "➡️ Returning: "
+                "completed=true (timeout)"
+            )
+
             return {
                 "completed": True
             }
 
-        # already completed
-        if attempt.completed_at is not None:
+        # --------------------------------------------------
+        # ✅ Already completed
+        # --------------------------------------------------
+        if (
+            attempt.completed_at
+            is not None
+        ):
+
+            print(
+                "➡️ Returning: "
+                "completed=true "
+                "(already completed)"
+            )
+
             return {
                 "completed": True
             }
 
-        # resume active
+        # --------------------------------------------------
+        # ▶ Resume active attempt
+        # --------------------------------------------------
         remaining = max(
             0,
-            attempt.duration_minutes * 60
+            attempt.duration_minutes
+            * 60
             - elapsed
         )
 
@@ -47796,21 +53120,42 @@ def start_naplan_language_conventions_homework_exam(
 
         for q in raw_questions:
 
-            if q.get("question_type") == 1:
-                q = serialize_type1_question_for_exam(q)
+            if q.get(
+                "question_type"
+            ) == 1:
 
-            normalized_questions.append(q)
+                q = (
+                    serialize_type1_question_for_exam(
+                        q
+                    )
+                )
+
+            normalized_questions.append(
+                q
+            )
 
         return {
-            "completed": False,
-            "questions": normalized_questions,
-            "remaining_time": remaining
+
+            "completed":
+                False,
+
+            "is_resumed":
+                True,
+
+            "questions":
+                normalized_questions,
+
+            "remaining_time":
+                remaining
         }
 
     # --------------------------------------------------
-    # 6. First attempt
+    # 8️⃣ First attempt
     # --------------------------------------------------
-    print("🆕 Creating first homework attempt")
+    print(
+        "🆕 No existing attempt → "
+        "creating first attempt"
+    )
 
     raw_questions = (
         normalize_naplan_language_conventions_questions_live(
@@ -47823,33 +53168,574 @@ def start_naplan_language_conventions_homework_exam(
 
     for q in raw_questions:
 
-        if q.get("question_type") == 1:
-            q = serialize_type1_question_for_exam(q)
+        if q.get(
+            "question_type"
+        ) == 1:
 
-        normalized_questions.append(q)
+            q = (
+                serialize_type1_question_for_exam(
+                    q
+                )
+            )
 
+        normalized_questions.append(
+            q
+        )
+
+    # --------------------------------------------------
+    # 9️⃣ Create attempt
+    # --------------------------------------------------
     new_attempt = (
-        StudentExamNaplanLanguageConventionsHomework(
-            student_id=student.id,
-            exam_id=exam.id,
-            year=student_year,
-            started_at=now,
-            duration_minutes=40
+        StudentExamNaplanLanguageConventions(
+
+            student_id=
+                student.id,
+
+            exam_id=
+                exam.id,
+
+            year=
+                student_year,
+
+            started_at=
+                now,
+
+            duration_minutes=
+                40
         )
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
     print(
-        f"🆕 New homework attempt created | "
-        f"id={new_attempt.id}"
+        "🆕 New attempt created | "
+        f"attempt_id={new_attempt.id}"
     )
 
     # --------------------------------------------------
-    # 7. Pre-create response rows
+    # 🔟 Pre-create response rows
     # --------------------------------------------------
+    for original_q in (
+        exam.questions or []
+    ):
+
+        correct_option = (
+            normalize_correct_option_for_db(
+                original_q.get(
+                    "correct_answer"
+                )
+            )
+        )
+
+        db.add(
+            StudentExamResponseNaplanLanguageConventions(
+
+                student_id=
+                    student.id,
+
+                exam_id=
+                    exam.id,
+
+                exam_attempt_id=
+                    new_attempt.id,
+
+                year=
+                    student_year,
+
+                q_id=
+                    original_q["id"],
+
+                topic=
+                    original_q.get(
+                        "topic"
+                    ),
+
+                selected_option=
+                    None,
+
+                correct_option=
+                    correct_option,
+
+                is_correct=
+                    None
+            )
+        )
+
+    db.commit()
+
+    print(
+        "================ END START "
+        "NAPLAN LANGUAGE "
+        "CONVENTIONS EXAM "
+        "=================\n"
+    )
+
+    return {
+
+        "completed":
+            False,
+
+        "is_resumed":
+            False,
+
+        "questions":
+            normalized_questions,
+
+        "remaining_time":
+            (
+                new_attempt
+                .duration_minutes
+                * 60
+            )
+    }     
+@app.post("/api/student/start-homework/naplan-language-conventions")
+def start_naplan_language_conventions_homework(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+
+    print(
+        "\n================ START "
+        "NAPLAN LANGUAGE CONVENTIONS "
+        "HOMEWORK ================"
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
+
+    # ==================================================
+    # 1️⃣ Resolve student
+    # ==================================================
+
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            ==
+            func.lower(
+                req.student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+
+        print(
+            "❌ Student not found:",
+            repr(req.student_id)
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        f"✅ Student resolved | "
+        f"student_id={student.student_id} | "
+        f"internal_id={student.id}"
+    )
+
+    print(
+        f"🏢 Student center_code: "
+        f"{student.center_code}"
+    )
+
+    # ==================================================
+    # 2️⃣ Resolve class year
+    # ==================================================
+
+    if not student.student_year:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student year not set"
+            )
+        )
+
+    student_year = int(
+        student.student_year
+        .replace("Year", "")
+        .strip()
+    )
+
+    print(
+        f"📘 Student class_year: "
+        f"{student_year}"
+    )
+
+    MAX_DURATION = timedelta(
+        minutes=40
+    )
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    # ==================================================
+    # 3️⃣ Fetch latest CENTER-SPECIFIC homework
+    # ==================================================
+
+    exam = (
+        db.query(
+            ExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+
+            func.lower(
+                func.trim(
+                    ExamNaplanLanguageConventionsHomework
+                    .class_name
+                )
+            )
+            ==
+            func.lower(
+                func.trim(
+                    student.class_name
+                )
+            ),
+
+            func.lower(
+                func.trim(
+                    ExamNaplanLanguageConventionsHomework
+                    .subject
+                )
+            )
+            ==
+            "language conventions",
+
+            ExamNaplanLanguageConventionsHomework
+            .year
+            ==
+            student_year,
+
+            func.upper(
+                func.trim(
+                    ExamNaplanLanguageConventionsHomework
+                    .center_code
+                )
+            )
+            ==
+            student.center_code
+            .strip()
+            .upper()
+        )
+        .order_by(
+            ExamNaplanLanguageConventionsHomework
+            .id.desc()
+        )
+        .first()
+    )
+
+    if not exam:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No NAPLAN Language "
+                f"Conventions homework found "
+                f"for year={student_year} "
+                f"and center="
+                f"{student.center_code}"
+            )
+        )
+
+    print(
+        f"📦 Homework selected | "
+        f"exam_id={exam.id}"
+    )
+
+    # ==================================================
+    # 4️⃣ Normalize Questions
+    # ==================================================
+
+    uploaded_images = (
+        db.query(
+            UploadedImage
+        )
+        .all()
+    )
+
+    image_map = {
+
+        img.original_name:
+            img.gcs_url
+
+        for img in uploaded_images
+    }
+
+    def normalize_questions(
+        raw_questions
+    ):
+
+        hydrated_questions = (
+            normalize_naplan_language_conventions_questions_live(
+                raw_questions or [],
+                image_map
+            )
+        )
+
+        normalized = []
+
+        for q in hydrated_questions:
+
+            fixed = dict(q)
+
+            # ==========================================
+            # TYPE 1 SERIALIZATION
+            # ==========================================
+
+            if (
+                fixed.get("question_type")
+                == 1
+            ):
+
+                fixed = (
+                    serialize_type1_question_for_exam(
+                        fixed
+                    )
+                )
+
+            normalized.append(
+                fixed
+            )
+
+        return normalized
+
+    # ==================================================
+    # 5️⃣ Check ACTIVE attempt
+    # ==================================================
+
+    active_attempt = (
+        db.query(
+            StudentExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+
+            StudentExamNaplanLanguageConventionsHomework
+            .student_id
+            ==
+            student.id,
+
+            StudentExamNaplanLanguageConventionsHomework
+            .exam_id
+            ==
+            exam.id,
+
+            StudentExamNaplanLanguageConventionsHomework
+            .year
+            ==
+            student_year,
+
+            StudentExamNaplanLanguageConventionsHomework
+            .completed_at.is_(None)
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventionsHomework
+            .started_at.desc()
+        )
+        .first()
+    )
+
+    if active_attempt:
+
+        print(
+            f"🧠 Active homework attempt found | "
+            f"attempt_id="
+            f"{active_attempt.id}"
+        )
+
+        started_at = (
+            active_attempt.started_at
+        )
+
+        if started_at.tzinfo is None:
+
+            started_at = (
+                started_at.replace(
+                    tzinfo=timezone.utc
+                )
+            )
+
+        expires_at = (
+            started_at
+            + MAX_DURATION
+        )
+
+        elapsed = int(
+            (
+                now - started_at
+            ).total_seconds()
+        )
+
+        # ==========================================
+        # TIMEOUT
+        # ==========================================
+
+        if now > expires_at:
+
+            print(
+                "⛔ Homework expired "
+                "→ auto submit"
+            )
+
+            active_attempt.completed_at = (
+                expires_at
+            )
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        remaining = max(
+
+            0,
+
+            (
+                active_attempt
+                .duration_minutes
+                * 60
+            )
+            - elapsed
+        )
+
+        normalized_questions = (
+            normalize_questions(
+                exam.questions or []
+            )
+        )
+
+        return {
+
+            "completed":
+                False,
+
+            "exam_attempt_id":
+                active_attempt.id,
+
+            "questions":
+                jsonable_encoder(
+                    normalized_questions
+                ),
+
+            "remaining_time":
+                remaining
+        }
+
+    # ==================================================
+    # 6️⃣ Check COMPLETED attempt
+    # ==================================================
+
+    completed_attempt = (
+        db.query(
+            StudentExamNaplanLanguageConventionsHomework
+        )
+        .filter(
+
+            StudentExamNaplanLanguageConventionsHomework
+            .student_id
+            ==
+            student.id,
+
+            StudentExamNaplanLanguageConventionsHomework
+            .exam_id
+            ==
+            exam.id,
+
+            StudentExamNaplanLanguageConventionsHomework
+            .year
+            ==
+            student_year,
+
+            StudentExamNaplanLanguageConventionsHomework
+            .completed_at.isnot(None)
+        )
+        .first()
+    )
+
+    if completed_attempt:
+
+        print(
+            f"🚫 Homework already completed "
+            f"exam_id={exam.id} | "
+            f"attempt_id="
+            f"{completed_attempt.id}"
+        )
+
+        return {
+
+            "completed":
+                True,
+
+            "exam_attempt_id":
+                completed_attempt.id,
+
+            "message":
+                "Homework already attempted"
+        }
+
+    # ==================================================
+    # 7️⃣ Create NEW attempt
+    # ==================================================
+
+    print(
+        "🆕 Creating new "
+        "homework attempt"
+    )
+
+    normalized_questions = (
+        normalize_questions(
+            exam.questions or []
+        )
+    )
+
+    new_attempt = (
+        StudentExamNaplanLanguageConventionsHomework(
+
+            student_id=
+                student.id,
+
+            exam_id=
+                exam.id,
+
+            year=
+                student_year,
+
+            started_at=
+                now,
+
+            duration_minutes=
+                40
+        )
+    )
+
+    db.add(new_attempt)
+
+    db.commit()
+
+    db.refresh(new_attempt)
+
+    print(
+        f"🆕 New homework attempt "
+        f"created | "
+        f"attempt_id="
+        f"{new_attempt.id}"
+    )
+
+    # ==================================================
+    # 8️⃣ Pre-create response rows
+    # ==================================================
+
     for original_q in exam.questions or []:
 
         correct_option = (
@@ -47861,264 +53747,70 @@ def start_naplan_language_conventions_homework_exam(
         )
 
         db.add(
+
             StudentExamResponseNaplanLanguageConventionsHomework(
-                student_id=student.id,
-                exam_id=exam.id,
-                exam_attempt_id=new_attempt.id,
-                year=student_year,
-                q_id=original_q["id"],
-                topic=original_q.get("topic"),
-                selected_option=None,
-                correct_option=correct_option,
-                is_correct=None
+
+                student_id=
+                    student.id,
+
+                exam_id=
+                    exam.id,
+
+                exam_attempt_id=
+                    new_attempt.id,
+
+                year=
+                    student_year,
+
+                q_id=
+                    original_q["id"],
+
+                topic=
+                    original_q.get("topic"),
+
+                selected_option=
+                    None,
+
+                correct_option=
+                    correct_option,
+
+                is_correct=
+                    None
             )
         )
 
     db.commit()
 
     print(
-        "========== END START NAPLAN LANGUAGE "
-        "CONVENTIONS HOMEWORK ==========\n"
+        "================ END START "
+        "NAPLAN LANGUAGE CONVENTIONS "
+        "HOMEWORK ================\n"
     )
+
+    # ==================================================
+    # 9️⃣ Response
+    # ==================================================
 
     return {
-        "completed": False,
-        "questions": normalized_questions,
-        "remaining_time": 40 * 60
-    }
 
-@app.post("/api/student/start-exam/naplan-language-conventions")
-def start_naplan_language_conventions_exam(
-    req: StartExamRequest = Body(...),
-    db: Session = Depends(get_db)
-):
-    print("\n================ START NAPLAN LANGUAGE CONVENTIONS EXAM =================")
-    print("📥 Incoming payload:", req.dict())
-    
-    # --------------------------------------------------
-    # 1️⃣ Resolve student
-    # --------------------------------------------------
-    student = (
-        db.query(Student)
-        .filter(
-            func.lower(Student.student_id) ==
-            func.lower(req.student_id.strip())
-        )
-        .first()
-    )
+        "completed":
+            False,
 
-    if not student:
-        print("❌ Student not found:", repr(req.student_id))
-        raise HTTPException(status_code=404, detail="Student not found")
-    student_year = int(student.student_year.replace("Year", "").strip())
+        "exam_attempt_id":
+            new_attempt.id,
 
-    if not student_year:
-        print("❌ Student year missing")
-        raise HTTPException(
-            status_code=400,
-            detail="Student year not set"
-        )
+        "questions":
+            jsonable_encoder(
+                normalized_questions
+            ),
 
-    print(
-        f"✅ Student resolved | "
-        f"student_id={student.student_id} | "
-        f"internal_id={student.id}"
-    )
-    # --------------------------------------------------
-    # 2️⃣ Fetch latest exam FIRST
-    # --------------------------------------------------
-    exam = (
-        db.query(ExamNaplanLanguageConventions)
-        .filter(
-            func.lower(ExamNaplanLanguageConventions.class_name) == func.lower(student.class_name),
-            func.lower(ExamNaplanLanguageConventions.subject) == "language conventions",
-            ExamNaplanLanguageConventions.year == student_year
-        )
-        .order_by(ExamNaplanLanguageConventions.created_at.desc())
-        .first()
-    )
-
-    if not exam:
-        raise HTTPException(
-            status_code=404,
-            detail="NAPLAN Language Conventions exam not found"
-        )
-
-    print(f"📦 Latest exam ID: {exam.id}")
-
-    # --------------------------------------------------
-    # 3️⃣ Fetch attempt ONLY for this exam
-    # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamNaplanLanguageConventions)
-        .filter(
-            StudentExamNaplanLanguageConventions.student_id == student.id,
-            StudentExamNaplanLanguageConventions.exam_id == exam.id
-        )
-        .order_by(
-            StudentExamNaplanLanguageConventions.started_at.desc()
-        )
-        .first()
-    )
-
-    print("📦 Attempt for this exam:", attempt.id if attempt else None)
-
-    MAX_DURATION = timedelta(minutes=40)
-    now = datetime.now(timezone.utc)
-    uploaded_images = db.query(UploadedImage).all()
-    image_map = {img.original_name: img.gcs_url for img in uploaded_images}
-
-
-    if attempt:
-        print(
-            "🔢 Existing attempt found | "
-            f"attempt_id={attempt.id} | "
-            f"started_at={attempt.started_at} | "
-            f"completed_at={attempt.completed_at}"
-        )
-
-        started_at = attempt.started_at
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-
-        expires_at = started_at + MAX_DURATION
-        elapsed = int((now - started_at).total_seconds())
-
-        print(
-            "⏱️ Timer evaluation | "
-            f"now={now} | "
-            f"expires_at={expires_at} | "
-            f"elapsed_seconds={elapsed}"
-        )
-
-        # ⛔ Expired attempt → auto-complete
-        if attempt.completed_at is None and now > expires_at:
-            attempt.completed_at = expires_at
-            db.commit()
-
-            print("➡️ Returning: completed=true (timeout)")
-            return {"completed": True}
-
-        # ✅ Already completed
-        if attempt.completed_at is not None:
-            print("➡️ Returning: completed=true (already completed)")
-            return {"completed": True}
-
-        # ▶ Resume active attempt
-        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
-
-        
-
-        # 🔥 SANITIZE BEFORE RETURNING
-        raw_questions = normalize_naplan_language_conventions_questions_live(
-            exam.questions or [],
-            image_map
-        )
-        
-        normalized_questions = []
-        
-        for q in raw_questions:
-        
-            if q.get("question_type") == 1:
-                q = serialize_type1_question_for_exam(q)
-        
-            normalized_questions.append(q)
-        
-        return {
-            "completed": False,
-            "questions": normalized_questions,
-            "remaining_time": remaining
-        }
-
-
-    # --------------------------------------------------
-    # 🆕 FIRST ATTEMPT
-    # --------------------------------------------------
-    print("🆕 No existing attempt → creating first Language Conventions attempt")
-
-    exam = (
-        db.query(ExamNaplanLanguageConventions)
-        .filter(
-            func.lower(ExamNaplanLanguageConventions.class_name) ==
-            func.lower(student.class_name),
-            func.lower(ExamNaplanLanguageConventions.subject) ==
-            "language conventions",
-            ExamNaplanLanguageConventions.year == student_year
-        )
-        .order_by(
-            ExamNaplanLanguageConventions.created_at.desc()
-        )
-        .first()
-    )
-    if not exam:
-        raise HTTPException(
-            status_code=404,
-            detail="NAPLAN Language Conventions exam not found"
-        )
-
-    raw_questions = normalize_naplan_language_conventions_questions_live(
-        exam.questions or [],
-        image_map
-    )
-    
-    normalized_questions = []
-    
-    for q in raw_questions:
-    
-        if q.get("question_type") == 1:
-            q = serialize_type1_question_for_exam(q)
-    
-        normalized_questions.append(q)
-
-    new_attempt = StudentExamNaplanLanguageConventions(
-        student_id=student.id,
-        exam_id=exam.id,
-        year=student_year,
-        started_at=now,
-        duration_minutes=40
-    )
-
-    db.add(new_attempt)
-    db.commit()
-    db.refresh(new_attempt)
-
-    print(
-        "🆕 New attempt created | "
-        f"attempt_id={new_attempt.id}"
-    )
-
-    # --------------------------------------------------
-    # Pre-create response rows
-    # --------------------------------------------------
-    for original_q in exam.questions or []:
-        correct_option = normalize_correct_option_for_db(
-            original_q.get("correct_answer")
-        )
-
-        db.add(
-            StudentExamResponseNaplanLanguageConventions(
-                student_id=student.id,
-                exam_id=exam.id,
-                exam_attempt_id=new_attempt.id,
-                year=student_year,
-                q_id=original_q["id"],
-                topic=original_q.get("topic"),
-                selected_option=None,
-                correct_option=correct_option,
-                is_correct=None
+        "remaining_time":
+            int(
+                new_attempt
+                .duration_minutes
+                * 60
             )
-        )
-
-    db.commit()
-
-    print("================ END START NAPLAN LANGUAGE CONVENTIONS EXAM ================\n")
-
-    return {
-        "completed": False,
-        "questions": normalized_questions,
-        "remaining_time": new_attempt.duration_minutes * 60
     }
- 
 
 @app.post("/api/student/start-exam/foundational-skills")
 def start_or_resume_foundational_exam(
@@ -62869,279 +68561,30 @@ def start_naplan_reading_exam(
     db: Session = Depends(get_db)
 ):
 
-    print("\n================ START NAPLAN READING EXAM =================")
-    print("📥 Incoming payload:", req.dict())
+    print(
+        "\n================ "
+        "START NAPLAN "
+        "READING EXAM "
+        "================="
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
 
     # --------------------------------------------------
     # STUDENT LOOKUP
     # --------------------------------------------------
+
     student = (
         db.query(Student)
         .filter(
-            func.lower(Student.student_id) ==
-            func.lower(req.student_id.strip())
-        )
-        .first()
-    )
-
-    if not student:
-        print("❌ Student not found")
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    print(f"✅ Student found: {student.student_id}")
-    print(f"📚 Student class_name in DB: '{student.class_name}'")
-    print(f"🎓 Student student_year column: '{student.student_year}'")
-    
-    try:
-        student_year = int(student.student_year.lower().replace("year", "").strip())
-    except Exception:
-        print("❌ Failed to parse year from student_year:", student.student_year)
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid student_year format"
-        )
-    
-    print(f"✅ Parsed student year: {student_year}")
-    print(f"🎓 Parsed student year: {student_year}")
-
-    # --------------------------------------------------
-    # DEBUG: WHAT EXAMS EXIST
-    # --------------------------------------------------
-    available_exams = db.query(ExamNaplanReading.year).distinct().all()
-    available_years = [y[0] for y in available_exams]
-
-    print("📊 Available exam years in exam_naplan_reading:", available_years)
-    exam = (
-        db.query(ExamNaplanReading)
-        .filter(
-            ExamNaplanReading.year == student_year,
-            func.lower(ExamNaplanReading.subject) == "reading"
-        )
-        .order_by(ExamNaplanReading.created_at.desc())
-        .first()
-    )
-
-    if not exam:
-        print("❌ No exam found for year:", student_year)
-        raise HTTPException(
-            status_code=404,
-            detail=f"No Reading exam available for Year {student_year}"
-        )
-
-    print(f"📘 Selected latest exam id={exam.id} for year={exam.year}")
-    # --------------------------------------------------
-    # EXISTING ATTEMPT
-    # --------------------------------------------------
-    attempt = (
-        db.query(StudentExamNaplanReading)
-        .filter(
-            StudentExamNaplanReading.student_id == student.id,
-            StudentExamNaplanReading.exam_id == exam.id
-        )
-        .order_by(StudentExamNaplanReading.started_at.desc())
-        .first()
-    )
-
-    MAX_DURATION = timedelta(minutes=40)
-    now = datetime.now(timezone.utc)
-
-    uploaded_images = db.query(UploadedImage).all()
-    image_map = {img.original_name: img.gcs_url for img in uploaded_images}
-
-    # --------------------------------------------------
-    # RESUME ATTEMPT
-    # --------------------------------------------------
-    if attempt:
-
-        print(f"🔁 Resuming attempt id={attempt.id} for year {student_year}")
-
-        responses = (
-            db.query(StudentExamResponseNaplanReading)
-            .filter(
-                StudentExamResponseNaplanReading.exam_attempt_id == attempt.id
+            func.lower(
+                Student.student_id
             )
-            .all()
-        )
-
-        answers = {
-            str(r.q_id): r.selected_option
-            for r in responses
-            if r.selected_option is not None
-        }
-
-        started_at = attempt.started_at
-
-        if started_at.tzinfo is None:
-            started_at = started_at.replace(tzinfo=timezone.utc)
-
-        expires_at = started_at + MAX_DURATION
-        elapsed = int((now - started_at).total_seconds())
-
-        if attempt.completed_at is None and now > expires_at:
-            print("⏱ Attempt expired automatically")
-            attempt.completed_at = expires_at
-            db.commit()
-            return {"completed": True}
-
-        if attempt.completed_at is not None:
-            print("✅ Attempt already completed")
-            return {"completed": True}
-
-        remaining = max(0, attempt.duration_minutes * 60 - elapsed)
-
-        # --------------------------------------------------
-        # LOAD EXAM BY YEAR
-        # --------------------------------------------------
-        exam = (
-            db.query(ExamNaplanReading)
-            .filter(
-                ExamNaplanReading.year == student_year,
-                func.lower(ExamNaplanReading.subject) == "reading"
-            )
-            .order_by(ExamNaplanReading.created_at.desc())
-            .first()
-        )
-
-        if not exam:
-            print("❌ No exam found for year:", student_year)
-            raise HTTPException(
-                status_code=404,
-                detail=f"No Reading exam available for Year {student_year}"
-            )
-
-        print(f"📘 Serving exam id={exam.id} for year={exam.year}")
-
-        raw_questions = exam.questions or []
-
-        normalized_questions = []
-
-        for q in raw_questions:
-            normalize_images_in_question(q, image_map)
-            normalize_type2_correct_answer(q)
-            normalize_reading_gap_questions(q)
-            normalize_true_false_questions(q)
-
-            sanitized_q = strip_correct_answers_from_question(q)
-
-            normalized_questions.append(sanitized_q)
-
-        return {
-            "completed": False,
-            "is_resumed": True,
-            "answers": answers,
-            "questions": normalized_questions,
-            "remaining_time": remaining
-        }
-
-    # --------------------------------------------------
-    # 🆕 FIRST ATTEMPT
-    # --------------------------------------------------
-    print("🆕 No existing attempt — creating new attempt")
-
-    exam = (
-        db.query(ExamNaplanReading)
-        .filter(
-            ExamNaplanReading.year == student_year,
-            func.lower(ExamNaplanReading.subject) == "reading"
-        )
-        .order_by(ExamNaplanReading.created_at.desc())
-        .first()
-    )
-
-    if not exam:
-        print("❌ No exam found for year:", student_year)
-        raise HTTPException(
-            status_code=404,
-            detail=f"No Reading exam available for Year {student_year}"
-        )
-
-    print(f"📘 Selected exam id={exam.id} for year={exam.year}")
-
-    raw_questions = exam.questions or []
-
-    normalized_questions = []
-
-    for q in raw_questions:
-
-        normalize_images_in_question(q, image_map)
-        normalize_type2_correct_answer(q)
-        normalize_reading_gap_questions(q)
-        normalize_true_false_questions(q)
-
-        sanitized_q = strip_correct_answers_from_question(q)
-
-        normalized_questions.append(sanitized_q)
-
-    # --------------------------------------------------
-    # CREATE ATTEMPT
-    # --------------------------------------------------
-    new_attempt = StudentExamNaplanReading(
-        student_id=student.id,
-        exam_id=exam.id,
-        year=student_year,
-        started_at=now,
-        duration_minutes=40
-    )
-
-    db.add(new_attempt)
-    db.commit()
-    db.refresh(new_attempt)
-
-    print(f"🧾 Created new attempt id={new_attempt.id} for year={student_year}")
-
-    # --------------------------------------------------
-    # SEED RESPONSES
-    # --------------------------------------------------
-    for original_q in exam.questions or []:
-
-        normalized_correct_option = normalize_correct_option_for_db(
-            original_q.get("correct_answer")
-        )
-
-        db.add(
-            StudentExamResponseNaplanReading(
-                student_id=student.id,
-                exam_id=exam.id,
-                exam_attempt_id=new_attempt.id,
-                year=student_year,
-                q_id=str(original_q.get("question_id")),
-                topic=original_q.get("topic"),
-                selected_option=None,
-                correct_option=normalized_correct_option,
-                is_correct=None
-            )
-        )
-
-    db.commit()
-
-    print("✅ Response rows seeded")
-
-    return {
-        "completed": False,
-        "is_resumed": False,
-        "answers": {},
-        "questions": normalized_questions,
-        "remaining_time": new_attempt.duration_minutes * 60
-    }
-@app.post("/api/student/start-homework-exam/naplan-reading")
-def start_naplan_reading_homework_exam(
-    req: StartExamRequest = Body(...),
-    db: Session = Depends(get_db)
-):
-    print(
-        "\n============ START NAPLAN "
-        "READING HOMEWORK EXAM ============"
-    )
-    print("📥 Incoming payload:", req.dict())
-
-    # --------------------------------------------------
-    # 1. STUDENT LOOKUP
-    # --------------------------------------------------
-    student = (
-        db.query(Student)
-        .filter(
-            func.lower(Student.student_id)
-            == func.lower(
+            ==
+            func.lower(
                 req.student_id.strip()
             )
         )
@@ -63149,7 +68592,9 @@ def start_naplan_reading_homework_exam(
     )
 
     if not student:
+
         print("❌ Student not found")
+
         raise HTTPException(
             status_code=404,
             detail="Student not found"
@@ -63160,59 +68605,194 @@ def start_naplan_reading_homework_exam(
         f"{student.student_id}"
     )
 
+    print(
+        f"📚 Student class_name "
+        f"in DB: "
+        f"'{student.class_name}'"
+    )
+
+    print(
+        f"🎓 Student "
+        f"student_year column: "
+        f"'{student.student_year}'"
+    )
+
+    # --------------------------------------------------
+    # PARSE YEAR
+    # --------------------------------------------------
+
     try:
+
         student_year = int(
             student.student_year
             .lower()
             .replace("year", "")
             .strip()
         )
+
     except Exception:
+
         print(
-            "❌ Failed to parse year:",
+            "❌ Failed to parse "
+            "year from "
+            "student_year:",
             student.student_year
         )
+
         raise HTTPException(
             status_code=400,
-            detail="Invalid student_year format"
+            detail=(
+                "Invalid "
+                "student_year format"
+            )
         )
 
     print(
-        f"🎓 Parsed student year: "
+        f"✅ Parsed "
+        f"student year: "
         f"{student_year}"
     )
-    exam = (
-        db.query(ExamNaplanReadingHomework)
+
+    # --------------------------------------------------
+    # NORMALIZE CENTER CODE
+    # --------------------------------------------------
+
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 normalized_center_code="
+        f"{normalized_center_code}"
+    )
+
+    # --------------------------------------------------
+    # DEBUG AVAILABLE EXAMS
+    # --------------------------------------------------
+
+    available_exams = (
+        db.query(
+            ExamNaplanReading.year
+        )
         .filter(
-            ExamNaplanReadingHomework.year == student_year,
+            func.upper(
+                func.trim(
+                    ExamNaplanReading
+                    .center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .distinct()
+        .all()
+    )
+
+    available_years = [
+
+        y[0]
+
+        for y in available_exams
+    ]
+
+    print(
+        "📊 Available exam years "
+        "for center:",
+        available_years
+    )
+
+    # --------------------------------------------------
+    # FETCH LATEST CENTER-AWARE EXAM
+    # --------------------------------------------------
+
+    exam = (
+        db.query(
+            ExamNaplanReading
+        )
+        .filter(
+
+            ExamNaplanReading.year
+            ==
+            student_year,
+
             func.lower(
                 func.trim(
-                    ExamNaplanReadingHomework.subject
+                    ExamNaplanReading
+                    .subject
                 )
-            ) == "reading"
+            )
+            ==
+            "reading",
+
+            func.upper(
+                func.trim(
+                    ExamNaplanReading
+                    .center_code
+                )
+            )
+            ==
+            normalized_center_code
         )
         .order_by(
-            ExamNaplanReadingHomework.id.desc()
+            ExamNaplanReading
+            .created_at.desc()
         )
         .first()
     )
+
+    if not exam:
+
+        print(
+            "❌ No exam found "
+            f"for year: "
+            f"{student_year}"
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No Reading exam "
+                f"available for "
+                f"Year {student_year}"
+            )
+        )
+
+    print(
+        f"📘 Selected latest "
+        f"exam id={exam.id} "
+        f"for year={exam.year}"
+    )
+
+    print(
+        f"🏢 Exam center_code="
+        f"{exam.center_code}"
+    )
+
     # --------------------------------------------------
-    # 2. EXISTING ATTEMPT
+    # EXISTING ATTEMPT
     # --------------------------------------------------
+
     attempt = (
         db.query(
-            StudentExamNaplanReadingHomework
+            StudentExamNaplanReading
         )
         .filter(
-            StudentExamNaplanReadingHomework.student_id
-            == student.id,
 
-            StudentExamNaplanReadingHomework.exam_id
-            == exam.id
+            StudentExamNaplanReading
+            .student_id
+            ==
+            student.id,
+
+            StudentExamNaplanReading
+            .exam_id
+            ==
+            exam.id
         )
         .order_by(
-            StudentExamNaplanReadingHomework.started_at
-            .desc()
+            StudentExamNaplanReading
+            .started_at.desc()
         )
         .first()
     )
@@ -63228,17 +68808,622 @@ def start_naplan_reading_homework_exam(
     uploaded_images = (
         db.query(
             UploadedImage
-        ).all()
+        )
+        .all()
     )
 
     image_map = {
+
         img.original_name:
-        img.gcs_url
+            img.gcs_url
+
         for img in uploaded_images
     }
 
     # --------------------------------------------------
-    # 3. RESUME ATTEMPT
+    # RESUME ATTEMPT
+    # --------------------------------------------------
+
+    if attempt:
+
+        print(
+            f"🔁 Resuming "
+            f"attempt id="
+            f"{attempt.id} "
+            f"for year "
+            f"{student_year}"
+        )
+
+        responses = (
+            db.query(
+                StudentExamResponseNaplanReading
+            )
+            .filter(
+                StudentExamResponseNaplanReading
+                .exam_attempt_id
+                ==
+                attempt.id
+            )
+            .all()
+        )
+
+        answers = {
+
+            str(r.q_id):
+                r.selected_option
+
+            for r in responses
+
+            if r.selected_option
+            is not None
+        }
+
+        started_at = (
+            attempt.started_at
+        )
+
+        if (
+            started_at.tzinfo
+            is None
+        ):
+
+            started_at = (
+                started_at.replace(
+                    tzinfo=timezone.utc
+                )
+            )
+
+        expires_at = (
+            started_at
+            +
+            MAX_DURATION
+        )
+
+        elapsed = int(
+            (
+                now
+                -
+                started_at
+            ).total_seconds()
+        )
+
+        # --------------------------------------------------
+        # AUTO COMPLETE EXPIRED
+        # --------------------------------------------------
+
+        if (
+            attempt.completed_at
+            is None
+            and
+            now > expires_at
+        ):
+
+            print(
+                "⏱ Attempt "
+                "expired automatically"
+            )
+
+            attempt.completed_at = (
+                expires_at
+            )
+
+            db.commit()
+
+            return {
+                "completed": True
+            }
+
+        # --------------------------------------------------
+        # ALREADY COMPLETED
+        # --------------------------------------------------
+
+        if (
+            attempt.completed_at
+            is not None
+        ):
+
+            print(
+                "✅ Attempt "
+                "already completed"
+            )
+
+            return {
+                "completed": True
+            }
+
+        remaining = max(
+
+            0,
+
+            (
+                attempt.duration_minutes
+                * 60
+            )
+            -
+            elapsed
+        )
+
+        print(
+            f"📘 Serving "
+            f"exam id={exam.id}"
+        )
+
+        raw_questions = (
+            exam.questions
+            or []
+        )
+
+        normalized_questions = []
+
+        for q in raw_questions:
+
+            normalize_images_in_question(
+                q,
+                image_map
+            )
+
+            normalize_type2_correct_answer(
+                q
+            )
+
+            normalize_reading_gap_questions(
+                q
+            )
+
+            normalize_true_false_questions(
+                q
+            )
+
+            sanitized_q = (
+                strip_correct_answers_from_question(
+                    q
+                )
+            )
+
+            normalized_questions.append(
+                sanitized_q
+            )
+
+        return {
+
+            "completed":
+                False,
+
+            "is_resumed":
+                True,
+
+            "answers":
+                answers,
+
+            "questions":
+                normalized_questions,
+
+            "remaining_time":
+                remaining
+        }
+
+    # --------------------------------------------------
+    # FIRST ATTEMPT
+    # --------------------------------------------------
+
+    print(
+        "🆕 No existing "
+        "attempt — "
+        "creating new attempt"
+    )
+
+    raw_questions = (
+        exam.questions
+        or []
+    )
+
+    normalized_questions = []
+
+    for q in raw_questions:
+
+        normalize_images_in_question(
+            q,
+            image_map
+        )
+
+        normalize_type2_correct_answer(
+            q
+        )
+
+        normalize_reading_gap_questions(
+            q
+        )
+
+        normalize_true_false_questions(
+            q
+        )
+
+        sanitized_q = (
+            strip_correct_answers_from_question(
+                q
+            )
+        )
+
+        normalized_questions.append(
+            sanitized_q
+        )
+
+    # --------------------------------------------------
+    # CREATE ATTEMPT
+    # --------------------------------------------------
+
+    new_attempt = (
+        StudentExamNaplanReading(
+
+            student_id=
+                student.id,
+
+            exam_id=
+                exam.id,
+
+            year=
+                student_year,
+
+            started_at=
+                now,
+
+            duration_minutes=
+                40
+        )
+    )
+
+    db.add(new_attempt)
+
+    db.commit()
+
+    db.refresh(new_attempt)
+
+    print(
+        f"🧾 Created "
+        f"new attempt id="
+        f"{new_attempt.id} "
+        f"for year="
+        f"{student_year}"
+    )
+
+    # --------------------------------------------------
+    # SEED RESPONSES
+    # --------------------------------------------------
+
+    for original_q in (
+        exam.questions
+        or []
+    ):
+
+        normalized_correct_option = (
+            normalize_correct_option_for_db(
+                original_q.get(
+                    "correct_answer"
+                )
+            )
+        )
+
+        db.add(
+            StudentExamResponseNaplanReading(
+
+                student_id=
+                    student.id,
+
+                exam_id=
+                    exam.id,
+
+                exam_attempt_id=
+                    new_attempt.id,
+
+                year=
+                    student_year,
+
+                q_id=
+                    str(
+                        original_q.get(
+                            "question_id"
+                        )
+                    ),
+
+                topic=
+                    original_q.get(
+                        "topic"
+                    ),
+
+                selected_option=
+                    None,
+
+                correct_option=
+                    normalized_correct_option,
+
+                is_correct=
+                    None
+            )
+        )
+
+    db.commit()
+
+    print(
+        "✅ Response rows seeded"
+    )
+
+    return {
+
+        "completed":
+            False,
+
+        "is_resumed":
+            False,
+
+        "answers":
+            {},
+
+        "questions":
+            normalized_questions,
+
+        "remaining_time":
+            (
+                new_attempt
+                .duration_minutes
+                * 60
+            )
+    }
+
+@app.post("/api/student/start-homework-exam/naplan-reading")
+def start_naplan_reading_homework_exam(
+    req: StartExamRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+
+    print(
+        "\n============ START NAPLAN "
+        "READING HOMEWORK EXAM ============"
+    )
+
+    print(
+        "📥 Incoming payload:",
+        req.dict()
+    )
+
+    # --------------------------------------------------
+    # 1️⃣ STUDENT LOOKUP
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(
+                Student.student_id
+            )
+            ==
+            func.lower(
+                req.student_id.strip()
+            )
+        )
+        .first()
+    )
+
+    if not student:
+
+        print("❌ Student not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        f"✅ Student found: "
+        f"{student.student_id}"
+    )
+
+    print(
+        f"📚 Student class_name: "
+        f"'{student.class_name}'"
+    )
+
+    print(
+        f"🎓 Student year: "
+        f"'{student.student_year}'"
+    )
+
+    print(
+        f"🏢 Student center_code: "
+        f"'{student.center_code}'"
+    )
+
+    # --------------------------------------------------
+    # 2️⃣ PARSE YEAR
+    # --------------------------------------------------
+    try:
+
+        student_year = int(
+            student.student_year
+            .lower()
+            .replace("year", "")
+            .strip()
+        )
+
+    except Exception:
+
+        print(
+            "❌ Failed to parse year:",
+            student.student_year
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid student_year format"
+        )
+
+    print(
+        f"🎓 Parsed student year: "
+        f"{student_year}"
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ NORMALIZE CENTER CODE
+    # --------------------------------------------------
+    normalized_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 normalized_center_code="
+        f"{normalized_center_code}"
+    )
+
+    # --------------------------------------------------
+    # 4️⃣ DEBUG AVAILABLE HOMEWORKS
+    # --------------------------------------------------
+    available_homeworks = (
+        db.query(
+            ExamNaplanReadingHomework.year
+        )
+        .filter(
+            func.upper(
+                func.trim(
+                    ExamNaplanReadingHomework
+                    .center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .distinct()
+        .all()
+    )
+
+    available_years = [
+
+        y[0]
+
+        for y in available_homeworks
+    ]
+
+    print(
+        "📊 Available homework years "
+        "for center:",
+        available_years
+    )
+
+    # --------------------------------------------------
+    # 5️⃣ FETCH LATEST CENTER-AWARE HOMEWORK
+    # --------------------------------------------------
+    exam = (
+        db.query(
+            ExamNaplanReadingHomework
+        )
+        .filter(
+
+            ExamNaplanReadingHomework.year
+            ==
+            student_year,
+
+            func.lower(
+                func.trim(
+                    ExamNaplanReadingHomework
+                    .subject
+                )
+            )
+            ==
+            "reading",
+
+            func.upper(
+                func.trim(
+                    ExamNaplanReadingHomework
+                    .center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .order_by(
+            ExamNaplanReadingHomework
+            .created_at.desc()
+        )
+        .first()
+    )
+
+    if not exam:
+
+        print(
+            "❌ No homework found "
+            f"for year={student_year} "
+            f"center={normalized_center_code}"
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No Reading homework "
+                f"available for "
+                f"Year {student_year}"
+            )
+        )
+
+    print(
+        f"📘 Selected homework "
+        f"id={exam.id}"
+    )
+
+    print(
+        f"🏢 Homework center_code="
+        f"{exam.center_code}"
+    )
+
+    # --------------------------------------------------
+    # 6️⃣ EXISTING ATTEMPT
+    # --------------------------------------------------
+    attempt = (
+        db.query(
+            StudentExamNaplanReadingHomework
+        )
+        .filter(
+
+            StudentExamNaplanReadingHomework
+            .student_id
+            ==
+            student.id,
+
+            StudentExamNaplanReadingHomework
+            .exam_id
+            ==
+            exam.id
+        )
+        .order_by(
+            StudentExamNaplanReadingHomework
+            .started_at.desc()
+        )
+        .first()
+    )
+
+    MAX_DURATION = timedelta(
+        minutes=40
+    )
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    uploaded_images = (
+        db.query(
+            UploadedImage
+        )
+        .all()
+    )
+
+    image_map = {
+
+        img.original_name:
+            img.gcs_url
+
+        for img in uploaded_images
+    }
+
+    # --------------------------------------------------
+    # 7️⃣ RESUME ATTEMPT
     # --------------------------------------------------
     if attempt:
 
@@ -63254,22 +69439,32 @@ def start_naplan_reading_homework_exam(
             .filter(
                 StudentExamResponseNaplanReadingHomework
                 .exam_attempt_id
-                == attempt.id
+                ==
+                attempt.id
             )
             .all()
         )
 
         answers = {
+
             str(r.q_id):
-            r.selected_option
+                r.selected_option
+
             for r in responses
+
             if r.selected_option
             is not None
         }
 
-        started_at = attempt.started_at
+        started_at = (
+            attempt.started_at
+        )
 
-        if started_at.tzinfo is None:
+        if (
+            started_at.tzinfo
+            is None
+        ):
+
             started_at = (
                 started_at.replace(
                     tzinfo=timezone.utc
@@ -63278,20 +69473,28 @@ def start_naplan_reading_homework_exam(
 
         expires_at = (
             started_at
-            + MAX_DURATION
+            +
+            MAX_DURATION
         )
 
         elapsed = int(
             (
-                now - started_at
+                now
+                -
+                started_at
             ).total_seconds()
         )
 
+        # --------------------------------------------------
+        # AUTO COMPLETE EXPIRED
+        # --------------------------------------------------
         if (
             attempt.completed_at
             is None
-            and now > expires_at
+            and
+            now > expires_at
         ):
+
             print(
                 "⏱ Homework "
                 "attempt expired"
@@ -63307,10 +69510,14 @@ def start_naplan_reading_homework_exam(
                 "completed": True
             }
 
+        # --------------------------------------------------
+        # ALREADY COMPLETED
+        # --------------------------------------------------
         if (
             attempt.completed_at
             is not None
         ):
+
             print(
                 "✅ Homework "
                 "already completed"
@@ -63321,37 +69528,25 @@ def start_naplan_reading_homework_exam(
             }
 
         remaining = max(
+
             0,
-            attempt.duration_minutes
-            * 60
-            - elapsed
+
+            (
+                attempt.duration_minutes
+                * 60
+            )
+            -
+            elapsed
         )
 
-        # ----------------------------------------------
-        # Load homework exam by exam_id
-        # ----------------------------------------------
-        exam = (
-            db.query(
-                ExamNaplanReadingHomework
-            )
-            .filter(
-                ExamNaplanReadingHomework.id
-                == attempt.exam_id
-            )
-            .first()
+        print(
+            f"📘 Serving homework "
+            f"id={exam.id}"
         )
-
-        if not exam:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    "Homework exam "
-                    "not found"
-                )
-            )
 
         raw_questions = (
-            exam.questions or []
+            exam.questions
+            or []
         )
 
         normalized_questions = []
@@ -63363,9 +69558,17 @@ def start_naplan_reading_homework_exam(
                 image_map
             )
 
-            normalize_type2_correct_answer(q)
-            normalize_reading_gap_questions(q)
-            normalize_true_false_questions(q)
+            normalize_type2_correct_answer(
+                q
+            )
+
+            normalize_reading_gap_questions(
+                q
+            )
+
+            normalize_true_false_questions(
+                q
+            )
 
             sanitized_q = (
                 strip_correct_answers_from_question(
@@ -63378,55 +69581,34 @@ def start_naplan_reading_homework_exam(
             )
 
         return {
-            "completed": False,
-            "is_resumed": True,
-            "answers": answers,
+
+            "completed":
+                False,
+
+            "is_resumed":
+                True,
+
+            "answers":
+                answers,
+
             "questions":
                 normalized_questions,
+
             "remaining_time":
                 remaining
         }
 
     # --------------------------------------------------
-    # 4. FIRST ATTEMPT
+    # 8️⃣ FIRST ATTEMPT
     # --------------------------------------------------
     print(
         "🆕 No homework attempt "
         "found. Creating new one."
     )
 
-    exam = (
-        db.query(
-            ExamNaplanReadingHomework
-        )
-        .filter(
-            ExamNaplanReadingHomework.year
-            == student_year,
-
-            func.lower(
-                func.trim(
-                    ExamNaplanReadingHomework.subject
-                )
-            ) == "reading"
-            )
-        .order_by(
-            ExamNaplanReadingHomework.id.desc()
-        )
-        .first()
-    )
-
-    if not exam:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"No Reading homework "
-                f"available for "
-                f"Year {student_year}"
-            )
-        )
-
     raw_questions = (
-        exam.questions or []
+        exam.questions
+        or []
     )
 
     normalized_questions = []
@@ -63438,9 +69620,17 @@ def start_naplan_reading_homework_exam(
             image_map
         )
 
-        normalize_type2_correct_answer(q)
-        normalize_reading_gap_questions(q)
-        normalize_true_false_questions(q)
+        normalize_type2_correct_answer(
+            q
+        )
+
+        normalize_reading_gap_questions(
+            q
+        )
+
+        normalize_true_false_questions(
+            q
+        )
 
         sanitized_q = (
             strip_correct_answers_from_question(
@@ -63453,32 +69643,46 @@ def start_naplan_reading_homework_exam(
         )
 
     # --------------------------------------------------
-    # 5. CREATE ATTEMPT
+    # 9️⃣ CREATE ATTEMPT
     # --------------------------------------------------
     new_attempt = (
         StudentExamNaplanReadingHomework(
-            student_id=student.id,
-            exam_id=exam.id,
-            year=student_year,
-            started_at=now,
-            duration_minutes=40
+
+            student_id=
+                student.id,
+
+            exam_id=
+                exam.id,
+
+            year=
+                student_year,
+
+            started_at=
+                now,
+
+            duration_minutes=
+                40
         )
     )
 
     db.add(new_attempt)
+
     db.commit()
+
     db.refresh(new_attempt)
 
     print(
         f"🧾 Created homework "
-        f"attempt id={new_attempt.id}"
+        f"attempt id="
+        f"{new_attempt.id}"
     )
 
     # --------------------------------------------------
-    # 6. SEED RESPONSES
+    # 🔟 SEED RESPONSES
     # --------------------------------------------------
     for original_q in (
-        exam.questions or []
+        exam.questions
+        or []
     ):
 
         normalized_correct_option = (
@@ -63491,19 +69695,39 @@ def start_naplan_reading_homework_exam(
 
         db.add(
             StudentExamResponseNaplanReadingHomework(
-                student_id=student.id,
-                exam_id=exam.id,
-                exam_attempt_id=new_attempt.id,
-                year=student_year,
-                q_id=str(original_q.get("question_id")),
-                topic=original_q.get(
-                    "topic"
-                ),
-                selected_option=None,
-                correct_option=(
-                    normalized_correct_option
-                ),
-                is_correct=None
+
+                student_id=
+                    student.id,
+
+                exam_id=
+                    exam.id,
+
+                exam_attempt_id=
+                    new_attempt.id,
+
+                year=
+                    student_year,
+
+                q_id=
+                    str(
+                        original_q.get(
+                            "question_id"
+                        )
+                    ),
+
+                topic=
+                    original_q.get(
+                        "topic"
+                    ),
+
+                selected_option=
+                    None,
+
+                correct_option=
+                    normalized_correct_option,
+
+                is_correct=
+                    None
             )
         )
 
@@ -63515,15 +69739,26 @@ def start_naplan_reading_homework_exam(
     )
 
     return {
-        "completed": False,
-        "is_resumed": False,
-        "answers": {},
+
+        "completed":
+            False,
+
+        "is_resumed":
+            False,
+
+        "answers":
+            {},
+
         "questions":
             normalized_questions,
+
         "remaining_time":
-            new_attempt.duration_minutes * 60
+            (
+                new_attempt
+                .duration_minutes
+                * 60
+            )
     }
- 
 def hydrate_naplan_question_structure(raw_questions):
     """
     Converts legacy / blob-style question_text into structured question_blocks.
@@ -64102,7 +70337,7 @@ def start_naplan_numeracy_homework_exam(
                 * 60
             )
     }
-        
+
 
 
 @app.post("/api/student/start-exam/naplan-numeracy")
