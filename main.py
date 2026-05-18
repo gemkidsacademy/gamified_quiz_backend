@@ -10133,38 +10133,194 @@ def generate_thinking_skills_exam_latest(
 @app.get("/api/reading-availability")
 def get_reading_availability(
     class_year: str,
+    center_code: str,
     db: Session = Depends(get_db)
 ):
-    results = (
+
+    print(
+        "\n=== READING AVAILABILITY DEBUG START ==="
+    )
+
+    print(
+        f"[INPUT] class_year={class_year} | "
+        f"center_code={center_code}"
+    )
+
+    # --------------------------------------------------
+    # 1. Normalize center code
+    # --------------------------------------------------
+
+    normalized_center_code = (
+        center_code or ""
+    ).strip().upper()
+
+    if not normalized_center_code:
+
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    # --------------------------------------------------
+    # 2. Resolve center
+    # --------------------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(
+            func.upper(
+                func.trim(
+                    Center.center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    print(
+        f"🏢 Center resolved | "
+        f"center_id={center.id}"
+    )
+
+    # --------------------------------------------------
+    # 3. Used questions subquery
+    # --------------------------------------------------
+
+    used_question_ids_subquery = (
         db.query(
-            QuestionNaplanReading.topic,
-            func.lower(QuestionNaplanReading.difficulty),
-            func.count(QuestionNaplanReading.id)
+            NaplanReadingQuestionUsage.question_id
+        )
+        .join(
+            QuestionNaplanReading,
+            QuestionNaplanReading.id
+            ==
+            NaplanReadingQuestionUsage.question_id
         )
         .filter(
-            QuestionNaplanReading.subject == "reading",
-            QuestionNaplanReading.year == int(class_year),
-            QuestionNaplanReading.is_used == False
+
+            NaplanReadingQuestionUsage.center_id
+            ==
+            center.id,
+
+            QuestionNaplanReading.year
+            ==
+            int(class_year),
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading.subject
+                )
+            )
+            ==
+            "reading"
+        )
+        .subquery()
+    )
+
+    # --------------------------------------------------
+    # 4. Main availability query
+    # --------------------------------------------------
+
+    results = (
+        db.query(
+
+            QuestionNaplanReading.topic,
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading
+                    .difficulty
+                )
+            ).label("difficulty"),
+
+            func.count(
+                QuestionNaplanReading.id
+            ).label("count")
+        )
+        .filter(
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading.subject
+                )
+            )
+            ==
+            "reading",
+
+            QuestionNaplanReading.year
+            ==
+            int(class_year),
+
+            ~QuestionNaplanReading.id.in_(
+                used_question_ids_subquery
+            ),
+
+            QuestionNaplanReading.topic
+            .isnot(None),
+
+            func.trim(
+                QuestionNaplanReading.topic
+            )
+            != ""
         )
         .group_by(
+
             QuestionNaplanReading.topic,
-            func.lower(QuestionNaplanReading.difficulty)
+
+            func.lower(
+                func.trim(
+                    QuestionNaplanReading
+                    .difficulty
+                )
+            )
         )
         .all()
     )
 
+    print(
+        f"📊 Availability rows: "
+        f"{len(results)}"
+    )
+
+    # --------------------------------------------------
+    # 5. Build response
+    # --------------------------------------------------
+
     availability = {}
 
     for topic, difficulty, count in results:
-        topic_key = topic.lower().strip()
+
+        topic_key = (
+            topic
+            .lower()
+            .strip()
+        )
 
         if topic_key not in availability:
             availability[topic_key] = {}
 
         availability[topic_key][difficulty] = count
 
-    return availability
+        print(
+            f"TOPIC={topic_key} | "
+            f"difficulty={difficulty} | "
+            f"count={count}"
+        )
 
+    print(
+        "=== READING AVAILABILITY DEBUG END ===\n"
+    )
+
+    return availability 
 
 @app.get("/api/topic-question-counts")
 def get_topic_question_counts(
@@ -11273,176 +11429,15 @@ def get_available_subjects_naplan(
     class_name = student.class_name.strip()
 
     # ==================================================
-    # 🔢 NUMERACY
+    # 🔢 NAPLAN NUMERACY
     # ==================================================
-    print("\n================ NAPLAN NUMERACY AVAILABILITY DEBUG =================")
+
+    print("\n==================================================")
+    print("🔢 NAPLAN NUMERACY DEBUG START")
+    print("==================================================")
 
     numeracy_exam_enabled = False
     numeracy_homework_enabled = False
-
-    print(f"🎓 Student ID: {student.id}")
-    print(f"🏫 Class Name (input): '{class_name}'")
-    print(f"📅 Student Year (input): {student_year}")
-
-    # =========================================================
-    # 🔎 FETCH NUMERACY EXAM
-    # =========================================================
-    print("\n================ NAPLAN NUMERACY AVAILABILITY =================")
-
-    numeracy_exam_enabled = False
-    numeracy_homework_enabled = False
-
-    # =========================================================
-    # 🔎 FETCH NUMERACY EXAM (YEAR-BASED, NOT CLASS-BASED)
-    # =========================================================
-    print("\n--- 🔎 FETCHING NUMERACY EXAM ---")
-
-    numeracy_exam = (
-        db.query(ExamNaplanNumeracy)
-        .filter(
-            ExamNaplanNumeracy.year == student_year,
-            func.lower(ExamNaplanNumeracy.subject) == "numeracy"
-        )
-        .order_by(ExamNaplanNumeracy.created_at.desc())
-        .first()
-    )
-
-    print("📦 Numeracy exam result:", numeracy_exam)
-
-    if numeracy_exam:
-
-        print(f"✅ Found Numeracy Exam ID: {numeracy_exam.id}")
-        print(f"   Year: {numeracy_exam.year}")
-        print(f"   Subject: {numeracy_exam.subject}")
-        print(f"   Created At: {numeracy_exam.created_at}")
-
-        # --------------------------------------------------
-        # 🔎 FETCH STUDENT ATTEMPT
-        # --------------------------------------------------
-        print("\n--- 🔎 FETCHING NUMERACY ATTEMPT ---")
-
-        attempt = (
-            db.query(StudentExamNaplanNumeracy)
-            .filter(
-                StudentExamNaplanNumeracy.student_id == student.id,
-                StudentExamNaplanNumeracy.exam_id == numeracy_exam.id
-            )
-            .order_by(StudentExamNaplanNumeracy.started_at.desc())
-            .first()
-        )
-
-        print("📦 Attempt result:", attempt)
-
-        if attempt:
-            print(f"🔁 Attempt ID: {attempt.id}")
-            print(f"   Started At: {attempt.started_at}")
-            print(f"   Completed At: {attempt.completed_at}")
-
-            if attempt.completed_at is None:
-                print("🟡 IN PROGRESS → enable (resume)")
-                numeracy_exam_enabled = True
-            else:
-                print("🔴 COMPLETED → disable")
-                numeracy_exam_enabled = False
-        else:
-            print("🟢 No attempt → enable (fresh start)")
-            numeracy_exam_enabled = True
-
-    else:
-        print("❌ No numeracy exam found → disable")
-        numeracy_exam_enabled = False
-
-
-    # =========================================================
-    # 🔎 FETCH NUMERACY HOMEWORK (FIXED: NO class_name filter)
-    # =========================================================
-    print("\n--- 🔎 FETCHING NUMERACY HOMEWORK EXAM ---")
-
-    numeracy_homework_exam = (
-        db.query(ExamNaplanNumeracyHomework)
-        .filter(
-            ExamNaplanNumeracyHomework.year == student_year,
-            func.lower(ExamNaplanNumeracyHomework.subject) == "numeracy"
-        )
-        .order_by(ExamNaplanNumeracyHomework.created_at.desc())
-        .first()
-    )
-
-    print("📦 Numeracy homework exam result:", numeracy_homework_exam)
-
-    if numeracy_homework_exam:
-
-        print(f"✅ Found Homework Exam ID: {numeracy_homework_exam.id}")
-        print(f"   Created At: {numeracy_homework_exam.created_at}")
-
-        # --------------------------------------------------
-        # 🔎 FETCH HOMEWORK ATTEMPT
-        # --------------------------------------------------
-        print("\n--- 🔎 FETCHING HOMEWORK ATTEMPT ---")
-
-        attempt = (
-            db.query(StudentExamNaplanNumeracyHomework)
-            .filter(
-                StudentExamNaplanNumeracyHomework.student_id == student.id,
-                StudentExamNaplanNumeracyHomework.exam_id == numeracy_homework_exam.id
-            )
-            .order_by(StudentExamNaplanNumeracyHomework.started_at.desc())
-            .first()
-        )
-
-        print("📦 Homework attempt result:", attempt)
-
-        if attempt:
-            print(f"🔁 Homework Attempt ID: {attempt.id}")
-            print(f"   Completed At: {attempt.completed_at}")
-
-            if attempt.completed_at is None:
-                print("🟡 IN PROGRESS → enable")
-                numeracy_homework_enabled = True
-            else:
-                print("🔴 COMPLETED → disable")
-                numeracy_homework_enabled = False
-        else:
-            print("🟢 No attempt → enable")
-            numeracy_homework_enabled = True
-
-    else:
-        print("❌ No homework exam found → disable")
-        numeracy_homework_enabled = False
-
-
-    # =========================================================
-    # FINAL STATUS
-    # =========================================================
-    print("\n================ FINAL AVAILABILITY =================")
-    print("📊 Numeracy Exam Enabled:", numeracy_exam_enabled)
-    print("📊 Numeracy Homework Enabled:", numeracy_homework_enabled)
-    print("====================================================\n")
-
-    # ==================================================
-    # 📖 READING
-    # ==================================================
-
-    reading_exam_enabled = False
-    reading_homework_enabled = False
-
-    print("\n📘 STUDENT DEBUG")
-
-    print(
-        f"class_name={class_name}"
-    )
-
-    print(
-        f"student_year={student_year}"
-    )
-
-    print(
-        f"student_id={student.id}"
-    )
-
-    # --------------------------------------------------
-    # Normalize student center code
-    # --------------------------------------------------
 
     normalized_center_code = (
         student.center_code
@@ -11450,21 +11445,312 @@ def get_available_subjects_naplan(
         .upper()
     )
 
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", class_name)
+    print("🧪 Student year:", student_year)
+    print("🧪 Student center_code:", normalized_center_code)
+
+    # ==================================================
+    # 1️⃣ NUMERACY EXAM
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 NAPLAN NUMERACY EXAM CHECK")
+    print("-----------------------------")
+
+    numeracy_exam = (
+        db.query(ExamNaplanNumeracy)
+        .filter(
+            ExamNaplanNumeracy.year
+            == student_year,
+
+            func.lower(
+                func.trim(
+                    ExamNaplanNumeracy.subject
+                )
+            ) == "numeracy",
+
+            func.upper(
+                func.trim(
+                    ExamNaplanNumeracy.center_code
+                )
+            ) == normalized_center_code
+        )
+        .order_by(
+            ExamNaplanNumeracy.created_at.desc()
+        )
+        .first()
+    )
+
+    print("📘 Selected numeracy exam:",
+        numeracy_exam)
+
+    if numeracy_exam:
+
+        print("✅ Exam ID:",
+            numeracy_exam.id)
+
+        print("✅ Exam year:",
+            numeracy_exam.year)
+
+        print("✅ Exam subject:",
+            numeracy_exam.subject)
+
+        print("✅ Exam center_code:",
+            numeracy_exam.center_code)
+
+        print("✅ Exam created_at:",
+            numeracy_exam.created_at)
+
+    else:
+
+        print("❌ No numeracy exam found")
+
+    latest_exam_attempt = None
+
+    if numeracy_exam:
+
+        print("\n🔍 Searching for numeracy exam attempt...")
+
+        latest_exam_attempt = (
+            db.query(
+                StudentExamNaplanNumeracy
+            )
+            .filter(
+                StudentExamNaplanNumeracy
+                .student_id
+                == student.id,
+
+                StudentExamNaplanNumeracy
+                .exam_id
+                == numeracy_exam.id
+            )
+            .order_by(
+                StudentExamNaplanNumeracy
+                .started_at.desc()
+            )
+            .first()
+        )
+
+    print("🔎 Numeracy exam attempt:",
+        latest_exam_attempt)
+
+    if latest_exam_attempt:
+
+        print("🧾 Attempt ID:",
+            latest_exam_attempt.id)
+
+        print("🧾 Attempt exam_id:",
+            latest_exam_attempt.exam_id)
+
+        print("🧾 Attempt student_id:",
+            latest_exam_attempt.student_id)
+
+        print("🧾 Attempt started_at:",
+            latest_exam_attempt.started_at)
+
+        print("🧾 Attempt completed_at:",
+            latest_exam_attempt.completed_at)
+
+    # ==================================================
+    # ✅ EXAM DECISION
+    # ==================================================
+
+    if not numeracy_exam:
+
+        print("❌ No exam found → disable")
+
+        numeracy_exam_enabled = False
+
+    elif not latest_exam_attempt:
+
+        print("🆕 No attempt found → enable")
+
+        numeracy_exam_enabled = True
+
+    elif latest_exam_attempt.completed_at is None:
+
+        print("🟡 In-progress attempt → enable")
+
+        numeracy_exam_enabled = True
+
+    else:
+
+        print("⛔ Exam already completed → disable")
+
+        numeracy_exam_enabled = False
+
     print(
-        f"🏢 normalized_center_code="
-        f"{normalized_center_code}"
+        "🎯 Final numeracy_exam_enabled =",
+        numeracy_exam_enabled
     )
 
     # ==================================================
-    # 📘 READING EXAM
+    # 2️⃣ NUMERACY HOMEWORK
     # ==================================================
 
-    print(
-        "\n================ "
-        "READING EXAM "
-        "AVAILABILITY "
-        "================"
+    print("\n-----------------------------")
+    print("📚 NAPLAN NUMERACY HOMEWORK CHECK")
+    print("-----------------------------")
+
+    numeracy_homework_exam = (
+        db.query(ExamNaplanNumeracyHomework)
+        .filter(
+            ExamNaplanNumeracyHomework.year
+            == student_year,
+
+            func.lower(
+                func.trim(
+                    ExamNaplanNumeracyHomework.subject
+                )
+            ) == "numeracy",
+
+            func.upper(
+                func.trim(
+                    ExamNaplanNumeracyHomework
+                    .center_code
+                )
+            ) == normalized_center_code
+        )
+        .order_by(
+            ExamNaplanNumeracyHomework
+            .created_at.desc()
+        )
+        .first()
     )
+
+    print("📘 Selected numeracy homework:",
+        numeracy_homework_exam)
+
+    if numeracy_homework_exam:
+
+        print("✅ Homework ID:",
+            numeracy_homework_exam.id)
+
+        print("✅ Homework year:",
+            numeracy_homework_exam.year)
+
+        print("✅ Homework subject:",
+            numeracy_homework_exam.subject)
+
+        print("✅ Homework center_code:",
+            numeracy_homework_exam.center_code)
+
+        print("✅ Homework created_at:",
+            numeracy_homework_exam.created_at)
+
+    else:
+
+        print("❌ No numeracy homework found")
+
+    latest_homework_attempt = None
+
+    if numeracy_homework_exam:
+
+        print("\n🔍 Searching for homework attempt...")
+
+        latest_homework_attempt = (
+            db.query(
+                StudentExamNaplanNumeracyHomework
+            )
+            .filter(
+                StudentExamNaplanNumeracyHomework
+                .student_id
+                == student.id,
+
+                StudentExamNaplanNumeracyHomework
+                .exam_id
+                == numeracy_homework_exam.id
+            )
+            .order_by(
+                StudentExamNaplanNumeracyHomework
+                .started_at.desc()
+            )
+            .first()
+        )
+
+    print("🔎 Numeracy homework attempt:",
+        latest_homework_attempt)
+
+    if latest_homework_attempt:
+
+        print("🧾 Attempt ID:",
+            latest_homework_attempt.id)
+
+        print("🧾 Attempt exam_id:",
+            latest_homework_attempt.exam_id)
+
+        print("🧾 Attempt student_id:",
+            latest_homework_attempt.student_id)
+
+        print("🧾 Attempt started_at:",
+            latest_homework_attempt.started_at)
+
+        print("🧾 Attempt completed_at:",
+            latest_homework_attempt.completed_at)
+
+    # ==================================================
+    # ✅ HOMEWORK DECISION
+    # ==================================================
+
+    if not numeracy_homework_exam:
+
+        print("❌ No homework found → disable")
+
+        numeracy_homework_enabled = False
+
+    elif not latest_homework_attempt:
+
+        print("🆕 No homework attempt found → enable")
+
+        numeracy_homework_enabled = True
+
+    elif latest_homework_attempt.completed_at is None:
+
+        print("🟡 Homework in progress → enable")
+
+        numeracy_homework_enabled = True
+
+    else:
+
+        print("⛔ Homework already completed → disable")
+
+        numeracy_homework_enabled = False
+
+    print(
+        "🎯 Final numeracy_homework_enabled =",
+        numeracy_homework_enabled
+    )
+
+    print("\n==================================================")
+    print("🔢 NAPLAN NUMERACY DEBUG END")
+    print("==================================================\n")
+
+    # ==================================================
+    # 📖 NAPLAN READING
+    # ==================================================
+
+    print("\n==================================================")
+    print("📖 NAPLAN READING DEBUG START")
+    print("==================================================")
+
+    reading_exam_enabled = False
+    reading_homework_enabled = False
+
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", class_name)
+    print("🧪 Student year:", student_year)
+    print("🧪 Student center_code:", normalized_center_code)
+
+    # ==================================================
+    # 1️⃣ READING EXAM
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 NAPLAN READING EXAM CHECK")
+    print("-----------------------------")
 
     reading_exam = (
         db.query(
@@ -11473,47 +11759,57 @@ def get_available_subjects_naplan(
         .filter(
 
             ExamNaplanReading.year
-            ==
-            student_year,
+            == student_year,
 
             func.lower(
                 func.trim(
-                    ExamNaplanReading
-                    .subject
+                    ExamNaplanReading.subject
                 )
-            )
-            ==
-            "reading",
+            ) == "reading",
 
             func.upper(
                 func.trim(
-                    ExamNaplanReading
-                    .center_code
+                    ExamNaplanReading.center_code
                 )
-            )
-            ==
-            normalized_center_code
+            ) == normalized_center_code
         )
         .order_by(
-            ExamNaplanReading
-            .created_at.desc()
+            ExamNaplanReading.created_at.desc()
         )
         .first()
     )
 
-    print(
-        "📘 reading_exam found = "
-        f"{reading_exam.id if reading_exam else None}"
-    )
+    print("📘 Selected reading exam:",
+        reading_exam)
 
     if reading_exam:
 
-        print(
-            f"✅ Reading exam found | "
-            f"exam_id={reading_exam.id}"
-        )
+        print("✅ Exam ID:",
+            reading_exam.id)
 
-        attempt = (
+        print("✅ Exam year:",
+            reading_exam.year)
+
+        print("✅ Exam subject:",
+            reading_exam.subject)
+
+        print("✅ Exam center_code:",
+            reading_exam.center_code)
+
+        print("✅ Exam created_at:",
+            reading_exam.created_at)
+
+    else:
+
+        print("❌ No reading exam found")
+
+    latest_exam_attempt = None
+
+    if reading_exam:
+
+        print("\n🔍 Searching for reading exam attempt...")
+
+        latest_exam_attempt = (
             db.query(
                 StudentExamNaplanReading
             )
@@ -11521,13 +11817,11 @@ def get_available_subjects_naplan(
 
                 StudentExamNaplanReading
                 .student_id
-                ==
-                student.id,
+                == student.id,
 
                 StudentExamNaplanReading
                 .exam_id
-                ==
-                reading_exam.id
+                == reading_exam.id
             )
             .order_by(
                 StudentExamNaplanReading
@@ -11536,59 +11830,66 @@ def get_available_subjects_naplan(
             .first()
         )
 
-        print(
-            f"📦 Reading attempt = "
-            f"{attempt.id if attempt else None}"
-        )
+    print("🔎 Reading exam attempt:",
+        latest_exam_attempt)
 
-        if not attempt:
+    if latest_exam_attempt:
 
-            print(
-                "🟢 No attempt found "
-                "→ enable"
-            )
+        print("🧾 Attempt ID:",
+            latest_exam_attempt.id)
 
-            reading_exam_enabled = True
+        print("🧾 Attempt exam_id:",
+            latest_exam_attempt.exam_id)
 
-        elif (
-            attempt.completed_at
-            is None
-        ):
+        print("🧾 Attempt student_id:",
+            latest_exam_attempt.student_id)
 
-            print(
-                "🟡 In progress "
-                "→ enable resume"
-            )
+        print("🧾 Attempt started_at:",
+            latest_exam_attempt.started_at)
 
-            reading_exam_enabled = True
+        print("🧾 Attempt completed_at:",
+            latest_exam_attempt.completed_at)
 
-        else:
+    # ==================================================
+    # ✅ EXAM DECISION
+    # ==================================================
 
-            print(
-                "🔴 Current exam "
-                "already completed "
-                "→ disable"
-            )
+    if not reading_exam:
 
-            reading_exam_enabled = False
+        print("❌ No exam found → disable")
+
+        reading_exam_enabled = False
+
+    elif not latest_exam_attempt:
+
+        print("🆕 No attempt found → enable")
+
+        reading_exam_enabled = True
+
+    elif latest_exam_attempt.completed_at is None:
+
+        print("🟡 In-progress attempt → enable")
+
+        reading_exam_enabled = True
 
     else:
 
-        print(
-            "❌ No reading exam "
-            "found"
-        )
+        print("⛔ Exam already completed → disable")
 
-    # ==================================================
-    # 📘 READING HOMEWORK
-    # ==================================================
+        reading_exam_enabled = False
 
     print(
-        "\n================ "
-        "READING HOMEWORK "
-        "AVAILABILITY "
-        "================"
+        "🎯 Final reading_exam_enabled =",
+        reading_exam_enabled
     )
+
+    # ==================================================
+    # 2️⃣ READING HOMEWORK
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📚 NAPLAN READING HOMEWORK CHECK")
+    print("-----------------------------")
 
     reading_homework_exam = (
         db.query(
@@ -11596,28 +11897,22 @@ def get_available_subjects_naplan(
         )
         .filter(
 
-            ExamNaplanReadingHomework
-            .year
-            ==
-            student_year,
+            ExamNaplanReadingHomework.year
+            == student_year,
 
             func.lower(
                 func.trim(
                     ExamNaplanReadingHomework
                     .subject
                 )
-            )
-            ==
-            "reading",
+            ) == "reading",
 
             func.upper(
                 func.trim(
                     ExamNaplanReadingHomework
                     .center_code
                 )
-            )
-            ==
-            normalized_center_code
+            ) == normalized_center_code
         )
         .order_by(
             ExamNaplanReadingHomework
@@ -11626,22 +11921,37 @@ def get_available_subjects_naplan(
         .first()
     )
 
-    print(
-        "📘 reading_homework_exam "
-        f"found = "
-        f"{reading_homework_exam.id if reading_homework_exam else None}"
-    )
+    print("📘 Selected reading homework:",
+        reading_homework_exam)
 
     if reading_homework_exam:
 
-        print(
-            f"✅ Reading homework "
-            f"exam found | "
-            f"exam_id="
-            f"{reading_homework_exam.id}"
-        )
+        print("✅ Homework ID:",
+            reading_homework_exam.id)
 
-        attempt = (
+        print("✅ Homework year:",
+            reading_homework_exam.year)
+
+        print("✅ Homework subject:",
+            reading_homework_exam.subject)
+
+        print("✅ Homework center_code:",
+            reading_homework_exam.center_code)
+
+        print("✅ Homework created_at:",
+            reading_homework_exam.created_at)
+
+    else:
+
+        print("❌ No reading homework found")
+
+    latest_homework_attempt = None
+
+    if reading_homework_exam:
+
+        print("\n🔍 Searching for homework attempt...")
+
+        latest_homework_attempt = (
             db.query(
                 StudentExamNaplanReadingHomework
             )
@@ -11649,13 +11959,11 @@ def get_available_subjects_naplan(
 
                 StudentExamNaplanReadingHomework
                 .student_id
-                ==
-                student.id,
+                == student.id,
 
                 StudentExamNaplanReadingHomework
                 .exam_id
-                ==
-                reading_homework_exam.id
+                == reading_homework_exam.id
             )
             .order_by(
                 StudentExamNaplanReadingHomework
@@ -11664,124 +11972,365 @@ def get_available_subjects_naplan(
             .first()
         )
 
-        print(
-            f"📦 Homework attempt = "
-            f"{attempt.id if attempt else None}"
-        )
+    print("🔎 Reading homework attempt:",
+        latest_homework_attempt)
 
-        if not attempt:
+    if latest_homework_attempt:
 
-            print(
-                "🟢 No homework "
-                "attempt found "
-                "→ enable"
-            )
+        print("🧾 Attempt ID:",
+            latest_homework_attempt.id)
 
-            reading_homework_enabled = True
+        print("🧾 Attempt exam_id:",
+            latest_homework_attempt.exam_id)
 
-        elif (
-            attempt.completed_at
-            is None
-        ):
+        print("🧾 Attempt student_id:",
+            latest_homework_attempt.student_id)
 
-            print(
-                "🟡 Homework "
-                "in progress "
-                "→ enable resume"
-            )
+        print("🧾 Attempt started_at:",
+            latest_homework_attempt.started_at)
 
-            reading_homework_enabled = True
+        print("🧾 Attempt completed_at:",
+            latest_homework_attempt.completed_at)
 
-        else:
+    # ==================================================
+    # ✅ HOMEWORK DECISION
+    # ==================================================
 
-            print(
-                "🔴 Current homework "
-                "already completed "
-                "→ disable"
-            )
+    if not reading_homework_exam:
 
-            reading_homework_enabled = False
+        print("❌ No homework found → disable")
+
+        reading_homework_enabled = False
+
+    elif not latest_homework_attempt:
+
+        print("🆕 No homework attempt found → enable")
+
+        reading_homework_enabled = True
+
+    elif latest_homework_attempt.completed_at is None:
+
+        print("🟡 Homework in progress → enable")
+
+        reading_homework_enabled = True
 
     else:
 
-        print(
-            "❌ No reading "
-            "homework exam found"
-        )
+        print("⛔ Homework already completed → disable")
 
+        reading_homework_enabled = False
+
+    print(
+        "🎯 Final reading_homework_enabled =",
+        reading_homework_enabled
+    )
+
+    print("\n==================================================")
+    print("📖 NAPLAN READING DEBUG END")
+    print("==================================================\n")
     # ==================================================
     # 🧾 LANGUAGE CONVENTIONS
     # ==================================================
+
+    print("\n==================================================")
+    print("🧾 LANGUAGE CONVENTIONS DEBUG START")
+    print("==================================================")
+
     language_exam_enabled = False
     language_homework_enabled = False
+
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", class_name)
+    print("🧪 Student year:", student_year)
+    print("🧪 Student center_code:", normalized_center_code)
+
+    # ==================================================
+    # 1️⃣ LANGUAGE EXAM
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 LANGUAGE EXAM CHECK")
+    print("-----------------------------")
+
     latest_language_exam = (
         db.query(ExamNaplanLanguageConventions)
         .filter(
-            ExamNaplanLanguageConventions.year == student_year,
-            func.lower(ExamNaplanLanguageConventions.subject) == "language conventions"
+
+            ExamNaplanLanguageConventions.year
+            == student_year,
+
+            func.lower(
+                func.trim(
+                    ExamNaplanLanguageConventions
+                    .subject
+                )
+            ) == "language conventions",
+
+            func.upper(
+                func.trim(
+                    ExamNaplanLanguageConventions
+                    .center_code
+                )
+            ) == normalized_center_code
         )
-        .order_by(ExamNaplanLanguageConventions.created_at.desc())
+        .order_by(
+            ExamNaplanLanguageConventions
+            .created_at.desc()
+        )
         .first()
     )
+
+    print("📘 Selected language exam:",
+        latest_language_exam)
 
     if latest_language_exam:
-        attempt = (
-            db.query(StudentExamNaplanLanguageConventions)
+
+        print("✅ Exam ID:",
+            latest_language_exam.id)
+
+        print("✅ Exam year:",
+            latest_language_exam.year)
+
+        print("✅ Exam subject:",
+            latest_language_exam.subject)
+
+        print("✅ Exam center_code:",
+            latest_language_exam.center_code)
+
+        print("✅ Exam created_at:",
+            latest_language_exam.created_at)
+
+    else:
+
+        print("❌ No language exam found")
+
+    latest_exam_attempt = None
+
+    if latest_language_exam:
+
+        print("\n🔍 Searching for language exam attempt...")
+
+        latest_exam_attempt = (
+            db.query(
+                StudentExamNaplanLanguageConventions
+            )
             .filter(
-                StudentExamNaplanLanguageConventions.student_id == student.id,
-                StudentExamNaplanLanguageConventions.exam_id == latest_language_exam.id
+
+                StudentExamNaplanLanguageConventions
+                .student_id
+                == student.id,
+
+                StudentExamNaplanLanguageConventions
+                .exam_id
+                == latest_language_exam.id
+            )
+            .order_by(
+                StudentExamNaplanLanguageConventions
+                .started_at.desc()
             )
             .first()
         )
 
-        if not attempt:
-            language_exam_enabled = True
+    print("🔎 Language exam attempt:",
+        latest_exam_attempt)
 
-        elif attempt.exam_id != latest_language_exam.id:
-            # 🟢 attempt belongs to old exam
-            language_exam_enabled = True
+    if latest_exam_attempt:
 
-        elif attempt.completed_at is None:
-            # 🟡 resume
-            language_exam_enabled = True
+        print("🧾 Attempt ID:",
+            latest_exam_attempt.id)
 
-        else:
-            # 🔴 completed current exam
-            language_exam_enabled = False
+        print("🧾 Attempt exam_id:",
+            latest_exam_attempt.exam_id)
+
+        print("🧾 Attempt student_id:",
+            latest_exam_attempt.student_id)
+
+        print("🧾 Attempt started_at:",
+            latest_exam_attempt.started_at)
+
+        print("🧾 Attempt completed_at:",
+            latest_exam_attempt.completed_at)
+
+    # ==================================================
+    # ✅ EXAM DECISION
+    # ==================================================
+
+    if not latest_language_exam:
+
+        print("❌ No exam found → disable")
+
+        language_exam_enabled = False
+
+    elif not latest_exam_attempt:
+
+        print("🆕 No attempt found → enable")
+
+        language_exam_enabled = True
+
+    elif latest_exam_attempt.completed_at is None:
+
+        print("🟡 In-progress attempt → enable")
+
+        language_exam_enabled = True
+
+    else:
+
+        print("⛔ Exam already completed → disable")
+
+        language_exam_enabled = False
+
+    print(
+        "🎯 Final language_exam_enabled =",
+        language_exam_enabled
+    )
+
+    # ==================================================
+    # 2️⃣ LANGUAGE HOMEWORK
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📚 LANGUAGE HOMEWORK CHECK")
+    print("-----------------------------")
+
     latest_language_homework_exam = (
-        db.query(ExamNaplanLanguageConventionsHomework)
-        .filter(
-            ExamNaplanLanguageConventionsHomework.year == student_year,
-            func.lower(ExamNaplanLanguageConventionsHomework.subject) == "language conventions"
+        db.query(
+            ExamNaplanLanguageConventionsHomework
         )
-        .order_by(ExamNaplanLanguageConventionsHomework.created_at.desc())
+        .filter(
+
+            ExamNaplanLanguageConventionsHomework
+            .year
+            == student_year,
+
+            func.lower(
+                func.trim(
+                    ExamNaplanLanguageConventionsHomework
+                    .subject
+                )
+            ) == "language conventions",
+
+            func.upper(
+                func.trim(
+                    ExamNaplanLanguageConventionsHomework
+                    .center_code
+                )
+            ) == normalized_center_code
+        )
+        .order_by(
+            ExamNaplanLanguageConventionsHomework
+            .created_at.desc()
+        )
         .first()
     )
 
+    print("📘 Selected language homework:",
+        latest_language_homework_exam)
+
     if latest_language_homework_exam:
-        attempt = (
-            db.query(StudentExamNaplanLanguageConventionsHomework)
+
+        print("✅ Homework ID:",
+            latest_language_homework_exam.id)
+
+        print("✅ Homework year:",
+            latest_language_homework_exam.year)
+
+        print("✅ Homework subject:",
+            latest_language_homework_exam.subject)
+
+        print("✅ Homework center_code:",
+            latest_language_homework_exam.center_code)
+
+        print("✅ Homework created_at:",
+            latest_language_homework_exam.created_at)
+
+    else:
+
+        print("❌ No language homework found")
+
+    latest_homework_attempt = None
+
+    if latest_language_homework_exam:
+
+        print("\n🔍 Searching for homework attempt...")
+
+        latest_homework_attempt = (
+            db.query(
+                StudentExamNaplanLanguageConventionsHomework
+            )
             .filter(
-                StudentExamNaplanLanguageConventionsHomework.student_id == student.id,
-                StudentExamNaplanLanguageConventionsHomework.exam_id == latest_language_homework_exam.id
+
+                StudentExamNaplanLanguageConventionsHomework
+                .student_id
+                == student.id,
+
+                StudentExamNaplanLanguageConventionsHomework
+                .exam_id
+                == latest_language_homework_exam.id
+            )
+            .order_by(
+                StudentExamNaplanLanguageConventionsHomework
+                .started_at.desc()
             )
             .first()
         )
 
-        if not attempt:
-            language_homework_enabled = True
+    print("🔎 Language homework attempt:",
+        latest_homework_attempt)
 
-        elif attempt.exam_id != latest_language_homework_exam.id:
-            # 🟢 old attempt → new exam available
-            language_homework_enabled = True
+    if latest_homework_attempt:
 
-        elif attempt.completed_at is None:
-            # 🟡 resume
-            language_homework_enabled = True
+        print("🧾 Attempt ID:",
+            latest_homework_attempt.id)
 
-        else:
-            # 🔴 completed current homework
-            language_homework_enabled = False
+        print("🧾 Attempt exam_id:",
+            latest_homework_attempt.exam_id)
+
+        print("🧾 Attempt student_id:",
+            latest_homework_attempt.student_id)
+
+        print("🧾 Attempt started_at:",
+            latest_homework_attempt.started_at)
+
+        print("🧾 Attempt completed_at:",
+            latest_homework_attempt.completed_at)
+
+    # ==================================================
+    # ✅ HOMEWORK DECISION
+    # ==================================================
+
+    if not latest_language_homework_exam:
+
+        print("❌ No homework found → disable")
+
+        language_homework_enabled = False
+
+    elif not latest_homework_attempt:
+
+        print("🆕 No homework attempt found → enable")
+
+        language_homework_enabled = True
+
+    elif latest_homework_attempt.completed_at is None:
+
+        print("🟡 Homework in progress → enable")
+
+        language_homework_enabled = True
+
+    else:
+
+        print("⛔ Homework already completed → disable")
+
+        language_homework_enabled = False
+
+    print(
+        "🎯 Final language_homework_enabled =",
+        language_homework_enabled
+    )
+
+    print("\n==================================================")
+    print("🧾 LANGUAGE CONVENTIONS DEBUG END")
+    print("==================================================\n")
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
@@ -12194,80 +12743,168 @@ def get_available_subjects(
     # ==================================================
     # 🧮 MATHEMATICAL REASONING
     # ==================================================
+
+    print("\n==================================================")
+    print("🧮 MATHEMATICAL REASONING DEBUG START")
+    print("==================================================")
+
     math_exam_enabled = True
     math_homework_enabled = True
-    
-    # -----------------------------
+
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", student.class_name)
+    print("🧪 Student year:", student.student_year)
+    print("🧪 Student center_code:", student.center_code)
+
+    # ==================================================
     # 1️⃣ NORMAL EXAM
-    # -----------------------------
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 NORMAL EXAM CHECK")
+    print("-----------------------------")
+
     math_exam = (
         db.query(Exam)
         .filter(
-            func.lower(Exam.class_name) == func.lower(student.class_name),
-            Exam.subject == "mathematical_reasoning"
+            func.lower(func.trim(Exam.class_name)) ==
+            func.lower(func.trim(student.class_name)),
+
+            Exam.subject == "mathematical_reasoning",
+
+            Exam.center_code == student.center_code
         )
         .order_by(Exam.created_at.desc())
         .first()
     )
-    
+
+    print("📘 Selected math exam:", math_exam)
+
+    if math_exam:
+        print("✅ Exam ID:", math_exam.id)
+        print("✅ Exam class_name:", math_exam.class_name)
+        print("✅ Exam subject:", math_exam.subject)
+        print("✅ Exam center_code:", math_exam.center_code)
+        print("✅ Exam created_at:", math_exam.created_at)
+    else:
+        print("❌ No math exam found")
+
     if not math_exam:
+        print("⛔ math_exam_enabled = False")
         math_exam_enabled = False
+
     else:
         math_attempt = (
             db.query(StudentExamMathematicalReasoning)
             .filter(
                 StudentExamMathematicalReasoning.student_id == student.id,
-                StudentExamMathematicalReasoning.exam_id == math_exam.id
+
+                StudentExamMathematicalReasoning.exam_id ==
+                math_exam.id
             )
-            .order_by(StudentExamMathematicalReasoning.started_at.desc())
+            .order_by(
+                StudentExamMathematicalReasoning.started_at.desc()
+            )
             .first()
         )
-    
-        if math_attempt and math_attempt.completed_at is not None:
+
+        print("🔎 Math attempt object:", math_attempt)
+
+        if math_attempt:
+            print("🧾 Attempt ID:", math_attempt.id)
+            print("🧾 Attempt exam_id:", math_attempt.exam_id)
+            print("🧾 Attempt student_id:", math_attempt.student_id)
+            print("🧾 Attempt started_at:", math_attempt.started_at)
+            print("🧾 Attempt completed_at:", math_attempt.completed_at)
+
+        else:
+            print("🆕 No previous math attempt found")
+
+        if (
+            math_attempt and
+            math_attempt.completed_at is not None
+        ):
+            print("⛔ Completed attempt found → disable exam")
             math_exam_enabled = False
-    
-    
-    # -----------------------------
+        else:
+            print("✅ Exam remains enabled")
+
+    print("🎯 Final math_exam_enabled =", math_exam_enabled)
+
+    # ==================================================
     # 2️⃣ HOMEWORK
-    # -----------------------------
     # ==================================================
-    # 🧮 MATHEMATICAL REASONING HOMEWORK
-    # ==================================================
-    math_homework_enabled = True
+
+    print("\n-----------------------------")
+    print("📚 HOMEWORK CHECK")
+    print("-----------------------------")
+
+    normalized_student_year = (
+        str(student.student_year)
+        .replace("Year", "")
+        .strip()
+    )
+
+    print("🧪 Normalized student year:", normalized_student_year)
 
     homework_exam = (
         db.query(HomeworkExamMathematicalReasoning)
         .filter(
             func.lower(
-                func.trim(HomeworkExamMathematicalReasoning.class_name)
-            ) == func.lower(student.class_name),
+                func.trim(
+                    HomeworkExamMathematicalReasoning.class_name
+                )
+            ) == func.lower(
+                func.trim(student.class_name)
+            ),
 
             HomeworkExamMathematicalReasoning.class_year ==
-            str(student.student_year).replace("Year", "").strip(),
+            normalized_student_year,
 
             func.lower(
-                func.trim(HomeworkExamMathematicalReasoning.subject)
-            ) == "mathematical_reasoning"
+                func.trim(
+                    HomeworkExamMathematicalReasoning.subject
+                )
+            ) == "mathematical_reasoning",
+
+            HomeworkExamMathematicalReasoning.center_code ==
+            student.center_code
         )
-        .order_by(HomeworkExamMathematicalReasoning.id.desc())
+        .order_by(
+            HomeworkExamMathematicalReasoning.id.desc()
+        )
         .first()
     )
 
-    print("\n========== MR HOMEWORK DEBUG START ==========")
-    print("🧪 Student year:", student.student_year)
-    print("🧪 Selected homework exam:", homework_exam)
+    print("📘 Selected homework exam:", homework_exam)
+
+    if homework_exam:
+        print("✅ Homework ID:", homework_exam.id)
+        print("✅ Homework class_name:", homework_exam.class_name)
+        print("✅ Homework class_year:", homework_exam.class_year)
+        print("✅ Homework subject:", homework_exam.subject)
+        print("✅ Homework center_code:", homework_exam.center_code)
+
+    else:
+        print("❌ No homework exam found")
 
     if not homework_exam:
-        print("❌ No MR homework found")
+        print("⛔ math_homework_enabled = False")
         math_homework_enabled = False
 
     else:
-        print("✅ Homework ID:", homework_exam.id)
+
+        print("\n🔍 Searching for homework attempt...")
+        print("🧪 Using student_id:", student.id)
+        print("🧪 Using homework_id:", homework_exam.id)
+        print("🧪 Using center_code:", student.center_code)
 
         homework_attempt = (
             db.query(StudentHomeworkMathematicalReasoning)
             .filter(
-                StudentHomeworkMathematicalReasoning.student_id == student.id,
+                StudentHomeworkMathematicalReasoning.student_id ==
+                student.id,
 
                 StudentHomeworkMathematicalReasoning.homework_id ==
                 homework_exam.id
@@ -12278,7 +12915,29 @@ def get_available_subjects(
             .first()
         )
 
-        print("🔎 Homework attempt:", homework_attempt)
+        print("🔎 Homework attempt object:", homework_attempt)
+
+        if homework_attempt:
+
+            print("🧾 Attempt ID:", homework_attempt.id)
+            print("🧾 Attempt student_id:",
+                homework_attempt.student_id)
+
+            print("🧾 Attempt homework_id:",
+                homework_attempt.homework_id)
+
+            print("🧾 Attempt started_at:",
+                homework_attempt.started_at)
+
+            print("🧾 Attempt completed_at:",
+                homework_attempt.completed_at)
+
+            if hasattr(homework_attempt, "center_code"):
+                print("🧾 Attempt center_code:",
+                    homework_attempt.center_code)
+
+        else:
+            print("🆕 No homework attempt found")
 
         if (
             homework_attempt and
@@ -12286,270 +12945,891 @@ def get_available_subjects(
         ):
             print("⛔ Homework already completed → disable")
             math_homework_enabled = False
-        else:
-            print("🆕 No completed attempt → enable")
 
-    print(
-        "🎯 Final math_homework_enabled =",
-        math_homework_enabled
-    )
-    print("========== MR HOMEWORK DEBUG END ==========\n")
-    print("🎯 Final math_homework_enabled =", math_homework_enabled)
-    print("========== MR HOMEWORK DEBUG END ==========\n")
+        else:
+            print("✅ Homework remains enabled")
+
+    print("🎯 Final math_homework_enabled =",
+        math_homework_enabled)
+
+    print("\n==================================================")
+    print("🧮 MATHEMATICAL REASONING DEBUG END")
+    print("==================================================\n")
     # ==================================================
     # 🧠 THINKING SKILLS
     # ==================================================
+
+    print("\n==================================================")
+    print("🧠 THINKING SKILLS DEBUG START")
+    print("==================================================")
+
     thinking_exam_enabled = True
     thinking_homework_enabled = True
-    
+
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", student.class_name)
+    print("🧪 Student year:", student.student_year)
+    print("🧪 Student center_code:", student.center_code)
+
     if not student.student_year:
+
+        print("❌ Student year missing")
+
         thinking_exam_enabled = False
         thinking_homework_enabled = False
+
     else:
-        class_year = extract_class_year_numeric(student.student_year)
-    
-        # -----------------------------
+
+        class_year = extract_class_year_numeric(
+            student.student_year
+        )
+
+        print("🧪 Extracted class_year:", class_year)
+
+        # ==================================================
         # 1️⃣ NORMAL EXAM
-        # -----------------------------
+        # ==================================================
+
+        print("\n-----------------------------")
+        print("📝 THINKING SKILLS EXAM CHECK")
+        print("-----------------------------")
+
         thinking_exam = (
             db.query(Exam)
             .filter(
                 Exam.subject == "thinking_skills",
+
                 Exam.class_name == "selective",
-                Exam.class_year == class_year
+
+                Exam.class_year == class_year,
+
+                Exam.center_code ==
+                student.center_code
             )
             .order_by(Exam.id.desc())
             .first()
         )
-    
-        if not thinking_exam:
-            thinking_exam_enabled = False
+
+        print("📘 Selected thinking exam:",
+            thinking_exam)
+
+        if thinking_exam:
+
+            print("✅ Exam ID:",
+                thinking_exam.id)
+
+            print("✅ Exam subject:",
+                thinking_exam.subject)
+
+            print("✅ Exam class_name:",
+                thinking_exam.class_name)
+
+            print("✅ Exam class_year:",
+                thinking_exam.class_year)
+
+            print("✅ Exam center_code:",
+                thinking_exam.center_code)
+
         else:
+            print("❌ No thinking skills exam found")
+
+        if not thinking_exam:
+
+            print("⛔ thinking_exam_enabled = False")
+
+            thinking_exam_enabled = False
+
+        else:
+
+            print("\n🔍 Searching for exam attempt...")
+
             completed_exam_attempt = (
                 db.query(StudentExamThinkingSkills)
                 .filter(
-                    StudentExamThinkingSkills.student_id == student.id,
-                    StudentExamThinkingSkills.exam_id == thinking_exam.id,
-                    StudentExamThinkingSkills.class_year == class_year,
-                    StudentExamThinkingSkills.completed_at.isnot(None)
+                    StudentExamThinkingSkills.student_id
+                    == student.id,
+
+                    StudentExamThinkingSkills.exam_id
+                    == thinking_exam.id,
+
+                    StudentExamThinkingSkills.class_year
+                    == class_year,
+
+                    StudentExamThinkingSkills
+                    .completed_at
+                    .isnot(None)
                 )
                 .first()
             )
-    
+
+            print("🔎 Completed exam attempt:",
+                completed_exam_attempt)
+
             if completed_exam_attempt:
+
+                print("🧾 Attempt ID:",
+                    completed_exam_attempt.id)
+
+                print("🧾 Attempt exam_id:",
+                    completed_exam_attempt.exam_id)
+
+                print("🧾 Attempt student_id:",
+                    completed_exam_attempt.student_id)
+
+                print("🧾 Attempt completed_at:",
+                    completed_exam_attempt.completed_at)
+
+                if hasattr(
+                    completed_exam_attempt,
+                    "center_code"
+                ):
+                    print(
+                        "🧾 Attempt center_code:",
+                        completed_exam_attempt.center_code
+                    )
+
+                print("⛔ Exam already completed")
+
                 thinking_exam_enabled = False
-    
-        # -----------------------------
+
+            else:
+
+                print("🆕 No completed attempt found")
+                print("✅ Exam remains enabled")
+
+        print(
+            "🎯 Final thinking_exam_enabled =",
+            thinking_exam_enabled
+        )
+
+        # ==================================================
         # 2️⃣ HOMEWORK EXAM
-        # -----------------------------
+        # ==================================================
+
+        print("\n-----------------------------")
+        print("📚 THINKING SKILLS HOMEWORK CHECK")
+        print("-----------------------------")
+
         homework_exam = (
             db.query(HomeWorkExam)
             .filter(
-                HomeWorkExam.subject == "thinking_skills",
-                HomeWorkExam.class_name == "selective",
-                HomeWorkExam.class_year == class_year
+                HomeWorkExam.subject ==
+                "thinking_skills",
+
+                HomeWorkExam.class_name ==
+                "selective",
+
+                HomeWorkExam.class_year ==
+                class_year,
+
+                HomeWorkExam.center_code ==
+                student.center_code
             )
             .order_by(HomeWorkExam.id.desc())
             .first()
         )
-    
-        if not homework_exam:
-            thinking_homework_enabled = False
+
+        print("📘 Selected homework exam:",
+            homework_exam)
+
+        if homework_exam:
+
+            print("✅ Homework ID:",
+                homework_exam.id)
+
+            print("✅ Homework subject:",
+                homework_exam.subject)
+
+            print("✅ Homework class_name:",
+                homework_exam.class_name)
+
+            print("✅ Homework class_year:",
+                homework_exam.class_year)
+
+            print("✅ Homework center_code:",
+                homework_exam.center_code)
+
         else:
+            print("❌ No homework exam found")
+
+        if not homework_exam:
+
+            print(
+                "⛔ thinking_homework_enabled = False"
+            )
+
+            thinking_homework_enabled = False
+
+        else:
+
+            print("\n🔍 Searching for homework attempt...")
+
             completed_homework_attempt = (
                 db.query(StudentHomeworkThinkingSkills)
                 .filter(
-                    StudentHomeworkThinkingSkills.student_id == student.id,
-                    StudentHomeworkThinkingSkills.homework_exam_id == homework_exam.id,
-                    StudentHomeworkThinkingSkills.class_year == class_year,
-                    StudentHomeworkThinkingSkills.completed_at.isnot(None)
+                    StudentHomeworkThinkingSkills
+                    .student_id
+                    == student.id,
+
+                    StudentHomeworkThinkingSkills
+                    .homework_exam_id
+                    == homework_exam.id,
+
+                    StudentHomeworkThinkingSkills
+                    .class_year
+                    == class_year,
+
+                    StudentHomeworkThinkingSkills
+                    .completed_at
+                    .isnot(None)
                 )
                 .first()
             )
-    
+
+            print("🔎 Completed homework attempt:",
+                completed_homework_attempt)
+
             if completed_homework_attempt:
+
+                print("🧾 Attempt ID:",
+                    completed_homework_attempt.id)
+
+                print("🧾 Attempt homework_exam_id:",
+                    completed_homework_attempt.homework_exam_id)
+
+                print("🧾 Attempt student_id:",
+                    completed_homework_attempt.student_id)
+
+                print("🧾 Attempt completed_at:",
+                    completed_homework_attempt.completed_at)
+
+                if hasattr(
+                    completed_homework_attempt,
+                    "center_code"
+                ):
+                    print(
+                        "🧾 Attempt center_code:",
+                        completed_homework_attempt.center_code
+                    )
+
+                print(
+                    "⛔ Homework already completed"
+                )
+
                 thinking_homework_enabled = False
-    
+
+            else:
+
+                print("🆕 No completed homework found")
+                print("✅ Homework remains enabled")
+
+        print(
+            "🎯 Final thinking_homework_enabled =",
+            thinking_homework_enabled
+        )
+
+    print("\n==================================================")
+    print("🧠 THINKING SKILLS DEBUG END")
+    print("==================================================\n")
     # ==================================================
     # 📖 READING
     # ==================================================
+
+    print("\n==================================================")
+    print("📖 READING AVAILABILITY DEBUG START")
+    print("==================================================")
+
     reading_exam_enabled = False
     reading_homework_enabled = True
 
-    print("\n========== 📖 READING AVAILABILITY DEBUG START ==========")
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", student.class_name)
+    print("🧪 Student year:", student.student_year)
+    print("🧪 Student center_code:", student.center_code)
 
     # ==================================================
     # ✅ NORMALIZATION
     # ==================================================
 
-    class_name = student.class_name.strip().lower()
-    class_year = student.student_year.strip().lower().replace("year", "").strip()
+    class_name = (
+        student.class_name
+        .strip()
+        .lower()
+    )
 
-    print(f"🧪 class_name = {class_name}")
-    print(f"🧪 class_year = {class_year}")
+    class_year = (
+        student.student_year
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    print("🧪 Normalized class_name =", class_name)
+    print("🧪 Normalized class_year =", class_year)
 
     # ==================================================
-    # 1️⃣ EXAM LOGIC (SIMPLIFIED & FIXED)
+    # 1️⃣ EXAM LOGIC
     # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 READING EXAM CHECK")
+    print("-----------------------------")
 
     latest_exam = (
         db.query(GeneratedExamReading)
         .filter(
-            func.lower(GeneratedExamReading.class_name) == class_name,
-            GeneratedExamReading.class_year == class_year
+            func.lower(
+                func.trim(
+                    GeneratedExamReading.class_name
+                )
+            ) == class_name,
+
+            GeneratedExamReading.class_year
+            == class_year,
+
+            GeneratedExamReading.center_code
+            == student.center_code
         )
-        .order_by(GeneratedExamReading.id.desc())
+        .order_by(
+            GeneratedExamReading.id.desc()
+        )
         .first()
     )
 
-    print("📘 Latest exam:", latest_exam)
+    print("📘 Latest reading exam:",
+        latest_exam)
+
+    if latest_exam:
+
+        print("✅ Exam ID:",
+            latest_exam.id)
+
+        print("✅ Exam class_name:",
+            latest_exam.class_name)
+
+        print("✅ Exam class_year:",
+            latest_exam.class_year)
+
+        print("✅ Exam center_code:",
+            latest_exam.center_code)
+
+        print("✅ Exam created_at:",
+            getattr(
+                latest_exam,
+                "created_at",
+                None
+            ))
+
+    else:
+        print("❌ No reading exam found")
 
     latest_attempt = None
 
     if latest_exam:
+
+        print("\n🔍 Searching for reading exam attempt...")
+
         latest_attempt = (
             db.query(StudentExamReading)
             .filter(
-                StudentExamReading.student_id == student.id,
-                StudentExamReading.exam_id == latest_exam.id
+                StudentExamReading.student_id
+                == student.id,
+
+                StudentExamReading.exam_id
+                == latest_exam.id
             )
-            .order_by(StudentExamReading.started_at.desc())
+            .order_by(
+                StudentExamReading.started_at.desc()
+            )
             .first()
         )
 
-    print("🔎 Latest exam attempt:", latest_attempt)
+    print("🔎 Latest reading exam attempt:",
+        latest_attempt)
 
-    # --- Decision ---
+    if latest_attempt:
+
+        print("🧾 Attempt ID:",
+            latest_attempt.id)
+
+        print("🧾 Attempt exam_id:",
+            latest_attempt.exam_id)
+
+        print("🧾 Attempt student_id:",
+            latest_attempt.student_id)
+
+        print("🧾 Attempt started_at:",
+            latest_attempt.started_at)
+
+        print("🧾 Attempt finished:",
+            latest_attempt.finished)
+
+        if hasattr(latest_attempt, "center_code"):
+
+            print("🧾 Attempt center_code:",
+                latest_attempt.center_code)
+
+    # ==================================================
+    # ✅ DECISION
+    # ==================================================
+
     if not latest_exam:
-        print("❌ No exam → disable")
+
+        print("❌ No exam found → disable")
+
         reading_exam_enabled = False
 
     elif not latest_attempt:
-        print("🆕 No attempt → enable")
+
+        print("🆕 No attempt found → enable")
+
         reading_exam_enabled = True
 
     elif latest_attempt.finished is False:
-        print("🟡 Resume attempt → enable")
+
+        print("🟡 In-progress attempt found → enable")
+
         reading_exam_enabled = True
 
     else:
-        print("⛔ Exam already completed → disable")
+
+        print("⛔ Completed exam found → disable")
+
         reading_exam_enabled = False
 
+    print(
+        "🎯 Final reading_exam_enabled =",
+        reading_exam_enabled
+    )
 
     # ==================================================
-    # 2️⃣ HOMEWORK LOGIC (SIMPLIFIED & FIXED)
+    # 2️⃣ HOMEWORK LOGIC
     # ==================================================
+
+    print("\n-----------------------------")
+    print("📚 READING HOMEWORK CHECK")
+    print("-----------------------------")
 
     latest_homework_exam = (
         db.query(GeneratedHomeworkReading)
         .filter(
-            func.lower(GeneratedHomeworkReading.class_name) == class_name,
-            GeneratedHomeworkReading.class_year == class_year
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkReading.class_name
+                )
+            ) == class_name,
+
+            GeneratedHomeworkReading.class_year
+            == class_year,
+
+            GeneratedHomeworkReading.center_code
+            == student.center_code
         )
-        .order_by(GeneratedHomeworkReading.id.desc())
+        .order_by(
+            GeneratedHomeworkReading.id.desc()
+        )
         .first()
     )
 
-    print("📘 Latest homework exam:", latest_homework_exam)
+    print("📘 Latest homework exam:",
+        latest_homework_exam)
+
+    if latest_homework_exam:
+
+        print("✅ Homework ID:",
+            latest_homework_exam.id)
+
+        print("✅ Homework class_name:",
+            latest_homework_exam.class_name)
+
+        print("✅ Homework class_year:",
+            latest_homework_exam.class_year)
+
+        print("✅ Homework center_code:",
+            latest_homework_exam.center_code)
+
+        print("✅ Homework created_at:",
+            getattr(
+                latest_homework_exam,
+                "created_at",
+                None
+            ))
+
+    else:
+        print("❌ No reading homework found")
 
     latest_homework_attempt = None
 
     if latest_homework_exam:
+
+        print("\n🔍 Searching for homework attempt...")
+
         latest_homework_attempt = (
             db.query(StudentHomeworkReading)
             .filter(
-                StudentHomeworkReading.student_id == student.id,
-                StudentHomeworkReading.exam_id == latest_homework_exam.id
+                StudentHomeworkReading.student_id
+                == student.id,
+
+                StudentHomeworkReading.exam_id
+                == latest_homework_exam.id
             )
-            .order_by(StudentHomeworkReading.started_at.desc())
+            .order_by(
+                StudentHomeworkReading.started_at.desc()
+            )
             .first()
         )
 
-    print("🔎 Latest homework attempt:", latest_homework_attempt)
+    print("🔎 Latest homework attempt:",
+        latest_homework_attempt)
 
-    # --- Decision ---
+    if latest_homework_attempt:
+
+        print("🧾 Attempt ID:",
+            latest_homework_attempt.id)
+
+        print("🧾 Attempt exam_id:",
+            latest_homework_attempt.exam_id)
+
+        print("🧾 Attempt student_id:",
+            latest_homework_attempt.student_id)
+
+        print("🧾 Attempt started_at:",
+            latest_homework_attempt.started_at)
+
+        print("🧾 Attempt finished:",
+            latest_homework_attempt.finished)
+
+        if hasattr(
+            latest_homework_attempt,
+            "center_code"
+        ):
+
+            print("🧾 Attempt center_code:",
+                latest_homework_attempt.center_code)
+
+    # ==================================================
+    # ✅ HOMEWORK DECISION
+    # ==================================================
+
     if not latest_homework_exam:
-        print("❌ No homework → disable")
+
+        print("❌ No homework found → disable")
+
         reading_homework_enabled = False
 
     elif not latest_homework_attempt:
-        print("🆕 No homework attempt → enable")
+
+        print("🆕 No homework attempt found → enable")
+
         reading_homework_enabled = True
 
     elif latest_homework_attempt.finished is False:
+
         print("🟡 Homework in progress → enable")
+
         reading_homework_enabled = True
 
     else:
+
         print("⛔ Homework already completed → disable")
+
         reading_homework_enabled = False
 
+    print(
+        "🎯 Final reading_homework_enabled =",
+        reading_homework_enabled
+    )
 
-    print(f"🎯 Final reading_exam_enabled = {reading_exam_enabled}")
-    print(f"🎯 Final reading_homework_enabled = {reading_homework_enabled}")
-    print("========== 📖 READING AVAILABILITY DEBUG END ==========\n")
+    print("\n==================================================")
+    print("📖 READING AVAILABILITY DEBUG END")
+    print("==================================================\n")
+    
     # ==================================================
     # ✍️ WRITING
     # ==================================================
+
+    print("\n==================================================")
+    print("✍️ WRITING AVAILABILITY DEBUG START")
+    print("==================================================")
+
     writing_exam_enabled = True
     writing_homework_enabled = True
-    
-    # -----------------------------
+
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", student.class_name)
+    print("🧪 Student year:", student.student_year)
+    print("🧪 Student center_code:", student.center_code)
+
+    normalized_class_name = (
+        student.class_name
+        .strip()
+        .lower()
+    )
+
+    normalized_class_year = (
+        student.student_year
+        .strip()
+        .lower()
+    )
+
+    print("🧪 Normalized class_name:",
+        normalized_class_name)
+
+    print("🧪 Normalized class_year:",
+        normalized_class_year)
+
+    # ==================================================
     # 1️⃣ NORMAL EXAM
-    # -----------------------------
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 WRITING EXAM CHECK")
+    print("-----------------------------")
+
     writing_exam = (
         db.query(GeneratedExamWriting)
-        .filter(GeneratedExamWriting.is_current == True)
-        .order_by(GeneratedExamWriting.created_at.desc())
+        .filter(
+            GeneratedExamWriting.is_current == True,
+
+            GeneratedExamWriting.center_code ==
+            student.center_code
+        )
+        .order_by(
+            GeneratedExamWriting.created_at.desc()
+        )
         .first()
     )
-    
-    if not writing_exam:
-        writing_exam_enabled = False
+
+    print("📘 Selected writing exam:",
+        writing_exam)
+
+    if writing_exam:
+
+        print("✅ Exam ID:",
+            writing_exam.id)
+
+        print("✅ Exam center_code:",
+            writing_exam.center_code)
+
+        print("✅ Exam created_at:",
+            writing_exam.created_at)
+
+        print("✅ Exam is_current:",
+            writing_exam.is_current)
+
     else:
+        print("❌ No writing exam found")
+
+    if not writing_exam:
+
+        print("⛔ writing_exam_enabled = False")
+
+        writing_exam_enabled = False
+
+    else:
+
+        print("\n🔍 Searching for writing exam attempt...")
+
         writing_attempt = (
             db.query(StudentExamWriting)
             .filter(
-                StudentExamWriting.student_id == student.id,
-                StudentExamWriting.exam_id == writing_exam.id
+                StudentExamWriting.student_id
+                == student.id,
+
+                StudentExamWriting.exam_id
+                == writing_exam.id
             )
-            .order_by(StudentExamWriting.started_at.desc())
+            .order_by(
+                StudentExamWriting.started_at.desc()
+            )
             .first()
         )
-    
-        if writing_attempt and writing_attempt.completed_at is not None:
+
+        print("🔎 Writing attempt:",
+            writing_attempt)
+
+        if writing_attempt:
+
+            print("🧾 Attempt ID:",
+                writing_attempt.id)
+
+            print("🧾 Attempt exam_id:",
+                writing_attempt.exam_id)
+
+            print("🧾 Attempt student_id:",
+                writing_attempt.student_id)
+
+            print("🧾 Attempt started_at:",
+                writing_attempt.started_at)
+
+            print("🧾 Attempt completed_at:",
+                writing_attempt.completed_at)
+
+            if hasattr(
+                writing_attempt,
+                "center_code"
+            ):
+
+                print("🧾 Attempt center_code:",
+                    writing_attempt.center_code)
+
+        else:
+            print("🆕 No writing exam attempt found")
+
+        if (
+            writing_attempt and
+            writing_attempt.completed_at is not None
+        ):
+
+            print("⛔ Writing exam completed → disable")
+
             writing_exam_enabled = False
-    
-    
-    # -----------------------------
+
+        else:
+
+            print("✅ Writing exam remains enabled")
+
+    print(
+        "🎯 Final writing_exam_enabled =",
+        writing_exam_enabled
+    )
+
+    # ==================================================
     # 2️⃣ HOMEWORK
-    # -----------------------------
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📚 WRITING HOMEWORK CHECK")
+    print("-----------------------------")
+
     homework_exam = (
         db.query(GeneratedHomeworkWriting)
         .filter(
-            func.lower(GeneratedHomeworkWriting.class_name) == func.lower(student.class_name),
-            func.lower(GeneratedHomeworkWriting.class_year) == func.lower(student.student_year)
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkWriting.class_name
+                )
+            ) == normalized_class_name,
+
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkWriting.class_year
+                )
+            ) == normalized_class_year,
+
+            GeneratedHomeworkWriting.center_code ==
+            student.center_code
         )
-        .order_by(GeneratedHomeworkWriting.created_at.desc())
+        .order_by(
+            GeneratedHomeworkWriting.created_at.desc()
+        )
         .first()
     )
-    
-    if not homework_exam:
-        writing_homework_enabled = False
+
+    print("📘 Selected writing homework:",
+        homework_exam)
+
+    if homework_exam:
+
+        print("✅ Homework ID:",
+            homework_exam.id)
+
+        print("✅ Homework class_name:",
+            homework_exam.class_name)
+
+        print("✅ Homework class_year:",
+            homework_exam.class_year)
+
+        print("✅ Homework center_code:",
+            homework_exam.center_code)
+
+        print("✅ Homework created_at:",
+            homework_exam.created_at)
+
     else:
+        print("❌ No writing homework found")
+
+    if not homework_exam:
+
+        print("⛔ writing_homework_enabled = False")
+
+        writing_homework_enabled = False
+
+    else:
+
+        print("\n🔍 Searching for writing homework attempt...")
+
         homework_attempt = (
             db.query(StudentHomeworkWriting)
             .filter(
-                StudentHomeworkWriting.student_id == student.id,
-                StudentHomeworkWriting.homework_id == homework_exam.id
+                StudentHomeworkWriting.student_id
+                == student.id,
+
+                StudentHomeworkWriting.homework_id
+                == homework_exam.id
             )
-            .order_by(StudentHomeworkWriting.started_at.desc())
+            .order_by(
+                StudentHomeworkWriting.started_at.desc()
+            )
             .first()
         )
-    
-        if homework_attempt and homework_attempt.completed_at is not None:
+
+        print("🔎 Writing homework attempt:",
+            homework_attempt)
+
+        if homework_attempt:
+
+            print("🧾 Attempt ID:",
+                homework_attempt.id)
+
+            print("🧾 Attempt homework_id:",
+                homework_attempt.homework_id)
+
+            print("🧾 Attempt student_id:",
+                homework_attempt.student_id)
+
+            print("🧾 Attempt started_at:",
+                homework_attempt.started_at)
+
+            print("🧾 Attempt completed_at:",
+                homework_attempt.completed_at)
+
+            if hasattr(
+                homework_attempt,
+                "center_code"
+            ):
+
+                print("🧾 Attempt center_code:",
+                    homework_attempt.center_code)
+
+        else:
+            print("🆕 No writing homework attempt found")
+
+        if (
+            homework_attempt and
+            homework_attempt.completed_at is not None
+        ):
+
+            print("⛔ Writing homework completed → disable")
+
             writing_homework_enabled = False
+
+        else:
+
+            print("✅ Writing homework remains enabled")
+
+    print(
+        "🎯 Final writing_homework_enabled =",
+        writing_homework_enabled
+    )
+
+    print("\n==================================================")
+    print("✍️ WRITING AVAILABILITY DEBUG END")
+    print("==================================================\n")
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
@@ -14614,7 +15894,11 @@ def generate_writing_homework(
             )
         )
 
-        center_code = payload.center_code
+        center_code = (
+            payload.center_code
+            .strip()
+            .upper()
+        )
 
         print("\n📥 INPUTS:")
 
@@ -14630,8 +15914,55 @@ def generate_writing_homework(
             f"   center_code    = '{center_code}'"
         )
 
+        print("\n🧪 NORMALIZED VALUES:")
+
+        print(
+            f"   class_name_norm   = "
+            f"'{class_name_norm}'"
+        )
+
+        print(
+            f"   class_year_norm   = "
+            f"'{class_year_norm}'"
+        )
+
+        print(
+            f"   class_year_digits = "
+            f"'{class_year_digits}'"
+        )
+
+        print(
+            f"   center_code_norm  = "
+            f"'{center_code}'"
+        )
+
         # -------------------------------------------------
-        # Load setup using center code
+        # Debug all setups
+        # -------------------------------------------------
+        all_setups = (
+            db.query(
+                QuizSetupWritingHomework
+            ).all()
+        )
+
+        print(
+            f"\n📊 TOTAL HOMEWORK SETUPS: "
+            f"{len(all_setups)}"
+        )
+
+        for s in all_setups:
+
+            print(
+                f"   → ID={s.id} | "
+                f"class='{s.class_name}' | "
+                f"year='{s.class_year}' | "
+                f"topic='{s.topic}' | "
+                f"difficulty='{s.difficulty}' | "
+                f"center='{s.center_code}'"
+            )
+
+        # -------------------------------------------------
+        # Load setup using normalized center code
         # -------------------------------------------------
         setup = (
             db.query(
@@ -14650,8 +15981,11 @@ def generate_writing_homework(
                     )
                 ) == class_year_norm,
 
-                QuizSetupWritingHomework.center_code
-                == center_code
+                func.lower(
+                    func.trim(
+                        QuizSetupWritingHomework.center_code
+                    )
+                ) == center_code.lower()
             )
             .order_by(
                 QuizSetupWritingHomework.id.desc()
@@ -14664,6 +15998,10 @@ def generate_writing_homework(
         )
 
         if not setup:
+
+            print(
+                "❌ No homework setup matched"
+            )
 
             raise HTTPException(
                 status_code=404,
@@ -14713,8 +16051,11 @@ def generate_writing_homework(
                     )
                 ) == class_year_norm,
 
-                GeneratedHomeworkWriting.center_code
-                == center_code
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.center_code
+                    )
+                ) == center_code.lower()
             )
             .all()
         )
@@ -14731,34 +16072,53 @@ def generate_writing_homework(
 
         if homework_ids:
 
-            db.query(
-                StudentHomeworkResponseWriting
-            ).filter(
-                StudentHomeworkResponseWriting.homework_id.in_(
-                    homework_ids
+            deleted_responses = (
+                db.query(
+                    StudentHomeworkResponseWriting
+                ).filter(
+                    StudentHomeworkResponseWriting
+                    .homework_id.in_(homework_ids)
+                ).delete(
+                    synchronize_session=False
                 )
-            ).delete(
-                synchronize_session=False
             )
 
-            db.query(
-                StudentHomeworkWriting
-            ).filter(
-                StudentHomeworkWriting.homework_id.in_(
-                    homework_ids
-                )
-            ).delete(
-                synchronize_session=False
+            print(
+                f"🗑 Deleted homework responses: "
+                f"{deleted_responses}"
             )
 
-            db.query(
-                GeneratedHomeworkWriting
-            ).filter(
-                GeneratedHomeworkWriting.id.in_(
-                    homework_ids
+            deleted_attempts = (
+                db.query(
+                    StudentHomeworkWriting
+                ).filter(
+                    StudentHomeworkWriting
+                    .homework_id.in_(homework_ids)
+                ).delete(
+                    synchronize_session=False
                 )
-            ).delete(
-                synchronize_session=False
+            )
+
+            print(
+                f"🗑 Deleted homework attempts: "
+                f"{deleted_attempts}"
+            )
+
+            deleted_homeworks = (
+                db.query(
+                    GeneratedHomeworkWriting
+                ).filter(
+                    GeneratedHomeworkWriting.id.in_(
+                        homework_ids
+                    )
+                ).delete(
+                    synchronize_session=False
+                )
+            )
+
+            print(
+                f"🗑 Deleted generated homeworks: "
+                f"{deleted_homeworks}"
             )
 
         db.commit()
@@ -14776,8 +16136,11 @@ def generate_writing_homework(
                 QuestionUsageWriting.question_id
             )
             .filter(
-                QuestionUsageWriting.center_code
-                == center_code
+                func.lower(
+                    func.trim(
+                        QuestionUsageWriting.center_code
+                    )
+                ) == center_code.lower()
             )
             .all()
         )
@@ -14790,6 +16153,20 @@ def generate_writing_homework(
         print(
             f"\n🚫 USED QUESTION IDS: "
             f"{used_question_ids}"
+        )
+
+        # -------------------------------------------------
+        # Debug question bank
+        # -------------------------------------------------
+        all_questions = (
+            db.query(
+                WritingQuestionBank
+            ).all()
+        )
+
+        print(
+            f"\n📊 TOTAL QUESTIONS IN BANK: "
+            f"{len(all_questions)}"
         )
 
         # -------------------------------------------------
@@ -14852,6 +16229,10 @@ def generate_writing_homework(
         )
 
         if not question:
+
+            print(
+                "❌ No unused question matched"
+            )
 
             raise HTTPException(
                 status_code=404,
@@ -14968,7 +16349,6 @@ def generate_writing_homework(
 
         # -------------------------------------------------
         # Register question usage
-        # SAME TABLE AS ACTUAL EXAMS
         # -------------------------------------------------
         print(
             "\n📝 Registering "
@@ -14986,6 +16366,10 @@ def generate_writing_homework(
 
         print(
             "✅ Question usage registered"
+        )
+
+        print(
+            "\n=========== COMPLETE ===========\n"
         )
 
         # -------------------------------------------------
@@ -15014,6 +16398,7 @@ def generate_writing_homework(
         traceback.print_exc()
 
         raise e
+    
 @app.post("/api/exams/generate-writing-homework-latest")
 def generate_writing_homework_latest(
     payload: dict = Body(...),
@@ -16214,7 +17599,7 @@ def generate_mr_homework_exam(
     # 6️⃣ SAVE EXAM
     # ==================================================
 
-    new_exam = Exam(
+    new_exam = HomeworkExamMathematicalReasoning(
 
         quiz_id=quiz.id,
 
@@ -16222,7 +17607,7 @@ def generate_mr_homework_exam(
 
         subject=quiz.subject,
 
-        class_year=int(class_year),
+        class_year=str(class_year),
 
         center_code=center_code,
 
@@ -16311,6 +17696,7 @@ def generate_mr_homework_exam(
         "questions":
             questions
     } 
+
 @app.get(
     "/api/student/homework-review/thinking-skills",
     response_model=ExamReviewResponse
@@ -24755,6 +26141,7 @@ def get_naplan_reading_question_bank(
 
         for row in results
     ]
+
 @app.get("/api/admin/question-bank/naplan")
 def get_naplan_question_bank(
     subject: str = Query(...),
@@ -51057,8 +52444,11 @@ def generate_exam_writing(
                     )
                 ) == class_year_norm,
 
-                QuizSetupWriting.center_code
-                == center_code
+                func.lower(
+                    func.trim(
+                        QuizSetupWriting.center_code
+                    )
+                ) == center_code.strip().lower()
             )
             .order_by(
                 QuizSetupWriting.id.desc()
@@ -52324,6 +53714,7 @@ def save_writing_homework_quiz(
         "message": "Writing homework quiz setup saved",
         "quiz_id": quiz.id
     }
+
 @app.post("/api/quizzes-writing")
 def save_writing_quiz(
     payload: WritingQuizSchema,
@@ -67069,19 +68460,9 @@ def start_homework_oc_mathematical_reasoning(
                 )
             ) == "mathematical_reasoning",
 
-            func.trim(
-                func.replace(
-
-                    func.lower(
-                        HomeworkExamOCMathematicalReasoning
-                        .class_year
-                    ),
-
-                    "year",
-
-                    ""
-                )
-            ) == class_year,
+            HomeworkExamOCMathematicalReasoning
+            .class_year
+            == int(class_year),
 
             func.upper(
                 func.trim(
@@ -71523,17 +72904,9 @@ def start_homework_oc_thinking_skills(
                 )
             ) == "oc",
 
-            func.trim(
-                func.replace(
-
-                    func.lower(
-                        HomeworkExamOCThinkingSkills.class_year
-                    ),
-
-                    "year",
-
-                    ""
-                )
+            cast(
+                HomeworkExamOCThinkingSkills.class_year,
+                String
             ) == class_year,
 
             func.upper(
@@ -72140,18 +73513,7 @@ def start_exam_oc_thinking_skills(
                 )
             ) == "oc",
 
-            func.trim(
-                func.replace(
-
-                    func.lower(
-                        Exam.class_year
-                    ),
-
-                    "year",
-
-                    ""
-                )
-            ) == class_year,
+            cast(Exam.class_year, String) == class_year,
 
             func.upper(
                 func.trim(
@@ -72546,186 +73908,686 @@ def get_oc_available_subjects(
     # ==================================================
     # 🧠 OC THINKING SKILLS
     # ==================================================
+
+    print("\n==================================================")
+    print("🧠 OC THINKING SKILLS DEBUG START")
+    print("==================================================")
+
     thinking_exam_enabled = True
     thinking_homework_enabled = True
 
-    # -----------------------------
+    student_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
+
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", student.class_name)
+    print("🧪 Student center_code:", student_center_code)
+
+    # ==================================================
     # 1️⃣ NORMAL EXAM
-    # -----------------------------
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 OC THINKING EXAM CHECK")
+    print("-----------------------------")
+
     exam = (
         db.query(Exam)
         .filter(
-            func.lower(Exam.class_name) == "oc",
-            Exam.subject == "thinking_skills"
+            func.lower(
+                func.trim(
+                    Exam.class_name
+                )
+            ) == "oc",
+
+            Exam.subject == "thinking_skills",
+
+            func.lower(
+                func.trim(
+                    Exam.center_code
+                )
+            ) == student_center_code.lower()
         )
-        .order_by(Exam.created_at.desc())
+        .order_by(
+            Exam.created_at.desc()
+        )
         .first()
     )
+
+    print("📘 Selected OC thinking exam:",
+        exam)
+
+    if exam:
+
+        print("✅ Exam ID:",
+            exam.id)
+
+        print("✅ Exam class_name:",
+            exam.class_name)
+
+        print("✅ Exam subject:",
+            exam.subject)
+
+        print("✅ Exam center_code:",
+            exam.center_code)
+
+        print("✅ Exam created_at:",
+            exam.created_at)
+
+    else:
+
+        print("❌ No OC thinking exam found")
 
     if not exam:
+
+        print("⛔ thinking_exam_enabled = False")
+
         thinking_exam_enabled = False
+
     else:
+
+        print("\n🔍 Searching for exam attempt...")
+
         attempt = (
-            db.query(StudentExamOCThinkingSkills)
-            .filter(
-                StudentExamOCThinkingSkills.student_id == student.id,
-                StudentExamOCThinkingSkills.exam_id == exam.id
+            db.query(
+                StudentExamOCThinkingSkills
             )
-            .order_by(StudentExamOCThinkingSkills.started_at.desc())
+            .filter(
+                StudentExamOCThinkingSkills
+                .student_id
+                == student.id,
+
+                StudentExamOCThinkingSkills
+                .exam_id
+                == exam.id
+            )
+            .order_by(
+                StudentExamOCThinkingSkills
+                .started_at.desc()
+            )
             .first()
         )
 
-        if attempt and attempt.completed_at is not None:
+        print("🔎 Exam attempt:", attempt)
+
+        if attempt:
+
+            print("🧾 Attempt ID:",
+                attempt.id)
+
+            print("🧾 Attempt exam_id:",
+                attempt.exam_id)
+
+            print("🧾 Attempt student_id:",
+                attempt.student_id)
+
+            print("🧾 Attempt started_at:",
+                attempt.started_at)
+
+            print("🧾 Attempt completed_at:",
+                attempt.completed_at)
+
+            if hasattr(
+                attempt,
+                "center_code"
+            ):
+
+                print("🧾 Attempt center_code:",
+                    attempt.center_code)
+
+        else:
+
+            print("🆕 No previous exam attempt")
+
+        if (
+            attempt and
+            attempt.completed_at is not None
+        ):
+
+            print("⛔ Exam already completed")
+
             thinking_exam_enabled = False
 
-    # -----------------------------
+        else:
+
+            print("✅ Exam remains enabled")
+
+    print(
+        "🎯 Final thinking_exam_enabled =",
+        thinking_exam_enabled
+    )
+
+    # ==================================================
     # 2️⃣ HOMEWORK
-    # -----------------------------
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📚 OC THINKING HOMEWORK CHECK")
+    print("-----------------------------")
+
     homework = (
-        db.query(HomeworkExamOCThinkingSkills)
-        .filter(
-            func.lower(HomeworkExamOCThinkingSkills.class_name) == "oc",
-            HomeworkExamOCThinkingSkills.subject == "thinking_skills"
+        db.query(
+            HomeworkExamOCThinkingSkills
         )
-        .order_by(HomeworkExamOCThinkingSkills.created_at.desc())
+        .filter(
+            func.lower(
+                func.trim(
+                    HomeworkExamOCThinkingSkills
+                    .class_name
+                )
+            ) == "oc",
+
+            HomeworkExamOCThinkingSkills
+            .subject
+            == "thinking_skills",
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCThinkingSkills
+                    .center_code
+                )
+            ) == student_center_code.lower()
+        )
+        .order_by(
+            HomeworkExamOCThinkingSkills
+            .created_at.desc()
+        )
         .first()
     )
 
-    if not homework:
-        thinking_homework_enabled = False
+    print("📘 Selected OC homework:",
+        homework)
+
+    if homework:
+
+        print("✅ Homework ID:",
+            homework.id)
+
+        print("✅ Homework class_name:",
+            homework.class_name)
+
+        print("✅ Homework subject:",
+            homework.subject)
+
+        print("✅ Homework center_code:",
+            homework.center_code)
+
+        print("✅ Homework created_at:",
+            homework.created_at)
+
     else:
+
+        print("❌ No OC homework found")
+
+    if not homework:
+
+        print(
+            "⛔ thinking_homework_enabled = False"
+        )
+
+        thinking_homework_enabled = False
+
+    else:
+
+        print(
+            "\n🔍 Searching for homework attempt..."
+        )
+
         attempt = (
-            db.query(StudentHomeworkOCThinkingSkills)
-            .filter(
-                StudentHomeworkOCThinkingSkills.student_id == student.id,
-                StudentHomeworkOCThinkingSkills.homework_exam_id == homework.id
+            db.query(
+                StudentHomeworkOCThinkingSkills
             )
-            .order_by(StudentHomeworkOCThinkingSkills.started_at.desc())
+            .filter(
+                StudentHomeworkOCThinkingSkills
+                .student_id
+                == student.id,
+
+                StudentHomeworkOCThinkingSkills
+                .homework_exam_id
+                == homework.id
+            )
+            .order_by(
+                StudentHomeworkOCThinkingSkills
+                .started_at.desc()
+            )
             .first()
         )
 
-        if attempt and attempt.completed_at is not None:
+        print("🔎 Homework attempt:", attempt)
+
+        if attempt:
+
+            print("🧾 Attempt ID:",
+                attempt.id)
+
+            print("🧾 Attempt homework_exam_id:",
+                attempt.homework_exam_id)
+
+            print("🧾 Attempt student_id:",
+                attempt.student_id)
+
+            print("🧾 Attempt started_at:",
+                attempt.started_at)
+
+            print("🧾 Attempt completed_at:",
+                attempt.completed_at)
+
+            if hasattr(
+                attempt,
+                "center_code"
+            ):
+
+                print("🧾 Attempt center_code:",
+                    attempt.center_code)
+
+        else:
+
+            print("🆕 No previous homework attempt")
+
+        if (
+            attempt and
+            attempt.completed_at is not None
+        ):
+
+            print("⛔ Homework already completed")
+
             thinking_homework_enabled = False
+
+        else:
+
+            print("✅ Homework remains enabled")
+
+    print(
+        "🎯 Final thinking_homework_enabled =",
+        thinking_homework_enabled
+    )
+
+    print("\n==================================================")
+    print("🧠 OC THINKING SKILLS DEBUG END")
+    print("==================================================\n")
     # ==================================================
     # 🧮 OC MATHEMATICAL REASONING
     # ==================================================
+
+    print("\n==================================================")
+    print("🧮 OC MATHEMATICAL REASONING DEBUG START")
+    print("==================================================")
+
     # -----------------------------
     # Normalize student year once
     # -----------------------------
     if isinstance(student.student_year, str):
-        student_year_int = int(student.student_year.strip().split()[-1])
-    else:
-        student_year_int = int(student.student_year)
 
-    student_year_str = str(student_year_int)
+        student_year_int = int(
+            student.student_year
+            .strip()
+            .split()[-1]
+        )
+
+    else:
+
+        student_year_int = int(
+            student.student_year
+        )
+
+    student_year_str = str(
+        student_year_int
+    )
+
+    student_center_code = (
+        student.center_code
+        .strip()
+        .upper()
+    )
 
     math_exam_enabled = True
     math_homework_enabled = True
 
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", student.class_name)
+    print("🧪 Student year raw:", student.student_year)
+    print("🧪 Student year int:", student_year_int)
+    print("🧪 Student year str:", student_year_str)
+    print("🧪 Student center_code:", student_center_code)
 
     # ==================================================
     # 1️⃣ NORMAL EXAM
     # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 OC MATH EXAM CHECK")
+    print("-----------------------------")
+
     exam = (
         db.query(Exam)
         .filter(
-            func.lower(func.trim(Exam.class_name)) == "oc",
-            func.lower(func.trim(Exam.subject)) == "mathematical_reasoning",
-            Exam.class_year == student_year_int   # ✅ INT match
+            func.lower(
+                func.trim(
+                    Exam.class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.trim(
+                    Exam.subject
+                )
+            ) == "mathematical_reasoning",
+
+            Exam.class_year
+            == student_year_int,
+
+            func.lower(
+                func.trim(
+                    Exam.center_code
+                )
+            ) == student_center_code.lower()
         )
-        .order_by(Exam.created_at.desc())
+        .order_by(
+            Exam.created_at.desc()
+        )
         .first()
     )
 
-    if not exam:
-        math_exam_enabled = False
+    print("📘 Selected OC math exam:",
+        exam)
+
+    if exam:
+
+        print("✅ Exam ID:",
+            exam.id)
+
+        print("✅ Exam class_name:",
+            exam.class_name)
+
+        print("✅ Exam subject:",
+            exam.subject)
+
+        print("✅ Exam class_year:",
+            exam.class_year)
+
+        print("✅ Exam center_code:",
+            exam.center_code)
+
+        print("✅ Exam created_at:",
+            exam.created_at)
+
     else:
+
+        print("❌ No OC math exam found")
+
+    if not exam:
+
+        print("⛔ math_exam_enabled = False")
+
+        math_exam_enabled = False
+
+    else:
+
+        print("\n🔍 Searching for exam attempt...")
+
         attempt = (
-            db.query(StudentExamOCMathematicalReasoning)
-            .filter(
-                StudentExamOCMathematicalReasoning.student_id == student.id,
-                StudentExamOCMathematicalReasoning.exam_id == exam.id
+            db.query(
+                StudentExamOCMathematicalReasoning
             )
-            .order_by(StudentExamOCMathematicalReasoning.started_at.desc())
+            .filter(
+                StudentExamOCMathematicalReasoning
+                .student_id
+                == student.id,
+
+                StudentExamOCMathematicalReasoning
+                .exam_id
+                == exam.id
+            )
+            .order_by(
+                StudentExamOCMathematicalReasoning
+                .started_at.desc()
+            )
             .first()
         )
 
+        print("🔎 Exam attempt:",
+            attempt)
+
+        if attempt:
+
+            print("🧾 Attempt ID:",
+                attempt.id)
+
+            print("🧾 Attempt exam_id:",
+                attempt.exam_id)
+
+            print("🧾 Attempt student_id:",
+                attempt.student_id)
+
+            print("🧾 Attempt started_at:",
+                attempt.started_at)
+
+            print("🧾 Attempt completed_at:",
+                attempt.completed_at)
+
+            if hasattr(
+                attempt,
+                "center_code"
+            ):
+
+                print("🧾 Attempt center_code:",
+                    attempt.center_code)
+
+        else:
+
+            print("🆕 No previous exam attempt")
+
         # disable only if latest exam attempt is completed
-        if attempt and attempt.completed_at is not None:
+        if (
+            attempt and
+            attempt.completed_at is not None
+        ):
+
+            print("⛔ Exam already completed")
+
             math_exam_enabled = False
 
+        else:
+
+            print("✅ Exam remains enabled")
+
+    print(
+        "🎯 Final math_exam_enabled =",
+        math_exam_enabled
+    )
 
     # ==================================================
     # 2️⃣ HOMEWORK
     # ==================================================
+
+    print("\n-----------------------------")
+    print("📚 OC MATH HOMEWORK CHECK")
+    print("-----------------------------")
+
     homework = (
-        db.query(HomeworkExamOCMathematicalReasoning)
-        .filter(
-            func.lower(func.trim(HomeworkExamOCMathematicalReasoning.class_name)) == "oc",
-            func.lower(func.trim(HomeworkExamOCMathematicalReasoning.subject)) == "mathematical_reasoning",
-            HomeworkExamOCMathematicalReasoning.class_year == student_year_str   # ✅ STRING match
+        db.query(
+            HomeworkExamOCMathematicalReasoning
         )
-        .order_by(HomeworkExamOCMathematicalReasoning.created_at.desc())
+        .filter(
+            func.lower(
+                func.trim(
+                    HomeworkExamOCMathematicalReasoning
+                    .class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCMathematicalReasoning
+                    .subject
+                )
+            ) == "mathematical_reasoning",
+
+            HomeworkExamOCMathematicalReasoning
+            .class_year
+            == student_year_str,
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCMathematicalReasoning
+                    .center_code
+                )
+            ) == student_center_code.lower()
+        )
+        .order_by(
+            HomeworkExamOCMathematicalReasoning
+            .created_at.desc()
+        )
         .first()
     )
 
-    if not homework:
-        math_homework_enabled = False
+    print("📘 Selected OC math homework:",
+        homework)
+
+    if homework:
+
+        print("✅ Homework ID:",
+            homework.id)
+
+        print("✅ Homework class_name:",
+            homework.class_name)
+
+        print("✅ Homework subject:",
+            homework.subject)
+
+        print("✅ Homework class_year:",
+            homework.class_year)
+
+        print("✅ Homework center_code:",
+            homework.center_code)
+
+        print("✅ Homework created_at:",
+            homework.created_at)
+
     else:
+
+        print("❌ No OC math homework found")
+
+    if not homework:
+
+        print("⛔ math_homework_enabled = False")
+
+        math_homework_enabled = False
+
+    else:
+
+        print(
+            "\n🔍 Searching for homework attempt..."
+        )
+
         attempt = (
-            db.query(StudentHomeworkOCMathematicalReasoning)
-            .filter(
-                StudentHomeworkOCMathematicalReasoning.student_id == student.id,
-                StudentHomeworkOCMathematicalReasoning.homework_exam_id == homework.id
+            db.query(
+                StudentHomeworkOCMathematicalReasoning
             )
-            .order_by(StudentHomeworkOCMathematicalReasoning.started_at.desc())
+            .filter(
+                StudentHomeworkOCMathematicalReasoning
+                .student_id
+                == student.id,
+
+                StudentHomeworkOCMathematicalReasoning
+                .homework_exam_id
+                == homework.id
+            )
+            .order_by(
+                StudentHomeworkOCMathematicalReasoning
+                .started_at.desc()
+            )
             .first()
         )
 
+        print("🔎 Homework attempt:",
+            attempt)
+
+        if attempt:
+
+            print("🧾 Attempt ID:",
+                attempt.id)
+
+            print("🧾 Attempt homework_exam_id:",
+                attempt.homework_exam_id)
+
+            print("🧾 Attempt student_id:",
+                attempt.student_id)
+
+            print("🧾 Attempt started_at:",
+                attempt.started_at)
+
+            print("🧾 Attempt completed_at:",
+                attempt.completed_at)
+
+            if hasattr(
+                attempt,
+                "center_code"
+            ):
+
+                print("🧾 Attempt center_code:",
+                    attempt.center_code)
+
+        else:
+
+            print("🆕 No previous homework attempt")
+
         # disable only if this exact homework is completed
-        if attempt and attempt.completed_at is not None:
+        if (
+            attempt and
+            attempt.completed_at is not None
+        ):
+
+            print("⛔ Homework already completed")
+
             math_homework_enabled = False
 
+        else:
+
+            print("✅ Homework remains enabled")
+
+    print(
+        "🎯 Final math_homework_enabled =",
+        math_homework_enabled
+    )
+
+    print("\n==================================================")
+    print("🧮 OC MATHEMATICAL REASONING DEBUG END")
+    print("==================================================\n")
     # ==================================================
     # 📖 OC READING
     # ==================================================
-    reading_exam_enabled = True
+
+    print("\n==================================================")
+    print("📖 OC READING DEBUG START")
+    print("==================================================")
+
+    reading_exam_enabled = False
     reading_homework_enabled = True
-    
-    # -----------------------------
-    # 1️⃣ NORMAL EXAM
-    # -----------------------------
-    exam = (
-        db.query(GeneratedExamReading)
-        .filter(GeneratedExamReading.class_name == "oc")
-        .order_by(GeneratedExamReading.id.desc())
-        .first()
+
+    student_center_code = (
+        student.center_code
+        .strip()
+        .upper()
     )
-    
-    if not exam:
-        reading_exam_enabled = False
-    else:
-        attempt = (
-            db.query(StudentExamReadingOC)
-            .filter(
-                StudentExamReadingOC.student_id == student.student_id,  # ⚠️ string-based
-                StudentExamReadingOC.exam_id == exam.id
-            )
-            .order_by(StudentExamReadingOC.started_at.desc())
-            .first()
-        )
-    
-        if attempt and attempt.finished:
-            reading_exam_enabled = False
-    
-    
-    # -----------------------------
-    # 2️⃣ HOMEWORK
-    # -----------------------------
-    # extract class_year same way as your endpoint
-    # --------------------------------------------------
-    # ✅ NORMALIZE STUDENT YEAR
-    # --------------------------------------------------
+
+    print("🧪 Student DB ID:", student.id)
+    print("🧪 Student public ID:", student.student_id)
+    print("🧪 Student class_name:", student.class_name)
+    print("🧪 Student year:", student.student_year)
+    print("🧪 Student center_code:", student_center_code)
+
+    # ==================================================
+    # ✅ NORMALIZATION
+    # ==================================================
+
+    class_name = "oc"
+
     class_year = (
         str(student.student_year)
         .strip()
@@ -72734,60 +74596,284 @@ def get_oc_available_subjects(
         .strip()
     )
 
-    # --------------------------------------------------
-    # ✅ FETCH HOMEWORK (CORRECT TABLE + NORMALIZATION)
-    # --------------------------------------------------
-    homework = (
-        db.query(GeneratedHomeworkReading)   # ✅ FIXED TABLE
-        .filter(
-            func.lower(func.trim(GeneratedHomeworkReading.class_name)) == "oc",
+    print("🧪 Normalized class_name =", class_name)
+    print("🧪 Normalized class_year =", class_year)
 
-            func.trim(
-                func.replace(
-                    func.lower(GeneratedHomeworkReading.class_year),
-                    "year",
-                    ""
+    # ==================================================
+    # 1️⃣ EXAM LOGIC
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 OC READING EXAM CHECK")
+    print("-----------------------------")
+
+    exam = (
+        db.query(GeneratedExamReading)
+        .filter(
+            func.lower(
+                func.trim(
+                    GeneratedExamReading.class_name
                 )
-            ) == class_year
+            ) == "oc",
+
+            func.upper(
+                func.trim(
+                    GeneratedExamReading.center_code
+                )
+            ) == student_center_code
         )
-        .order_by(GeneratedHomeworkReading.id.desc())
+        .order_by(
+            GeneratedExamReading.id.desc()
+        )
         .first()
     )
 
-    # --------------------------------------------------
-    # 🧪 DEBUG (VERY USEFUL)
-    # --------------------------------------------------
-    print("\n🧪 HOMEWORK DEBUG")
-    print("student.class_year →", class_year)
-    print("found homework →", homework)
+    print("📘 Selected OC reading exam:",
+        exam)
 
-    # --------------------------------------------------
-    # ✅ DECISION LOGIC
-    # --------------------------------------------------
-    if not homework:
-        print("❌ No homework found → disable")
-        reading_homework_enabled = False
+    if exam:
+
+        print("✅ Exam ID:",
+            exam.id)
+
+        print("✅ Exam class_name:",
+            exam.class_name)
+
+        print("✅ Exam center_code:",
+            exam.center_code)
+
+        print("✅ Exam created_at:",
+            getattr(
+                exam,
+                "created_at",
+                None
+            ))
+
     else:
-        attempt = (
-            db.query(StudentHomeworkReadingOC)
-            .filter(
-                func.lower(StudentHomeworkReadingOC.student_id)
-                == student.student_id.lower(),
 
-                StudentHomeworkReadingOC.exam_id == homework.id
+        print("❌ No OC reading exam found")
+
+    latest_attempt = None
+
+    if exam:
+
+        print("\n🔍 Searching for reading exam attempt...")
+
+        latest_attempt = (
+            db.query(StudentExamReadingOC)
+            .filter(
+                func.lower(
+                    StudentExamReadingOC.student_id
+                ) == student.student_id.lower(),
+
+                StudentExamReadingOC.exam_id
+                == exam.id
             )
-            .order_by(StudentHomeworkReadingOC.started_at.desc())
+            .order_by(
+                StudentExamReadingOC.started_at.desc()
+            )
             .first()
         )
 
-        print("🔎 attempt →", attempt)
+    print("🔎 Latest exam attempt:",
+        latest_attempt)
 
-        if attempt and attempt.finished:
-            print("⛔ Homework already completed → disable")
-            reading_homework_enabled = False
-        else:
-            print("🆕 Homework available → enable")
-            reading_homework_enabled = True
+    if latest_attempt:
+
+        print("🧾 Attempt ID:",
+            latest_attempt.id)
+
+        print("🧾 Attempt exam_id:",
+            latest_attempt.exam_id)
+
+        print("🧾 Attempt student_id:",
+            latest_attempt.student_id)
+
+        print("🧾 Attempt started_at:",
+            latest_attempt.started_at)
+
+        print("🧾 Attempt finished:",
+            latest_attempt.finished)
+
+    # ==================================================
+    # ✅ DECISION
+    # ==================================================
+
+    if not exam:
+
+        print("❌ No exam found → disable")
+
+        reading_exam_enabled = False
+
+    elif not latest_attempt:
+
+        print("🆕 No attempt found → enable")
+
+        reading_exam_enabled = True
+
+    elif latest_attempt.finished is False:
+
+        print("🟡 In-progress attempt → enable")
+
+        reading_exam_enabled = True
+
+    else:
+
+        print("⛔ Exam already completed → disable")
+
+        reading_exam_enabled = False
+
+    print(
+        "🎯 Final reading_exam_enabled =",
+        reading_exam_enabled
+    )
+
+    # ==================================================
+    # 2️⃣ HOMEWORK LOGIC
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📚 OC READING HOMEWORK CHECK")
+    print("-----------------------------")
+
+    homework = (
+        db.query(GeneratedHomeworkReading)
+        .filter(
+
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkReading.class_name
+                )
+            ) == "oc",
+
+            func.trim(
+                func.replace(
+                    func.lower(
+                        GeneratedHomeworkReading.class_year
+                    ),
+                    "year",
+                    ""
+                )
+            ) == class_year,
+
+            func.upper(
+                func.trim(
+                    GeneratedHomeworkReading.center_code
+                )
+            ) == student_center_code
+        )
+        .order_by(
+            GeneratedHomeworkReading.id.desc()
+        )
+        .first()
+    )
+
+    print("📘 Selected OC reading homework:",
+        homework)
+
+    if homework:
+
+        print("✅ Homework ID:",
+            homework.id)
+
+        print("✅ Homework class_name:",
+            homework.class_name)
+
+        print("✅ Homework class_year:",
+            homework.class_year)
+
+        print("✅ Homework center_code:",
+            homework.center_code)
+
+        print("✅ Homework created_at:",
+            getattr(
+                homework,
+                "created_at",
+                None
+            ))
+
+    else:
+
+        print("❌ No OC reading homework found")
+
+    latest_homework_attempt = None
+
+    if homework:
+
+        print("\n🔍 Searching for homework attempt...")
+
+        latest_homework_attempt = (
+            db.query(StudentHomeworkReadingOC)
+            .filter(
+                func.lower(
+                    StudentHomeworkReadingOC.student_id
+                ) == student.student_id.lower(),
+
+                StudentHomeworkReadingOC.exam_id
+                == homework.id
+            )
+            .order_by(
+                StudentHomeworkReadingOC.started_at.desc()
+            )
+            .first()
+        )
+
+    print("🔎 Latest homework attempt:",
+        latest_homework_attempt)
+
+    if latest_homework_attempt:
+
+        print("🧾 Attempt ID:",
+            latest_homework_attempt.id)
+
+        print("🧾 Attempt exam_id:",
+            latest_homework_attempt.exam_id)
+
+        print("🧾 Attempt student_id:",
+            latest_homework_attempt.student_id)
+
+        print("🧾 Attempt started_at:",
+            latest_homework_attempt.started_at)
+
+        print("🧾 Attempt finished:",
+            latest_homework_attempt.finished)
+
+    # ==================================================
+    # ✅ HOMEWORK DECISION
+    # ==================================================
+
+    if not homework:
+
+        print("❌ No homework found → disable")
+
+        reading_homework_enabled = False
+
+    elif not latest_homework_attempt:
+
+        print("🆕 No homework attempt found → enable")
+
+        reading_homework_enabled = True
+
+    elif latest_homework_attempt.finished is False:
+
+        print("🟡 Homework in progress → enable")
+
+        reading_homework_enabled = True
+
+    else:
+
+        print("⛔ Homework already completed → disable")
+
+        reading_homework_enabled = False
+
+    print(
+        "🎯 Final reading_homework_enabled =",
+        reading_homework_enabled
+    )
+
+    print("\n==================================================")
+    print("📖 OC READING DEBUG END")
+    print("==================================================\n")
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
