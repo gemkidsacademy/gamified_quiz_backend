@@ -63482,6 +63482,283 @@ RETURN VALID JSON ONLY.
     print(f"💾 Literary exam saved | ID={obj.id}")
     return saved_ids
 
+def parse_dropdown_cloze_block(
+    block_text: str,
+    db: Session,
+    batch_id: int
+) -> list[int]:
+
+    import re
+
+    print("🧠 [dropdown_cloze] START parsing block")
+
+    saved_ids: list[int] = []
+
+    # --------------------------------------------------
+    # 1️⃣ METADATA EXTRACTION
+    # --------------------------------------------------
+    def extract_meta(label: str) -> str | None:
+
+        match = re.search(
+            rf"^[^\S\r\n]*{label}[^\S\r\n]*:[^\S\r\n]*\"?(.*?)\"?[^\S\r\n]*$",
+            block_text,
+            re.MULTILINE | re.IGNORECASE
+        )
+
+        return match.group(1).strip() if match else None
+
+    class_name = extract_meta("CLASS")
+    class_year = extract_meta("CLASS_YEAR")
+    subject = extract_meta("SUBJECT")
+    topic = extract_meta("TOPIC")
+    difficulty = extract_meta("DIFFICULTY")
+
+    # --------------------------------------------------
+    # 2️⃣ REQUIRED VALIDATION
+    # --------------------------------------------------
+    missing = []
+
+    if not class_name:
+        missing.append("CLASS")
+
+    if not class_year:
+        missing.append("CLASS_YEAR")
+
+    if not subject:
+        missing.append("SUBJECT")
+
+    if not topic:
+        missing.append("TOPIC")
+
+    if not difficulty:
+        missing.append("DIFFICULTY")
+
+    if missing:
+        raise ValueError(
+            f"Missing METADATA fields: {', '.join(missing)}"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ TOTAL QUESTIONS
+    # --------------------------------------------------
+    tq_match = re.search(
+        r"TOTAL[_ ]?QUESTIONS\s*:\s*(\d+)",
+        block_text,
+        re.IGNORECASE
+    )
+
+    if not tq_match:
+        raise ValueError("TOTAL_QUESTIONS missing")
+
+    expected_q_count = int(tq_match.group(1))
+
+    print("   → Class:", class_name)
+    print("   → Year:", class_year)
+    print("   → Topic:", topic)
+    print("   → Expected Questions:", expected_q_count)
+
+    
+    gap_pattern = re.compile(
+        r"\[(GAP_\d+)\]"
+    )
+
+    detected_gaps = gap_pattern.findall(block_text)
+
+    # Preserve order + dedupe
+    detected_gaps = list(dict.fromkeys(detected_gaps))
+
+    if not detected_gaps:
+        raise ValueError("No GAP placeholders found")
+
+    print("   → Detected Gaps:", detected_gaps)
+
+    # --------------------------------------------------
+    # 5️⃣ GAP COUNT VALIDATION
+    # --------------------------------------------------
+    if len(detected_gaps) != expected_q_count:
+        raise ValueError(
+            f"GAP count mismatch: expected "
+            f"{expected_q_count}, got {len(detected_gaps)}"
+        )
+
+    # --------------------------------------------------
+    # 6️⃣ GAP SEQUENCE VALIDATION
+    # --------------------------------------------------
+    expected_gap_labels = [
+        f"GAP_{i}"
+        for i in range(1, expected_q_count + 1)
+    ]
+
+    if detected_gaps != expected_gap_labels:
+        raise ValueError(
+            f"GAP sequence invalid. "
+            f"Expected={expected_gap_labels}, "
+            f"Found={detected_gaps}"
+        )
+
+    print("   → GAP validation passed")
+
+    # --------------------------------------------------
+    # 7️⃣ OPTION BLOCK EXTRACTION
+    # --------------------------------------------------
+    option_block_pattern = re.compile(
+        r"(GAP_\d+)\s*:\s*"
+        r"A\.\s*(.*?)\s*"
+        r"B\.\s*(.*?)\s*"
+        r"C\.\s*(.*?)\s*"
+        r"D\.\s*(.*?)\s*"
+        r'CORRECT_ANSWER\s*:\s*"?(A|B|C|D)"?',
+        re.DOTALL | re.IGNORECASE
+    )
+
+    option_matches = option_block_pattern.findall(block_text)
+
+    if not option_matches:
+        raise ValueError(
+            "No option blocks detected"
+        )
+
+    print(
+        f"   → Option blocks detected: "
+        f"{len(option_matches)}"
+    )
+
+    # --------------------------------------------------
+    # 8️⃣ OPTION BLOCK VALIDATION
+    # --------------------------------------------------
+    if len(option_matches) != expected_q_count:
+        raise ValueError(
+            f"Option block mismatch: expected "
+            f"{expected_q_count}, got "
+            f"{len(option_matches)}"
+        )
+
+    parsed_questions = []
+
+    for match in option_matches:
+
+        gap_label = match[0]
+
+        parsed_question = {
+            "gap_label": gap_label,
+            "answer_options": {
+                "A": match[1].strip(),
+                "B": match[2].strip(),
+                "C": match[3].strip(),
+                "D": match[4].strip()
+            },
+            "correct_answer": match[5].strip()
+        }
+
+        parsed_questions.append(parsed_question)
+
+    # --------------------------------------------------
+    # 9️⃣ QUESTION VALIDATION
+    # --------------------------------------------------
+    for i, q in enumerate(parsed_questions, start=1):
+
+        expected_gap = f"GAP_{i}"
+
+        if q["gap_label"] != expected_gap:
+            raise ValueError(
+                f"Gap ordering mismatch. "
+                f"Expected={expected_gap}, "
+                f"Found={q['gap_label']}"
+            )
+
+        opts = q["answer_options"]
+
+        if set(opts.keys()) != {"A", "B", "C", "D"}:
+            raise ValueError(
+                f"{expected_gap} invalid options"
+            )
+
+        if q["correct_answer"] not in opts:
+            raise ValueError(
+                f"{expected_gap} invalid correct_answer"
+            )
+
+    print("   → Option validation passed")
+
+        # --------------------------------------------------
+    # 🔟 READING MATERIAL EXTRACTION
+    # --------------------------------------------------
+    reading_match = re.search(
+        r"READING_MATERIAL\s*:(.*?)QUESTION_OPTIONS\s*:",
+        block_text,
+        re.DOTALL | re.IGNORECASE
+    )
+
+    if not reading_match:
+        raise ValueError(
+            "READING_MATERIAL section missing"
+        )
+
+    reading_material = reading_match.group(1).strip()
+
+    if len(reading_material) < 100:
+        raise ValueError(
+            "Reading material too short"
+        )
+
+    print("   → Reading material extracted")
+
+    # --------------------------------------------------
+    # 1️⃣1️⃣ FRONTEND ENRICHMENT
+    # --------------------------------------------------
+    enriched_questions = []
+
+    for i, q in enumerate(parsed_questions, start=1):
+
+        enriched_questions.append({
+            "question_id": f"DC_Q{i}",
+            "gap_number": i,
+            "placeholder": q["gap_label"],
+            "question_text": f"Gap {i}",
+            "answer_options": q["answer_options"],
+            "correct_answer": q["correct_answer"]
+        })
+
+    # --------------------------------------------------
+    # 1️⃣2️⃣ FINAL BUNDLE
+    # --------------------------------------------------
+    bundle = {
+        "question_type": "dropdown_cloze",
+        "topic": topic,
+        "reading_material": {
+            "content": reading_material
+        },
+        "questions": enriched_questions
+    }
+
+    # --------------------------------------------------
+    # 1️⃣3️⃣ SAVE
+    # --------------------------------------------------
+    obj = QuestionReading(
+        class_name=class_name.lower(),
+        class_year=class_year,
+        subject=subject,
+        difficulty=difficulty.lower(),
+        topic=topic,
+        batch_id=batch_id,
+        total_questions=len(enriched_questions),
+        is_used=False,
+        exam_bundle=bundle
+    )
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+
+    saved_ids.append(obj.id)
+
+    print(
+        f"✅ Dropdown cloze exam saved | "
+        f"ID={obj.id}"
+    )
+
+    return saved_ids
+
 def parse_main_idea_block(
     block_text: str,
     db: Session,
@@ -63683,16 +63960,16 @@ def parse_comparative_block(
     The JSON output MUST contain EXACTLY:
     
     {
-      "class_name": string,
-      "subject": string,
-      "topic": string,
-      "difficulty": string,
-      "reading_material": {
+    "class_name": string,
+    "subject": string,
+    "topic": string,
+    "difficulty": string,
+    "reading_material": {
         "extracts": {
-          "<EXTRACT_KEY>": string
+        "<EXTRACT_KEY>": string
         }
-      },
-      "questions": [...]
+    },
+    "questions": [...]
     }
     
     RULES:
@@ -63990,6 +64267,13 @@ async def upload_word_reading_unified(
             elif qtype == "literary":
 
                 ids = parse_literary_block(
+                    block,
+                    db,
+                    batch_id=new_batch_id
+                )
+            elif qtype == "dropdown_cloze":
+
+                ids = parse_dropdown_cloze_block(
                     block,
                     db,
                     batch_id=new_batch_id
