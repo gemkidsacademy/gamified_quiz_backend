@@ -49401,10 +49401,16 @@ def start_exam_oc_reading(
     # 7️⃣ Fetch Existing Attempt
     # ==================================================
 
+    # ==================================================
+    # FETCH ATTEMPT FOR LATEST EXAM ONLY
+    # ==================================================
+
     attempt = (
+
         db.query(
             StudentExamReadingOC
         )
+
         .filter(
 
             func.lower(
@@ -49416,11 +49422,27 @@ def start_exam_oc_reading(
             StudentExamReadingOC.exam_id
             == exam.id
         )
+
         .order_by(
-            StudentExamReadingOC.started_at
-            .desc()
+            StudentExamReadingOC.id.desc()
         )
+
         .first()
+    )
+
+    print(
+        "🧪 ATTEMPT LOOKUP:",
+        {
+            "latest_exam_id": exam.id,
+            "found_attempt":
+                attempt.id
+                if attempt
+                else None,
+            "attempt_exam_id":
+                attempt.exam_id
+                if attempt
+                else None
+        }
     )
 
     if attempt:
@@ -49473,7 +49495,15 @@ def start_exam_oc_reading(
     # 9️⃣ Resume Existing Attempt
     # ==================================================
 
-    if attempt and not attempt.finished:
+    # ==================================================
+    # RESUME ONLY IF SAME EXAM
+    # ==================================================
+
+    if (
+        attempt
+        and not attempt.finished
+        and attempt.exam_id == exam.id
+    ):
 
         started_at = attempt.started_at
 
@@ -49568,7 +49598,32 @@ def start_exam_oc_reading(
         )
 
         return payload
+    # ==================================================
+    # STALE ATTEMPT DETECTED
+    # ==================================================
 
+    if (
+        attempt
+        and not attempt.finished
+        and attempt.exam_id != exam.id
+    ):
+
+        print(
+            "⚠️ Old attempt belongs to "
+            "outdated exam version"
+        )
+
+        print(
+            f"Old exam_id={attempt.exam_id} "
+            f"Latest exam_id={exam.id}"
+        )
+
+        # OPTIONAL:
+        # mark old attempt finished
+
+        attempt.finished = True
+
+        db.commit()
     # ==================================================
     # 🔟 Create NEW Attempt
     # ==================================================
@@ -50362,6 +50417,23 @@ def get_reading_content(exam_id: int, db: Session = Depends(get_db)):
     # 🔧 FIX 1 — normalize reading_material (string → object)
     for section in sections:
         rm = section.get("reading_material")
+                # ==========================================
+        # Extract Matching normalization
+        # ==========================================
+        if (
+            section.get("question_type")
+            == "extract_matching"
+        ):
+
+            extracts = section.get(
+                "extracts",
+                []
+            )
+
+            section["reading_material"] = {
+                "type": "extract_matching",
+                "extracts": extracts
+            }
 
         if isinstance(rm, str):
             print("🛠 Normalizing reading_material for section:", section.get("section_id"))
@@ -57474,20 +57546,15 @@ def generate_exam_oc_reading_homework(
 
     try:
 
+        # ==================================================
+        # 0️⃣ INPUT NORMALIZATION
+        # ==================================================
+
         print(
-            "📥 RAW PAYLOAD:",
-            payload.dict()
+            "\n📥 RAW PAYLOAD:"
         )
 
-        used_bundle_ids = []
-
-        sections = []
-
-        warnings = []
-
-        # ==================================================
-        # 0️⃣ NORMALIZE INPUT
-        # ==================================================
+        print(payload.dict())
 
         class_name = (
             payload.class_name
@@ -57523,10 +57590,29 @@ def generate_exam_oc_reading_homework(
             )
 
         print(
-            f"🔧 class_name={class_name}, "
-            f"class_year={class_year}, "
-            f"center_code={center_code}"
+            "\n🔧 NORMALIZED INPUTS:"
         )
+
+        print(
+            f"   class_name = "
+            f"{class_name}"
+        )
+
+        print(
+            f"   class_year = "
+            f"{class_year}"
+        )
+
+        print(
+            f"   center_code = "
+            f"{center_code}"
+        )
+
+        used_bundle_ids = []
+
+        sections = []
+
+        warnings = []
 
         # ==================================================
         # 1️⃣ FIND CENTER
@@ -57555,7 +57641,7 @@ def generate_exam_oc_reading_homework(
         )
 
         # ==================================================
-        # 2️⃣ FETCH USED READING BUNDLES
+        # 2️⃣ FETCH USED QUESTION IDS
         # ==================================================
 
         used_question_ids = (
@@ -57736,7 +57822,7 @@ def generate_exam_oc_reading_homework(
             )
 
             # ==================================================
-            # QUERY UNUSED BUNDLE
+            # FETCH UNUSED BUNDLE
             # ==================================================
 
             bundle_query = (
@@ -57802,11 +57888,6 @@ def generate_exam_oc_reading_homework(
                         )
                     ) == class_year,
 
-                    # ==========================================
-                    # EXCLUDE USED BUNDLES
-                    # FOR THIS CENTER
-                    # ==========================================
-
                     (
                         ~QuestionReading.id.in_(
                             used_question_ids
@@ -57814,11 +57895,6 @@ def generate_exam_oc_reading_homework(
                         if used_question_ids
                         else True
                     ),
-
-                    # ==========================================
-                    # PREVENT DUPLICATES
-                    # INSIDE SAME HOMEWORK
-                    # ==========================================
 
                     ~QuestionReading.id.in_(
                         used_bundle_ids
@@ -57838,8 +57914,7 @@ def generate_exam_oc_reading_homework(
             matched_bundle = (
                 bundle_query
                 .order_by(
-                    QuestionReading
-                    .id.desc()
+                    QuestionReading.id.desc()
                 )
                 .first()
             )
@@ -57858,16 +57933,27 @@ def generate_exam_oc_reading_homework(
                 )
 
             print(
-                f"   ✅ Bundle ID: "
-                f"{matched_bundle.id}"
+                f"   ✅ Bundle selected "
+                f"ID={matched_bundle.id}"
+            )
+
+            print(
+                "🧪 SELECTED BUNDLE JSON:",
+                matched_bundle.exam_bundle
             )
 
             used_bundle_ids.append(
                 matched_bundle.id
             )
 
+            # ==================================================
+            # EXTRACT BUNDLE CONTENT
+            # ==================================================
+
             bundle_json = (
-                matched_bundle.exam_bundle
+                copy.deepcopy(
+                    matched_bundle.exam_bundle
+                )
                 or {}
             )
 
@@ -57878,19 +57964,94 @@ def generate_exam_oc_reading_homework(
             )
 
             reading_material = (
-                bundle_json.get(
-                    "reading_material"
+                copy.deepcopy(
+                    bundle_json.get(
+                        "reading_material"
+                    ) or {}
                 )
             )
 
             answer_options = (
-                bundle_json.get(
-                    "answer_options"
+                copy.deepcopy(
+                    bundle_json.get(
+                        "answer_options"
+                    )
                 )
             )
 
             # ==================================================
-            # PREP QUESTIONS
+            # EXTRACT SUPPORT
+            # ==================================================
+
+            extracts = []
+
+            # --------------------------------------------------
+            # ROOT LEVEL EXTRACTS
+            # --------------------------------------------------
+
+            if isinstance(
+                bundle_json.get("extracts"),
+                list
+            ):
+
+                extracts = copy.deepcopy(
+
+                    bundle_json.get(
+                        "extracts",
+                        []
+                    )
+                )
+
+            # --------------------------------------------------
+            # READING MATERIAL EXTRACTS
+            # --------------------------------------------------
+
+            elif isinstance(
+                reading_material,
+                dict
+            ):
+
+                rm_extracts = (
+                    reading_material.get(
+                        "extracts"
+                    )
+                )
+
+                # OLD OBJECT FORMAT
+                if isinstance(
+                    rm_extracts,
+                    dict
+                ):
+
+                    extracts = [
+
+                        {
+                            "label": key,
+                            "title": "",
+                            "content": value
+                        }
+
+                        for key, value
+                        in rm_extracts.items()
+                    ]
+
+                # NEW ARRAY FORMAT
+                elif isinstance(
+                    rm_extracts,
+                    list
+                ):
+
+                    extracts = copy.deepcopy(
+                        rm_extracts
+                    )
+
+            print(
+                "🔥 NORMALIZED EXTRACTS:",
+                extracts
+            )
+
+            # ==================================================
+            # BUILD QUESTIONS
             # ==================================================
 
             collected_questions = [
@@ -57920,7 +58081,7 @@ def generate_exam_oc_reading_homework(
             )
 
             # ==================================================
-            # BUILD SECTION
+            # RENDER HELPERS
             # ==================================================
 
             passage_style = (
@@ -57937,12 +58098,28 @@ def generate_exam_oc_reading_homework(
 
             render_hint = (
 
-                "gapped_text"
+                "extract_matching"
 
                 if question_type
-                == "gapped_text"
+                == "extract_matching"
 
-                else "standard"
+                else (
+
+                    "gapped_text"
+
+                    if question_type
+                    == "gapped_text"
+
+                    else (
+
+                        "dropdown_cloze"
+
+                        if question_type
+                        == "dropdown_cloze"
+
+                        else "standard"
+                    )
+                )
             )
 
             options_scope = (
@@ -57953,6 +58130,72 @@ def generate_exam_oc_reading_homework(
 
                 else "per_question"
             )
+
+            # ==================================================
+            # NORMALIZE READING MATERIAL
+            # ==================================================
+
+            normalized_reading_material = (
+                reading_material
+            )
+
+            # --------------------------------------------------
+            # FORCE STANDARDIZED
+            # EXTRACT MATCHING FORMAT
+            # --------------------------------------------------
+
+            if (
+                question_type
+                == "extract_matching"
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "extract_matching",
+
+                    "extracts":
+                        copy.deepcopy(
+                            extracts
+                        )
+                }
+
+            # ==================================================
+            # ENSURE TYPE EXISTS
+            # ==================================================
+
+            if (
+                isinstance(
+                    normalized_reading_material,
+                    dict
+                )
+                and
+                "type"
+                not in normalized_reading_material
+            ):
+
+                normalized_reading_material[
+                    "type"
+                ] = question_type
+
+            # ==================================================
+            # DEBUG FINAL READING MATERIAL
+            # ==================================================
+
+            print(
+                "\n🚨 FINAL READING MATERIAL:"
+            )
+
+            print(
+                json.dumps(
+                    normalized_reading_material,
+                    indent=2
+                )
+            )
+
+            # ==================================================
+            # BUILD SECTION
+            # ==================================================
 
             section = {
 
@@ -57972,7 +58215,13 @@ def generate_exam_oc_reading_homework(
                     question_type,
 
                 "reading_material":
-                    reading_material,
+                    normalized_reading_material,
+
+                # IMPORTANT
+                "extracts":
+                    copy.deepcopy(
+                        extracts
+                    ),
 
                 "passage_style":
                     passage_style,
@@ -57987,16 +58236,35 @@ def generate_exam_oc_reading_homework(
                     collected_questions,
             }
 
+            # ==================================================
+            # SHARED ANSWER OPTIONS
+            # ==================================================
+
             if answer_options:
 
                 section[
                     "answer_options"
                 ] = answer_options
 
+            print(
+                "\n🚨 FINAL SECTION:"
+            )
+
+            print(
+                json.dumps(
+                    section,
+                    indent=2
+                )
+            )
+
+            # ==================================================
+            # APPEND SECTION
+            # ==================================================
+
             sections.append(section)
 
         # ==================================================
-        # 5️⃣ FINALIZE
+        # 5️⃣ FINALIZE HOMEWORK
         # ==================================================
 
         if not sections:
@@ -58034,6 +58302,17 @@ def generate_exam_oc_reading_homework(
             "sections":
                 sections,
         }
+
+        print(
+            "\n🚨 FINAL HOMEWORK JSON:"
+        )
+
+        print(
+            json.dumps(
+                homework_json,
+                indent=2
+            )
+        )
 
         print(
             f"📊 Total questions: "
@@ -58113,6 +58392,11 @@ def generate_exam_oc_reading_homework(
             f"{len(usage_rows)}"
         )
 
+        print(
+            "================ "
+            "END =================\n"
+        )
+
         # ==================================================
         # 8️⃣ RESPONSE
         # ==================================================
@@ -58142,10 +58426,12 @@ def generate_exam_oc_reading_homework(
             "OC READING HOMEWORK"
         )
 
-        print(str(e))
+        print(
+            f"❗ Exception: "
+            f"{str(e)}"
+        )
 
         raise
-
 @app.post("/api/exams/generate-oc-reading-homework-latest")
 def generate_exam_oc_reading_homework_latest(
     payload: ReadingHomeworkExamRequest,
@@ -58162,9 +58448,10 @@ def generate_exam_oc_reading_homework_latest(
     try:
 
         print(
-            "📥 RAW PAYLOAD:",
-            payload.dict()
+            "\n📥 RAW PAYLOAD:"
         )
+
+        print(payload.dict())
 
         # ==================================================
         # 0️⃣ NORMALIZE INPUT
@@ -58355,11 +58642,6 @@ def generate_exam_oc_reading_homework_latest(
                 QuestionReading.batch_id
                 == batch_id,
 
-                # ==========================================
-                # EXCLUDE USED BUNDLES
-                # FOR THIS CENTER
-                # ==========================================
-
                 (
                     ~QuestionReading.id.in_(
                         used_question_ids
@@ -58408,9 +58690,21 @@ def generate_exam_oc_reading_homework_latest(
             start=1
         ):
 
+            print(
+                f"\n➡️ PROCESSING "
+                f"BUNDLE ID={row.id}"
+            )
+
             bundle_json = (
-                row.exam_bundle
+                copy.deepcopy(
+                    row.exam_bundle
+                )
                 or {}
+            )
+
+            print(
+                "🧪 BUNDLE JSON:",
+                bundle_json
             )
 
             question_type = (
@@ -58420,16 +58714,95 @@ def generate_exam_oc_reading_homework_latest(
             )
 
             reading_material = (
-                bundle_json.get(
-                    "reading_material"
+                copy.deepcopy(
+                    bundle_json.get(
+                        "reading_material"
+                    ) or {}
                 )
             )
 
             answer_options = (
-                bundle_json.get(
-                    "answer_options"
+                copy.deepcopy(
+                    bundle_json.get(
+                        "answer_options"
+                    )
                 )
             )
+
+            # ==================================================
+            # EXTRACT SUPPORT
+            # ==================================================
+
+            extracts = []
+
+            # --------------------------------------------------
+            # ROOT LEVEL EXTRACTS
+            # --------------------------------------------------
+
+            if isinstance(
+                bundle_json.get("extracts"),
+                list
+            ):
+
+                extracts = copy.deepcopy(
+
+                    bundle_json.get(
+                        "extracts",
+                        []
+                    )
+                )
+
+            # --------------------------------------------------
+            # READING MATERIAL EXTRACTS
+            # --------------------------------------------------
+
+            elif isinstance(
+                reading_material,
+                dict
+            ):
+
+                rm_extracts = (
+                    reading_material.get(
+                        "extracts"
+                    )
+                )
+
+                # OLD OBJECT FORMAT
+                if isinstance(
+                    rm_extracts,
+                    dict
+                ):
+
+                    extracts = [
+
+                        {
+                            "label": key,
+                            "title": "",
+                            "content": value
+                        }
+
+                        for key, value
+                        in rm_extracts.items()
+                    ]
+
+                # NEW ARRAY FORMAT
+                elif isinstance(
+                    rm_extracts,
+                    list
+                ):
+
+                    extracts = copy.deepcopy(
+                        rm_extracts
+                    )
+
+            print(
+                "🔥 NORMALIZED EXTRACTS:",
+                extracts
+            )
+
+            # ==================================================
+            # BUILD QUESTIONS
+            # ==================================================
 
             questions = [
 
@@ -58455,6 +58828,15 @@ def generate_exam_oc_reading_homework_latest(
                     f"{q_index}"
                 )
 
+            print(
+                f"✅ Questions collected: "
+                f"{len(questions)}"
+            )
+
+            # ==================================================
+            # RENDER HELPERS
+            # ==================================================
+
             passage_style = (
 
                 "literary"
@@ -58469,12 +58851,28 @@ def generate_exam_oc_reading_homework_latest(
 
             render_hint = (
 
-                "gapped_text"
+                "extract_matching"
 
                 if question_type
-                == "gapped_text"
+                == "extract_matching"
 
-                else "standard"
+                else (
+
+                    "gapped_text"
+
+                    if question_type
+                    == "gapped_text"
+
+                    else (
+
+                        "dropdown_cloze"
+
+                        if question_type
+                        == "dropdown_cloze"
+
+                        else "standard"
+                    )
+                )
             )
 
             options_scope = (
@@ -58485,6 +58883,68 @@ def generate_exam_oc_reading_homework_latest(
 
                 else "per_question"
             )
+
+            # ==================================================
+            # NORMALIZE READING MATERIAL
+            # ==================================================
+
+            normalized_reading_material = (
+                reading_material
+            )
+
+            # --------------------------------------------------
+            # FORCE STANDARDIZED
+            # EXTRACT MATCHING FORMAT
+            # --------------------------------------------------
+
+            if (
+                question_type
+                == "extract_matching"
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "extract_matching",
+
+                    "extracts":
+                        copy.deepcopy(
+                            extracts
+                        )
+                }
+
+            # ==================================================
+            # ENSURE TYPE EXISTS
+            # ==================================================
+
+            if (
+                isinstance(
+                    normalized_reading_material,
+                    dict
+                )
+                and
+                "type"
+                not in normalized_reading_material
+            ):
+
+                normalized_reading_material[
+                    "type"
+                ] = question_type
+
+            print(
+                "\n🚨 FINAL READING MATERIAL:"
+            )
+
+            print(
+                json.dumps(
+                    normalized_reading_material,
+                    indent=2
+                )
+            )
+
+            # ==================================================
+            # BUILD SECTION
+            # ==================================================
 
             section = {
 
@@ -58507,7 +58967,13 @@ def generate_exam_oc_reading_homework_latest(
                     question_type,
 
                 "reading_material":
-                    reading_material,
+                    normalized_reading_material,
+
+                # IMPORTANT
+                "extracts":
+                    copy.deepcopy(
+                        extracts
+                    ),
 
                 "passage_style":
                     passage_style,
@@ -58522,11 +58988,26 @@ def generate_exam_oc_reading_homework_latest(
                     questions,
             }
 
+            # ==================================================
+            # SHARED ANSWER OPTIONS
+            # ==================================================
+
             if answer_options:
 
                 section[
                     "answer_options"
                 ] = answer_options
+
+            print(
+                "\n🚨 FINAL SECTION:"
+            )
+
+            print(
+                json.dumps(
+                    section,
+                    indent=2
+                )
+            )
 
             sections.append(section)
 
@@ -58574,6 +59055,17 @@ def generate_exam_oc_reading_homework_latest(
             "sections":
                 sections,
         }
+
+        print(
+            "\n🚨 FINAL HOMEWORK JSON:"
+        )
+
+        print(
+            json.dumps(
+                homework_json,
+                indent=2
+            )
+        )
 
         print(
             f"📊 Sections: "
@@ -58703,7 +59195,10 @@ def generate_exam_oc_reading_homework_latest(
             "(DATE + BATCH MODE)"
         )
 
-        print(str(e))
+        print(
+            f"❗ Exception: "
+            f"{str(e)}"
+        )
 
         raise
     
@@ -59040,11 +59535,6 @@ def generate_exam_oc_reading(
                         )
                     ) == class_year,
 
-                    # ==========================================
-                    # EXCLUDE USED BUNDLES
-                    # FOR THIS CENTER
-                    # ==========================================
-
                     (
                         ~QuestionReading.id.in_(
                             used_question_ids
@@ -59052,11 +59542,6 @@ def generate_exam_oc_reading(
                         if used_question_ids
                         else True
                     ),
-
-                    # ==========================================
-                    # AVOID DUPLICATES
-                    # INSIDE SAME EXAM
-                    # ==========================================
 
                     ~QuestionReading.id.in_(
                         used_bundle_ids
@@ -59099,12 +59584,23 @@ def generate_exam_oc_reading(
                 f"ID={matched_bundle.id}"
             )
 
+            print(
+                "🧪 SELECTED BUNDLE JSON:",
+                matched_bundle.exam_bundle
+            )
+
             used_bundle_ids.append(
                 matched_bundle.id
             )
 
+            # ==================================================
+            # EXTRACT BUNDLE CONTENT
+            # ==================================================
+
             bundle_json = (
-                matched_bundle.exam_bundle
+                copy.deepcopy(
+                    matched_bundle.exam_bundle
+                )
                 or {}
             )
 
@@ -59115,15 +59611,90 @@ def generate_exam_oc_reading(
             )
 
             reading_material = (
-                bundle_json.get(
-                    "reading_material"
+                copy.deepcopy(
+                    bundle_json.get(
+                        "reading_material"
+                    ) or {}
                 )
             )
 
             answer_options = (
-                bundle_json.get(
-                    "answer_options"
+                copy.deepcopy(
+                    bundle_json.get(
+                        "answer_options"
+                    )
                 )
+            )
+
+            # ==================================================
+            # EXTRACT SUPPORT
+            # ==================================================
+
+            extracts = []
+
+            # --------------------------------------------------
+            # ROOT LEVEL EXTRACTS
+            # --------------------------------------------------
+
+            if isinstance(
+                bundle_json.get("extracts"),
+                list
+            ):
+
+                extracts = copy.deepcopy(
+
+                    bundle_json.get(
+                        "extracts",
+                        []
+                    )
+                )
+
+            # --------------------------------------------------
+            # READING MATERIAL EXTRACTS
+            # --------------------------------------------------
+
+            elif isinstance(
+                reading_material,
+                dict
+            ):
+
+                rm_extracts = (
+                    reading_material.get(
+                        "extracts"
+                    )
+                )
+
+                # OLD OBJECT FORMAT
+                if isinstance(
+                    rm_extracts,
+                    dict
+                ):
+
+                    extracts = [
+
+                        {
+                            "label": key,
+                            "title": "",
+                            "content": value
+                        }
+
+                        for key, value
+                        in rm_extracts.items()
+                    ]
+
+                # NEW ARRAY FORMAT
+                elif isinstance(
+                    rm_extracts,
+                    list
+                ):
+
+                    extracts = copy.deepcopy(
+                        rm_extracts
+                    )
+
+            print(
+                "🔥 NORMALIZED EXTRACTS:",
+                extracts
             )
 
             # ==================================================
@@ -59174,12 +59745,28 @@ def generate_exam_oc_reading(
 
             render_hint = (
 
-                "gapped_text"
+                "extract_matching"
 
                 if question_type
-                == "gapped_text"
+                == "extract_matching"
 
-                else "standard"
+                else (
+
+                    "gapped_text"
+
+                    if question_type
+                    == "gapped_text"
+
+                    else (
+
+                        "dropdown_cloze"
+
+                        if question_type
+                        == "dropdown_cloze"
+
+                        else "standard"
+                    )
+                )
             )
 
             options_scope = (
@@ -59190,6 +59777,72 @@ def generate_exam_oc_reading(
 
                 else "per_question"
             )
+
+            # ==================================================
+            # NORMALIZE READING MATERIAL
+            # ==================================================
+
+            normalized_reading_material = (
+                reading_material
+            )
+
+            # --------------------------------------------------
+            # FORCE STANDARDIZED
+            # EXTRACT MATCHING FORMAT
+            # --------------------------------------------------
+
+            if (
+                question_type
+                == "extract_matching"
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "extract_matching",
+
+                    "extracts":
+                        copy.deepcopy(
+                            extracts
+                        )
+                }
+
+            # ==================================================
+            # ENSURE TYPE EXISTS
+            # ==================================================
+
+            if (
+                isinstance(
+                    normalized_reading_material,
+                    dict
+                )
+                and
+                "type"
+                not in normalized_reading_material
+            ):
+
+                normalized_reading_material[
+                    "type"
+                ] = question_type
+
+            # ==================================================
+            # DEBUG FINAL SECTION
+            # ==================================================
+
+            print(
+                "\n🚨 FINAL READING MATERIAL:"
+            )
+
+            print(
+                json.dumps(
+                    normalized_reading_material,
+                    indent=2
+                )
+            )
+
+            # ==================================================
+            # BUILD SECTION
+            # ==================================================
 
             section = {
 
@@ -59209,7 +59862,13 @@ def generate_exam_oc_reading(
                     topic_difficulty,
 
                 "reading_material":
-                    reading_material,
+                    normalized_reading_material,
+
+                # IMPORTANT
+                "extracts":
+                    copy.deepcopy(
+                        extracts
+                    ),
 
                 "passage_style":
                     passage_style,
@@ -59224,11 +59883,30 @@ def generate_exam_oc_reading(
                     collected_questions,
             }
 
+            # ==================================================
+            # SHARED ANSWER OPTIONS
+            # ==================================================
+
             if answer_options:
 
                 section[
                     "answer_options"
                 ] = answer_options
+
+            print(
+                "\n🚨 FINAL SECTION:"
+            )
+
+            print(
+                json.dumps(
+                    section,
+                    indent=2
+                )
+            )
+
+            # ==================================================
+            # APPEND SECTION
+            # ==================================================
 
             sections.append(section)
 
@@ -59290,6 +59968,17 @@ def generate_exam_oc_reading(
             "sections":
                 sections,
         }
+
+        print(
+            "\n🚨 FINAL EXAM JSON:"
+        )
+
+        print(
+            json.dumps(
+                exam_json,
+                indent=2
+            )
+        )
 
         # ==================================================
         # 6️⃣ SAVE EXAM
@@ -59409,7 +60098,6 @@ def generate_exam_oc_reading(
 
         raise
 
-
 @app.post("/api/exams/generate-oc-reading-latest")
 def generate_exam_oc_reading_latest(
     payload: ReadingExamRequest,
@@ -59430,9 +60118,10 @@ def generate_exam_oc_reading_latest(
         # ==================================================
 
         print(
-            "📥 RAW PAYLOAD:",
-            payload.dict()
+            "\n📥 RAW PAYLOAD:"
         )
+
+        print(payload.dict())
 
         class_name = (
             payload.class_name
@@ -59610,11 +60299,6 @@ def generate_exam_oc_reading_latest(
                 QuestionReading.batch_id
                 == batch_id,
 
-                # ==========================================
-                # EXCLUDE USED BUNDLES
-                # FOR THIS CENTER
-                # ==========================================
-
                 (
                     ~QuestionReading.id.in_(
                         used_question_ids
@@ -59667,9 +60351,21 @@ def generate_exam_oc_reading_latest(
             start=1
         ):
 
+            print(
+                f"\n➡️ PROCESSING "
+                f"BUNDLE ID={row.id}"
+            )
+
             bundle_json = (
-                row.exam_bundle
+                copy.deepcopy(
+                    row.exam_bundle
+                )
                 or {}
+            )
+
+            print(
+                "🧪 BUNDLE JSON:",
+                bundle_json
             )
 
             question_type = (
@@ -59679,16 +60375,95 @@ def generate_exam_oc_reading_latest(
             )
 
             reading_material = (
-                bundle_json.get(
-                    "reading_material"
+                copy.deepcopy(
+                    bundle_json.get(
+                        "reading_material"
+                    ) or {}
                 )
             )
 
             answer_options = (
-                bundle_json.get(
-                    "answer_options"
+                copy.deepcopy(
+                    bundle_json.get(
+                        "answer_options"
+                    )
                 )
             )
+
+            # ==================================================
+            # EXTRACT SUPPORT
+            # ==================================================
+
+            extracts = []
+
+            # --------------------------------------------------
+            # ROOT LEVEL EXTRACTS
+            # --------------------------------------------------
+
+            if isinstance(
+                bundle_json.get("extracts"),
+                list
+            ):
+
+                extracts = copy.deepcopy(
+
+                    bundle_json.get(
+                        "extracts",
+                        []
+                    )
+                )
+
+            # --------------------------------------------------
+            # READING MATERIAL EXTRACTS
+            # --------------------------------------------------
+
+            elif isinstance(
+                reading_material,
+                dict
+            ):
+
+                rm_extracts = (
+                    reading_material.get(
+                        "extracts"
+                    )
+                )
+
+                # OLD OBJECT FORMAT
+                if isinstance(
+                    rm_extracts,
+                    dict
+                ):
+
+                    extracts = [
+
+                        {
+                            "label": key,
+                            "title": "",
+                            "content": value
+                        }
+
+                        for key, value
+                        in rm_extracts.items()
+                    ]
+
+                # NEW ARRAY FORMAT
+                elif isinstance(
+                    rm_extracts,
+                    list
+                ):
+
+                    extracts = copy.deepcopy(
+                        rm_extracts
+                    )
+
+            print(
+                "🔥 NORMALIZED EXTRACTS:",
+                extracts
+            )
+
+            # ==================================================
+            # BUILD QUESTIONS
+            # ==================================================
 
             questions = [
 
@@ -59714,6 +60489,153 @@ def generate_exam_oc_reading_latest(
                     f"{q_index}"
                 )
 
+            print(
+                f"✅ Questions collected: "
+                f"{len(questions)}"
+            )
+
+            # ==================================================
+            # PASSAGE STYLE
+            # ==================================================
+
+            passage_style = (
+
+                "literary"
+
+                if question_type in (
+                    "main_idea",
+                    "literary_analysis"
+                )
+
+                else "informational"
+            )
+
+            # ==================================================
+            # RENDER HINT
+            # ==================================================
+
+            render_hint = (
+
+                "extract_matching"
+
+                if question_type
+                == "extract_matching"
+
+                else (
+
+                    "gapped_text"
+
+                    if question_type
+                    == "gapped_text"
+
+                    else (
+
+                        "dropdown_cloze"
+
+                        if question_type
+                        == "dropdown_cloze"
+
+                        else "standard"
+                    )
+                )
+            )
+
+            # ==================================================
+            # OPTIONS SCOPE
+            # ==================================================
+
+            options_scope = (
+
+                "shared"
+
+                if answer_options
+
+                else "per_question"
+            )
+
+            # ==================================================
+            # NORMALIZE READING MATERIAL
+            # ==================================================
+
+            normalized_reading_material = (
+                reading_material
+            )
+
+            # --------------------------------------------------
+            # FORCE STANDARDIZED
+            # EXTRACT MATCHING FORMAT
+            # --------------------------------------------------
+
+            if (
+                question_type
+                == "extract_matching"
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "extract_matching",
+
+                    "extracts":
+                        copy.deepcopy(
+                            extracts
+                        )
+                }
+
+            # --------------------------------------------------
+            # STANDARD STRING PASSAGE
+            # --------------------------------------------------
+
+            elif isinstance(
+                reading_material,
+                str
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "standard",
+
+                    "title":
+                        row.topic,
+
+                    "content":
+                        reading_material
+                }
+
+            # ==================================================
+            # ENSURE TYPE EXISTS
+            # ==================================================
+
+            if (
+                isinstance(
+                    normalized_reading_material,
+                    dict
+                )
+                and
+                "type"
+                not in normalized_reading_material
+            ):
+
+                normalized_reading_material[
+                    "type"
+                ] = question_type
+
+            print(
+                "\n🚨 FINAL READING MATERIAL:"
+            )
+
+            print(
+                json.dumps(
+                    normalized_reading_material,
+                    indent=2
+                )
+            )
+
+            # ==================================================
+            # SECTION OBJECT
+            # ==================================================
+
             section = {
 
                 "section_id":
@@ -59735,17 +60657,47 @@ def generate_exam_oc_reading_latest(
                     row.difficulty,
 
                 "reading_material":
-                    reading_material,
+                    normalized_reading_material,
+
+                # IMPORTANT
+                "extracts":
+                    copy.deepcopy(
+                        extracts
+                    ),
+
+                "passage_style":
+                    passage_style,
+
+                "render_hint":
+                    render_hint,
+
+                "options_scope":
+                    options_scope,
 
                 "questions":
                     questions,
             }
+
+            # ==================================================
+            # SHARED ANSWER OPTIONS
+            # ==================================================
 
             if answer_options:
 
                 section[
                     "answer_options"
                 ] = answer_options
+
+            print(
+                "\n🚨 FINAL SECTION:"
+            )
+
+            print(
+                json.dumps(
+                    section,
+                    indent=2
+                )
+            )
 
             sections.append(section)
 
@@ -59796,6 +60748,17 @@ def generate_exam_oc_reading_latest(
             "sections":
                 sections,
         }
+
+        print(
+            "\n🚨 FINAL EXAM JSON:"
+        )
+
+        print(
+            json.dumps(
+                exam_json,
+                indent=2
+            )
+        )
 
         print(
             f"📊 Sections: "
@@ -59926,7 +60889,7 @@ def generate_exam_oc_reading_latest(
         )
 
         raise
-
+    
 @app.post("/api/exams/generate-reading-homework-latest")
 def generate_exam_reading_homework_latest(
     payload: ReadingHomeworkExamRequest,
@@ -60226,6 +61189,157 @@ def generate_exam_reading_homework_latest(
                     f"{q_index}"
                 )
 
+            # ==================================================
+            # EXTRACT SUPPORT
+            # ==================================================
+
+            extracts = (
+                bundle_json.get(
+                    "extracts",
+                    []
+                )
+            )
+
+            # ==================================================
+            # PASSAGE STYLE
+            # ==================================================
+
+            passage_style = (
+
+                "literary"
+
+                if question_type in (
+                    "main_idea",
+                    "literary_analysis"
+                )
+
+                else "informational"
+            )
+
+            # ==================================================
+            # RENDER HINT
+            # ==================================================
+
+            render_hint = (
+
+                "gapped_text"
+
+                if question_type
+                == "gapped_text"
+
+                else (
+
+                    "dropdown_cloze"
+
+                    if question_type
+                    == "dropdown_cloze"
+
+                    else (
+
+                        "extract_matching"
+
+                        if question_type
+                        == "extract_matching"
+
+                        else "standard"
+                    )
+                )
+            )
+
+            # ==================================================
+            # OPTIONS SCOPE
+            # ==================================================
+
+            options_scope = (
+
+                "shared"
+
+                if answer_options
+
+                else "per_question"
+            )
+
+            # ==================================================
+            # NORMALIZE READING MATERIAL
+            # ==================================================
+
+            normalized_reading_material = (
+                reading_material
+            )
+
+            # --------------------------------------------------
+            # NEW EXTRACT MATCHING FORMAT
+            # --------------------------------------------------
+
+            if (
+                question_type
+                == "extract_matching"
+                and extracts
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "extract_matching",
+
+                    "extracts":
+                        extracts,
+
+                    "active_extract_index":
+                        0
+                }
+
+            # --------------------------------------------------
+            # LEGACY COMPARATIVE ANALYSIS FORMAT
+            # --------------------------------------------------
+
+            elif (
+                isinstance(
+                    reading_material,
+                    dict
+                )
+                and reading_material.get(
+                    "extracts"
+                )
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "comparative_analysis",
+
+                    "extracts":
+                        reading_material.get(
+                            "extracts",
+                            {}
+                        )
+                }
+
+            # --------------------------------------------------
+            # STANDARD PASSAGE FORMAT
+            # --------------------------------------------------
+
+            elif isinstance(
+                reading_material,
+                str
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "standard",
+
+                    "title":
+                        row.topic,
+
+                    "content":
+                        reading_material
+                }
+
+            # ==================================================
+            # BUILD SECTION
+            # ==================================================
+
             section = {
 
                 "section_id":
@@ -60247,7 +61361,19 @@ def generate_exam_reading_homework_latest(
                     question_type,
 
                 "reading_material":
-                    reading_material,
+                    normalized_reading_material,
+
+                "extracts":
+                    extracts,
+
+                "passage_style":
+                    passage_style,
+
+                "render_hint":
+                    render_hint,
+
+                "options_scope":
+                    options_scope,
 
                 "questions":
                     questions,
@@ -60878,6 +62004,153 @@ def generate_exam_reading_homework(
             )
 
             # ==================================================
+            # EXTRACT SUPPORT
+            # ==================================================
+
+            extracts = (
+                bundle_json.get(
+                    "extracts",
+                    []
+                )
+            )
+
+            # ==================================================
+            # PASSAGE STYLE
+            # ==================================================
+
+            passage_style = (
+
+                "literary"
+
+                if question_type in (
+                    "main_idea",
+                    "literary_analysis"
+                )
+
+                else "informational"
+            )
+
+            # ==================================================
+            # RENDER HINT
+            # ==================================================
+
+            render_hint = (
+
+                "gapped_text"
+
+                if question_type
+                == "gapped_text"
+
+                else (
+
+                    "dropdown_cloze"
+
+                    if question_type
+                    == "dropdown_cloze"
+
+                    else (
+
+                        "extract_matching"
+
+                        if question_type
+                        == "extract_matching"
+
+                        else "standard"
+                    )
+                )
+            )
+
+            # ==================================================
+            # OPTIONS SCOPE
+            # ==================================================
+
+            options_scope = (
+
+                "shared"
+
+                if answer_options
+
+                else "per_question"
+            )
+
+            # ==================================================
+            # NORMALIZE READING MATERIAL
+            # ==================================================
+
+            normalized_reading_material = (
+                reading_material
+            )
+
+            # --------------------------------------------------
+            # NEW EXTRACT MATCHING FORMAT
+            # --------------------------------------------------
+
+            if (
+                question_type
+                == "extract_matching"
+                and extracts
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "extract_matching",
+
+                    "extracts":
+                        extracts,
+
+                    "active_extract_index":
+                        0
+                }
+
+            # --------------------------------------------------
+            # LEGACY COMPARATIVE ANALYSIS FORMAT
+            # --------------------------------------------------
+
+            elif (
+                isinstance(
+                    reading_material,
+                    dict
+                )
+                and reading_material.get(
+                    "extracts"
+                )
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "comparative_analysis",
+
+                    "extracts":
+                        reading_material.get(
+                            "extracts",
+                            {}
+                        )
+                }
+
+            # --------------------------------------------------
+            # STANDARD PASSAGE FORMAT
+            # --------------------------------------------------
+
+            elif isinstance(
+                reading_material,
+                str
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "standard",
+
+                    "title":
+                        topic_name,
+
+                    "content":
+                        reading_material
+                }
+
+            # ==================================================
             # BUILD SECTION
             # ==================================================
 
@@ -60899,7 +62172,19 @@ def generate_exam_reading_homework(
                     question_type,
 
                 "reading_material":
-                    reading_material,
+                    normalized_reading_material,
+
+                "extracts":
+                    extracts,
+
+                "passage_style":
+                    passage_style,
+
+                "render_hint":
+                    render_hint,
+
+                "options_scope":
+                    options_scope,
 
                 "questions":
                     collected_questions,
@@ -61360,6 +62645,157 @@ def generate_exam_reading_latest(
                     f"{q_index}"
                 )
 
+            # ==================================================
+            # EXTRACT SUPPORT
+            # ==================================================
+
+            extracts = (
+                bundle_json.get(
+                    "extracts",
+                    []
+                )
+            )
+
+            # ==================================================
+            # PASSAGE STYLE
+            # ==================================================
+
+            passage_style = (
+
+                "literary"
+
+                if question_type in (
+                    "main_idea",
+                    "literary_analysis"
+                )
+
+                else "informational"
+            )
+
+            # ==================================================
+            # RENDER HINT
+            # ==================================================
+
+            render_hint = (
+
+                "gapped_text"
+
+                if question_type
+                == "gapped_text"
+
+                else (
+
+                    "dropdown_cloze"
+
+                    if question_type
+                    == "dropdown_cloze"
+
+                    else (
+
+                        "extract_matching"
+
+                        if question_type
+                        == "extract_matching"
+
+                        else "standard"
+                    )
+                )
+            )
+
+            # ==================================================
+            # OPTIONS SCOPE
+            # ==================================================
+
+            options_scope = (
+
+                "shared"
+
+                if answer_options
+
+                else "per_question"
+            )
+
+            # ==================================================
+            # NORMALIZE READING MATERIAL
+            # ==================================================
+
+            normalized_reading_material = (
+                reading_material
+            )
+
+            # --------------------------------------------------
+            # NEW EXTRACT MATCHING FORMAT
+            # --------------------------------------------------
+
+            if (
+                question_type
+                == "extract_matching"
+                and extracts
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "extract_matching",
+
+                    "extracts":
+                        extracts,
+
+                    "active_extract_index":
+                        0
+                }
+
+            # --------------------------------------------------
+            # LEGACY COMPARATIVE ANALYSIS FORMAT
+            # --------------------------------------------------
+
+            elif (
+                isinstance(
+                    reading_material,
+                    dict
+                )
+                and reading_material.get(
+                    "extracts"
+                )
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "comparative_analysis",
+
+                    "extracts":
+                        reading_material.get(
+                            "extracts",
+                            {}
+                        )
+                }
+
+            # --------------------------------------------------
+            # STANDARD PASSAGE FORMAT
+            # --------------------------------------------------
+
+            elif isinstance(
+                reading_material,
+                str
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "standard",
+
+                    "title":
+                        row.topic,
+
+                    "content":
+                        reading_material
+                }
+
+            # ==================================================
+            # SECTION OBJECT
+            # ==================================================
+
             section = {
 
                 "section_id":
@@ -61381,7 +62817,19 @@ def generate_exam_reading_latest(
                     row.difficulty,
 
                 "reading_material":
-                    reading_material,
+                    normalized_reading_material,
+
+                "extracts":
+                    extracts,
+
+                "passage_style":
+                    passage_style,
+
+                "render_hint":
+                    render_hint,
+
+                "options_scope":
+                    options_scope,
 
                 "questions":
                     questions,
@@ -61946,6 +63394,10 @@ def generate_exam_reading(
                 matched_bundle.id
             )
 
+            # ==================================================
+            # EXTRACT BUNDLE CONTENT
+            # ==================================================
+
             bundle_json = (
                 matched_bundle.exam_bundle
                 or {}
@@ -61968,6 +63420,71 @@ def generate_exam_reading(
                     "answer_options"
                 )
             )
+
+            # ==================================================
+            # EXTRACT SUPPORT
+            # ==================================================
+
+            extracts = []
+
+            # --------------------------------------------------
+            # NEW FORMAT
+            # --------------------------------------------------
+
+            if isinstance(
+                bundle_json.get("extracts"),
+                list
+            ):
+
+                extracts = (
+                    bundle_json.get(
+                        "extracts",
+                        []
+                    )
+                )
+
+            # --------------------------------------------------
+            # LEGACY FORMAT
+            # --------------------------------------------------
+
+            elif (
+                isinstance(
+                    reading_material,
+                    dict
+                )
+            ):
+
+                rm_extracts = (
+                    reading_material.get(
+                        "extracts"
+                    )
+                )
+
+                # OLD OBJECT FORMAT
+                if isinstance(
+                    rm_extracts,
+                    dict
+                ):
+
+                    extracts = [
+
+                        {
+                            "label": key,
+                            "title": "",
+                            "content": value
+                        }
+
+                        for key, value
+                        in rm_extracts.items()
+                    ]
+
+                # NEW ARRAY FORMAT
+                elif isinstance(
+                    rm_extracts,
+                    list
+                ):
+
+                    extracts = rm_extracts
 
             # ==================================================
             # BUILD QUESTIONS
@@ -62022,7 +63539,23 @@ def generate_exam_reading(
                 if question_type
                 == "gapped_text"
 
-                else "standard"
+                else (
+
+                    "dropdown_cloze"
+
+                    if question_type
+                    == "dropdown_cloze"
+
+                    else (
+
+                        "extract_matching"
+
+                        if question_type
+                        == "extract_matching"
+
+                        else "standard"
+                    )
+                )
             )
 
             options_scope = (
@@ -62033,6 +63566,32 @@ def generate_exam_reading(
 
                 else "per_question"
             )
+
+            # ==================================================
+            # NORMALIZE READING MATERIAL
+            # ==================================================
+
+            normalized_reading_material = (
+                reading_material
+            )
+
+            if (
+                question_type
+                == "extract_matching"
+            ):
+
+                normalized_reading_material = {
+
+                    "type":
+                        "extract_matching",
+
+                    "extracts":
+                        extracts
+                }
+
+            # ==================================================
+            # SECTION OBJECT
+            # ==================================================
 
             section = {
 
@@ -62052,7 +63611,10 @@ def generate_exam_reading(
                     topic_difficulty,
 
                 "reading_material":
-                    reading_material,
+                    normalized_reading_material,
+
+                "extracts":
+                    extracts,
 
                 "passage_style":
                     passage_style,
@@ -62248,7 +63810,6 @@ def generate_exam_reading(
         )
 
         raise
-
 
 
 @app.get("/api/quizzes-reading")
@@ -63481,6 +65042,339 @@ RETURN VALID JSON ONLY.
 
     print(f"💾 Literary exam saved | ID={obj.id}")
     return saved_ids
+def parse_extract_matching_block(
+    block_text: str,
+    db: Session,
+    batch_id: int
+) -> list[int]:
+
+    import re
+
+    print("🧠 [extract_matching] START parsing block")
+
+    saved_ids: list[int] = []
+
+    # --------------------------------------------------
+    # 1️⃣ METADATA EXTRACTION
+    # --------------------------------------------------
+    def extract_meta(label: str) -> str | None:
+
+        match = re.search(
+            rf"^[^\S\r\n]*{label}[^\S\r\n]*:[^\S\r\n]*\"?(.*?)\"?[^\S\r\n]*$",
+            block_text,
+            re.MULTILINE | re.IGNORECASE
+        )
+
+        return match.group(1).strip() if match else None
+
+    class_name = extract_meta("CLASS")
+    class_year = extract_meta("CLASS_YEAR")
+    subject = extract_meta("SUBJECT")
+    topic = extract_meta("TOPIC")
+    difficulty = extract_meta("DIFFICULTY")
+    total_extracts = extract_meta("TOTAL_EXTRACTS")
+
+    # --------------------------------------------------
+    # 2️⃣ REQUIRED VALIDATION
+    # --------------------------------------------------
+    missing = []
+
+    if not class_name:
+        missing.append("CLASS")
+
+    if not class_year:
+        missing.append("CLASS_YEAR")
+
+    if not subject:
+        missing.append("SUBJECT")
+
+    if not topic:
+        missing.append("TOPIC")
+
+    if not difficulty:
+        missing.append("DIFFICULTY")
+
+    if not total_extracts:
+        missing.append("TOTAL_EXTRACTS")
+
+    if missing:
+        raise ValueError(
+            f"Missing METADATA fields: {', '.join(missing)}"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ TOTAL QUESTIONS
+    # --------------------------------------------------
+    tq_match = re.search(
+        r"TOTAL[_ ]?QUESTIONS\s*:\s*(\d+)",
+        block_text,
+        re.IGNORECASE
+    )
+
+    if not tq_match:
+        raise ValueError("TOTAL_QUESTIONS missing")
+
+    expected_q_count = int(tq_match.group(1))
+
+    print("   → Class:", class_name)
+    print("   → Year:", class_year)
+    print("   → Topic:", topic)
+    print("   → Expected Questions:", expected_q_count)
+    print("   → Total Extracts:", total_extracts)
+
+        # --------------------------------------------------
+    # 4️⃣ EXTRACT PARSING
+    # --------------------------------------------------
+    extract_pattern = re.compile(
+        r"EXTRACT_([A-Z])_TITLE:\s*"
+        r'"(.*?)"\s*'
+        r"EXTRACT_\1:\s*"
+        r"(.*?)(?=EXTRACT_[A-Z]_TITLE:|QUESTIONS:|$)",
+        re.DOTALL | re.IGNORECASE
+    )
+
+    extract_matches = extract_pattern.findall(block_text)
+
+    if not extract_matches:
+        raise ValueError(
+            "No extracts detected"
+        )
+
+    parsed_extracts = []
+
+    for match in extract_matches:
+
+        extract_label = match[0].strip()
+
+        extract_title = match[1].strip()
+
+        extract_content = match[2].strip()
+
+        parsed_extracts.append({
+            "label": extract_label,
+            "title": extract_title,
+            "content": extract_content
+        })
+
+    # --------------------------------------------------
+    # 5️⃣ EXTRACT VALIDATION
+    # --------------------------------------------------
+    if len(parsed_extracts) != int(total_extracts):
+        raise ValueError(
+            f"Extract count mismatch: expected "
+            f"{total_extracts}, got "
+            f"{len(parsed_extracts)}"
+        )
+
+    expected_labels = [
+        chr(ord("A") + i)
+        for i in range(int(total_extracts))
+    ]
+
+    detected_labels = [
+        e["label"]
+        for e in parsed_extracts
+    ]
+
+    if detected_labels != expected_labels:
+        raise ValueError(
+            f"Extract labels invalid. "
+            f"Expected={expected_labels}, "
+            f"Found={detected_labels}"
+        )
+
+    print(
+        f"   → Extracts detected: "
+        f"{len(parsed_extracts)}"
+    )
+
+    for e in parsed_extracts:
+        print(
+            f"      [{e['label']}] "
+            f"{e['title']}"
+        )
+        
+    # --------------------------------------------------
+    # 6️⃣ QUESTION BLOCK SPLITTING
+    # --------------------------------------------------
+    question_block_pattern = re.compile(
+        r"(Q\d+:.*?)(?=Q\d+:|$)",
+        re.DOTALL | re.IGNORECASE
+    )
+
+    question_blocks = question_block_pattern.findall(
+        block_text
+    )
+    print(
+        f"   → Question blocks detected: "
+        f"{len(question_blocks)}"
+    )
+
+    for i, qb in enumerate(question_blocks, start=1):
+        print("\n------------------")
+        print(f"QUESTION BLOCK {i}")
+        print("------------------")
+        print(qb[:300])
+
+    if not question_blocks:
+        raise ValueError(
+            "No question blocks detected"
+        )
+
+    parsed_questions = []
+
+    # --------------------------------------------------
+    # 7️⃣ INDIVIDUAL QUESTION PARSING
+    # --------------------------------------------------
+    for block in question_blocks:
+
+        qnum_match = re.search(
+            r"Q(\d+):",
+            block,
+            re.IGNORECASE
+        )
+
+        question_match = re.search(
+            r"QUESTION:\s*(.*?)\s*OPTIONS:",
+            block,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        option_a = re.search(
+            r"A\.\s*(.*?)\s*(?=B\.)",
+            block,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        option_b = re.search(
+            r"B\.\s*(.*?)\s*(?=C\.)",
+            block,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        option_c = re.search(
+            r"C\.\s*(.*?)\s*(?=D\.)",
+            block,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        option_d = re.search(
+            r"D\.\s*(.*?)\s*(?=CORRECT_ANSWER)",
+            block,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        correct_match = re.search(
+            r'CORRECT_ANSWER:\s*"?(A|B|C|D)"?',
+            block,
+            re.IGNORECASE
+        )
+
+        if not all([
+            qnum_match,
+            question_match,
+            option_a,
+            option_b,
+            option_c,
+            option_d,
+            correct_match
+        ]):
+            raise ValueError(
+                f"Malformed question block:\n{block[:200]}"
+            )
+
+        q_number = int(qnum_match.group(1))
+
+        parsed_question = {
+            "question_id": f"EM_Q{q_number}",
+            "question_number": q_number,
+            "question_text": question_match.group(1).strip(),
+            "answer_options": {
+                "A": option_a.group(1).strip(),
+                "B": option_b.group(1).strip(),
+                "C": option_c.group(1).strip(),
+                "D": option_d.group(1).strip()
+            },
+            "correct_answer": correct_match.group(1).strip()
+        }
+
+        parsed_questions.append(parsed_question)
+
+    # --------------------------------------------------
+    # 7️⃣ QUESTION VALIDATION
+    # --------------------------------------------------
+    if len(parsed_questions) != expected_q_count:
+        raise ValueError(
+            f"Question count mismatch: expected "
+            f"{expected_q_count}, got "
+            f"{len(parsed_questions)}"
+        )
+
+    for i, q in enumerate(parsed_questions, start=1):
+
+        expected_qid = f"EM_Q{i}"
+
+        if q["question_id"] != expected_qid:
+            raise ValueError(
+                f"Question ordering invalid. "
+                f"Expected={expected_qid}, "
+                f"Found={q['question_id']}"
+            )
+
+        opts = q["answer_options"]
+
+        if set(opts.keys()) != {
+            "A", "B", "C", "D"
+        }:
+            raise ValueError(
+                f"{expected_qid} invalid options"
+            )
+
+        if q["correct_answer"] not in opts:
+            raise ValueError(
+                f"{expected_qid} invalid correct answer"
+            )
+
+    print(
+        f"   → Questions detected: "
+        f"{len(parsed_questions)}"
+    )
+        # --------------------------------------------------
+    # 8️⃣ EXAM BUNDLE
+    # --------------------------------------------------
+    bundle = {
+        "question_type": "extract_matching",
+        "extracts": parsed_extracts,
+        "questions": parsed_questions
+    }
+
+    # --------------------------------------------------
+    # 9️⃣ SAVE TO DB
+    # --------------------------------------------------
+    obj = QuestionReading(
+        class_name=class_name.lower(),
+        class_year=class_year,
+        subject=subject,
+        difficulty=difficulty.lower(),
+        topic=topic,
+        batch_id=batch_id,
+        total_questions=len(parsed_questions),
+        is_used=False,
+        exam_bundle=bundle
+    )
+
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+
+    saved_ids.append(obj.id)
+
+    print(
+        f"💾 Extract Matching exam saved | "
+        f"ID={obj.id}"
+    )
+
+    return saved_ids
 
 def parse_dropdown_cloze_block(
     block_text: str,
@@ -64278,6 +66172,14 @@ async def upload_word_reading_unified(
                     db,
                     batch_id=new_batch_id
                 )
+            elif qtype == "extract_matching":
+
+                ids = parse_extract_matching_block(
+                    block,
+                    db,
+                    batch_id=new_batch_id
+                )
+            
             else:
                 raise ValueError(f"Unknown question_type: {qtype}")
 
