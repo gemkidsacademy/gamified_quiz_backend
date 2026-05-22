@@ -36685,20 +36685,75 @@ def get_exam_dates(
     }
 
 
-@app.get("/api/admin/students")
-def get_admin_students(db: Session = Depends(get_db)):
+from fastapi import Query
+
+@app.get("/api/admin/students_center_specific")
+def get_admin_students(
+    center_code: str = Query(...),
+    db: Session = Depends(get_db)
+):
+
+    print(
+        "\n========== GET ADMIN STUDENTS =========="
+    )
+
+    print(
+        f"🏢 Incoming center_code: "
+        f"{center_code}"
+    )
+
+    normalized_center_code = (
+        center_code
+        .strip()
+        .upper()
+    )
+
+    print(
+        f"🏢 Normalized center_code: "
+        f"{normalized_center_code}"
+    )
+
     students = (
-        db.query(Student.student_id, Student.name)
-        .filter(Student.class_name == "Selective")
-        .order_by(Student.student_id)
+        db.query(
+            Student.student_id,
+            Student.name
+        )
+        .filter(
+
+            func.lower(
+                func.trim(
+                    Student.class_name
+                )
+            )
+            ==
+            "selective",
+
+            func.upper(
+                func.trim(
+                    Student.center_code
+                )
+            )
+            ==
+            normalized_center_code
+        )
+        .order_by(
+            Student.student_id
+        )
         .all()
     )
 
+    print(
+        f"📊 Students found: "
+        f"{len(students)}"
+    )
+
     return [
+
         {
             "student_id": student_id,
             "name": name
         }
+
         for student_id, name in students
     ]
 
@@ -71846,18 +71901,7 @@ def start_exam_oc_mathematical_reasoning(
                 )
             ) == "mathematical_reasoning",
 
-            func.trim(
-                func.replace(
-
-                    func.lower(
-                        Exam.class_year
-                    ),
-
-                    "year",
-
-                    ""
-                )
-            ) == class_year,
+            Exam.class_year == int(class_year),
 
             func.upper(
                 func.trim(
