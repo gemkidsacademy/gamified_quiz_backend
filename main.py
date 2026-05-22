@@ -10227,24 +10227,12 @@ def get_reading_availability(
     )
 
     # --------------------------------------------------
-    # 4. Main availability query
+    # 4. Fetch all matching rows
     # --------------------------------------------------
 
-    results = (
+    rows = (
         db.query(
-
-            QuestionNaplanReading.topic,
-
-            func.lower(
-                func.trim(
-                    QuestionNaplanReading
-                    .difficulty
-                )
-            ).label("difficulty"),
-
-            func.count(
-                QuestionNaplanReading.id
-            ).label("count")
+            QuestionNaplanReading
         )
         .filter(
 
@@ -10272,35 +10260,30 @@ def get_reading_availability(
             )
             != ""
         )
-        .group_by(
-
-            QuestionNaplanReading.topic,
-
-            func.lower(
-                func.trim(
-                    QuestionNaplanReading
-                    .difficulty
-                )
-            )
-        )
         .all()
     )
 
     print(
-        f"📊 Availability rows: "
-        f"{len(results)}"
+        f"📊 Raw DB rows: "
+        f"{len(rows)}"
     )
 
     # --------------------------------------------------
-    # 5. Build response
+    # 5. Build availability manually
     # --------------------------------------------------
 
     availability = {}
 
-    for topic, difficulty, count in results:
+    for row in rows:
 
         topic_key = (
-            topic
+            row.topic
+            .lower()
+            .strip()
+        )
+
+        difficulty_key = (
+            row.difficulty
             .lower()
             .strip()
         )
@@ -10308,12 +10291,48 @@ def get_reading_availability(
         if topic_key not in availability:
             availability[topic_key] = {}
 
-        availability[topic_key][difficulty] = count
+        if difficulty_key not in availability[topic_key]:
+            availability[topic_key][difficulty_key] = 0
+
+        # --------------------------------------------------
+        # Type 8 grouped count
+        # --------------------------------------------------
+
+        if row.question_type == 8:
+
+            try:
+
+                extract_block = next(
+                    (
+                        block
+                        for block in row.exam_bundle["question_blocks"]
+                        if block.get("type") == "extract_matching"
+                    ),
+                    None
+                )
+
+                if extract_block:
+
+                    availability[topic_key][difficulty_key] += len(
+                        extract_block.get("questions", [])
+                    )
+
+                else:
+
+                    availability[topic_key][difficulty_key] += 1
+
+            except Exception:
+
+                availability[topic_key][difficulty_key] += 1
+
+        else:
+
+            availability[topic_key][difficulty_key] += 1
 
         print(
             f"TOPIC={topic_key} | "
-            f"difficulty={difficulty} | "
-            f"count={count}"
+            f"difficulty={difficulty_key} | "
+            f"count={availability[topic_key][difficulty_key]}"
         )
 
     print(
@@ -13878,6 +13897,7 @@ def generate_naplan_reading_homework_latest(
     selected_date = (
         payload.selected_date
     )
+    batch_id = payload.batch_id
 
     center_code = (
         payload.center_code
@@ -13899,6 +13919,16 @@ def generate_naplan_reading_homework_latest(
         f"🏢 Center code: "
         f"{center_code}"
     )
+    print(
+        f"📦 Batch ID: "
+        f"{batch_id}"
+    )
+    if batch_id is None:
+
+        raise HTTPException(
+            status_code=400,
+            detail="batch_id is required"
+        )
 
     if not center_code:
 
@@ -14017,6 +14047,11 @@ def generate_naplan_reading_homework_latest(
             ==
             selected_date,
 
+            QuestionNaplanReading
+            .batch_id
+            ==
+            batch_id,
+
             ~QuestionNaplanReading
             .id.in_(
                 used_question_ids_subquery
@@ -14094,9 +14129,48 @@ def generate_naplan_reading_homework_latest(
 
         db.add(usage_row)
 
+    # --------------------------------------------------
+    # Calculate REAL total question count
+    # --------------------------------------------------
+
+    real_question_count = 0
+
+    for q in assembled_questions:
+
+        if q.get("question_type") == 8:
+
+            try:
+
+                extract_block = next(
+                    (
+                        block
+                        for block in q["exam_bundle"]["question_blocks"]
+                        if block.get("type") == "extract_matching"
+                    ),
+                    None
+                )
+
+                if extract_block:
+
+                    real_question_count += len(
+                        extract_block.get("questions", [])
+                    )
+
+                else:
+
+                    real_question_count += 1
+
+            except Exception:
+
+                real_question_count += 1
+
+        else:
+
+            real_question_count += 1
+
     print(
         f"✅ Assembled "
-        f"{len(assembled_questions)} "
+        f"{real_question_count} "
         f"questions"
     )
 
@@ -14165,11 +14239,12 @@ def generate_naplan_reading_homework_latest(
             str(selected_date),
 
         "total_questions":
-            len(assembled_questions),
+            real_question_count,
 
         "questions":
             assembled_questions
     }
+
 @app.post("/naplan/reading/generate-homework")
 def generate_naplan_reading_homework(
     payload: dict = Body(...),
@@ -14456,16 +14531,60 @@ def generate_naplan_reading_homework(
                 .all()
             )
 
+            # ----------------------------------------
+            # Calculate REAL available question count
+            # ----------------------------------------
+
+            available_question_count = 0
+
+            for row in db_rows:
+
+                if row.question_type == 8:
+
+                    try:
+
+                        extract_block = next(
+                            (
+                                block
+                                for block in row.exam_bundle["question_blocks"]
+                                if block.get("type") == "extract_matching"
+                            ),
+                            None
+                        )
+
+                        if extract_block:
+
+                            available_question_count += len(
+                                extract_block.get("questions", [])
+                            )
+
+                        else:
+
+                            available_question_count += 1
+
+                    except Exception:
+
+                        available_question_count += 1
+
+                else:
+
+                    available_question_count += 1
+
             print(
                 f"     Found DB rows: "
                 f"{len(db_rows)}"
+            )
+
+            print(
+                f"     Available question count: "
+                f"{available_question_count}"
             )
 
             # ----------------------------------------
             # 7. STRICT MODE
             # ----------------------------------------
 
-            if len(db_rows) < db_count:
+            if available_question_count < db_count:
 
                 raise HTTPException(
                     status_code=400,
@@ -14475,7 +14594,7 @@ def generate_naplan_reading_homework(
                         f"topic '{topic_name}' "
                         f"({level}). "
                         f"Required={db_count}, "
-                        f"Found={len(db_rows)}"
+                        f"Found={available_question_count}"
                     )
                 )
 
@@ -14483,15 +14602,78 @@ def generate_naplan_reading_homework(
             # 8. Random selection
             # ----------------------------------------
 
-            selected_rows = random.sample(
-                db_rows,
-                db_count
+            selected_rows = []
+            selected_question_count = 0
+
+            shuffled_rows = db_rows[:]
+            random.shuffle(shuffled_rows)
+
+            for row in shuffled_rows:
+
+                # ----------------------------------------
+                # TYPE 8
+                # ----------------------------------------
+
+                if row.question_type == 8:
+
+                    try:
+
+                        extract_block = next(
+                            (
+                                block
+                                for block in row.exam_bundle["question_blocks"]
+                                if block.get("type") == "extract_matching"
+                            ),
+                            None
+                        )
+
+                        internal_count = (
+                            len(
+                                extract_block.get("questions", [])
+                            )
+                            if extract_block
+                            else 1
+                        )
+
+                    except Exception:
+
+                        internal_count = 1
+
+                # ----------------------------------------
+                # NORMAL TYPES
+                # ----------------------------------------
+
+                else:
+
+                    internal_count = 1
+
+                # ----------------------------------------
+                # Stop if enough collected
+                # ----------------------------------------
+
+                if (
+                    selected_question_count
+                    + internal_count
+                    >
+                    db_count
+                ):
+                    continue
+
+                selected_rows.append(row)
+
+                selected_question_count += internal_count
+
+                if selected_question_count == db_count:
+                    break
+
+            print(
+                f"     Selected rows: "
+                f"{len(selected_rows)}"
             )
 
             print(
-                f"     Selected "
-                f"{len(selected_rows)} "
-                f"DB questions"
+                f"     Selected question count: "
+                f"{selected_question_count}"
             )
 
             # ----------------------------------------
@@ -14538,9 +14720,40 @@ def generate_naplan_reading_homework(
     # 10. Final validation
     # ----------------------------------------
 
-    total_question_count = len(
-        assembled_questions
-    )
+    total_question_count = 0
+
+    for q in assembled_questions:
+
+        if q.get("question_type") == 8:
+
+            try:
+
+                extract_block = next(
+                    (
+                        block
+                        for block in q["exam_bundle"]["question_blocks"]
+                        if block.get("type") == "extract_matching"
+                    ),
+                    None
+                )
+
+                if extract_block:
+
+                    total_question_count += len(
+                        extract_block.get("questions", [])
+                    )
+
+                else:
+
+                    total_question_count += 1
+
+            except Exception:
+
+                total_question_count += 1
+
+        else:
+
+            total_question_count += 1
 
     print(
         f"Total assembled "
@@ -24187,10 +24400,49 @@ def generate_naplan_reading_exam_latest(
 
             db.add(usage_row)
 
+        # --------------------------------------------------
+        # Calculate REAL total question count
+        # --------------------------------------------------
+
+        real_question_count = 0
+
+        for q in assembled_questions:
+
+            if q.get("question_type") == 8:
+
+                try:
+
+                    extract_block = next(
+                        (
+                            block
+                            for block in q["exam_bundle"]["question_blocks"]
+                            if block.get("type") == "extract_matching"
+                        ),
+                        None
+                    )
+
+                    if extract_block:
+
+                        real_question_count += len(
+                            extract_block.get("questions", [])
+                        )
+
+                    else:
+
+                        real_question_count += 1
+
+                except Exception:
+
+                    real_question_count += 1
+
+            else:
+
+                real_question_count += 1
+
         print(
             f"\n✅ Assembled total "
             f"questions = "
-            f"{len(assembled_questions)}"
+            f"{real_question_count}"
         )
 
         # --------------------------------------------------
@@ -24263,7 +24515,7 @@ def generate_naplan_reading_exam_latest(
 
         print(
             f"   total_questions = "
-            f"{len(assembled_questions)}"
+            f"{real_question_count}"
         )
 
         print("\n" + "=" * 80)
@@ -24302,7 +24554,7 @@ def generate_naplan_reading_exam_latest(
                 batch_id,
 
             "total_questions":
-                len(assembled_questions),
+                real_question_count,
 
             "questions":
                 assembled_questions
@@ -24627,7 +24879,47 @@ def generate_naplan_reading_exam(
             # 7. STRICT MODE
             # ----------------------------------------
 
-            if len(db_rows) < db_count:
+            available_question_count = 0
+
+            for row in db_rows:
+
+                if row.question_type == 8:
+
+                    try:
+
+                        extract_block = next(
+                            (
+                                block
+                                for block in row.exam_bundle["question_blocks"]
+                                if block.get("type") == "extract_matching"
+                            ),
+                            None
+                        )
+
+                        if extract_block:
+
+                            available_question_count += len(
+                                extract_block.get("questions", [])
+                            )
+
+                        else:
+
+                            available_question_count += 1
+
+                    except Exception:
+
+                        available_question_count += 1
+
+                else:
+
+                    available_question_count += 1
+
+            print(
+                f"     Available question count: "
+                f"{available_question_count}"
+            )
+
+            if available_question_count < db_count:
 
                 raise HTTPException(
                     status_code=400,
@@ -24637,23 +24929,73 @@ def generate_naplan_reading_exam(
                         f"topic '{topic_name}' "
                         f"({level}). "
                         f"Required={db_count}, "
-                        f"Found={len(db_rows)}"
+                        f"Found={available_question_count}"
                     )
                 )
+            # ----------------------------------------
+            # 8. Random selection
+            # ----------------------------------------
 
             # ----------------------------------------
             # 8. Random selection
             # ----------------------------------------
 
-            selected_rows = random.sample(
-                db_rows,
-                db_count
+            random.shuffle(db_rows)
+
+            selected_rows = []
+
+            selected_question_count = 0
+
+            for row in db_rows:
+
+                if selected_question_count >= db_count:
+                    break
+
+                selected_rows.append(row)
+
+                # ----------------------------------------
+                # Count contribution
+                # ----------------------------------------
+
+                if row.question_type == 8:
+
+                    try:
+
+                        extract_block = next(
+                            (
+                                block
+                                for block in row.exam_bundle["question_blocks"]
+                                if block.get("type") == "extract_matching"
+                            ),
+                            None
+                        )
+
+                        if extract_block:
+
+                            selected_question_count += len(
+                                extract_block.get("questions", [])
+                            )
+
+                        else:
+
+                            selected_question_count += 1
+
+                    except Exception:
+
+                        selected_question_count += 1
+
+                else:
+
+                    selected_question_count += 1
+
+            print(
+                f"     Selected rows: "
+                f"{len(selected_rows)}"
             )
 
             print(
-                f"     Selected "
-                f"{len(selected_rows)} "
-                f"DB questions"
+                f"     Selected question count: "
+                f"{selected_question_count}"
             )
 
             # ----------------------------------------
@@ -24704,9 +25046,40 @@ def generate_naplan_reading_exam(
         "\n=== FINAL CHECK ==="
     )
 
-    total_question_count = len(
-        assembled_questions
-    )
+    total_question_count = 0
+
+    for q in assembled_questions:
+
+        if q["question_type"] == 8:
+
+            try:
+
+                extract_block = next(
+                    (
+                        block
+                        for block in q["exam_bundle"]["question_blocks"]
+                        if block.get("type") == "extract_matching"
+                    ),
+                    None
+                )
+
+                if extract_block:
+
+                    total_question_count += len(
+                        extract_block.get("questions", [])
+                    )
+
+                else:
+
+                    total_question_count += 1
+
+            except Exception:
+
+                total_question_count += 1
+
+        else:
+
+            total_question_count += 1
 
     print(
         f"Total assembled "
@@ -26024,32 +26397,20 @@ def get_naplan_reading_question_bank(
         f"{used_count}"
     )
 
+
     # --------------------------------------------------
-    # 6. Main query
+    # 6. Fetch all matching questions
     # --------------------------------------------------
 
-    results = (
+    questions = (
         db.query(
-
-            func.lower(
-                func.trim(
-                    QuestionNaplanReading
-                    .difficulty
-                )
-            ).label("difficulty"),
-
-            QuestionNaplanReading.topic,
-
-            func.count(
-                QuestionNaplanReading.id
-            ).label("total_questions"),
+            QuestionNaplanReading
         )
         .filter(
 
             func.lower(
                 func.trim(
-                    QuestionNaplanReading
-                    .subject
+                    QuestionNaplanReading.subject
                 )
             )
             ==
@@ -26071,23 +26432,11 @@ def get_naplan_reading_question_bank(
             )
             != ""
         )
-        .group_by(
-
-            func.lower(
-                func.trim(
-                    QuestionNaplanReading
-                    .difficulty
-                )
-            ),
-
-            QuestionNaplanReading.topic,
-        )
         .order_by(
 
             func.lower(
                 func.trim(
-                    QuestionNaplanReading
-                    .difficulty
+                    QuestionNaplanReading.difficulty
                 )
             ),
 
@@ -26095,6 +26444,68 @@ def get_naplan_reading_question_bank(
         )
         .all()
     )
+
+    # --------------------------------------------------
+    # 7. Group manually
+    # --------------------------------------------------
+
+    grouped = {}
+
+    for row in questions:
+
+        difficulty = (
+            row.difficulty
+            .strip()
+            .lower()
+        )
+
+        topic = row.topic
+
+        key = (
+            difficulty,
+            topic
+        )
+
+        if key not in grouped:
+
+            grouped[key] = {
+                "difficulty": difficulty,
+                "topic": topic,
+                "total_questions": 0
+            }
+
+        # --------------------------------------------------
+        # Count logic
+        # --------------------------------------------------
+
+        if row.question_type == 8:
+
+            try:
+
+                extract_block = next(
+                    (
+                        block
+                        for block in row.exam_bundle["question_blocks"]
+                        if block.get("type") == "extract_matching"
+                    ),
+                    None
+                )
+
+                if extract_block:
+                    grouped[key]["total_questions"] += len(
+                        extract_block.get("questions", [])
+                    )
+                else:
+                    grouped[key]["total_questions"] += 1
+
+            except Exception:
+
+                grouped[key]["total_questions"] += 1
+        else:
+
+            grouped[key]["total_questions"] += 1
+
+    results = list(grouped.values())
 
     print(
         f"📊 Grouped rows: "
@@ -26112,9 +26523,9 @@ def get_naplan_reading_question_bank(
 
         print(
             f"ROW {idx} | "
-            f"topic={row.topic} | "
-            f"difficulty={row.difficulty} | "
-            f"count={row.total_questions}"
+            f"topic={row['topic']} | "
+            f"difficulty={row['difficulty']} | "
+            f"count={row['total_questions']}"
         )
 
     print(
@@ -26126,21 +26537,7 @@ def get_naplan_reading_question_bank(
     # 8. Response
     # --------------------------------------------------
 
-    return [
-
-        {
-            "difficulty":
-                row.difficulty,
-
-            "topic":
-                row.topic,
-
-            "total_questions":
-                row.total_questions,
-        }
-
-        for row in results
-    ]
+    return results
 
 @app.get("/api/admin/question-bank/naplan")
 def get_naplan_question_bank(
@@ -66652,7 +67049,107 @@ def parse_options(ctx):
 
     return options
 
+def parse_extracts(ctx):
 
+    extracts = {}
+
+    while ctx.peek():
+
+        line = ctx.peek().strip()
+
+        # stop at QUESTIONS:
+        if line.upper().startswith("QUESTIONS"):
+            break
+
+        # detect EXTRACT_A:
+        if line.upper().startswith("EXTRACT_"):
+
+            header = ctx.next().strip()
+
+            extract_id = (
+                header.split(":")[0]
+                .replace("EXTRACT_", "")
+                .strip()
+            )
+
+            content_lines = []
+
+            while ctx.peek():
+
+                peek = ctx.peek().strip()
+
+                if (
+                    peek.upper().startswith("EXTRACT_")
+                    or peek.upper().startswith("QUESTIONS")
+                ):
+                    break
+
+                content_lines.append(ctx.next())
+
+            extracts[extract_id] = "\n".join(content_lines).strip()
+
+        else:
+            ctx.next()
+
+    return extracts
+
+def parse_extract_questions(ctx):
+
+    questions = []
+
+    while ctx.peek():
+
+        line = ctx.peek().strip()
+        upper = line.upper()
+
+        # stop before QUESTION END
+        if upper.startswith("--- QUESTION END"):
+            break
+
+        # QUESTION_TEXT
+        if upper.startswith("QUESTION_TEXT"):
+
+            question = parse_block(
+                ctx,
+                "QUESTION_TEXT",
+                ["CORRECT_ANSWER"],
+                required=True
+            )
+
+            # consume CORRECT_ANSWER:
+            line = ctx.next()
+
+            if not line.strip().upper().startswith("CORRECT_ANSWER"):
+                raise ValueError("MISSING_CORRECT_ANSWER")
+
+            answers = []
+
+            while ctx.peek():
+
+                peek = ctx.peek().strip()
+                up = peek.upper()
+
+                # stop at next question
+                if (
+                    up.startswith("QUESTION_TEXT")
+                    or up.startswith("--- QUESTION END")
+                ):
+                    break
+
+                answer_line = ctx.next().lstrip("-• ").strip()
+
+                if answer_line:
+                    answers.append(answer_line)
+
+            questions.append({
+                "question": question,
+                "correct": answers
+            })
+
+        else:
+            ctx.next()
+
+    return questions
 
 def is_question_boundary(line: str) -> bool:
     line = line.strip().upper()
@@ -66796,6 +67293,85 @@ def read_list_block(ctx):
         items.append(line[2:].strip())
 
     return items
+# --------------------------------------------------
+# 8️⃣ Extract Matching
+# --------------------------------------------------
+
+@register
+class ExtractMatchingHandler(InstructionAwareHandler):
+    question_type = 8
+
+    def parse(self, ctx):
+
+        # -------------------------------
+        # QUESTION_TITLE
+        # -------------------------------
+        title = parse_block(
+            ctx,
+            "QUESTION_TITLE",
+            ["EXTRACTS"],
+            required=True
+        )
+
+        # consume EXTRACTS:
+        line = ctx.next()
+        if not line.strip().upper().startswith("EXTRACTS"):
+            raise ValueError("MISSING_EXTRACTS_SECTION")
+
+        extracts = parse_extracts(ctx)
+
+        # consume QUESTIONS:
+        line = ctx.next()
+        if not line.strip().upper().startswith("QUESTIONS"):
+            raise ValueError("MISSING_QUESTIONS_SECTION")
+
+        questions = parse_extract_questions(ctx)
+
+        return {
+            "title": title,
+            "extracts": extracts,
+            "questions": questions
+        }
+
+    def validate(self, parsed, *, context=None):
+
+        if len(parsed["extracts"]) < 2:
+            raise ValueError("MINIMUM_TWO_EXTRACTS_REQUIRED")
+
+        if not parsed["questions"]:
+            raise ValueError("NO_INTERNAL_QUESTIONS_FOUND")
+
+        valid_extract_ids = set(parsed["extracts"].keys())
+
+        for q in parsed["questions"]:
+
+            if len(q["correct"]) != 1:
+                raise ValueError("INVALID_CORRECT_ANSWER_COUNT")
+
+            answer = q["correct"][0]
+
+            if answer not in valid_extract_ids:
+                raise ValueError(
+                    f"INVALID_EXTRACT_REFERENCE: {answer}"
+                )
+
+    def build_exam_bundle(self, parsed):
+
+        return {
+            "question_type": 8,
+
+            "question_blocks": [
+                {
+                    "type": "extract_matching",
+
+                    "title": parsed["title"],
+
+                    "extracts": parsed["extracts"],
+
+                    "questions": parsed["questions"]
+                }
+            ]
+        }   
 @register
 class SingleMCQHandler(InstructionAwareHandler):
     question_type = 1
@@ -67296,9 +67872,12 @@ def parse_common_sections_naplan_reading(ctx):
     # ==================================================
     # VALIDATION + NORMALIZATION
     # ==================================================
-    if not extracts:
-        raise ValueError("READING_TOO_SHORT")
+    remaining_text = "\n".join(ctx.lines[ctx.ptr:]).upper()
 
+    contains_type_8 = "QUESTION_TYPE: 8" in remaining_text
+
+    if not extracts and not contains_type_8:
+        raise ValueError("READING_TOO_SHORT")
     normalized = []
 
     for e in extracts:
@@ -67311,7 +67890,7 @@ def parse_common_sections_naplan_reading(ctx):
                 "images": e["images"]
             })
 
-    if not normalized:
+    if not normalized and not contains_type_8:
         raise ValueError("READING_TOO_SHORT")
 
     return meta, normalized
@@ -78367,7 +78946,41 @@ def finish_naplan_reading_exam(
         )
 
     questions = exam.questions or []
+    # --------------------------------------------------
+    # TYPE 8 answer regrouping
+    # --------------------------------------------------
 
+    # --------------------------------------------------
+    # TYPE 8 answer regrouping
+    # --------------------------------------------------
+
+    grouped_answers = {}
+
+    for raw_qid, value in answers.items():
+
+        # ----------------------------------------
+        # Internal Type 8 question
+        # ----------------------------------------
+
+        if "_" in raw_qid:
+
+            parent_id, idx = raw_qid.rsplit("_", 1)
+
+            if parent_id not in grouped_answers:
+                grouped_answers[parent_id] = []
+
+            grouped_answers[parent_id].append(value)
+
+        # ----------------------------------------
+        # Normal questions
+        # ----------------------------------------
+
+        else:
+
+            grouped_answers[raw_qid] = value
+
+    print("🧠 GROUPED ANSWERS:")
+    print(grouped_answers)
     print(
         "🧠 DEBUG:",
         "exam_id =", exam.id,
@@ -78413,7 +79026,7 @@ def finish_naplan_reading_exam(
     
         topic = q.get("topic")
     
-        student_answer = answers.get(q_id)
+        student_answer = grouped_answers.get(q_id)
 
         # 1️⃣ Normalize unanswered
         student_answer = normalize_student_answer(student_answer)
@@ -78520,6 +79133,7 @@ def finish_naplan_reading_exam(
         "exam_attempt_id": attempt.id,
         "accuracy_percent": accuracy
     }
+
 @app.post("/api/student/finish-homework-exam/naplan-reading")
 def finish_naplan_reading_homework_exam(
     payload: dict,
@@ -78686,7 +79300,37 @@ def finish_naplan_reading_homework_exam(
     questions = (
         exam.questions or []
     )
+    # --------------------------------------------------
+    # TYPE 8 answer regrouping
+    # --------------------------------------------------
 
+    grouped_answers = {}
+
+    for raw_qid, value in answers.items():
+
+        # ----------------------------------------
+        # Internal Type 8 question
+        # ----------------------------------------
+
+        if "_" in raw_qid:
+
+            parent_id, idx = raw_qid.rsplit("_", 1)
+
+            if parent_id not in grouped_answers:
+                grouped_answers[parent_id] = []
+
+            grouped_answers[parent_id].append(value)
+
+        # ----------------------------------------
+        # Normal questions
+        # ----------------------------------------
+
+        else:
+
+            grouped_answers[raw_qid] = value
+
+    print("🧠 GROUPED HOMEWORK ANSWERS:")
+    print(grouped_answers)
     print(
         "🧠 DEBUG:",
         "exam_id =", exam.id,
@@ -78767,7 +79411,7 @@ def finish_naplan_reading_homework_exam(
 
         topic = q.get("topic")
 
-        student_answer = answers.get(
+        student_answer = grouped_answers.get(
             q_id
         )
 
@@ -78907,9 +79551,48 @@ def finish_naplan_reading_homework_exam(
     # --------------------------------------------------
     # 7️⃣ Save results
     # --------------------------------------------------
-    total_questions = len(
-        questions
-    )
+    # --------------------------------------------------
+    # 7️⃣ Calculate real total questions
+    # --------------------------------------------------
+
+    total_questions = 0
+
+    for q in questions:
+
+        if q.get("question_type") == 8:
+
+            try:
+
+                extract_block = next(
+                    (
+                        block
+                        for block in q["exam_bundle"]["question_blocks"]
+                        if block.get("type") == "extract_matching"
+                    ),
+                    None
+                )
+
+                if extract_block:
+
+                    total_questions += len(
+                        extract_block.get("questions", [])
+                    )
+
+                else:
+
+                    total_questions += 1
+
+            except Exception:
+
+                total_questions += 1
+
+        else:
+
+            total_questions += 1
+
+    # --------------------------------------------------
+    # Accuracy
+    # --------------------------------------------------
 
     accuracy = round(
         (
@@ -78938,6 +79621,7 @@ def finish_naplan_reading_homework_exam(
         "accuracy_percent":
             accuracy
     }
+
 def snapshot_naplan_numeracy_responses_for_admin(db: Session, attempt):
 
     print("📦 Snapshotting Naplan Numeracy responses")
@@ -79766,10 +80450,78 @@ def get_naplan_reading_review(
         else:
             value = raw
     
-        student_answers[qid] = {
-            "answer": value,
-            "is_correct": r.is_correct
-        }
+        # --------------------------------------------------
+        # TYPE 8 grouped answers
+        # --------------------------------------------------
+
+        if isinstance(value, list):
+
+            question_obj = next(
+                (
+                    q for q in normalized_questions
+                    if str(q.get("question_id")) == qid
+                ),
+                None
+            )
+
+            correctness_list = []
+
+            try:
+
+                extract_block = next(
+                    (
+                        b
+                        for b in question_obj["exam_bundle"]["question_blocks"]
+                        if b.get("type") == "extract_matching"
+                    ),
+                    None
+                )
+
+                internal_questions = (
+                    extract_block.get("questions", [])
+                    if extract_block
+                    else []
+                )
+
+                for idx, ans in enumerate(value):
+
+                    correct_ans = None
+
+                    if idx < len(internal_questions):
+
+                        internal_correct = (
+                            internal_questions[idx]
+                            .get("correct", [])
+                        )
+
+                        if internal_correct:
+                            correct_ans = internal_correct[0]
+
+                    correctness_list.append(
+                        ans == correct_ans
+                    )
+
+            except Exception:
+
+                correctness_list = [
+                    False for _ in value
+                ]
+
+            student_answers[qid] = {
+                "answer": value,
+                "is_correct": correctness_list
+            }
+
+        # --------------------------------------------------
+        # NORMAL QUESTION TYPES
+        # --------------------------------------------------
+
+        else:
+
+            student_answers[qid] = {
+                "answer": value,
+                "is_correct": r.is_correct
+            }
     print("\n------------- FINAL student_answers -------------")
     print(json.dumps(student_answers, indent=2))
     # --------------------------------------------------
@@ -79779,6 +80531,7 @@ def get_naplan_reading_review(
         "questions": normalized_questions,
         "student_answers": student_answers
     }
+
 @app.get("/api/student/exam-review/naplan-reading-homework")
 def get_naplan_reading_homework_review(
     student_id: str,
