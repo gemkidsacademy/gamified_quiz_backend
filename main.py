@@ -5562,6 +5562,7 @@ def get_students_by_center(
     return {
         "students": formatted_students
     }
+
 @app.get("/center-admin/get-all-center-admins")
 def get_all_center_admins(
     db: Session = Depends(get_db)
