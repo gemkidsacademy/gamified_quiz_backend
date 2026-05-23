@@ -29864,18 +29864,42 @@ def get_class_exam_dates(
     if class_key == "selective":
         print("🟦 Branch: SELECTIVE")
     
+        ResponseModel = get_exam_response_model(exam)
+
         dates = (
-            db.query(func.date(AdminExamReport.created_at))
+            db.query(
+                func.date(AdminExamReport.created_at)
+            )
+
             .join(
                 Student,
-                Student.student_id == AdminExamReport.student_id   # ✅ FIXED BACK
+                Student.student_id
+                ==
+                AdminExamReport.student_id
             )
+
             .filter(
                 Student.class_name == class_name,
-                func.lower(AdminExamReport.exam_type) == exam_key,
+
+                func.lower(
+                    AdminExamReport.exam_type
+                )
+                ==
+                exam_key,
+
+                AdminExamReport.created_at.isnot(None),
+
+                AdminExamReport.overall_score.isnot(None)
             )
+
             .distinct()
-            .order_by(func.date(AdminExamReport.created_at))
+
+            .order_by(
+                func.date(
+                    AdminExamReport.created_at
+                )
+            )
+
             .all()
         )
 
@@ -29920,27 +29944,59 @@ def get_class_exam_dates(
         print("🟨 Branch: NAPLAN")
 
         if exam_key == "naplan_numeracy":
-            model = StudentExamNaplanNumeracy
+
+            response_model = StudentExamResponseNaplanNumeracy
+            exam_model = StudentExamNaplanNumeracy
 
         elif exam_key == "naplan_language_conventions":
-            model = StudentExamNaplanLanguageConventions
+
+            response_model = StudentExamResponseNaplanLanguageConventions
+            exam_model = StudentExamNaplanLanguageConventions
 
         elif exam_key == "naplan_reading":
-            model = StudentExamNaplanReading
+
+            response_model = StudentExamResponseNaplanReading
+            exam_model = StudentExamNaplanReading
 
         else:
             print("❌ Invalid Naplan exam:", exam_key)
-            return {"class_name": class_name, "exam": exam, "dates": []}
+
+            return {
+                "class_name": class_name,
+                "exam": exam,
+                "dates": []
+            }
 
         dates = (
-            db.query(func.date(model.completed_at))
-            .join(Student, Student.id == model.student_id)   # ✅ FIXED
+            db.query(
+                func.date(
+                    exam_model.completed_at
+                )
+            )
+            .select_from(response_model)
+            .join(
+                exam_model,
+                exam_model.id
+                ==
+                response_model.exam_attempt_id
+            )
+            .join(
+                Student,
+                Student.id
+                ==
+                exam_model.student_id
+            )
             .filter(
                 Student.class_name == class_name,
-                model.completed_at.isnot(None)
+
+                exam_model.completed_at.isnot(None)
             )
             .distinct()
-            .order_by(func.date(model.completed_at))
+            .order_by(
+                func.date(
+                    exam_model.completed_at
+                )
+            )
             .all()
         )
 
@@ -30554,11 +30610,20 @@ def compute_student_scores_from_responses(raw_rows):
 
     results = []
 
+    MINIMUM_ATTEMPT_QUESTIONS = 5
+
     for (sid, _), v in attempts.items():
+
         total = v["total"]
         correct = v["correct"]
 
-        score = round((correct / total) * 100) if total else 0
+        # 🚫 Ignore incomplete / abandoned attempts
+        if total < MINIMUM_ATTEMPT_QUESTIONS:
+            continue
+
+        score = round(
+            (correct / total) * 100
+        ) if total else 0
 
         results.append({
             "student_id": sid,
@@ -30676,11 +30741,24 @@ def class_exam_report(
             external_ids = list(student_code_map.values())
         
             attempt_ids = (
-                db.query(AdminExamReport.exam_attempt_id)
+                db.query(
+                    AdminExamReport.exam_attempt_id
+                )
                 .filter(
+
                     AdminExamReport.exam_type == exam,
-                    func.date(AdminExamReport.created_at) == date,
-                    AdminExamReport.student_id.in_(external_ids)
+
+                    func.date(
+                        AdminExamReport.created_at
+                    )
+                    ==
+                    date,
+
+                    AdminExamReport.student_id.in_(
+                        external_ids
+                    ),
+
+                    AdminExamReport.overall_score.isnot(None)
                 )
                 .all()
             )
