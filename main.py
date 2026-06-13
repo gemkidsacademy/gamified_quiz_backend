@@ -5526,43 +5526,30 @@ def get_students_by_center(
     center_code: str,
     db: Session = Depends(get_db)
 ):
-
     students = (
         db.query(Student)
-        .filter(
-            Student.center_code == center_code
-        )
+        .filter(Student.center_code == center_code)
         .all()
     )
 
     formatted_students = []
 
     for student in students:
-
         formatted_students.append({
-
             "id": student.id,
-
             "student_id": student.student_id,
-
             "name": student.name,
-
             "class_name": student.class_name,
-
             "class_day": student.class_day,
-
+            "student_year": student.student_year,  # Added
             "parent_email": student.parent_email,
-
             "gender": student.gender,
-
             "center_code": student.center_code
-
         })
 
     return {
         "students": formatted_students
     }
-
 @app.get("/center-admin/get-all-center-admins")
 def get_all_center_admins(
     db: Session = Depends(get_db)
@@ -21503,24 +21490,56 @@ def delete_previous_questions_oc_ts(
     db: Session = Depends(get_db)
 ):
     try:
+
+        question_ids = [
+            row[0]
+            for row in (
+                db.query(Question.id)
+                .filter(
+                    func.lower(Question.subject) == "thinking skills",
+                    func.lower(Question.class_name) == "oc"
+                )
+                .all()
+            )
+        ]
+
+        if question_ids:
+
+            usage_deleted = (
+                db.query(QuestionUsage)
+                .filter(
+                    QuestionUsage.question_id.in_(
+                        question_ids
+                    )
+                )
+                .delete(
+                    synchronize_session=False
+                )
+            )
+
         deleted_rows = (
             db.query(Question)
             .filter(
                 func.lower(Question.subject) == "thinking skills",
                 func.lower(Question.class_name) == "oc"
             )
-            .delete(synchronize_session=False)
+            .delete(
+                synchronize_session=False
+            )
         )
 
         db.commit()
 
         return {
-            "message": "OC Thinking Skills questions deleted successfully",
-            "deleted_rows": deleted_rows
+            "message":
+                "OC Thinking Skills questions deleted successfully",
+            "deleted_count": deleted_rows
         }
 
     except Exception as e:
+
         db.rollback()
+
         return {
             "error": str(e)
         }
@@ -21529,27 +21548,73 @@ def delete_previous_questions_oc_mr(
     db: Session = Depends(get_db)
 ):
     try:
+
+        question_ids = [
+            row[0]
+            for row in (
+                db.query(Question.id)
+                .filter(
+                    func.lower(Question.subject)
+                    == "mathematical reasoning",
+
+                    func.lower(Question.class_name)
+                    == "oc"
+                )
+                .all()
+            )
+        ]
+
+        usage_deleted = 0
+
+        if question_ids:
+
+            usage_deleted = (
+                db.query(QuestionUsage)
+                .filter(
+                    QuestionUsage.question_id.in_(
+                        question_ids
+                    )
+                )
+                .delete(
+                    synchronize_session=False
+                )
+            )
+
         deleted_rows = (
             db.query(Question)
             .filter(
-                func.lower(Question.subject) == "mathematical reasoning",
-                func.lower(Question.class_name) == "oc"
+                func.lower(Question.subject)
+                == "mathematical reasoning",
+
+                func.lower(Question.class_name)
+                == "oc"
             )
-            .delete(synchronize_session=False)
+            .delete(
+                synchronize_session=False
+            )
         )
 
         db.commit()
 
         return {
-            "message": "OC Mathematical Reasoning questions deleted successfully",
-            "deleted_rows": deleted_rows
+            "message":
+                "OC Mathematical Reasoning questions deleted successfully",
+
+            "deleted_count":
+                deleted_rows,
+
+            "usage_rows_deleted":
+                usage_deleted
         }
 
     except Exception as e:
+
         db.rollback()
+
         return {
             "error": str(e)
-        }     
+        }
+
 @app.delete("/api/admin/delete-all-questions-naplan-reading")
 def delete_all_questions_selective_reading(db: Session = Depends(get_db)):
     try:
@@ -21589,23 +21654,66 @@ def delete_all_questions_naplan_lc(db: Session = Depends(get_db)):
 
 
 @app.delete("/api/admin/delete-all-questions-naplan-numeracy")
-def delete_all_questions_naplan_numeracy(db: Session = Depends(get_db)):
+def delete_all_questions_naplan_numeracy(
+    db: Session = Depends(get_db)
+):
     try:
-        db.execute(
-            text("DELETE FROM questions_numeracy_lc WHERE subject = 'Numeracy'")
+
+        # Count questions before deletion
+        question_count = db.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM questions_numeracy_lc
+                WHERE subject = 'Numeracy'
+                """
+            )
+        ).scalar()
+
+        # Remove usage history first
+        usage_result = db.execute(
+            text(
+                """
+                DELETE FROM naplan_question_usage
+                WHERE question_id IN (
+                    SELECT id
+                    FROM questions_numeracy_lc
+                    WHERE subject = 'Numeracy'
+                )
+                """
+            )
         )
+
+        usage_deleted_count = usage_result.rowcount
+
+        # Remove questions
+        question_result = db.execute(
+            text(
+                """
+                DELETE FROM questions_numeracy_lc
+                WHERE subject = 'Numeracy'
+                """
+            )
+        )
+
+        question_deleted_count = question_result.rowcount
+
         db.commit()
 
         return {
-            "message": "All NAPLAN Numeracy questions deleted successfully."
+            "message": "All NAPLAN Numeracy questions deleted successfully.",
+            "deleted_count": question_deleted_count,
+            "usage_rows_deleted": usage_deleted_count,
+            "questions_found": question_count
         }
 
     except Exception as e:
+
         db.rollback()
+
         return {
             "detail": f"Error deleting questions: {str(e)}"
-        }
-     
+        }   
 
 @app.delete("/api/admin/delete-all-questions-selective-reading")
 def delete_all_reading_questions_selective(
@@ -37691,6 +37799,7 @@ def generate_oc_thinking_skills_exam_latest(
 
     CLASS_EXAM = "OC"
     SUBJECT_EXAM = "thinking_skills"
+    center_code = payload.get("center_code")
 
     # --------------------------------------------------
     # 1️⃣ Validate input
@@ -37728,11 +37837,46 @@ def generate_oc_thinking_skills_exam_latest(
             detail="Invalid class_year"
         )
 
+    if not center_code:
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    used_question_ids = (
+        db.query(
+            QuestionUsage.question_id
+        )
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .subquery()
+    )
+
     print(f"🎓 Class Year: {class_year_int}")
 
     print(f"📅 Selected Date: {selected_date}")
 
     print(f"📦 Batch ID: {batch_id}")
+
+    print(f"🏫 Center Code: {center_code}")
 
     # --------------------------------------------------
     # 2️⃣ Fetch Questions
@@ -37751,16 +37895,15 @@ def generate_oc_thinking_skills_exam_latest(
 
             Question.class_year == class_year_int,
 
-            # selected upload date
             func.date(
                 Question.created_at
             ) == selected_date,
 
-            # selected upload batch
             Question.batch_id == batch_id,
 
-            # only unused questions
-            Question.is_used == False
+            ~Question.id.in_(
+                used_question_ids
+            )
 
         )
         .order_by(Question.id.asc())
@@ -37844,18 +37987,46 @@ def generate_oc_thinking_skills_exam_latest(
 
     if used_ids:
 
-        db.query(Question).filter(
-            Question.id.in_(used_ids),
-            Question.is_used == False
-        ).update(
-            {Question.is_used: True},
-            synchronize_session=False
+        existing_pairs = set(
+            db.query(
+                QuestionUsage.question_id
+            )
+            .filter(
+                QuestionUsage.center_id
+                == center.id,
+
+                QuestionUsage.question_id.in_(
+                    used_ids
+                )
+            )
+            .all()
         )
 
-        print(
-            f"🏷️ Marked {len(used_ids)} "
-            f"questions as used"
-        )
+        usage_rows = []
+
+        for q_id in used_ids:
+
+            if (q_id,) not in existing_pairs:
+
+                usage_rows.append(
+
+                    QuestionUsage(
+                        question_id=q_id,
+                        center_id=center.id
+                    )
+
+                )
+
+        if usage_rows:
+
+            db.add_all(usage_rows)
+
+            print(
+                f"🏷️ Added "
+                f"{len(usage_rows)} "
+                f"QuestionUsage rows "
+                f"for center={center_code}"
+            )
 
     # --------------------------------------------------
     # 5️⃣ Save generated exam
@@ -37868,6 +38039,7 @@ def generate_oc_thinking_skills_exam_latest(
         subject=SUBJECT_EXAM,
 
         class_year=class_year_int,
+        center_code=center_code,
 
         questions=questions
     )
@@ -38205,6 +38377,9 @@ def generate_oc_thinking_skills_homework_exam(
         "questions": questions
 
     }
+
+
+
 @app.post("/api/exams/generate-oc-thinking-skills")
 def generate_oc_thinking_skills_exam(
     payload: Optional[dict] = Body(default=None),
@@ -38232,7 +38407,7 @@ def generate_oc_thinking_skills_exam(
     CLASS_EXAM = "OC"
 
     SUBJECT_EXAM = "thinking_skills"
-
+    
     # ==========================================
     # VALIDATE INPUT
     # ==========================================
@@ -38267,7 +38442,27 @@ def generate_oc_thinking_skills_exam(
             status_code=400,
             detail="Invalid class_year"
         )
+    if not center_code:
+        raise HTTPException(
+            status_code=400,
+            detail="center_code is required"
+        )
 
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
     print(
         f"🎓 Generating for "
         f"class_year={class_year_int}"
@@ -38487,397 +38682,397 @@ def generate_oc_thinking_skills_exam(
         "questions": questions
 
     }
-    @app.post("/api/exams/generate-oc-mathematical-reasoning-latest")
-    def generate_oc_mathematical_reasoning_exam_latest(
-        payload: dict = Body(...),
-        db: Session = Depends(get_db)
-    ):
-        import random
-        from datetime import datetime
+@app.post("/api/exams/generate-oc-mathematical-reasoning-latest")
+def generate_oc_mathematical_reasoning_exam_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    import random
+    from datetime import datetime
 
-        print("\n" + "=" * 70)
-        print("🚀 OC MR LATEST EXAM GENERATION START")
-        print("=" * 70)
+    print("\n" + "=" * 70)
+    print("🚀 OC MR LATEST EXAM GENERATION START")
+    print("=" * 70)
 
-        # ==========================================
-        # PARSE PAYLOAD
-        # ==========================================
+    # ==========================================
+    # PARSE PAYLOAD
+    # ==========================================
 
-        raw_class_year = payload.get(
-            "class_year"
+    raw_class_year = payload.get(
+        "class_year"
+    )
+
+    selected_date = payload.get(
+        "selected_date"
+    )
+
+    batch_id = payload.get(
+        "batch_id"
+    )
+
+    center_code = payload.get(
+        "center_code"
+    )
+
+    if not raw_class_year:
+
+        raise HTTPException(
+            400,
+            "class_year is required"
         )
 
-        selected_date = payload.get(
-            "selected_date"
+    if not selected_date:
+
+        raise HTTPException(
+            400,
+            "selected_date is required"
         )
 
-        batch_id = payload.get(
-            "batch_id"
+    if not batch_id:
+
+        raise HTTPException(
+            400,
+            "batch_id is required"
         )
 
-        center_code = payload.get(
-            "center_code"
+    if not center_code:
+
+        raise HTTPException(
+            400,
+            "center_code is required"
         )
 
-        if not raw_class_year:
+    # ==========================================
+    # PARSE CLASS YEAR
+    # ==========================================
 
-            raise HTTPException(
-                400,
-                "class_year is required"
-            )
+    try:
 
-        if not selected_date:
-
-            raise HTTPException(
-                400,
-                "selected_date is required"
-            )
-
-        if not batch_id:
-
-            raise HTTPException(
-                400,
-                "batch_id is required"
-            )
-
-        if not center_code:
-
-            raise HTTPException(
-                400,
-                "center_code is required"
-            )
-
-        # ==========================================
-        # PARSE CLASS YEAR
-        # ==========================================
-
-        try:
-
-            if isinstance(
-                raw_class_year,
-                str
-            ):
-
-                class_year = int(
-                    raw_class_year
-                    .strip()
-                    .split()[-1]
-                )
-
-            else:
-
-                class_year = int(
-                    raw_class_year
-                )
-
-        except:
-
-            raise HTTPException(
-
-                400,
-
-                f"Invalid class_year: "
-                f"{raw_class_year}"
-
-            )
-
-        print(
-            f"🎓 Parsed class_year: "
-            f"{class_year}"
-        )
-
-        # ==========================================
-        # PARSE SELECTED DATE
-        # ==========================================
-
-        try:
-
-            parsed_date = datetime.strptime(
-
-                selected_date,
-
-                "%Y-%m-%d"
-
-            ).date()
-
-        except:
-
-            raise HTTPException(
-
-                400,
-
-                f"Invalid selected_date: "
-                f"{selected_date}"
-
-            )
-
-        print(
-            f"📅 Parsed selected_date: "
-            f"{parsed_date}"
-        )
-
-        print(
-            f"📦 Batch ID: "
-            f"{batch_id}"
-        )
-
-        print(
-            f"🏫 Center Code: "
-            f"{center_code}"
-        )
-
-        # ==========================================
-        # FIND CENTER
-        # ==========================================
-
-        center = (
-            db.query(Center)
-            .filter(
-                Center.center_code.ilike(
-                    center_code
-                )
-            )
-            .first()
-        )
-
-        if not center:
-
-            raise HTTPException(
-                404,
-                "Center not found"
-            )
-
-        # ==========================================
-        # USED QUESTIONS
-        # FOR THIS CENTER
-        # ==========================================
-
-        used_question_ids = (
-            db.query(
-                QuestionUsage.question_id
-            )
-            .filter(
-                QuestionUsage.center_id
-                == center.id
-            )
-            .subquery()
-        )
-
-        # ==========================================
-        # FETCH UNUSED QUESTIONS
-        # FOR THIS CENTER
-        # ==========================================
-
-        questions_from_db = (
-            db.query(Question)
-            .filter(
-
-                func.lower(
-                    func.trim(
-                        Question.class_name
-                    )
-                ) == "oc",
-
-                func.lower(
-                    func.trim(
-                        Question.subject
-                    )
-                ) == "mathematical reasoning",
-
-                Question.class_year
-                == class_year,
-
-                # selected upload date
-                func.date(
-                    Question.created_at
-                ) == parsed_date,
-
-                # selected upload batch
-                Question.batch_id
-                == batch_id,
-
-                # exclude already used
-                # by THIS center
-                ~Question.id.in_(
-                    used_question_ids
-                )
-
-            )
-            .order_by(
-                Question.created_at.asc()
-            )
-            .all()
-        )
-
-        print(
-            f"\n📦 Questions Found: "
-            f"{len(questions_from_db)}"
-        )
-
-        if not questions_from_db:
-
-            raise HTTPException(
-
-                404,
-
-                "No unused questions found "
-                "for selected date and batch"
-
-            )
-
-        # ==========================================
-        # BUILD QUESTION STRUCTURE
-        # ==========================================
-
-        questions = []
-
-        for index, q in enumerate(
-            questions_from_db,
-            start=1
+        if isinstance(
+            raw_class_year,
+            str
         ):
 
-            questions.append({
+            class_year = int(
+                raw_class_year
+                .strip()
+                .split()[-1]
+            )
 
-                "id": q.id,
+        else:
 
-                "q_id": index,
+            class_year = int(
+                raw_class_year
+            )
 
-                "topic": q.topic,
+    except:
 
-                "difficulty": q.difficulty,
+        raise HTTPException(
 
-                "batch_id": q.batch_id,
+            400,
 
-                "blocks":
-                    q.question_blocks or [],
+            f"Invalid class_year: "
+            f"{raw_class_year}"
 
-                "options":
-                    q.options,
-
-                "correct":
-                    q.correct_answer
-
-            })
-
-        print(
-            f"✅ Generated "
-            f"{len(questions)} questions"
         )
 
-        # ==========================================
-        # STORE QUESTION USAGE
-        # ==========================================
+    print(
+        f"🎓 Parsed class_year: "
+        f"{class_year}"
+    )
 
-        used_ids = [
+    # ==========================================
+    # PARSE SELECTED DATE
+    # ==========================================
 
-            q["id"]
+    try:
 
-            for q in questions
+        parsed_date = datetime.strptime(
 
-            if q.get("id")
+            selected_date,
+
+            "%Y-%m-%d"
+
+        ).date()
+
+    except:
+
+        raise HTTPException(
+
+            400,
+
+            f"Invalid selected_date: "
+            f"{selected_date}"
+
+        )
+
+    print(
+        f"📅 Parsed selected_date: "
+        f"{parsed_date}"
+    )
+
+    print(
+        f"📦 Batch ID: "
+        f"{batch_id}"
+    )
+
+    print(
+        f"🏫 Center Code: "
+        f"{center_code}"
+    )
+
+    # ==========================================
+    # FIND CENTER
+    # ==========================================
+
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code.ilike(
+                center_code
+            )
+        )
+        .first()
+    )
+
+    if not center:
+
+        raise HTTPException(
+            404,
+            "Center not found"
+        )
+
+    # ==========================================
+    # USED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
+    used_question_ids = (
+        db.query(
+            QuestionUsage.question_id
+        )
+        .filter(
+            QuestionUsage.center_id
+            == center.id
+        )
+        .subquery()
+    )
+
+    # ==========================================
+    # FETCH UNUSED QUESTIONS
+    # FOR THIS CENTER
+    # ==========================================
+
+    questions_from_db = (
+        db.query(Question)
+        .filter(
+
+            func.lower(
+                func.trim(
+                    Question.class_name
+                )
+            ) == "oc",
+
+            func.lower(
+                func.trim(
+                    Question.subject
+                )
+            ) == "mathematical reasoning",
+
+            Question.class_year
+            == class_year,
+
+            # selected upload date
+            func.date(
+                Question.created_at
+            ) == parsed_date,
+
+            # selected upload batch
+            Question.batch_id
+            == batch_id,
+
+            # exclude already used
+            # by THIS center
+            ~Question.id.in_(
+                used_question_ids
+            )
+
+        )
+        .order_by(
+            Question.created_at.asc()
+        )
+        .all()
+    )
+
+    print(
+        f"\n📦 Questions Found: "
+        f"{len(questions_from_db)}"
+    )
+
+    if not questions_from_db:
+
+        raise HTTPException(
+
+            404,
+
+            "No unused questions found "
+            "for selected date and batch"
+
+        )
+
+    # ==========================================
+    # BUILD QUESTION STRUCTURE
+    # ==========================================
+
+    questions = []
+
+    for index, q in enumerate(
+        questions_from_db,
+        start=1
+    ):
+
+        questions.append({
+
+            "id": q.id,
+
+            "q_id": index,
+
+            "topic": q.topic,
+
+            "difficulty": q.difficulty,
+
+            "batch_id": q.batch_id,
+
+            "blocks":
+                q.question_blocks or [],
+
+            "options":
+                q.options,
+
+            "correct":
+                q.correct_answer
+
+        })
+
+    print(
+        f"✅ Generated "
+        f"{len(questions)} questions"
+    )
+
+    # ==========================================
+    # STORE QUESTION USAGE
+    # ==========================================
+
+    used_ids = [
+
+        q["id"]
+
+        for q in questions
+
+        if q.get("id")
+
+    ]
+
+    if used_ids:
+
+        usage_rows = [
+
+            QuestionUsage(
+
+                question_id=q_id,
+
+                center_id=center.id
+
+            )
+
+            for q_id in used_ids
 
         ]
 
-        if used_ids:
-
-            usage_rows = [
-
-                QuestionUsage(
-
-                    question_id=q_id,
-
-                    center_id=center.id
-
-                )
-
-                for q_id in used_ids
-
-            ]
-
-            db.add_all(usage_rows)
-
-            print(
-                f"🏷️ Added "
-                f"{len(usage_rows)} "
-                f"QuestionUsage rows"
-            )
-
-        # ==========================================
-        # SHUFFLE QUESTIONS
-        # ==========================================
-
-        random.shuffle(questions)
-
-        # ==========================================
-        # SAVE EXAM
-        # ==========================================
-
-        new_exam = Exam(
-
-            quiz_id=None,
-
-            class_name="oc",
-
-            subject=
-                "mathematical_reasoning",
-
-            class_year=
-                class_year,
-
-            center_code=
-                center_code,
-
-            questions=
-                questions
-
-        )
-
-        db.add(new_exam)
-
-        db.commit()
-
-        db.refresh(new_exam)
+        db.add_all(usage_rows)
 
         print(
-            f"💾 Exam saved: "
-            f"{new_exam.id}"
+            f"🏷️ Added "
+            f"{len(usage_rows)} "
+            f"QuestionUsage rows"
         )
 
-        print("=" * 70 + "\n")
+    # ==========================================
+    # SHUFFLE QUESTIONS
+    # ==========================================
 
-        # ==========================================
-        # RESPONSE
-        # ==========================================
+    random.shuffle(questions)
 
-        return {
+    # ==========================================
+    # SAVE EXAM
+    # ==========================================
 
-            "message": (
+    new_exam = Exam(
 
-                "OC Mathematical "
-                "Reasoning latest "
-                "exam generated successfully"
+        quiz_id=None,
 
-            ),
+        class_name="oc",
 
-            "exam_id":
-                new_exam.id,
+        subject=
+            "mathematical_reasoning",
 
-            "batch_id":
-                batch_id,
+        class_year=
+            class_year,
 
-            "center_code":
-                center_code,
+        center_code=
+            center_code,
 
-            "selected_date":
-                selected_date,
+        questions=
+            questions
 
-            "total_questions":
-                len(questions),
+    )
 
-            "questions":
-                questions
+    db.add(new_exam)
 
-        }
+    db.commit()
+
+    db.refresh(new_exam)
+
+    print(
+        f"💾 Exam saved: "
+        f"{new_exam.id}"
+    )
+
+    print("=" * 70 + "\n")
+
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+
+    return {
+
+        "message": (
+
+            "OC Mathematical "
+            "Reasoning latest "
+            "exam generated successfully"
+
+        ),
+
+        "exam_id":
+            new_exam.id,
+
+        "batch_id":
+            batch_id,
+
+        "center_code":
+            center_code,
+
+        "selected_date":
+            selected_date,
+
+        "total_questions":
+            len(questions),
+
+        "questions":
+            questions
+
+    }
 
 @app.post("/api/exams/generate-oc-mathematical-reasoning")
 def generate_oc_mathematical_reasoning_exam(
