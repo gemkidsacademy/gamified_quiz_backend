@@ -21632,25 +21632,122 @@ def delete_all_questions_selective_reading(db: Session = Depends(get_db)):
             "detail": f"Error deleting questions: {str(e)}"
         }
 
+
+
 @app.delete("/api/admin/delete-all-questions-naplan-lc")
-def delete_all_questions_naplan_lc(db: Session = Depends(get_db)):
+def delete_all_questions_naplan_lc(
+    db: Session = Depends(get_db)
+):
     try:
-        result = db.execute(
-            text("DELETE FROM questions_numeracy_lc WHERE subject = 'Language Conventions'")
+        print("\n" + "=" * 80)
+        print("DELETE ALL LANGUAGE CONVENTIONS QUESTIONS")
+        print("=" * 80)
+
+        # --------------------------------------------------
+        # STEP 1: Count questions
+        # --------------------------------------------------
+        question_count = db.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM questions_numeracy_lc
+                WHERE subject = 'Language Conventions'
+            """)
+        ).scalar()
+
+        print(
+            f"[STEP 1] Language Conventions questions found: "
+            f"{question_count}"
         )
 
+        # --------------------------------------------------
+        # STEP 2: Delete usage records
+        # --------------------------------------------------
+        usage_result = db.execute(
+            text("""
+                DELETE FROM naplan_question_usage
+                WHERE question_id IN (
+                    SELECT id
+                    FROM questions_numeracy_lc
+                    WHERE subject = 'Language Conventions'
+                )
+            """)
+        )
+
+        print(
+            f"[STEP 2] Usage records deleted: "
+            f"{usage_result.rowcount}"
+        )
+
+        # --------------------------------------------------
+        # STEP 3: Delete questions
+        # --------------------------------------------------
+        question_result = db.execute(
+            text("""
+                DELETE FROM questions_numeracy_lc
+                WHERE subject = 'Language Conventions'
+            """)
+        )
+
+        print(
+            f"[STEP 3] Questions deleted: "
+            f"{question_result.rowcount}"
+        )
+
+        # --------------------------------------------------
+        # STEP 4: Commit
+        # --------------------------------------------------
         db.commit()
 
+        print(
+            "[STEP 4] Transaction committed successfully."
+        )
+
+        # --------------------------------------------------
+        # STEP 5: Verify
+        # --------------------------------------------------
+        remaining_questions = db.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM questions_numeracy_lc
+                WHERE subject = 'Language Conventions'
+            """)
+        ).scalar()
+
+        print(
+            f"[STEP 5] Remaining questions: "
+            f"{remaining_questions}"
+        )
+
+        print("=" * 80)
+        print("DELETE COMPLETED SUCCESSFULLY")
+        print("=" * 80)
+
         return {
+            "success": True,
             "message": "All Language Conventions questions deleted successfully.",
-            "rows_deleted": result.rowcount
+            "questions_deleted": question_result.rowcount,
+            "usage_records_deleted": usage_result.rowcount,
+            "remaining_questions": remaining_questions
         }
 
     except Exception as e:
+
         db.rollback()
-        return {
-            "detail": f"Error deleting questions: {str(e)}"
-        }
+
+        print("=" * 80)
+        print("DELETE FAILED")
+        print("=" * 80)
+        print(f"Error Type: {type(e).__name__}")
+        print(f"Error Message: {str(e)}")
+        print("Rollback completed.")
+        print("=" * 80)
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
 
 
 @app.delete("/api/admin/delete-all-questions-naplan-numeracy")
