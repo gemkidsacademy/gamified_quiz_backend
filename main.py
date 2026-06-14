@@ -21418,36 +21418,70 @@ def delete_previous_questions_ts(db: Session = Depends(get_db)):
 
 @app.delete("/api/admin/delete-previous-questions-TS")
 def delete_previous_questions_ts(db: Session = Depends(get_db)):
+    print("\n" + "=" * 80)
+    print("DELETE ALL THINKING SKILLS QUESTIONS START")
+    print("=" * 80)
+
     try:
-        print("\n🔍 STEP 1: Starting delete_previous_questions_ts function")
+        # --------------------------------------------------
+        # STEP 1: Count questions before delete
+        # --------------------------------------------------
+        print("\n[STEP 1] Counting Thinking Skills questions...")
 
-        # STEP 2: Check what actually exists in DB (broad match)
-        print("\n🔍 STEP 2: Fetching possible matching rows (using LIKE)...")
-        possible_rows = db.query(Question).filter(
-            func.lower(Question.subject).like("%thinking%"),
-            func.lower(Question.class_name).like("%selective%")
-        ).all()
-
-        print(f"👉 Rows found with LIKE: {len(possible_rows)}")
-
-        for row in possible_rows:
-            print(f"   SUBJECT: '{row.subject}' | CLASS: '{row.class_name}'")
-
-        # STEP 3: Check exact match BEFORE delete
-        print("\n🔍 STEP 3: Checking exact match BEFORE delete...")
-        exact_rows = db.query(Question).filter(
+        questions_before = db.query(Question).filter(
             func.lower(Question.subject) == "thinking skills",
             func.lower(Question.class_name) == "selective"
-        ).all()
+        ).count()
 
-        print(f"👉 Exact match rows: {len(exact_rows)}")
+        print(f"Thinking Skills questions found: {questions_before}")
 
-        for row in exact_rows:
-            print(f"   EXACT MATCH → SUBJECT: '{row.subject}' | CLASS: '{row.class_name}'")
+        # --------------------------------------------------
+        # STEP 2: Count usage rows
+        # --------------------------------------------------
+        print("\n[STEP 2] Counting usage rows...")
 
-        # STEP 4: Perform DELETE
-        print("\n🗑️ STEP 4: Performing DELETE...")
-        deleted_rows = (
+        usage_before = db.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM question_usage
+                WHERE question_id IN (
+                    SELECT id
+                    FROM questions
+                    WHERE lower(subject) = 'thinking skills'
+                      AND lower(class_name) = 'selective'
+                )
+            """)
+        ).scalar()
+
+        print(f"Usage rows found: {usage_before}")
+
+        # --------------------------------------------------
+        # STEP 3: Delete usage rows first
+        # --------------------------------------------------
+        print("\n[STEP 3] Deleting usage rows...")
+
+        usage_result = db.execute(
+            text("""
+                DELETE FROM question_usage
+                WHERE question_id IN (
+                    SELECT id
+                    FROM questions
+                    WHERE lower(subject) = 'thinking skills'
+                      AND lower(class_name) = 'selective'
+                )
+            """)
+        )
+
+        print(
+            f"Usage rows deleted: {usage_result.rowcount}"
+        )
+
+        # --------------------------------------------------
+        # STEP 4: Delete questions
+        # --------------------------------------------------
+        print("\n[STEP 4] Deleting Thinking Skills questions...")
+
+        questions_deleted = (
             db.query(Question)
             .filter(
                 func.lower(Question.subject) == "thinking skills",
@@ -21456,33 +21490,89 @@ def delete_previous_questions_ts(db: Session = Depends(get_db)):
             .delete(synchronize_session=False)
         )
 
-        print(f"👉 Rows deleted: {deleted_rows}")
+        print(
+            f"Question rows deleted: {questions_deleted}"
+        )
 
-        # STEP 5: Commit
+        # --------------------------------------------------
+        # STEP 5: Commit transaction
+        # --------------------------------------------------
+        print("\n[STEP 5] Committing transaction...")
+
         db.commit()
-        print("✅ STEP 5: Commit successful")
 
-        # STEP 6: Verify after delete
-        print("\n🔍 STEP 6: Verifying after delete...")
-        remaining_rows = db.query(Question).filter(
-            func.lower(Question.subject).like("%thinking%"),
-            func.lower(Question.class_name).like("%selective%")
-        ).all()
+        print("✅ Commit successful")
 
-        print(f"👉 Remaining rows after delete: {len(remaining_rows)}")
+        # --------------------------------------------------
+        # STEP 6: Verify questions deleted
+        # --------------------------------------------------
+        print("\n[STEP 6] Verifying question delete...")
+
+        questions_remaining = db.query(Question).filter(
+            func.lower(Question.subject) == "thinking skills",
+            func.lower(Question.class_name) == "selective"
+        ).count()
+
+        print(
+            f"Remaining Thinking Skills questions: {questions_remaining}"
+        )
+
+        # --------------------------------------------------
+        # STEP 7: Verify usage rows deleted
+        # --------------------------------------------------
+        print("\n[STEP 7] Verifying usage delete...")
+
+        usage_remaining = db.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM question_usage
+                WHERE question_id IN (
+                    SELECT id
+                    FROM questions
+                    WHERE lower(subject) = 'thinking skills'
+                      AND lower(class_name) = 'selective'
+                )
+            """)
+        ).scalar()
+
+        print(
+            f"Remaining usage rows: {usage_remaining}"
+        )
+
+        print("\n✅ DELETE COMPLETED SUCCESSFULLY")
+        print("=" * 80)
+        print("DELETE ALL THINKING SKILLS QUESTIONS END")
+        print("=" * 80)
 
         return {
-            "message": "Selective Thinking Skills questions deleted successfully",
-            "deleted_rows": deleted_rows
+            "success": True,
+            "message": "All Selective Thinking Skills questions deleted successfully.",
+            "questions_before": questions_before,
+            "questions_deleted": questions_deleted,
+            "questions_remaining": questions_remaining,
+            "usage_rows_before": usage_before,
+            "usage_rows_deleted": usage_result.rowcount,
+            "usage_rows_remaining": usage_remaining
         }
 
     except Exception as e:
-        print("\n❌ ERROR OCCURRED:", str(e))
-        db.rollback()
-        return {
-            "error": str(e)
-        }     
+        print("\n❌ ERROR OCCURRED")
+        print(f"Exception Type: {type(e).__name__}")
+        print(f"Exception Message: {str(e)}")
 
+        print("↩️ Rolling back transaction...")
+
+        db.rollback()
+
+        print("✅ Rollback complete")
+        print("=" * 80)
+        print("DELETE ALL THINKING SKILLS QUESTIONS FAILED")
+        print("=" * 80)
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting Thinking Skills questions: {str(e)}"
+        )
 from sqlalchemy import func
 
 @app.delete("/api/admin/delete-previous-questions-OC-TS")
