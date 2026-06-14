@@ -21878,23 +21878,125 @@ def delete_all_reading_questions_selective(
             status_code=500,
             detail=f"Error deleting Selective reading questions: {str(e)}"
         )
+
 @app.delete("/api/admin/delete-all-questions-oc-reading")
-def delete_all_reading_questions_selective(db: Session = Depends(get_db)):
+def delete_all_reading_questions_oc(db: Session = Depends(get_db)):
+    print("\n" + "=" * 80)
+    print("DELETE ALL OC READING QUESTIONS START")
+    print("=" * 80)
+
     try:
-        result = db.execute(
-            text("DELETE FROM questions_reading WHERE class_name = 'oc'")
+        # STEP 1: Count questions before delete
+        print("\n[STEP 1] Counting OC Reading questions...")
+        count_before = db.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM questions_reading
+                WHERE class_name = 'oc'
+            """)
+        ).scalar()
+        print(f"OC Reading questions found: {count_before}")
+
+        # STEP 2: Count usage records
+        print("\n[STEP 2] Counting usage records...")
+        usage_count = db.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM oc_reading_question_usage
+                WHERE question_reading_id IN (
+                    SELECT id
+                    FROM questions_reading
+                    WHERE class_name = 'oc'
+                )
+            """)
+        ).scalar()
+        print(f"Usage records referencing OC Reading questions: {usage_count}")
+
+        # STEP 3: Delete usage records first
+        print("\n[STEP 3] Deleting usage records...")
+        usage_result = db.execute(
+            text("""
+                DELETE FROM oc_reading_question_usage
+                WHERE question_reading_id IN (
+                    SELECT id
+                    FROM questions_reading
+                    WHERE class_name = 'oc'
+                )
+            """)
         )
+        print(f"Usage rows deleted: {usage_result.rowcount}")
+
+        # STEP 4: Delete questions
+        print("\n[STEP 4] Deleting OC Reading questions...")
+        question_result = db.execute(
+            text("""
+                DELETE FROM questions_reading
+                WHERE class_name = 'oc'
+            """)
+        )
+        print(f"Question rows deleted: {question_result.rowcount}")
+
+        # STEP 5: Commit transaction
+        print("\n[STEP 5] Committing transaction...")
         db.commit()
+        print("✅ Commit successful")
+
+        # STEP 6: Verify remaining questions
+        print("\n[STEP 6] Verifying question delete...")
+        count_after = db.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM questions_reading
+                WHERE class_name = 'oc'
+            """)
+        ).scalar()
+        print(f"Remaining OC Reading questions: {count_after}")
+
+        # STEP 7: Verify remaining usage rows
+        print("\n[STEP 7] Verifying usage delete...")
+        remaining_usage = db.execute(
+            text("""
+                SELECT COUNT(*)
+                FROM oc_reading_question_usage
+                WHERE question_reading_id IN (
+                    SELECT id
+                    FROM questions_reading
+                    WHERE class_name = 'oc'
+                )
+            """)
+        ).scalar()
+        print(f"Remaining usage rows: {remaining_usage}")
+
+        print("\n✅ DELETE COMPLETED SUCCESSFULLY")
+        print("=" * 80)
+        print("DELETE ALL OC READING QUESTIONS END")
+        print("=" * 80)
 
         return {
-            "message": "All Selective reading questions deleted successfully"
+            "success": True,
+            "message": "All OC Reading questions deleted successfully.",
+            "questions_before": count_before,
+            "questions_deleted": question_result.rowcount,
+            "questions_remaining": count_after,
+            "usage_rows_before": usage_count,
+            "usage_rows_deleted": usage_result.rowcount,
+            "usage_rows_remaining": remaining_usage
         }
 
     except Exception as e:
+        print("\n❌ ERROR OCCURRED")
+        print(f"Exception Type: {type(e).__name__}")
+        print(f"Exception Message: {str(e)}")
+        print("↩️ Rolling back transaction...")
         db.rollback()
+        print("✅ Rollback complete")
+        print("=" * 80)
+        print("DELETE ALL OC READING QUESTIONS FAILED")
+        print("=" * 80)
+
         raise HTTPException(
             status_code=500,
-            detail=f"Error deleting Selective reading questions: {str(e)}"
+            detail=f"Error deleting OC Reading questions: {str(e)}"
         )
 
 
@@ -46350,9 +46452,17 @@ def get_oc_thinking_skills_report(
     exam_attempt_id: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
+    print("\n" + "=" * 80)
+    print("OC THINKING SKILLS REPORT START")
+    print("=" * 80)
+    print(f"Requested student_id: {student_id}")
+    print(f"Requested exam_attempt_id: {exam_attempt_id}")
+
     # --------------------------------------------------
     # 1️⃣ Resolve student
     # --------------------------------------------------
+    print("\n[STEP 1] Resolving student...")
+
     student = (
         db.query(Student)
         .filter(Student.student_id == student_id)
@@ -46360,13 +46470,30 @@ def get_oc_thinking_skills_report(
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
+        print(f"[ERROR] Student not found: {student_id}")
 
-    
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print(
+        f"[SUCCESS] Student found | "
+        f"Internal ID: {student.id} | "
+        f"Student ID: {student.student_id}"
+    )
+
     # --------------------------------------------------
     # 2️⃣ Get attempt (specific OR latest)
     # --------------------------------------------------
+    print("\n[STEP 2] Loading exam attempt...")
+
     if exam_attempt_id:
+        print(
+            f"Looking for specific attempt ID: "
+            f"{exam_attempt_id}"
+        )
+
         attempt = (
             db.query(StudentExamOCThinkingSkills)
             .filter(
@@ -46377,33 +46504,62 @@ def get_oc_thinking_skills_report(
             .first()
         )
     else:
+        print(
+            "No attempt supplied. "
+            "Loading latest completed attempt."
+        )
+
         attempt = (
             db.query(StudentExamOCThinkingSkills)
             .filter(
                 StudentExamOCThinkingSkills.student_id == student.id,
                 StudentExamOCThinkingSkills.completed_at.isnot(None)
             )
-            .order_by(StudentExamOCThinkingSkills.completed_at.desc())
+            .order_by(
+                StudentExamOCThinkingSkills.completed_at.desc()
+            )
             .first()
         )
+
     if not attempt:
+        print(
+            "[ERROR] No completed OC Thinking Skills exam found."
+        )
+
         raise HTTPException(
             status_code=404,
             detail="No completed OC Thinking Skills exam found"
         )
 
+    print(
+        f"[SUCCESS] Attempt found | "
+        f"Attempt ID: {attempt.id} | "
+        f"Completed At: {attempt.completed_at}"
+    )
+
     # --------------------------------------------------
     # 3️⃣ Load responses
     # --------------------------------------------------
+    print("\n[STEP 3] Loading responses...")
+
     responses = (
         db.query(StudentExamResponseOCThinkingSkills)
         .filter(
-            StudentExamResponseOCThinkingSkills.exam_attempt_id == attempt.id
+            StudentExamResponseOCThinkingSkills.exam_attempt_id
+            == attempt.id
         )
         .all()
     )
 
+    print(
+        f"Responses fetched: {len(responses)}"
+    )
+
     if not responses:
+        print(
+            "[ERROR] No responses found for attempt."
+        )
+
         raise HTTPException(
             status_code=404,
             detail="No responses found for OC Thinking Skills exam"
@@ -46412,14 +46568,40 @@ def get_oc_thinking_skills_report(
     # --------------------------------------------------
     # 4️⃣ OVERALL SUMMARY
     # --------------------------------------------------
+    print("\n[STEP 4] Calculating overall summary...")
+
     total_questions = len(responses)
-    attempted = sum(1 for r in responses if r.is_correct is not None)
-    correct = sum(1 for r in responses if r.is_correct is True)
-    incorrect = sum(1 for r in responses if r.is_correct is False)
+    attempted = sum(
+        1 for r in responses
+        if r.is_correct is not None
+    )
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+    incorrect = sum(
+        1 for r in responses
+        if r.is_correct is False
+    )
     not_attempted = total_questions - attempted
 
-    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
-    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+    accuracy_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
+
+    score_percent = (
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    print(f"Total Questions: {total_questions}")
+    print(f"Attempted: {attempted}")
+    print(f"Correct: {correct}")
+    print(f"Incorrect: {incorrect}")
+    print(f"Not Attempted: {not_attempted}")
+    print(f"Accuracy %: {accuracy_percent}")
+    print(f"Score %: {score_percent}")
 
     overall = {
         "total_questions": total_questions,
@@ -46435,6 +46617,8 @@ def get_oc_thinking_skills_report(
     # --------------------------------------------------
     # 5️⃣ TOPIC-WISE PERFORMANCE
     # --------------------------------------------------
+    print("\n[STEP 5] Building topic statistics...")
+
     topic_map = {}
 
     for r in responses:
@@ -46456,29 +46640,52 @@ def get_oc_thinking_skills_report(
             topic_map[topic]["not_attempted"] += 1
         else:
             topic_map[topic]["attempted"] += 1
+
             if r.is_correct:
                 topic_map[topic]["correct"] += 1
             else:
                 topic_map[topic]["incorrect"] += 1
+
+    print(
+        f"Topics discovered: {len(topic_map)}"
+    )
+
+    for topic_name, stats in topic_map.items():
+        print(
+            f"Topic={topic_name} | "
+            f"Total={stats['total']} | "
+            f"Attempted={stats['attempted']} | "
+            f"Correct={stats['correct']} | "
+            f"Incorrect={stats['incorrect']} | "
+            f"NotAttempted={stats['not_attempted']}"
+        )
 
     topic_wise_performance = list(topic_map.values())
 
     # --------------------------------------------------
     # 6️⃣ TOPIC ACCURACY
     # --------------------------------------------------
+    print("\n[STEP 6] Calculating topic accuracy...")
+
     topic_accuracy = []
 
     for t in topic_wise_performance:
         attempted_t = t["attempted"]
 
         accuracy_t = (
-            round((t["correct"] / attempted_t) * 100, 2)
+            round(
+                (t["correct"] / attempted_t) * 100,
+                2
+            )
             if attempted_t else 0
         )
 
-        score_t = round((t["correct"] / t["total"]) * 100, 2)
+        score_t = round(
+            (t["correct"] / t["total"]) * 100,
+            2
+        )
 
-        topic_accuracy.append({
+        row = {
             "topic": t["topic"],
             "total_questions": t["total"],
             "attempted": attempted_t,
@@ -46487,15 +46694,27 @@ def get_oc_thinking_skills_report(
             "accuracy_percent": accuracy_t,
             "score_percent": score_t,
             "pass": None
-        })
+        }
+
+        topic_accuracy.append(row)
+
+        print(
+            f"Topic={t['topic']} | "
+            f"Accuracy={accuracy_t}% | "
+            f"Score={score_t}%"
+        )
 
     # --------------------------------------------------
     # 7️⃣ IMPROVEMENT AREAS
     # --------------------------------------------------
+    print("\n[STEP 7] Building improvement areas...")
+
     improvement_areas = []
 
     for t in topic_accuracy:
-        limited_data = t["total_questions"] < 5
+        limited_data = (
+            t["total_questions"] < 5
+        )
 
         improvement_areas.append({
             "topic": t["topic"],
@@ -46505,19 +46724,46 @@ def get_oc_thinking_skills_report(
             "limited_data": limited_data
         })
 
-    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+    improvement_areas.sort(
+        key=lambda x: x["accuracy_percent"]
+    )
+
+    print("Improvement Areas Ranking:")
+
+    for idx, area in enumerate(
+        improvement_areas,
+        start=1
+    ):
+        print(
+            f"{idx}. {area['topic']} | "
+            f"Accuracy={area['accuracy_percent']}% | "
+            f"Questions={area['total_questions']} | "
+            f"LimitedData={area['limited_data']}"
+        )
 
     # --------------------------------------------------
     # 8️⃣ Final response
     # --------------------------------------------------
-    return {
-    "exam_attempt_id": attempt.id,   # 🔥 ADD THIS LINE
-    "overall": overall,
-    "topic_wise_performance": topic_wise_performance,
-    "topic_accuracy": topic_accuracy,
-    "improvement_areas": improvement_areas
-}
+    print("\n[STEP 8] Returning response...")
 
+    response_payload = {
+        "exam_attempt_id": attempt.id,
+        "overall": overall,
+        "topic_wise_performance": topic_wise_performance,
+        "topic_accuracy": topic_accuracy,
+        "improvement_areas": improvement_areas
+    }
+
+    print(
+        f"Response prepared successfully for "
+        f"attempt_id={attempt.id}"
+    )
+
+    print("=" * 80)
+    print("OC THINKING SKILLS REPORT END")
+    print("=" * 80)
+
+    return response_payload
 @app.get("/api/student/homework-report/oc-thinking-skills")
 def get_homework_report_oc_thinking_skills(
     student_id: str,
@@ -76360,20 +76606,11 @@ def start_homework_oc_thinking_skills(
         )
     )
 
-    new_attempt = (
-        StudentHomeworkOCThinkingSkills(
-
-            student_id=
-                student.id,
-
-            homework_exam_id=
-                homework.id,
-
-            started_at=
-                now,
-
-            duration_minutes=40
-        )
+    new_attempt = StudentHomeworkOCThinkingSkills(
+        student_id=student.id,
+        homework_exam_id=homework.id,
+        started_at=now,
+        duration_minutes=40
     )
 
     db.add(new_attempt)
@@ -76424,33 +76661,15 @@ def start_homework_oc_thinking_skills(
 
                 continue
 
-            row = (
-                StudentHomeworkResponseOCThinkingSkills(
-
-                    student_id=
-                        student.id,
-
-                    homework_exam_id=
-                        homework.id,
-
-                    homework_attempt_id=
-                        new_attempt.id,
-
-                    q_id=
-                        q_id,
-
-                    topic=
-                        q.get("topic"),
-
-                    selected_option=
-                        None,
-
-                    correct_option=
-                        correct_option,
-
-                    is_correct=
-                        None
-                )
+            row = StudentHomeworkResponseOCThinkingSkills(
+                student_id=student.id,
+                homework_id=homework.id,  # ✅ matches model
+                homework_attempt_id=new_attempt.id,
+                q_id=q_id,
+                topic=q.get("topic"),
+                selected_option=None,
+                correct_option=correct_option,
+                is_correct=None
             )
 
             db.add(row)
