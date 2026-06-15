@@ -44019,8 +44019,8 @@ def get_naplan_reading_report(
     not_attempted = total_questions - attempted
 
     accuracy_percent = (
-        round((correct / attempted) * 100, 2)
-        if attempted else 0
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
     )
 
     score_percent = (
@@ -44155,6 +44155,7 @@ def get_naplan_reading_report(
         "topic_accuracy": topic_accuracy,                   # Report C
         "improvement_areas": improvement_areas              # Report D
     }
+
 @app.get("/api/student/exam-report/naplan-reading-homework")
 def get_naplan_reading_homework_report(
     student_id: str = Query(
@@ -44328,10 +44329,10 @@ def get_naplan_reading_homework_report(
 
     accuracy_percent = (
         round(
-            (correct / attempted) * 100,
+            (correct / total_questions) * 100,
             2
         )
-        if attempted else 0
+        if total_questions else 0
     )
 
     score_percent = (
@@ -44454,6 +44455,7 @@ def get_naplan_reading_homework_report(
     )
 
     return payload
+
 @app.get("/api/student/exam-dates/naplan-reading")
 def get_naplan_reading_exam_dates(
     student_id: str = Query(
