@@ -5521,6 +5521,36 @@ def update_center_admin(
             "center_code": existing_admin.center_code
         }
     }
+@app.get("/api/classes/years")
+def get_class_years(
+    category: str,
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    try:
+
+        years = (
+            db.query(Student.student_year)
+            .filter(
+                Student.class_name == category,
+                Student.center_code == center_code
+            )
+            .distinct()
+            .all()
+        )
+
+        return {
+            "years": sorted(
+                [y[0] for y in years if y[0]]
+            )
+        }
+
+    except Exception as e:
+        print("❌ Error loading class years:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load class years"
+        )
 @app.get("/students/by-center/{center_code}")
 def get_students_by_center(
     center_code: str,
@@ -30243,6 +30273,8 @@ def get_exam_review_oc_mathematical_reasoning(
 @app.get("/api/classes/{class_name}/exam-dates")
 def get_class_exam_dates(
     class_name: str,
+    student_year: str,
+    center_code: str,
     exam: str,
     db: Session = Depends(get_db),
 ):
@@ -30265,7 +30297,7 @@ def get_class_exam_dates(
 
         dates = (
             db.query(
-                func.date(AdminExamReport.created_at)
+                AdminExamReport.created_at
             )
 
             .join(
@@ -30277,6 +30309,8 @@ def get_class_exam_dates(
 
             .filter(
                 Student.class_name == class_name,
+                Student.student_year == student_year,
+                Student.center_code == center_code,
 
                 func.lower(
                     AdminExamReport.exam_type
@@ -30292,9 +30326,7 @@ def get_class_exam_dates(
             .distinct()
 
             .order_by(
-                func.date(
-                    AdminExamReport.created_at
-                )
+                AdminExamReport.created_at
             )
 
             .all()
@@ -30323,14 +30355,16 @@ def get_class_exam_dates(
             return {"class_name": class_name, "exam": exam, "dates": []}
 
         dates = (
-            db.query(func.date(date_column))
+            db.query(date_column)
             .join(Student, Student.id == model.student_id)   # ✅ FIXED
             .filter(
                 Student.class_name == class_name,
+                Student.student_year == student_year,
+                Student.center_code == center_code,
                 date_column.isnot(None)
             )
             .distinct()
-            .order_by(func.date(date_column))
+            .order_by(date_column)
             .all()
         )
 
@@ -30366,9 +30400,7 @@ def get_class_exam_dates(
 
         dates = (
             db.query(
-                func.date(
-                    exam_model.completed_at
-                )
+                exam_model.completed_at
             )
             .select_from(response_model)
             .join(
@@ -30385,14 +30417,14 @@ def get_class_exam_dates(
             )
             .filter(
                 Student.class_name == class_name,
+                Student.student_year == student_year,
+                Student.center_code == center_code,
 
                 exam_model.completed_at.isnot(None)
             )
             .distinct()
             .order_by(
-                func.date(
-                    exam_model.completed_at
-                )
+                exam_model.completed_at
             )
             .all()
         )
@@ -30407,6 +30439,7 @@ def get_class_exam_dates(
     # =========================================
     # FORMAT RESPONSE
     # =========================================
+    print("RAW DATES:", dates[:5])
     date_list = [d[0].isoformat() for d in dates if d[0]]
 
     print("✅ dates_found:", date_list)
@@ -31033,6 +31066,8 @@ def compute_student_scores_from_responses(raw_rows):
 @app.get("/api/reports/class")
 def class_exam_report(
     class_name: str,
+    class_year: str,
+    center_code: str,
     exam: str,
     date: str,
     db: Session = Depends(get_db)
@@ -31053,7 +31088,11 @@ def class_exam_report(
     try:
         class_days_raw = (
             db.query(Student.class_day)
-            .filter(Student.class_name == class_name)
+            .filter(
+                Student.class_name == class_name,
+                Student.student_year == class_year,
+                Student.center_code == center_code
+            )
             .distinct()
             .all()
         )
@@ -31088,9 +31127,15 @@ def class_exam_report(
         print("[STEP 2] Resolving students")
 
         students = (
-            db.query(Student.id, Student.student_id, Student.name)
+            db.query(
+                Student.id,
+                Student.student_id,
+                Student.name
+            )
             .filter(
                 Student.class_name == class_name,
+                Student.student_year == class_year,
+                Student.center_code == center_code,
                 Student.class_day == class_day
             )
             .all()
@@ -31219,6 +31264,8 @@ def class_exam_report(
                     Student.id == StudentExamOCThinkingSkills.student_id
                 ).filter(
                     Student.class_name == class_name,
+                    Student.student_year == class_year,
+                    Student.center_code == center_code,
                     func.date(StudentExamOCThinkingSkills.completed_at) == date
                 ).all()
         
@@ -31254,6 +31301,8 @@ def class_exam_report(
                     Student.id == StudentExamOCMathematicalReasoning.student_id
                 ).filter(
                     Student.class_name == class_name,
+                    Student.student_year == class_year,
+                    Student.center_code == center_code,
                     func.date(StudentExamOCMathematicalReasoning.completed_at) == date
                 ).all()
         
@@ -31286,6 +31335,8 @@ def class_exam_report(
                     Student.student_id == StudentExamReportOCReading.student_id
                 ).filter(
                     Student.class_name == class_name,
+                    Student.student_year == class_year,
+                    Student.center_code == center_code,
                     func.date(StudentExamReportOCReading.created_at) == date
                 ).all()
             
@@ -31338,6 +31389,8 @@ def class_exam_report(
                     Student.id == StudentExamNaplanNumeracy.student_id
                 ).filter(
                     Student.class_name == class_name,
+                    Student.student_year == class_year,
+                    Student.center_code == center_code,
                     func.date(StudentExamNaplanNumeracy.completed_at) == date
                 ).all()
         
@@ -31371,7 +31424,11 @@ def class_exam_report(
                     Student.id == StudentExamNaplanLanguageConventions.student_id
                 ).filter(
                     Student.class_name == class_name,
-                    func.date(StudentExamNaplanLanguageConventions.completed_at) == date
+                    Student.student_year == class_year,
+                    Student.center_code == center_code,
+                    func.date(
+                        StudentExamNaplanLanguageConventions.completed_at
+                    ) == date
                 ).all()
             
                 raw_results = compute_student_scores_from_responses(raw_rows)
@@ -31403,7 +31460,11 @@ def class_exam_report(
                     Student.id == StudentExamNaplanReading.student_id
                 ).filter(
                     Student.class_name == class_name,
-                    func.date(StudentExamNaplanReading.completed_at) == date
+                    Student.student_year == class_year,
+                    Student.center_code == center_code,
+                    func.date(
+                        StudentExamNaplanReading.completed_at
+                    ) == date
                 ).all()
             
                 raw_results = compute_student_scores_from_responses(raw_rows)
@@ -37149,7 +37210,7 @@ def get_exam_dates(
     # 4️⃣ Format response
     # --------------------------------------------------
     dates = [
-        row.created_at.date().isoformat()
+        row.created_at.isoformat()
         for row in rows
     ]
 
