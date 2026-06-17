@@ -44019,7 +44019,7 @@ def get_naplan_reading_report(
     not_attempted = total_questions - attempted
 
     accuracy_percent = (
-        round((correct / total_questions) * 100, 2)
+        round((attempted / total_questions) * 100, 2)
         if total_questions else 0
     )
 
@@ -44099,13 +44099,13 @@ def get_naplan_reading_report(
         attempted_t = t["attempted"]
 
         accuracy_t = (
-            round((t["correct"] / attempted_t) * 100, 2)
-            if attempted_t else 0
+            round((attempted_t / t["total"]) * 100, 2)
+            if t["total"] else 0
         )
 
         score_t = (
-            round((t["correct"] / t["total"]) * 100, 2)
-            if t["total"] else 0
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
         )
 
         topic_accuracy.append({
@@ -44329,19 +44329,13 @@ def get_naplan_reading_homework_report(
 
     accuracy_percent = (
         round(
-            (correct / total_questions) * 100,
+            (attempted / total_questions) * 100,
             2
         )
         if total_questions else 0
     )
 
-    score_percent = (
-        round(
-            (correct / total_questions) * 100,
-            2
-        )
-        if total_questions else 0
-    )
+    score_percent = round((correct / total_questions) * 100, 2)
 
     print(
         "📊 SUMMARY:",
@@ -44408,7 +44402,52 @@ def get_naplan_reading_homework_report(
     topic_wise_performance = list(
         topic_map.values()
     )
+    topic_accuracy = []
 
+    for t in topic_wise_performance:
+
+        attempted_t = t["attempted"]
+
+        accuracy_t = (
+            round(
+                (attempted_t / t["total"]) * 100,
+                2
+            )
+            if t["total"] else 0
+        )
+
+        score_t = (
+            round(
+                (t["correct"] / attempted_t) * 100,
+                2
+            )
+            if attempted_t else 0
+        )
+
+        topic_accuracy.append({
+            "topic": t["topic"],
+            "total_questions": t["total"],
+            "attempted": attempted_t,
+            "correct": t["correct"],
+            "incorrect": t["incorrect"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": score_t,
+            "pass": None
+        })
+    improvement_areas = []
+
+    for t in topic_accuracy:
+        improvement_areas.append({
+            "topic": t["topic"],
+            "accuracy_percent": t["accuracy_percent"],
+            "score_percent": t["score_percent"],
+            "total_questions": t["total_questions"],
+            "limited_data": t["total_questions"] < 5
+        })
+
+    improvement_areas.sort(
+        key=lambda x: x["accuracy_percent"]
+    )
     print(
         "📚 Topics found:",
         len(topic_wise_performance)
@@ -44418,18 +44457,12 @@ def get_naplan_reading_homework_report(
     # 6️⃣ Final payload debug
     # --------------------------------------------------
     payload = {
-        "exam_id":
-            attempt.exam_id,
-        "exam_attempt_id":
-            attempt.id,
-        "overall":
-            overall,
-        "topic_wise_performance":
-            topic_wise_performance,
-        "topic_accuracy":
-            [],
-        "improvement_areas":
-            []
+        "exam_id": attempt.exam_id,
+        "exam_attempt_id": attempt.id,
+        "overall": overall,
+        "topic_wise_performance": topic_wise_performance,
+        "topic_accuracy": topic_accuracy,
+        "improvement_areas": improvement_areas
     }
 
     print(
@@ -44933,21 +44966,18 @@ def get_naplan_language_conventions_homework_report(
 
     accuracy_percent = (
         round(
-            (correct / attempted) * 100,
+            (attempted / total_questions) * 100,
             2
         )
-        if attempted else 0
+        if total_questions else 0
     )
 
     score_percent = (
         round(
-            (
-                correct
-                / total_questions
-            ) * 100,
+            (correct / attempted) * 100,
             2
         )
-        if total_questions else 0
+        if attempted else 0
     )
 
     overall = {
@@ -45029,12 +45059,12 @@ def get_naplan_language_conventions_homework_report(
         accuracy_t = (
             round(
                 (
-                    t["correct"]
-                    / attempted_t
+                    attempted_t
+                    / t["total"]
                 ) * 100,
                 2
             )
-            if attempted_t
+            if t["total"]
             else 0
         )
 
@@ -45042,11 +45072,11 @@ def get_naplan_language_conventions_homework_report(
             round(
                 (
                     t["correct"]
-                    / t["total"]
+                    / attempted_t
                 ) * 100,
                 2
             )
-            if t["total"]
+            if attempted_t
             else 0
         )
 
@@ -45281,21 +45311,18 @@ def get_naplan_language_conventions_report(
 
     accuracy_percent = (
         round(
-            (correct / attempted) * 100,
+            (attempted / total_questions) * 100,
             2
         )
-        if attempted else 0
+        if total_questions else 0
     )
 
     score_percent = (
         round(
-            (
-                correct
-                / total_questions
-            ) * 100,
+            (correct / attempted) * 100,
             2
         )
-        if total_questions else 0
+        if attempted else 0
     )
 
     overall = {
@@ -45377,12 +45404,12 @@ def get_naplan_language_conventions_report(
         accuracy_t = (
             round(
                 (
-                    t["correct"]
-                    / attempted_t
+                    attempted_t
+                    / t["total"]
                 ) * 100,
                 2
             )
-            if attempted_t
+            if t["total"]
             else 0
         )
 
@@ -45390,11 +45417,11 @@ def get_naplan_language_conventions_report(
             round(
                 (
                     t["correct"]
-                    / t["total"]
+                    / attempted_t
                 ) * 100,
                 2
             )
-            if t["total"]
+            if attempted_t
             else 0
         )
 
@@ -45462,6 +45489,7 @@ def get_naplan_language_conventions_report(
         "improvement_areas":
             improvement_areas
     }
+
 @app.get("/api/student/exam-report/naplan-numeracy")
 def get_naplan_numeracy_report(
     student_id: str = Query(..., description="External student id e.g. Gem_001_naplan"),
@@ -45580,13 +45608,13 @@ def get_naplan_numeracy_report(
     not_attempted = total_questions - attempted
 
     accuracy_percent = (
-        round((correct / attempted) * 100, 2)
-        if attempted else 0
+        round((attempted / total_questions) * 100, 2)
+        if total_questions else 0
     )
 
     score_percent = (
-        round((correct / total_questions) * 100, 2)
-        if total_questions else 0
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
     )
 
     print("📊 OVERALL SUMMARY")
@@ -45660,13 +45688,13 @@ def get_naplan_numeracy_report(
         attempted_t = t["attempted"]
 
         accuracy_t = (
-            round((t["correct"] / attempted_t) * 100, 2)
-            if attempted_t else 0
+            round((attempted_t / t["total"]) * 100, 2)
+            if t["total"] else 0
         )
 
         score_t = (
-            round((t["correct"] / t["total"]) * 100, 2)
-            if t["total"] else 0
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
         )
 
         topic_accuracy.append({
@@ -45716,6 +45744,7 @@ def get_naplan_numeracy_report(
         "topic_accuracy": topic_accuracy,                   # Report C
         "improvement_areas": improvement_areas              # Report D
     }
+
 @app.get("/api/student/exam-report/naplan-numeracy-homework")
 def get_naplan_numeracy_homework_report(
     student_id: str = Query(..., description="External student id"),
@@ -45825,13 +45854,13 @@ def get_naplan_numeracy_homework_report(
     not_attempted = total_questions - attempted
 
     accuracy_percent = (
-        round((correct / attempted) * 100, 2)
-        if attempted else 0
+        round((attempted / total_questions) * 100, 2)
+        if total_questions else 0
     )
 
     score_percent = (
-        round((correct / total_questions) * 100, 2)
-        if total_questions else 0
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
     )
 
     overall = {
@@ -45886,13 +45915,13 @@ def get_naplan_numeracy_homework_report(
         attempted_t = t["attempted"]
 
         accuracy_t = (
-            round((t["correct"] / attempted_t) * 100, 2)
-            if attempted_t else 0
+            round((attempted_t / t["total"]) * 100, 2)
+            if t["total"] else 0
         )
 
         score_t = (
-            round((t["correct"] / t["total"]) * 100, 2)
-            if t["total"] else 0
+            round((t["correct"] / attempted_t) * 100, 2)
+            if attempted_t else 0
         )
 
         topic_accuracy.append({
@@ -45935,6 +45964,7 @@ def get_naplan_numeracy_homework_report(
         "topic_accuracy": topic_accuracy,
         "improvement_areas": improvement_areas
     }
+
 @app.get("/api/student/homework-report/thinking-skills")
 def get_homework_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
@@ -46008,9 +46038,8 @@ def get_homework_thinking_skills_report(
     incorrect = sum(1 for r in responses if r.is_correct is False)
     not_attempted = total_questions - attempted
 
-    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
-    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
-
+    accuracy_percent = round((attempted / total_questions) * 100, 2) if total_questions else 0
+    score_percent = round((correct / attempted) * 100, 2) if attempted else 0
     overall = {
         "total_questions": total_questions,
         "attempted": attempted,
@@ -46062,11 +46091,14 @@ def get_homework_thinking_skills_report(
         attempted_t = t["attempted"]
 
         accuracy_t = (
+            round((attempted_t / t["total"]) * 100, 2)
+            if t["total"] else 0
+        )
+
+        score_t = (
             round((t["correct"] / attempted_t) * 100, 2)
             if attempted_t else 0
         )
-
-        score_t = round((t["correct"] / t["total"]) * 100, 2)
 
         topic_accuracy.append({
             "topic": t["topic"],
@@ -46441,8 +46473,8 @@ def get_thinking_skills_report(
     incorrect = sum(1 for r in responses if r.is_correct is False)
     not_attempted = total_questions - attempted
 
-    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
-    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+    accuracy_percent = round((correct / total_questions) * 100, 2) if attempted else 0
+    score_percent = round((correct / attempted) * 100, 2) if attempted else 0
 
     overall = {
         "total_questions": total_questions,
@@ -46494,10 +46526,14 @@ def get_thinking_skills_report(
     for t in topic_wise_performance:
         attempted_t = t["attempted"]
         accuracy_t = (
+            round((attempted_t / t["total"]) * 100, 2)
+            if t["total"] else 0
+        )
+
+        score_t = (
             round((t["correct"] / attempted_t) * 100, 2)
             if attempted_t else 0
         )
-        score_t = round((t["correct"] / t["total"]) * 100, 2)
 
         topic_accuracy.append({
             "topic": t["topic"],
@@ -46538,6 +46574,7 @@ def get_thinking_skills_report(
         "topic_accuracy": topic_accuracy,                   # Report C
         "improvement_areas": improvement_areas              # Report D
     }
+
 @app.get("/api/student/exam-report/oc-thinking-skills")
 def get_oc_thinking_skills_report(
     student_id: str = Query(..., description="External student id e.g. Gem002"),
@@ -46678,15 +46715,14 @@ def get_oc_thinking_skills_report(
     not_attempted = total_questions - attempted
 
     accuracy_percent = (
-        round((correct / attempted) * 100, 2)
-        if attempted else 0
-    )
-
-    score_percent = (
-        round((correct / total_questions) * 100, 2)
+        round((attempted / total_questions) * 100, 2)
         if total_questions else 0
     )
 
+    score_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
     print(f"Total Questions: {total_questions}")
     print(f"Attempted: {attempted}")
     print(f"Correct: {correct}")
@@ -46766,15 +46802,18 @@ def get_oc_thinking_skills_report(
 
         accuracy_t = (
             round(
+                (attempted_t / t["total"]) * 100,
+                2
+            )
+            if t["total"] else 0
+        )
+
+        score_t = (
+            round(
                 (t["correct"] / attempted_t) * 100,
                 2
             )
             if attempted_t else 0
-        )
-
-        score_t = round(
-            (t["correct"] / t["total"]) * 100,
-            2
         )
 
         row = {
@@ -46856,6 +46895,7 @@ def get_oc_thinking_skills_report(
     print("=" * 80)
 
     return response_payload
+
 @app.get("/api/student/homework-report/oc-thinking-skills")
 def get_homework_report_oc_thinking_skills(
     student_id: str,
@@ -47102,8 +47142,15 @@ def get_homework_oc_mathematical_reasoning_report(
     incorrect = sum(1 for r in responses if r.is_correct is False)
     not_attempted = total_questions - attempted
 
-    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
-    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+    accuracy_percent = (
+        round((attempted / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    score_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
 
     overall = {
         "total_questions": total_questions,
@@ -47156,11 +47203,14 @@ def get_homework_oc_mathematical_reasoning_report(
         attempted_t = t["attempted"]
 
         accuracy_t = (
+            round((attempted_t / t["total"]) * 100, 2)
+            if t["total"] else 0
+        )
+
+        score_t = (
             round((t["correct"] / attempted_t) * 100, 2)
             if attempted_t else 0
         )
-
-        score_t = round((t["correct"] / t["total"]) * 100, 2)
 
         topic_accuracy.append({
             "topic": t["topic"],
@@ -47286,8 +47336,15 @@ def get_oc_mathematical_reasoning_report(
     incorrect = sum(1 for r in responses if r.is_correct is False)
     not_attempted = total_questions - attempted
 
-    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
-    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+    accuracy_percent = (
+        round((attempted / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    score_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
 
     overall = {
         "total_questions": total_questions,
@@ -47340,11 +47397,14 @@ def get_oc_mathematical_reasoning_report(
         attempted_t = t["attempted"]
 
         accuracy_t = (
+            round((attempted_t / t["total"]) * 100, 2)
+            if t["total"] else 0
+        )
+
+        score_t = (
             round((t["correct"] / attempted_t) * 100, 2)
             if attempted_t else 0
         )
-
-        score_t = round((t["correct"] / t["total"]) * 100, 2)
 
         topic_accuracy.append({
             "topic": t["topic"],
@@ -47384,6 +47444,7 @@ def get_oc_mathematical_reasoning_report(
         "topic_accuracy": topic_accuracy,
         "improvement_areas": improvement_areas
     } 
+
 # ============================================================
 # ❌ OLD / LEGACY MATHEMATICAL REASONING REPORT (DO NOT USE)
 # This version reads from GENERIC tables:
@@ -47515,8 +47576,8 @@ def get_homework_mathematical_reasoning_report(
     incorrect = attempted - correct
     not_attempted = total_questions - attempted
 
-    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
-    score_percent = round((correct / total_questions) * 100, 2) if total_questions else 0
+    accuracy_percent = round((correct /total_questions ) * 100, 2) if attempted else 0
+    score_percent = round((correct / attempted) * 100, 2) if total_questions else 0
 
     overall = {
         "total_questions": total_questions,
@@ -47925,8 +47986,8 @@ def get_mathematical_reasoning_report(
     incorrect = sum(1 for r in responses if r.is_correct is False)
     not_attempted = total_questions - attempted
 
-    accuracy_percent = round((correct / attempted) * 100, 2) if attempted else 0
-    score_percent = round((correct / total_questions) * 100, 2)
+    accuracy_percent = round((attempted / total_questions) * 100, 2) if total_questions else 0
+    score_percent = round((correct / attempted) * 100, 2) if attempted else 0
 
     overall = {
         "total_questions": total_questions,
@@ -47978,10 +48039,14 @@ def get_mathematical_reasoning_report(
     for t in topic_wise_performance:
         attempted_t = t["attempted"]
         accuracy_t = (
+            round((attempted_t / t["total"]) * 100, 2)
+            if t["total"] else 0
+        )
+
+        score_t = (
             round((t["correct"] / attempted_t) * 100, 2)
             if attempted_t else 0
         )
-        score_t = round((t["correct"] / t["total"]) * 100, 2)
 
         topic_accuracy.append({
             "topic": t["topic"],
@@ -48764,6 +48829,11 @@ def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
         topics_report = []
         for topic, stats in topic_stats.items():
             accuracy = (
+                round((stats["attempted"] / stats["total"]) * 100, 2)
+                if stats["total"] > 0 else 0.0
+            )
+
+            topic_score = (
                 round((stats["correct"] / stats["attempted"]) * 100, 2)
                 if stats["attempted"] > 0 else 0.0
             )
@@ -48775,11 +48845,19 @@ def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
                 "correct": stats["correct"],
                 "incorrect": stats["incorrect"],
                 "not_attempted": stats["not_attempted"],
-                "accuracy": accuracy
+                "accuracy": accuracy,
+                "score": topic_score
             })
 
-        accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
-        score_percent = round((correct / total_questions) * 100, 2) if total_questions > 0 else 0.0
+        accuracy = round(
+            (attempted / total_questions) * 100,
+            2
+        ) if total_questions > 0 else 0.0
+
+        score_percent = round(
+            (correct / attempted) * 100,
+            2
+        ) if attempted > 0 else 0.0
         result = "Pass" if score_percent >= 50 else "Fail"
 
         MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
@@ -48842,6 +48920,7 @@ def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
         import traceback
         traceback.print_exc()
         raise
+
 @app.post("/api/student/submit-homework-reading")
 def submit_homework_reading(payload: dict, db: Session = Depends(get_db)):
 
@@ -48973,6 +49052,11 @@ def submit_homework_reading(payload: dict, db: Session = Depends(get_db)):
         topics_report = []
         for topic, stats in topic_stats.items():
             accuracy = (
+                round((stats["attempted"] / stats["total"]) * 100, 2)
+                if stats["total"] > 0 else 0.0
+            )
+
+            topic_score = (
                 round((stats["correct"] / stats["attempted"]) * 100, 2)
                 if stats["attempted"] > 0 else 0.0
             )
@@ -48983,12 +49067,13 @@ def submit_homework_reading(payload: dict, db: Session = Depends(get_db)):
                 "attempted": stats["attempted"],
                 "correct": stats["correct"],
                 "incorrect": stats["incorrect"],
-                "accuracy": accuracy
+                "accuracy": accuracy,
+                "score": topic_score
             })
 
-        accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+        accuracy = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
         coverage = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
-        score_percent = round((correct / total_questions) * 100, 2) if total_questions > 0 else 0.0
+        score_percent = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
 
         result = "Pass" if score_percent >= 50 else "Fail"
 
@@ -49212,22 +49297,28 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         topics_report = []
         for topic, stats in topic_stats.items():
             accuracy = (
+                round((stats["attempted"] / stats["total"]) * 100, 2)
+                if stats["total"] > 0 else 0.0
+            )
+            topic_score = (
                 round((stats["correct"] / stats["attempted"]) * 100, 2)
                 if stats["attempted"] > 0 else 0.0
             )
+
             topics_report.append({
                 "topic": topic,
                 "total": stats["total"],
                 "attempted": stats["attempted"],
                 "correct": stats["correct"],
                 "incorrect": stats["incorrect"],
-                "accuracy": accuracy
+                "accuracy": accuracy,
+                "score": topic_score
             })
 
 
-        accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+        accuracy = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
         coverage = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
-        score_percent = round((correct / total_questions) * 100, 2) if total_questions > 0 else 0.0
+        score_percent = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
         result = "Pass" if score_percent >= 50 else "Fail"
 
 
@@ -49343,6 +49434,7 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         import traceback
         traceback.print_exc()
         raise
+
 def auto_submit_homework_reading(session: StudentHomeworkReading, db: Session):
     """
     Auto-submit homework reading on timeout.
