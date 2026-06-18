@@ -30297,14 +30297,18 @@ def get_class_exam_dates(
 
         dates = (
             db.query(
-                AdminExamReport.created_at
+                Exam.id,
+                Exam.created_at
+            )
+
+            .join(
+                StudentExamThinkingSkills,
+                StudentExamThinkingSkills.exam_id == Exam.id
             )
 
             .join(
                 Student,
-                Student.student_id
-                ==
-                AdminExamReport.student_id
+                Student.id == StudentExamThinkingSkills.student_id
             )
 
             .filter(
@@ -30312,21 +30316,13 @@ def get_class_exam_dates(
                 Student.student_year == student_year,
                 Student.center_code == center_code,
 
-                func.lower(
-                    AdminExamReport.exam_type
-                )
-                ==
-                exam_key,
-
-                AdminExamReport.created_at.isnot(None),
-
-                AdminExamReport.overall_score.isnot(None)
+                Exam.subject == exam_key
             )
 
             .distinct()
 
             .order_by(
-                AdminExamReport.created_at
+                Exam.created_at.desc()
             )
 
             .all()
@@ -30400,35 +30396,33 @@ def get_class_exam_dates(
 
         dates = (
             db.query(
-                exam_model.completed_at
+                Exam.id,
+                Exam.created_at
             )
-            .select_from(response_model)
             .join(
-                exam_model,
-                exam_model.id
-                ==
-                response_model.exam_attempt_id
+                StudentExamThinkingSkills,
+                StudentExamThinkingSkills.exam_id == Exam.id
             )
             .join(
                 Student,
-                Student.id
-                ==
-                exam_model.student_id
+                Student.id == StudentExamThinkingSkills.student_id
             )
             .filter(
                 Student.class_name == class_name,
                 Student.student_year == student_year,
                 Student.center_code == center_code,
-
-                exam_model.completed_at.isnot(None)
+                Exam.subject == exam_key
             )
-            .distinct()
+            .group_by(
+                Exam.id,
+                Exam.created_at
+            )
             .order_by(
-                exam_model.completed_at
+                Exam.created_at.desc()
             )
             .all()
         )
-
+        print("RAW DATES:", dates[:20])
     # =========================================
     # 🔴 UNKNOWN CLASS
     # =========================================
@@ -30440,9 +30434,18 @@ def get_class_exam_dates(
     # FORMAT RESPONSE
     # =========================================
     print("RAW DATES:", dates[:5])
-    date_list = [d[0].isoformat() for d in dates if d[0]]
+    date_list = [
+        row.created_at.isoformat()
+        for row in dates
+        if row.created_at
+    ]
 
     print("✅ dates_found:", date_list)
+    print("CLASS:", class_name)
+    print("YEAR:", student_year)
+    print("CENTER:", center_code)
+    print("EXAM:", exam_key)
+    print("RAW DATES:", dates)
 
     return {
         "class_name": class_name,
@@ -31072,11 +31075,16 @@ def class_exam_report(
     date: str,
     db: Session = Depends(get_db)
 ):
+    selected_date = date.split("T")[0]
+
+    print("ORIGINAL DATE:", date)
+    print("SELECTED DATE:", selected_date)
     print("========================================")
     print("[CLASS REPORT] Request received")
     print("class_name:", class_name)
     print("exam:", exam)
     print("date:", date)
+    print("GENERATE REPORT DATE:", date)
     class_key = class_name.lower().strip()
     exam_key = exam.lower().strip()
 
@@ -31140,7 +31148,8 @@ def class_exam_report(
             )
             .all()
         )
-
+        print("STUDENTS RAW:", students)
+        
 
         students_total = len(students)
         print("[STEP 2] Students found:", students_total)
@@ -31194,7 +31203,7 @@ def class_exam_report(
                         AdminExamReport.created_at
                     )
                     ==
-                    date,
+                    selected_date,
 
                     AdminExamReport.student_id.in_(
                         external_ids
@@ -31206,7 +31215,20 @@ def class_exam_report(
             )
         
             attempt_ids = [a[0] for a in attempt_ids]
-        
+            print("ATTEMPT IDS:", attempt_ids)
+            print("ATTEMPT IDS COUNT:", len(attempt_ids))
+            rows = (
+                db.query(
+                    StudentExamResponseThinkingSkills.student_id
+                )
+                .filter(
+                    StudentExamResponseThinkingSkills.exam_attempt_id.in_(attempt_ids)
+                )
+                .distinct()
+                .all()
+            )
+
+            print("DISTINCT STUDENTS WITH RESPONSES:", rows)
             if not attempt_ids:
                 student_results = []
                 students_attempted = 0
@@ -31223,18 +31245,25 @@ def class_exam_report(
                     .filter(ResponseModel.exam_attempt_id.in_(attempt_ids))
                     .all()
                 )
+                print("RAW ROWS COUNT:", len(raw_rows))
+                print("RAW ROWS SAMPLE:", raw_rows[:10])
         
                 raw_results = compute_student_scores_from_responses(raw_rows)
+                print("RAW RESULTS:", raw_results)
 
                 student_results = []
                 for r in raw_results:
                     # r["student_id"] is external ID → convert to internal
-                    internal_id = next(
-                        (k for k, v in student_code_map.items() if v == r["student_id"]),
-                        None
-                    )
+                    print("STUDENT CODE MAP:", student_code_map)
+                    print("RAW RESULT STUDENT ID:", r["student_id"])        
+                    print("RAW RESULT STUDENT ID TYPE:", type(r["student_id"]))
+                    internal_id = str(r["student_id"])
                 
                     if internal_id:
+                        print("STUDENT NAME MAP:", student_name_map)
+                        print("INTERNAL ID:", internal_id)
+                        print("LOOKUP NAME:", student_name_map.get(internal_id))
+                        print("LOOKUP CODE:", student_code_map.get(internal_id))
                         student_results.append({
                             "student_id": internal_id,
                             "student_code": r["student_id"],
@@ -31242,6 +31271,8 @@ def class_exam_report(
                             "score": r["score"],
                             "accuracy": r["accuracy"]
                         })
+                print("STUDENT RESULTS:", student_results)
+                print("STUDENTS ATTEMPTED:", len(student_results))
                 students_attempted = len(student_results)
         
         
@@ -31559,15 +31590,23 @@ def class_exam_report(
     # ===========================
     # STEP 8: Final response
     # ===========================
-    print("\n[STEP 8] Returning multi-day class report")
-    print("========================================")
-
-    return {
+    response = {
         "class_name": class_name,
         "exam": exam,
         "date": date,
         "reports": reports
     }
+
+    print("REPORTS COUNT:", len(reports))
+
+    for i, report in enumerate(reports):
+        print(f"\nREPORT {i + 1}:")
+        print(report)
+
+    print("\nFINAL RESPONSE:")
+    print(response)
+
+    return response
 
 
 def _empty_buckets():
@@ -36800,19 +36839,25 @@ def generate_overall_selective_report(
     for r in db.query(StudentExamResultsThinkingSkills).filter(
         StudentExamResultsThinkingSkills.exam_attempt_id.in_(attempt_ids)
     ):
-        results_by_attempt[r.exam_attempt_id] = r
+        results_by_attempt[
+            ("thinking_skills", r.exam_attempt_id)
+        ] = r
 
     # Math
     for r in db.query(StudentExamResultsMathematicalReasoning).filter(
         StudentExamResultsMathematicalReasoning.exam_attempt_id.in_(attempt_ids)
     ):
-        results_by_attempt[r.exam_attempt_id] = r
+        results_by_attempt[
+            ("mathematical_reasoning", r.exam_attempt_id)
+        ] = r
 
     # Reading
     for r in db.query(StudentExamResultsReading).filter(
         StudentExamResultsReading.exam_attempt_id.in_(attempt_ids)
     ):
-        results_by_attempt[r.exam_attempt_id] = r
+        results_by_attempt[
+            ("reading", r.exam_attempt_id)
+        ] = r
 
     
     # --------------------------------------------------
@@ -36822,7 +36867,9 @@ def generate_overall_selective_report(
 
     for subject, report in reports_by_subject.items():
 
-        result = results_by_attempt.get(report.exam_attempt_id)
+        result = results_by_attempt.get(
+            (subject, report.exam_attempt_id)
+        )
 
         obtained = None
         total = None
@@ -36924,6 +36971,7 @@ def generate_overall_selective_report(
         exam_id=maths_attempt.exam_id,
         db=db
     )
+    
 
     print("✅ Mathematical Reasoning diagnostics ready")
     reading_attempt = (
@@ -37007,6 +37055,7 @@ def generate_overall_selective_report(
             "writing": writing_report
         }
     }
+
 @app.get("/api/admin/students/{student_id}/selective-reports")
 def get_student_selective_reports(
 student_id: str,
@@ -37104,14 +37153,15 @@ db: Session = Depends(get_db)
     )
     
     results_by_attempt = {}
-    
+
     for r in thinking_results:
-        results_by_attempt[r.exam_attempt_id] = r
-    
+        results_by_attempt[("thinking_skills", r.exam_attempt_id)] = r
+
     for r in math_results:
-        results_by_attempt[r.exam_attempt_id] = r
+        results_by_attempt[("mathematical_reasoning", r.exam_attempt_id)] = r
+
     for r in reading_results:
-        results_by_attempt[r.exam_attempt_id] = r
+        results_by_attempt[("reading", r.exam_attempt_id)] = r
     # --------------------------------------------------
     # 5️⃣ Shape final response
     # --------------------------------------------------
@@ -37119,7 +37169,14 @@ db: Session = Depends(get_db)
     
     for report in reports:
     
-        result = results_by_attempt.get(report.exam_attempt_id)
+        exam_type = report.exam_type.lower()
+
+        if exam_type == "thinking skills":
+            exam_type = "thinking_skills"
+
+        result = results_by_attempt.get(
+            (exam_type, report.exam_attempt_id)
+        )
     
         obtained_marks = None
         total_marks = None
@@ -37127,6 +37184,13 @@ db: Session = Depends(get_db)
         if result:
             obtained_marks = result.correct_answers
             total_marks = result.total_questions
+        print(
+            "REPORT:",
+            report.exam_type,
+            report.exam_attempt_id,
+            obtained_marks,
+            total_marks
+        )
     
         response.append({
             "id": report.id,
@@ -37278,6 +37342,7 @@ def get_admin_students(
         )
         .all()
     )
+    print("STUDENTS RAW:", students)
 
     print(
         f"📊 Students found: "
@@ -37435,37 +37500,122 @@ def delete_selective_student_data(db: Session, student_id: str):
 
     print("🧠 Deleting SELECTIVE data")
 
-    db.query(StudentExamReportReading)\
-        .filter(StudentExamReportReading.student_id == student_id)\
+    # ==================================================
+    # Homework Response Cleanup FIRST
+    # ==================================================
+
+    math_homework_attempt_ids = [
+        row[0]
+        for row in db.query(
+            StudentHomeworkMathematicalReasoning.id
+        ).filter(
+            StudentHomeworkMathematicalReasoning.student_id == student_id
+        ).all()
+    ]
+
+    if math_homework_attempt_ids:
+        db.query(StudentHomeworkResponseMathematicalReasoning)\
+            .filter(
+                StudentHomeworkResponseMathematicalReasoning.attempt_id.in_(
+                    math_homework_attempt_ids
+                )
+            )\
+            .delete(synchronize_session=False)
+
+    # ==================================================
+    # Homework Attempts
+    # ==================================================
+
+    db.query(StudentHomeworkMathematicalReasoning)\
+        .filter(
+            StudentHomeworkMathematicalReasoning.student_id == int(student_id)
+        )\
         .delete(synchronize_session=False)
 
-    db.query(StudentExamReading)\
-        .filter(StudentExamReading.student_id == student_id)\
+    db.query(StudentHomeworkThinkingSkills)\
+        .filter(
+            StudentHomeworkThinkingSkills.student_id == int(student_id)
+        )\
         .delete(synchronize_session=False)
 
-    db.query(StudentExamResponseThinkingSkills)\
-        .filter(StudentExamResponseThinkingSkills.student_id == student_id)\
+    db.query(StudentHomeworkWriting)\
+        .filter(
+            StudentHomeworkWriting.student_id == int(student_id)
+        )\
         .delete(synchronize_session=False)
+
+    # ==================================================
+    # Writing
+    # ==================================================
+
+    db.query(StudentExamResponseWriting)\
+        .filter(
+            StudentExamResponseWriting.student_id == int(student_id)
+        )\
+        .delete(synchronize_session=False)
+
+    # ==================================================
+    # Mathematical Reasoning
+    # ==================================================
 
     db.query(StudentExamResponseMathematicalReasoning)\
-        .filter(StudentExamResponseMathematicalReasoning.student_id == student_id)\
-        .delete(synchronize_session=False)
-
-    db.query(StudentExamResultsThinkingSkills)\
-        .filter(StudentExamResultsThinkingSkills.student_id == student_id)\
+        .filter(
+            StudentExamResponseMathematicalReasoning.student_id == int(student_id)
+        )\
         .delete(synchronize_session=False)
 
     db.query(StudentExamResultsMathematicalReasoning)\
-        .filter(StudentExamResultsMathematicalReasoning.student_id == student_id)\
-        .delete(synchronize_session=False)
-
-    db.query(StudentExamThinkingSkills)\
-        .filter(StudentExamThinkingSkills.student_id == student_id)\
+        .filter(
+            StudentExamResultsMathematicalReasoning.student_id == int(student_id)
+        )\
         .delete(synchronize_session=False)
 
     db.query(StudentExamMathematicalReasoning)\
-        .filter(StudentExamMathematicalReasoning.student_id == student_id)\
-        .delete(synchronize_session=False) 
+        .filter(
+            StudentExamMathematicalReasoning.student_id == int(student_id)
+        )\
+        .delete(synchronize_session=False)
+
+    # ==================================================
+    # Thinking Skills
+    # ==================================================
+
+    db.query(StudentExamResponseThinkingSkills)\
+        .filter(
+            StudentExamResponseThinkingSkills.student_id == int(student_id)
+        )\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamResultsThinkingSkills)\
+        .filter(
+            StudentExamResultsThinkingSkills.student_id == int(student_id)
+        )\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamThinkingSkills)\
+        .filter(
+            StudentExamThinkingSkills.student_id == int(student_id)
+        )\
+        .delete(synchronize_session=False)
+
+    # ==================================================
+    # Reading
+    # ==================================================
+
+    db.query(StudentExamReportReading)\
+        .filter(
+            StudentExamReportReading.student_id == int(student_id)
+        )\
+        .delete(synchronize_session=False)
+
+    db.query(StudentExamReading)\
+        .filter(
+            StudentExamReading.student_id == int(student_id)
+        )\
+        .delete(synchronize_session=False)
+
+    print("✅ Selective data deleted")
+
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
     id: str,
@@ -47802,7 +47952,24 @@ def build_mathematical_reasoning_topic_report(
         "exam_id": attempt.exam_id,
         "completed_at": str(attempt.completed_at)
     })
+    print("ATTEMPT ID:", attempt.id)
 
+    result_row = (
+        db.query(StudentExamResultsMathematicalReasoning)
+        .filter(
+            StudentExamResultsMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .first()
+    )
+
+    print(
+        "RESULT TABLE:",
+        {
+            "correct_answers": result_row.correct_answers,
+            "total_questions": result_row.total_questions,
+            "accuracy_percent": result_row.accuracy_percent
+        }
+    )
     # --------------------------------------------------
     # 3️⃣ Load responses
     # --------------------------------------------------
@@ -47983,6 +48150,7 @@ def build_mathematical_reasoning_topic_report(
     print("===============================================\n")
 
     return final_payload
+
 @app.get("/api/student/exam-report/mathematical-reasoning")
 def get_mathematical_reasoning_report(
     student_id: str = Query(...),
@@ -55772,7 +55940,7 @@ def start_naplan_language_conventions_exam(
     )
 
     MAX_DURATION = timedelta(
-        minutes=40
+        minutes=45
     )
 
     now = datetime.now(
@@ -55818,7 +55986,9 @@ def start_naplan_language_conventions_exam(
 
         expires_at = (
             started_at
-            + MAX_DURATION
+            + timedelta(
+                minutes=attempt.duration_minutes
+            )
         )
 
         elapsed = int(
@@ -55978,7 +56148,7 @@ def start_naplan_language_conventions_exam(
                 now,
 
             duration_minutes=
-                40
+                45
         )
     )
 
@@ -56069,6 +56239,7 @@ def start_naplan_language_conventions_exam(
                 * 60
             )
     }     
+
 @app.post("/api/student/start-homework/naplan-language-conventions")
 def start_naplan_language_conventions_homework(
     req: StartExamRequest = Body(...),
@@ -56150,7 +56321,7 @@ def start_naplan_language_conventions_homework(
     )
 
     MAX_DURATION = timedelta(
-        minutes=40
+        minutes=45
     )
 
     now = datetime.now(
@@ -56344,7 +56515,9 @@ def start_naplan_language_conventions_homework(
 
         expires_at = (
             started_at
-            + MAX_DURATION
+            + timedelta(
+                minutes=active_attempt.duration_minutes
+            )
         )
 
         elapsed = int(
@@ -56492,7 +56665,7 @@ def start_naplan_language_conventions_homework(
                 now,
 
             duration_minutes=
-                40
+                45
         )
     )
 
@@ -73606,6 +73779,15 @@ def strip_correct_answers_from_question(question: dict) -> dict:
         q["exam_bundle"] = exam_bundle
 
     return q
+
+def get_exam_duration(student_year):
+    if student_year == 3:
+        return 40
+
+    if student_year in [5, 7, 9]:
+        return 42
+
+    return 40  # fallback
  
 @app.post("/api/student/start-exam/naplan-reading")
 def start_naplan_reading_exam(
@@ -73849,8 +74031,10 @@ def start_naplan_reading_exam(
         .first()
     )
 
+    duration_minutes = get_exam_duration(student_year)
+
     MAX_DURATION = timedelta(
-        minutes=40
+        minutes=duration_minutes
     )
 
     now = datetime.now(
@@ -74104,24 +74288,12 @@ def start_naplan_reading_exam(
     # CREATE ATTEMPT
     # --------------------------------------------------
 
-    new_attempt = (
-        StudentExamNaplanReading(
-
-            student_id=
-                student.id,
-
-            exam_id=
-                exam.id,
-
-            year=
-                student_year,
-
-            started_at=
-                now,
-
-            duration_minutes=
-                40
-        )
+    new_attempt = StudentExamNaplanReading(
+        student_id=student.id,
+        exam_id=exam.id,
+        year=student_year,
+        started_at=now,
+        duration_minutes=duration_minutes
     )
 
     db.add(new_attempt)
@@ -74451,8 +74623,12 @@ def start_naplan_reading_homework_exam(
         .first()
     )
 
+    duration_minutes = get_exam_duration(
+        student_year
+    )
+
     MAX_DURATION = timedelta(
-        minutes=40
+        minutes=duration_minutes
     )
 
     now = datetime.now(
@@ -74526,7 +74702,9 @@ def start_naplan_reading_homework_exam(
         expires_at = (
             started_at
             +
-            MAX_DURATION
+            timedelta(
+                minutes=attempt.duration_minutes
+            )
         )
 
         elapsed = int(
@@ -74713,7 +74891,7 @@ def start_naplan_reading_homework_exam(
                 now,
 
             duration_minutes=
-                40
+                duration_minutes
         )
     )
 
@@ -74811,6 +74989,7 @@ def start_naplan_reading_homework_exam(
                 * 60
             )
     }
+
 def hydrate_naplan_question_structure(raw_questions):
     """
     Converts legacy / blob-style question_text into structured question_blocks.
@@ -74993,7 +75172,7 @@ def start_naplan_numeracy_homework_exam(
 
     now = datetime.now(timezone.utc)
 
-    MAX_DURATION = timedelta(minutes=40)
+    MAX_DURATION = timedelta(minutes=42)
 
     # ==================================================
     # 3️⃣ Fetch latest CENTER-SPECIFIC
@@ -75207,7 +75386,9 @@ def start_naplan_numeracy_homework_exam(
 
         expires_at = (
             started_at
-            + MAX_DURATION
+            + timedelta(
+                minutes=active_attempt.duration_minutes
+            )
         )
 
         elapsed = int(
@@ -75349,7 +75530,7 @@ def start_naplan_numeracy_homework_exam(
                 now,
 
             duration_minutes=
-                40
+                42
         )
     )
 
@@ -75470,7 +75651,7 @@ def start_naplan_numeracy_exam(
 
     now = datetime.now(timezone.utc)
 
-    MAX_DURATION = timedelta(minutes=40)
+    MAX_DURATION = timedelta(minutes=42)
 
     # ==================================================
     # 3️⃣ Fetch latest CENTER-SPECIFIC exam
@@ -75819,7 +76000,7 @@ def start_naplan_numeracy_exam(
                 now,
 
             duration_minutes=
-                40
+                42
         )
     )
 
@@ -82531,7 +82712,7 @@ def finish_homework_exam(
         "not_attempted": not_attempted,
         "accuracy_percent": accuracy,
         "score_percent": score_percent
-    }
+    }@app.get("/api/classes/{class_name}/exam-dates")@app.get("/api/classes/{class_name}/exam-dates")
 
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
@@ -82776,6 +82957,7 @@ def finish_thinking_skills_exam(
         "wrong": wrong,
         "accuracy": accuracy
     }
+
 def copy_to_admin_snapshot_oc_thinking_skills(
     db: Session,
     attempt_id: int
