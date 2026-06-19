@@ -30292,42 +30292,156 @@ def get_class_exam_dates(
     # =========================================
     if class_key == "selective":
         print("🟦 Branch: SELECTIVE")
-    
-        ResponseModel = get_exam_response_model(exam)
 
-        dates = (
-            db.query(
-                Exam.id,
-                Exam.created_at
+        # =========================================
+        # READING
+        # =========================================
+        if exam_key == "reading":
+
+            print("\n========== READING DEBUG ==========")
+            print("CLASS:", class_name)
+            print("YEAR:", student_year)
+            print("CENTER:", center_code)
+
+            dates = (
+                db.query(
+                    GeneratedExamReading.id,
+                    GeneratedExamReading.created_at
+                )
+                .join(
+                    StudentExamReading,
+                    StudentExamReading.exam_id == GeneratedExamReading.id
+                )
+                .join(
+                    Student,
+                    Student.id == StudentExamReading.student_id
+                )
+                .filter(
+                    Student.class_name == class_name,
+                    Student.student_year == student_year,
+                    Student.center_code == center_code,
+                    StudentExamReading.completed_at.isnot(None)
+                )
+                .distinct()
+                .order_by(
+                    GeneratedExamReading.created_at.desc()
+                )
+                .all()
             )
 
-            .join(
-                StudentExamThinkingSkills,
-                StudentExamThinkingSkills.exam_id == Exam.id
+            print("\n--- READING DATES ---")
+            print("DATES COUNT:", len(dates))
+            for d in dates:
+                print(d)
+
+            # --------------------------------------------------
+            # Students matching this report request
+            # --------------------------------------------------
+            reading_students = (
+                db.query(
+                    Student.id,
+                    Student.student_id,
+                    Student.name,
+                    Student.class_day
+                )
+                .filter(
+                    Student.class_name == class_name,
+                    Student.student_year == student_year,
+                    Student.center_code == center_code
+                )
+                .all()
             )
 
-            .join(
-                Student,
-                Student.id == StudentExamThinkingSkills.student_id
+            print("\n--- MATCHING STUDENTS ---")
+            print("STUDENT COUNT:", len(reading_students))
+
+            for s in reading_students[:20]:
+                print(s)
+
+            # --------------------------------------------------
+            # Reading sessions
+            # --------------------------------------------------
+            reading_sessions = (
+                db.query(
+                    StudentExamReading.id,
+                    StudentExamReading.student_id,
+                    StudentExamReading.exam_id,
+                    StudentExamReading.completed_at
+                )
+                .filter(
+                    StudentExamReading.completed_at.isnot(None)
+                )
+                .order_by(
+                    StudentExamReading.completed_at.desc()
+                )
+                .all()
             )
 
-            .filter(
-                Student.class_name == class_name,
-                Student.student_year == student_year,
-                Student.center_code == center_code,
+            print("\n--- COMPLETED READING SESSIONS ---")
+            print("SESSION COUNT:", len(reading_sessions))
 
-                Exam.subject == exam_key
+            for r in reading_sessions[:20]:
+                print(r)
+
+            # --------------------------------------------------
+            # Verify report rows exist
+            # --------------------------------------------------
+            report_rows = (
+                db.query(
+                    StudentExamReportReading.student_id,
+                    StudentExamReportReading.session_id,
+                    StudentExamReportReading.is_correct
+                )
+                .limit(20)
+                .all()
             )
 
-            .distinct()
+            print("\n--- READING REPORT ROWS ---")
+            print("REPORT ROW COUNT:", len(report_rows))
 
-            .order_by(
-                Exam.created_at.desc()
+            for row in report_rows:
+                print(row)
+
+            print("========== END READING DEBUG ==========\n")
+
+        # =========================================
+        # THINKING SKILLS + MATHEMATICAL REASONING
+        # =========================================
+        else:
+
+            ResponseModel = get_exam_response_model(exam)
+
+            print("EXAM KEY:", exam_key)
+            print("RESPONSE MODEL:", ResponseModel.__tablename__)
+
+            dates = (
+                db.query(
+                    Exam.id,
+                    Exam.created_at
+                )
+                .join(
+                    ResponseModel,
+                    ResponseModel.exam_id == Exam.id
+                )
+                .join(
+                    Student,
+                    Student.id == ResponseModel.student_id
+                )
+                .filter(
+                    Student.class_name == class_name,
+                    Student.student_year == student_year,
+                    Student.center_code == center_code,
+                    Exam.subject == exam_key
+                )
+                .distinct()
+                .order_by(
+                    Exam.created_at.desc()
+                )
+                .all()
             )
 
-            .all()
-        )
-
+            print("RAW DATES:", dates)
+            print("DATES COUNT:", len(dates))
     # =========================================
     # 🟩 OC
     # =========================================
@@ -30457,9 +30571,9 @@ def get_exam_response_model(exam: str):
     if exam == "thinking_skills":
         return StudentExamResponseThinkingSkills
     elif exam == "reading":
-        return StudentExamReportReading
+        return StudentExamReading
     elif exam == "mathematical_reasoning":
-        return StudentExamResponse
+        return StudentExamResponseMathematicalReasoning
     elif exam == "writing":
         return StudentExamWriting
 
@@ -31043,7 +31157,7 @@ def compute_student_scores_from_responses(raw_rows):
 
     results = []
 
-    MINIMUM_ATTEMPT_QUESTIONS = 5
+    MINIMUM_ATTEMPT_QUESTIONS = 1
 
     for (sid, _), v in attempts.items():
 
@@ -31119,7 +31233,25 @@ def class_exam_report(
             "date": date,
             "reports": []
         }
+    print("CLASS DAYS RAW:", class_days_raw)
 
+    all_students = (
+        db.query(
+            Student.id,
+            Student.name,
+            Student.class_day
+        )
+        .filter(
+            Student.class_name == class_name,
+            Student.student_year == class_year,
+            Student.center_code == center_code
+        )
+        .all()
+    )
+
+    print("ALL STUDENTS:")
+    for s in all_students:
+        print(s)
     reports = []
 
     # ===========================
@@ -31185,96 +31317,133 @@ def class_exam_report(
         print("[STEP 3] Resolving responses based on class type")
 
         # =========================================
-        # 🟦 SELECTIVE (KEEP YOUR EXISTING LOGIC)
+        # 🟦 SELECTIVE
         # =========================================
         if class_key == "selective":
-        
-            external_ids = list(student_code_map.values())
-        
-            attempt_ids = (
-                db.query(
-                    AdminExamReport.exam_attempt_id
-                )
-                .filter(
 
-                    AdminExamReport.exam_type == exam,
+            # ==================================================
+            # 📘 SELECTIVE READING (SEPARATE FLOW)
+            # ==================================================
+            if exam_key == "reading":
 
-                    func.date(
-                        AdminExamReport.created_at
-                    )
-                    ==
-                    selected_date,
+                print("\n========== SELECTIVE READING ==========")
 
-                    AdminExamReport.student_id.in_(
-                        external_ids
-                    ),
+                selected_date_obj = datetime.fromisoformat(
+                    date.split("T")[0]
+                ).date()
 
-                    AdminExamReport.overall_score.isnot(None)
-                )
-                .all()
-            )
-        
-            attempt_ids = [a[0] for a in attempt_ids]
-            print("ATTEMPT IDS:", attempt_ids)
-            print("ATTEMPT IDS COUNT:", len(attempt_ids))
-            rows = (
-                db.query(
-                    StudentExamResponseThinkingSkills.student_id
-                )
-                .filter(
-                    StudentExamResponseThinkingSkills.exam_attempt_id.in_(attempt_ids)
-                )
-                .distinct()
-                .all()
-            )
-
-            print("DISTINCT STUDENTS WITH RESPONSES:", rows)
-            if not attempt_ids:
-                student_results = []
-                students_attempted = 0
-        
-            else:
-                ResponseModel = get_exam_response_model(exam)
-        
-                raw_rows = (
+                # ------------------------------------
+                # Find reading sessions for this class day
+                # ------------------------------------
+                attempt_rows = (
                     db.query(
-                        ResponseModel.student_id,
-                        ResponseModel.exam_attempt_id,
-                        ResponseModel.is_correct
+                        StudentExamReading.id,
+                        StudentExamReading.student_id,
+                        StudentExamReading.completed_at
                     )
-                    .filter(ResponseModel.exam_attempt_id.in_(attempt_ids))
+                    .filter(
+                        StudentExamReading.student_id.in_(
+                            student_internal_ids
+                        ),
+                        StudentExamReading.completed_at.isnot(None),
+                        func.date(
+                            StudentExamReading.completed_at
+                        ) == selected_date_obj
+                    )
                     .all()
                 )
-                print("RAW ROWS COUNT:", len(raw_rows))
-                print("RAW ROWS SAMPLE:", raw_rows[:10])
-        
-                raw_results = compute_student_scores_from_responses(raw_rows)
-                print("RAW RESULTS:", raw_results)
 
-                student_results = []
-                for r in raw_results:
-                    # r["student_id"] is external ID → convert to internal
-                    print("STUDENT CODE MAP:", student_code_map)
-                    print("RAW RESULT STUDENT ID:", r["student_id"])        
-                    print("RAW RESULT STUDENT ID TYPE:", type(r["student_id"]))
-                    internal_id = str(r["student_id"])
-                
-                    if internal_id:
-                        print("STUDENT NAME MAP:", student_name_map)
-                        print("INTERNAL ID:", internal_id)
-                        print("LOOKUP NAME:", student_name_map.get(internal_id))
-                        print("LOOKUP CODE:", student_code_map.get(internal_id))
+                print("READING ATTEMPTS:", attempt_rows)
+
+                attempt_ids = [a.id for a in attempt_rows]
+
+                print("READING ATTEMPT IDS:", attempt_ids)
+
+                if not attempt_ids:
+
+                    student_results = []
+                    students_attempted = 0
+
+                else:
+
+                    raw_rows = (
+                        db.query(
+                            StudentExamReportReading.student_id,
+                            StudentExamReportReading.session_id.label(
+                                "exam_attempt_id"
+                            ),
+                            StudentExamReportReading.is_correct
+                        )
+                        .filter(
+                            StudentExamReportReading.session_id.in_(
+                                attempt_ids
+                            )
+                        )
+                        .all()
+                    )
+
+                    print("RAW ROWS COUNT:", len(raw_rows))
+                    print("RAW ROWS SAMPLE:", raw_rows[:10])
+
+                    raw_results = compute_student_scores_from_responses(
+                        raw_rows
+                    )
+
+                    print("RAW RESULTS:", raw_results)
+
+                    student_results = []
+
+                    for r in raw_results:
+
+                        internal_id = str(r["student_id"])
+
                         student_results.append({
                             "student_id": internal_id,
-                            "student_code": r["student_id"],
-                            "student_name": student_name_map.get(internal_id),
+                            "student_code": student_code_map.get(
+                                internal_id
+                            ),
+                            "student_name": student_name_map.get(
+                                internal_id
+                            ),
                             "score": r["score"],
                             "accuracy": r["accuracy"]
                         })
-                print("STUDENT RESULTS:", student_results)
-                print("STUDENTS ATTEMPTED:", len(student_results))
-                students_attempted = len(student_results)
-        
+
+                    students_attempted = len(student_results)
+
+                    print("STUDENT RESULTS:", student_results)
+                    print("STUDENTS ATTEMPTED:", students_attempted)
+
+                print("========== END READING ==========\n")
+
+            # ==================================================
+            # 🧠 THINKING SKILLS + MATH (EXISTING FLOW)
+            # ==================================================
+            else:
+
+                external_ids = list(student_code_map.values())
+
+                attempt_ids = (
+                    db.query(
+                        AdminExamReport.exam_attempt_id
+                    )
+                    .filter(
+                        AdminExamReport.exam_type == exam,
+                        func.date(
+                            AdminExamReport.created_at
+                        ) == selected_date,
+                        AdminExamReport.student_id.in_(
+                            external_ids
+                        ),
+                        AdminExamReport.overall_score.isnot(None)
+                    )
+                    .all()
+                )
+
+                attempt_ids = [a[0] for a in attempt_ids]
+
+                # KEEP ALL YOUR EXISTING
+                # THINKING SKILLS / MATH CODE HERE
         
         # =========================================
         # 🟩 OC
@@ -31519,7 +31688,7 @@ def class_exam_report(
             
             
             print("[STEP 3] Students attempted:", students_attempted)
-  
+
 
         # ---------------------------
         # STEP 5: Summary metrics
@@ -82712,8 +82881,7 @@ def finish_homework_exam(
         "not_attempted": not_attempted,
         "accuracy_percent": accuracy,
         "score_percent": score_percent
-    }@app.get("/api/classes/{class_name}/exam-dates")@app.get("/api/classes/{class_name}/exam-dates")
-
+    }
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
     req: FinishExamRequest,
