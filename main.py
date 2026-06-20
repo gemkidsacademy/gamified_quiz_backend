@@ -2073,6 +2073,7 @@ class StudentExamOCThinkingSkills(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     ) 
+
 class StudentExamThinkingSkills(Base):
     __tablename__ = "student_exam_thinking_skills"
 
@@ -2216,6 +2217,7 @@ class StudentExamNaplanReading(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+
 class StudentExamNaplanReadingHomework(Base):
     __tablename__ = (
         "student_exam_naplan_reading_homework"
@@ -30463,41 +30465,74 @@ def get_class_exam_dates(
         else:
             print("❌ Invalid OC exam:", exam_key)
             return {"class_name": class_name, "exam": exam, "dates": []}
+        print("MODEL:", model.__tablename__)
 
         dates = (
-            db.query(date_column)
-            .join(Student, Student.id == model.student_id)   # ✅ FIXED
+            db.query(
+                Exam.id,
+                Exam.created_at
+            )
+            .join(
+                model,
+                model.exam_id == Exam.id
+            )
+            .join(
+                Student,
+                Student.id == model.student_id
+            )
             .filter(
                 Student.class_name == class_name,
                 Student.student_year == student_year,
                 Student.center_code == center_code,
-                date_column.isnot(None)
+                model.completed_at.isnot(None)
             )
             .distinct()
-            .order_by(date_column)
+            .order_by(
+                Exam.created_at.desc()
+            )
             .all()
         )
+        print("RAW OC DATES:", dates)
+        print("DATE COUNT:", len(dates))
+        for d in dates:
+            print("DATE VALUE:", d.created_at)
 
     # =========================================
     # 🟨 NAPLAN
     # =========================================
     elif class_key == "naplan":
+
         print("🟨 Branch: NAPLAN")
 
-        if exam_key == "naplan_numeracy":
+        if exam_key == "naplan_reading":
 
-            response_model = StudentExamResponseNaplanNumeracy
-            exam_model = StudentExamNaplanNumeracy
+            exam_table = ExamNaplanReading
+            attempt_table = StudentExamNaplanReading
+
+            student_join = (
+                cast(Student.id, String)
+                == StudentExamNaplanReading.student_id
+            )
 
         elif exam_key == "naplan_language_conventions":
 
-            response_model = StudentExamResponseNaplanLanguageConventions
-            exam_model = StudentExamNaplanLanguageConventions
+            exam_table = ExamNaplanLanguageConventions
+            attempt_table = StudentExamNaplanLanguageConventions
 
-        elif exam_key == "naplan_reading":
+            student_join = (
+                cast(Student.id, Integer)
+                == StudentExamNaplanLanguageConventions.student_id
+            )
 
-            response_model = StudentExamResponseNaplanReading
-            exam_model = StudentExamNaplanReading
+        elif exam_key == "naplan_numeracy":
+
+            exam_table = ExamNaplanNumeracy
+            attempt_table = StudentExamNaplanNumeracy
+
+            student_join = (
+                cast(Student.id, String)
+                == StudentExamNaplanNumeracy.student_id
+            )
 
         else:
             print("❌ Invalid Naplan exam:", exam_key)
@@ -30508,35 +30543,37 @@ def get_class_exam_dates(
                 "dates": []
             }
 
+        print("EXAM TABLE:", exam_table.__tablename__)
+        print("ATTEMPT TABLE:", attempt_table.__tablename__)
+
         dates = (
             db.query(
-                Exam.id,
-                Exam.created_at
+                exam_table.id,
+                exam_table.created_at
             )
             .join(
-                StudentExamThinkingSkills,
-                StudentExamThinkingSkills.exam_id == Exam.id
+                attempt_table,
+                attempt_table.exam_id == exam_table.id
             )
             .join(
                 Student,
-                Student.id == StudentExamThinkingSkills.student_id
+                student_join
             )
             .filter(
                 Student.class_name == class_name,
                 Student.student_year == student_year,
                 Student.center_code == center_code,
-                Exam.subject == exam_key
+                attempt_table.completed_at.isnot(None)
             )
-            .group_by(
-                Exam.id,
-                Exam.created_at
-            )
+            .distinct()
             .order_by(
-                Exam.created_at.desc()
+                exam_table.created_at.desc()
             )
             .all()
         )
-        print("RAW DATES:", dates[:20])
+
+        print("RAW NAPLAN DATES:", dates[:20])
+        print("DATES COUNT:", len(dates))
     # =========================================
     # 🔴 UNKNOWN CLASS
     # =========================================
@@ -31449,33 +31486,75 @@ def class_exam_report(
         # 🟩 OC
         # =========================================
         elif class_key == "oc":
-        
+
             if exam_key == "oc_thinking_skills":
-        
-                raw_rows = db.query(
-                    StudentExamResponseOCThinkingSkills.student_id,
-                    StudentExamResponseOCThinkingSkills.exam_attempt_id,
-                    StudentExamResponseOCThinkingSkills.is_correct
-                ).join(
-                    StudentExamOCThinkingSkills,
-                    StudentExamOCThinkingSkills.id == StudentExamResponseOCThinkingSkills.exam_attempt_id
-                ).join(
-                    Student,
-                    Student.id == StudentExamOCThinkingSkills.student_id
-                ).filter(
-                    Student.class_name == class_name,
-                    Student.student_year == class_year,
-                    Student.center_code == center_code,
-                    func.date(StudentExamOCThinkingSkills.completed_at) == date
-                ).all()
-        
+
+                print("\n========== OC THINKING SKILLS REPORT ==========")
+                print("CLASS:", class_name)
+                print("YEAR:", class_year)
+                print("CENTER:", center_code)
+                print("DATE:", date)
+                print("CLASS DAY:", class_day)
+
+                print("\n--- STUDENT IDS FOR THIS DAY ---")
+                print(student_internal_ids)
+
+                print("\n--- STUDENT MAPS ---")
+                print("STUDENT CODE MAP:", student_code_map)
+                print("STUDENT NAME MAP:", student_name_map)
+
+                raw_rows = (
+                    db.query(
+                        StudentExamResponseOCThinkingSkills.student_id,
+                        StudentExamResponseOCThinkingSkills.exam_attempt_id,
+                        StudentExamResponseOCThinkingSkills.is_correct
+                    )
+                    .join(
+                        StudentExamOCThinkingSkills,
+                        StudentExamOCThinkingSkills.id ==
+                        StudentExamResponseOCThinkingSkills.exam_attempt_id
+                    )
+                    .join(
+                        Student,
+                        Student.id ==
+                        StudentExamOCThinkingSkills.student_id
+                    )
+                    .filter(
+                        Student.class_name == class_name,
+                        Student.student_year == class_year,
+                        Student.center_code == center_code,
+
+                        # ✅ CRITICAL: only students in this class day
+                        StudentExamOCThinkingSkills.student_id.in_(
+                            student_internal_ids
+                        ),
+
+                        func.date(
+                            StudentExamOCThinkingSkills.completed_at
+                        ) == date
+                    )
+                    .all()
+                )
+
+                print("\n--- RAW ROWS ---")
+                print("RAW ROWS COUNT:", len(raw_rows))
+                print("RAW ROWS SAMPLE:", raw_rows[:20])
+
                 raw_results = compute_student_scores_from_responses(raw_rows)
 
+                print("\n--- COMPUTED RESULTS ---")
+                print(raw_results)
+
                 student_results = []
-                
+
                 for r in raw_results:
-                    sid = r["student_id"]
-                
+
+                    sid = str(r["student_id"])
+
+                    print("\nPROCESSING SID:", sid)
+                    print("CODE:", student_code_map.get(sid))
+                    print("NAME:", student_name_map.get(sid))
+
                     student_results.append({
                         "student_id": sid,
                         "student_code": student_code_map.get(sid),
@@ -31483,28 +31562,50 @@ def class_exam_report(
                         "score": r["score"],
                         "accuracy": r["accuracy"]
                     })
-                
+
                 students_attempted = len(student_results)
+
+                print("\n--- FINAL STUDENT RESULTS ---")
+                for row in student_results:
+                    print(row)
+
+                print("STUDENTS ATTEMPTED:", students_attempted)
+                print("========== END OC THINKING SKILLS ==========\n")
         
         
             elif exam_key == "oc_mathematical_reasoning":
         
-                raw_rows = db.query(
-                    StudentExamResponseOCMathematicalReasoning.student_id,
-                    StudentExamResponseOCMathematicalReasoning.exam_attempt_id,
-                    StudentExamResponseOCMathematicalReasoning.is_correct
-                ).join(
-                    StudentExamOCMathematicalReasoning,
-                    StudentExamOCMathematicalReasoning.id == StudentExamResponseOCMathematicalReasoning.exam_attempt_id
-                ).join(
-                    Student,
-                    Student.id == StudentExamOCMathematicalReasoning.student_id
-                ).filter(
-                    Student.class_name == class_name,
-                    Student.student_year == class_year,
-                    Student.center_code == center_code,
-                    func.date(StudentExamOCMathematicalReasoning.completed_at) == date
-                ).all()
+                raw_rows = (
+                    db.query(
+                        StudentExamResponseOCMathematicalReasoning.student_id,
+                        StudentExamResponseOCMathematicalReasoning.exam_attempt_id,
+                        StudentExamResponseOCMathematicalReasoning.is_correct
+                    )
+                    .join(
+                        StudentExamOCMathematicalReasoning,
+                        StudentExamOCMathematicalReasoning.id ==
+                        StudentExamResponseOCMathematicalReasoning.exam_attempt_id
+                    )
+                    .join(
+                        Student,
+                        Student.id ==
+                        StudentExamOCMathematicalReasoning.student_id
+                    )
+                    .filter(
+                        Student.class_name == class_name,
+                        Student.student_year == class_year,
+                        Student.center_code == center_code,
+
+                        StudentExamOCMathematicalReasoning.student_id.in_(
+                            student_internal_ids
+                        ),
+
+                        func.date(
+                            StudentExamOCMathematicalReasoning.completed_at
+                        ) == date
+                    )
+                    .all()
+                )
         
                 raw_results = compute_student_scores_from_responses(raw_rows)
 
@@ -31512,6 +31613,11 @@ def class_exam_report(
                 
                 for r in raw_results:
                     sid = r["student_id"]
+                    print("SID:", sid, type(sid))
+                    print("CODE MAP KEYS SAMPLE:", list(student_code_map.keys())[:10])
+                    print("NAME MAP KEYS SAMPLE:", list(student_name_map.keys())[:10])
+                    print("CODE LOOKUP:", student_code_map.get(sid))
+                    print("NAME LOOKUP:", student_name_map.get(sid))
                 
                     student_results.append({
                         "student_id": sid,
@@ -31574,33 +31680,105 @@ def class_exam_report(
         # 🟨 NAPLAN
         # =========================================
         elif class_key == "naplan":
-        
+
             if exam_key == "naplan_numeracy":
-        
-                raw_rows = db.query(
-                    StudentExamResponseNaplanNumeracy.student_id,
-                    StudentExamResponseNaplanNumeracy.exam_attempt_id,
-                    StudentExamResponseNaplanNumeracy.is_correct
-                ).join(
-                    StudentExamNaplanNumeracy,
-                    StudentExamNaplanNumeracy.id == StudentExamResponseNaplanNumeracy.exam_attempt_id
-                ).join(
-                    Student,
-                    Student.id == StudentExamNaplanNumeracy.student_id
-                ).filter(
-                    Student.class_name == class_name,
-                    Student.student_year == class_year,
-                    Student.center_code == center_code,
-                    func.date(StudentExamNaplanNumeracy.completed_at) == date
-                ).all()
-        
+
+                print("\n========== NAPLAN NUMERACY REPORT ==========")
+                print("CLASS:", class_name)
+                print("YEAR:", class_year)
+                print("CENTER:", center_code)
+                print("DATE:", date)
+                print("CLASS DAY:", class_day)
+
+                print("\n--- STUDENT IDS FOR THIS DAY ---")
+                print(student_internal_ids)
+
+                print("\n--- STUDENT MAPS ---")
+                print("STUDENT CODE MAP:", student_code_map)
+                print("STUDENT NAME MAP:", student_name_map)
+
+                # ---------------------------------------
+                # Show completed attempts for this day
+                # ---------------------------------------
+                attempts_debug = (
+                    db.query(
+                        StudentExamNaplanNumeracy.id,
+                        StudentExamNaplanNumeracy.student_id,
+                        StudentExamNaplanNumeracy.exam_id,
+                        StudentExamNaplanNumeracy.completed_at
+                    )
+                    .join(
+                        Student,
+                        Student.id == StudentExamNaplanNumeracy.student_id
+                    )
+                    .filter(
+                        Student.class_name == class_name,
+                        Student.student_year == class_year,
+                        Student.center_code == center_code,
+                        Student.class_day == class_day,
+                        func.date(
+                            StudentExamNaplanNumeracy.completed_at
+                        ) == date
+                    )
+                    .all()
+                )
+
+                print("\n--- ATTEMPTS FOUND FOR THIS DAY ---")
+                for row in attempts_debug:
+                    print(row)
+
+                print("ATTEMPT COUNT:", len(attempts_debug))
+
+                # ---------------------------------------
+                # Responses
+                # ---------------------------------------
+                raw_rows = (
+                    db.query(
+                        StudentExamResponseNaplanNumeracy.student_id,
+                        StudentExamResponseNaplanNumeracy.exam_attempt_id,
+                        StudentExamResponseNaplanNumeracy.is_correct
+                    )
+                    .join(
+                        StudentExamNaplanNumeracy,
+                        StudentExamNaplanNumeracy.id ==
+                        StudentExamResponseNaplanNumeracy.exam_attempt_id
+                    )
+                    .join(
+                        Student,
+                        Student.id ==
+                        StudentExamNaplanNumeracy.student_id
+                    )
+                    .filter(
+                        Student.class_name == class_name,
+                        Student.student_year == class_year,
+                        Student.center_code == center_code,
+                        Student.class_day == class_day,
+                        func.date(
+                            StudentExamNaplanNumeracy.completed_at
+                        ) == date
+                    )
+                    .all()
+                )
+
+                print("\n--- RAW ROWS ---")
+                print("RAW ROWS COUNT:", len(raw_rows))
+                print("RAW ROWS SAMPLE:", raw_rows[:50])
+
                 raw_results = compute_student_scores_from_responses(raw_rows)
 
+                print("\n--- COMPUTED RESULTS ---")
+                print(raw_results)
+
                 student_results = []
-                
+
                 for r in raw_results:
-                    sid = r["student_id"]
-                
+
+                    sid = str(r["student_id"])
+
+                    print("\nPROCESSING SID:", sid)
+                    print("CODE:", student_code_map.get(sid))
+                    print("NAME:", student_name_map.get(sid))
+
                     student_results.append({
                         "student_id": sid,
                         "student_code": student_code_map.get(sid),
@@ -31608,35 +31786,83 @@ def class_exam_report(
                         "score": r["score"],
                         "accuracy": r["accuracy"]
                     })
-                
+
+                print("\n--- FINAL STUDENT RESULTS ---")
+                for row in student_results:
+                    print(row)
+
                 students_attempted = len(student_results)
+
+                print("STUDENTS ATTEMPTED:", students_attempted)
+                print("========== END NAPLAN NUMERACY ==========\n")
             elif exam_key == "naplan_language_conventions":
 
-                raw_rows = db.query(
-                    StudentExamResponseNaplanLanguageConventions.student_id,
-                    StudentExamResponseNaplanLanguageConventions.exam_attempt_id,
-                    StudentExamResponseNaplanLanguageConventions.is_correct
-                ).join(
-                    StudentExamNaplanLanguageConventions,
-                    StudentExamNaplanLanguageConventions.id == StudentExamResponseNaplanLanguageConventions.exam_attempt_id
-                ).join(
-                    Student,
-                    Student.id == StudentExamNaplanLanguageConventions.student_id
-                ).filter(
-                    Student.class_name == class_name,
-                    Student.student_year == class_year,
-                    Student.center_code == center_code,
-                    func.date(
+                print("\n========== NAPLAN LANGUAGE CONVENTIONS ==========")
+                print("CLASS:", class_name)
+                print("YEAR:", class_year)
+                print("CENTER:", center_code)
+                print("DATE:", date)
+                print("CLASS DAY:", class_day)
+
+                print("\n--- STUDENT IDS FOR THIS DAY ---")
+                print(student_internal_ids)
+
+                attempts = (
+                    db.query(
+                        StudentExamNaplanLanguageConventions.id,
+                        StudentExamNaplanLanguageConventions.student_id,
+                        StudentExamNaplanLanguageConventions.exam_id,
                         StudentExamNaplanLanguageConventions.completed_at
-                    ) == date
-                ).all()
-            
+                    )
+                    .filter(
+                        StudentExamNaplanLanguageConventions.student_id.in_(
+                            student_internal_ids
+                        ),
+                        func.date(
+                            StudentExamNaplanLanguageConventions.completed_at
+                        ) == selected_date
+                    )
+                    .all()
+                )
+
+                print("\n--- ATTEMPTS FOUND FOR THIS DAY ---")
+                for a in attempts:
+                    print(a)
+
+                attempt_ids = [a.id for a in attempts]
+
+                print("ATTEMPT COUNT:", len(attempt_ids))
+                print("ATTEMPT IDS:", attempt_ids)
+
+                raw_rows = (
+                    db.query(
+                        StudentExamResponseNaplanLanguageConventions.student_id,
+                        StudentExamResponseNaplanLanguageConventions.exam_attempt_id,
+                        StudentExamResponseNaplanLanguageConventions.is_correct
+                    )
+                    .filter(
+                        StudentExamResponseNaplanLanguageConventions.exam_attempt_id.in_(
+                            attempt_ids
+                        )
+                    )
+                    .all()
+                )
+
+                print("\n--- RAW ROWS ---")
+                print("RAW ROWS COUNT:", len(raw_rows))
+                print("RAW ROWS SAMPLE:", raw_rows[:20])
+
                 raw_results = compute_student_scores_from_responses(raw_rows)
-            
+
+                print("\n--- COMPUTED RESULTS ---")
+                print(raw_results)
+
                 student_results = []
+
                 for r in raw_results:
-                    sid = r["student_id"]
-            
+
+                    sid = str(r["student_id"])
+
                     student_results.append({
                         "student_id": sid,
                         "student_code": student_code_map.get(sid),
@@ -31644,35 +31870,95 @@ def class_exam_report(
                         "score": r["score"],
                         "accuracy": r["accuracy"]
                     })
-            
+
                 students_attempted = len(student_results)
+
+                print("\n--- FINAL STUDENT RESULTS ---")
+                for row in student_results:
+                    print(row)
+
+                print("STUDENTS ATTEMPTED:", students_attempted)
+                print("========== END LANGUAGE CONVENTIONS ==========\n")
             elif exam_key == "naplan_reading":
 
-                raw_rows = db.query(
-                    StudentExamResponseNaplanReading.student_id,
-                    StudentExamResponseNaplanReading.exam_attempt_id,
-                    StudentExamResponseNaplanReading.is_correct
-                ).join(
-                    StudentExamNaplanReading,
-                    StudentExamNaplanReading.id == StudentExamResponseNaplanReading.exam_attempt_id
-                ).join(
-                    Student,
-                    Student.id == StudentExamNaplanReading.student_id
-                ).filter(
-                    Student.class_name == class_name,
-                    Student.student_year == class_year,
-                    Student.center_code == center_code,
-                    func.date(
+                print("\n========== NAPLAN READING REPORT ==========")
+                print("CLASS:", class_name)
+                print("YEAR:", class_year)
+                print("CENTER:", center_code)
+                print("DATE:", date)
+                print("CLASS DAY:", class_day)
+
+                print("\n--- STUDENT IDS FOR THIS DAY ---")
+                print(student_internal_ids)
+
+                # ------------------------------------------
+                # Find attempts for this class day
+                # ------------------------------------------
+                attempt_rows = (
+                    db.query(
+                        StudentExamNaplanReading.id,
+                        StudentExamNaplanReading.student_id,
+                        StudentExamNaplanReading.exam_id,
                         StudentExamNaplanReading.completed_at
-                    ) == date
-                ).all()
-            
-                raw_results = compute_student_scores_from_responses(raw_rows)
-            
+                    )
+                    .filter(
+                        StudentExamNaplanReading.student_id.in_(
+                            student_internal_ids
+                        ),
+                        func.date(
+                            StudentExamNaplanReading.completed_at
+                        ) == date
+                    )
+                    .all()
+                )
+
+                print("\n--- ATTEMPTS FOUND FOR THIS DAY ---")
+
+                for row in attempt_rows:
+                    print(row)
+
+                print("ATTEMPT COUNT:", len(attempt_rows))
+
+                attempt_ids = [row.id for row in attempt_rows]
+
+                # ------------------------------------------
+                # Pull response rows
+                # ------------------------------------------
+                raw_rows = (
+                    db.query(
+                        StudentExamResponseNaplanReading.student_id,
+                        StudentExamResponseNaplanReading.exam_attempt_id,
+                        StudentExamResponseNaplanReading.is_correct
+                    )
+                    .filter(
+                        StudentExamResponseNaplanReading.exam_attempt_id.in_(
+                            attempt_ids
+                        )
+                    )
+                    .all()
+                )
+
+                print("\n--- RAW ROWS ---")
+                print("RAW ROWS COUNT:", len(raw_rows))
+                print("RAW ROWS SAMPLE:", raw_rows[:20])
+
+                raw_results = compute_student_scores_from_responses(
+                    raw_rows
+                )
+
+                print("\n--- COMPUTED RESULTS ---")
+                print(raw_results)
+
                 student_results = []
+
                 for r in raw_results:
-                    sid = r["student_id"]
-            
+
+                    sid = str(r["student_id"])
+
+                    print("PROCESSING SID:", sid)
+                    print("CODE:", student_code_map.get(sid))
+                    print("NAME:", student_name_map.get(sid))
+
                     student_results.append({
                         "student_id": sid,
                         "student_code": student_code_map.get(sid),
@@ -31680,8 +31966,17 @@ def class_exam_report(
                         "score": r["score"],
                         "accuracy": r["accuracy"]
                     })
-            
+
                 students_attempted = len(student_results)
+
+                print("\n--- FINAL STUDENT RESULTS ---")
+
+                for row in student_results:
+                    print(row)
+
+                print("STUDENTS ATTEMPTED:", students_attempted)
+
+                print("========== END NAPLAN READING ==========\n")
             else:
                 student_results = []
                 students_attempted = 0
@@ -80025,6 +80320,7 @@ def finish_naplan_language_conventions_exam(
         "exam_attempt_id": attempt.id,
         "accuracy_percent": accuracy
     }
+
 def normalize_student_answer(answer):
     if answer is None:
         return None
