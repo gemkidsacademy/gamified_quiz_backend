@@ -90868,6 +90868,8 @@ def submit_answer(
     
 
 def send_otp_email(to_email: str, otp: str):
+    print(f"[DEBUG] SENDGRID_API_KEY is set: {SENDGRID_API_KEY is not None}")
+    print(f"[DEBUG] SENDGRID_API_KEY length: {len(SENDGRID_API_KEY) if SENDGRID_API_KEY else 0}")
     message = Mail(
         from_email='noreply@gemkidsacademy.com.au',
         to_emails=to_email,
