@@ -1130,6 +1130,7 @@ class StudentHomeworkMathematicalReasoning(Base):
 
     score = Column(Integer, default=0)
     total_questions = Column(Integer)
+
 class StudentHomeworkResponseMathematicalReasoning(Base):
     __tablename__ = "student_homework_response_mathematical_reasoning"
 
@@ -30450,52 +30451,111 @@ def get_class_exam_dates(
     elif class_key == "oc":
         print("🟩 Branch: OC")
 
-        if exam_key == "oc_thinking_skills":
-            model = StudentExamOCThinkingSkills
-            date_column = model.completed_at
+        # =========================================
+        # OC READING
+        # =========================================
+        if exam_key == "oc_reading":
 
-        elif exam_key == "oc_mathematical_reasoning":
-            model = StudentExamOCMathematicalReasoning
-            date_column = model.completed_at
+            print("MODEL: student_exams_reading_oc")
 
-        elif exam_key == "oc_reading":
-            model = StudentExamReadingOC
-            date_column = model.created_at   # this table uses created_at
+            dates = (
+                db.query(
+                    GeneratedExamReading.id,
+                    GeneratedExamReading.created_at
+                )
+                .join(
+                    StudentExamReadingOC,
+                    StudentExamReadingOC.exam_id == GeneratedExamReading.id
+                )
+                .join(
+                    Student,
+                    Student.student_id == StudentExamReadingOC.student_id
+                )
+                .filter(
+                    Student.class_name == class_name,
+                    Student.student_year == student_year,
+                    Student.center_code == center_code,
+                    StudentExamReadingOC.completed_at.isnot(None)
+                )
+                .distinct()
+                .order_by(
+                    GeneratedExamReading.created_at.desc()
+                )
+                .all()
+            )
 
+            print("RAW OC READING DATES:", dates)
+            print("DATE COUNT:", len(dates))
+
+            join_test = (
+                db.query(
+                    StudentExamReadingOC.student_id,
+                    Student.student_id
+                )
+                .join(
+                    Student,
+                    Student.student_id == StudentExamReadingOC.student_id
+                )
+                .limit(20)
+                .all()
+            )
+
+            print("OC READING JOIN TEST:")
+            for row in join_test:
+                print(row)
+
+        # =========================================
+        # OC THINKING SKILLS + OC MATHEMATICAL REASONING
+        # =========================================
         else:
-            print("❌ Invalid OC exam:", exam_key)
-            return {"class_name": class_name, "exam": exam, "dates": []}
-        print("MODEL:", model.__tablename__)
 
-        dates = (
-            db.query(
-                Exam.id,
-                Exam.created_at
+            if exam_key == "oc_thinking_skills":
+                model = StudentExamOCThinkingSkills
+
+            elif exam_key == "oc_mathematical_reasoning":
+                model = StudentExamOCMathematicalReasoning
+
+            else:
+                print("❌ Invalid OC exam:", exam_key)
+                return {
+                    "class_name": class_name,
+                    "exam": exam,
+                    "dates": []
+                }
+
+            print("MODEL:", model.__tablename__)
+
+            dates = (
+                db.query(
+                    Exam.id,
+                    Exam.created_at
+                )
+                .join(
+                    model,
+                    model.exam_id == Exam.id
+                )
+                .join(
+                    Student,
+                    Student.id == model.student_id
+                )
+                .filter(
+                    Student.class_name == class_name,
+                    Student.student_year == student_year,
+                    Student.center_code == center_code,
+                    model.completed_at.isnot(None)
+                )
+                .distinct()
+                .order_by(
+                    Exam.created_at.desc()
+                )
+                .all()
             )
-            .join(
-                model,
-                model.exam_id == Exam.id
-            )
-            .join(
-                Student,
-                Student.id == model.student_id
-            )
-            .filter(
-                Student.class_name == class_name,
-                Student.student_year == student_year,
-                Student.center_code == center_code,
-                model.completed_at.isnot(None)
-            )
-            .distinct()
-            .order_by(
-                Exam.created_at.desc()
-            )
-            .all()
-        )
-        print("RAW OC DATES:", dates)
-        print("DATE COUNT:", len(dates))
-        for d in dates:
-            print("DATE VALUE:", d.created_at)
+
+            print("RAW OC DATES:", dates)
+            print("DATE COUNT:", len(dates))
+
+            for d in dates:
+                print("DATE VALUE:", d.created_at)
 
     # =========================================
     # 🟨 NAPLAN
@@ -31342,6 +31402,10 @@ def class_exam_report(
         student_code_map = {s.id: s.student_id for s in students}  # optional but useful
         
         student_internal_ids = list(student_name_map.keys())
+        student_external_ids = list(student_code_map.values())
+
+        print("STUDENT INTERNAL IDS:", student_internal_ids)
+        print("STUDENT EXTERNAL IDS:", student_external_ids)
 
 
         print("[STEP 2] Student internal IDs:", student_internal_ids)
@@ -31632,45 +31696,125 @@ def class_exam_report(
         
             elif exam_key == "oc_reading":
 
-                raw_rows = db.query(
-                    StudentExamReportOCReading.student_id,
-                    StudentExamReportOCReading.session_id.label("exam_attempt_id"),
-                    StudentExamReportOCReading.is_correct
-                ).join(
-                    Student,
-                    Student.student_id == StudentExamReportOCReading.student_id
-                ).filter(
-                    Student.class_name == class_name,
-                    Student.student_year == class_year,
-                    Student.center_code == center_code,
-                    func.date(StudentExamReportOCReading.created_at) == date
-                ).all()
-            
-                # STEP 1: compute scores
-                raw_results = compute_student_scores_from_responses(raw_rows)
-            
-                # STEP 2: convert external → internal IDs
-                student_results = []
-            
-                for r in raw_results:
-                    external_id = r["student_id"]
-            
-                    internal_id = next(
-                        (k for k, v in student_code_map.items() if v == external_id),
-                        None
+                print("\n========== OC READING REPORT ==========")
+                print("CLASS:", class_name)
+                print("YEAR:", class_year)
+                print("CENTER:", center_code)
+                print("DATE:", date)
+                print("CLASS DAY:", class_day)
+
+                print("\n--- STUDENT IDS FOR THIS DAY ---")
+                print(student_internal_ids)
+
+                student_external_ids = list(student_code_map.values())
+
+                print("STUDENT EXTERNAL IDS:", student_external_ids)
+
+                # ------------------------------------------
+                # Find completed reading sessions
+                # ------------------------------------------
+                attempt_rows = (
+                    db.query(
+                        StudentExamReadingOC.id,
+                        StudentExamReadingOC.student_id,
+                        StudentExamReadingOC.completed_at
                     )
-            
-                    if internal_id:
+                    .filter(
+                        StudentExamReadingOC.student_id.in_(
+                            student_external_ids
+                        ),
+                        StudentExamReadingOC.completed_at.isnot(None),
+                        func.date(
+                            StudentExamReadingOC.completed_at
+                        ) == selected_date
+                    )
+                    .all()
+                )
+
+                print("\n--- OC READING ATTEMPTS ---")
+                for row in attempt_rows:
+                    print(row)
+
+                attempt_ids = [row.id for row in attempt_rows]
+
+                print("ATTEMPT IDS:", attempt_ids)
+
+                if not attempt_ids:
+
+                    student_results = []
+                    students_attempted = 0
+
+                else:
+
+                    raw_rows = (
+                        db.query(
+                            StudentExamReportOCReading.student_id,
+                            StudentExamReportOCReading.session_id.label(
+                                "exam_attempt_id"
+                            ),
+                            StudentExamReportOCReading.is_correct
+                        )
+                        .filter(
+                            StudentExamReportOCReading.session_id.in_(
+                                attempt_ids
+                            )
+                        )
+                        .all()
+                    )
+
+                    print("\n--- RAW ROWS ---")
+                    print("RAW ROW COUNT:", len(raw_rows))
+                    print("RAW ROW SAMPLE:", raw_rows[:20])
+
+                    raw_results = compute_student_scores_from_responses(
+                        raw_rows
+                    )
+
+                    print("\n--- COMPUTED RESULTS ---")
+                    print(raw_results)
+
+                    student_results = []
+
+                    for r in raw_results:
+
+                        external_id = r["student_id"]
+
+                        internal_id = next(
+                            (
+                                k for k, v in student_code_map.items()
+                                if v == external_id
+                            ),
+                            None
+                        )
+
+                        print(
+                            "MAPPING:",
+                            external_id,
+                            "->",
+                            internal_id
+                        )
+
+                        if not internal_id:
+                            continue
+
                         student_results.append({
                             "student_id": internal_id,
                             "student_code": external_id,
-                            "student_name": student_name_map.get(internal_id),
+                            "student_name": student_name_map.get(
+                                internal_id
+                            ),
                             "score": r["score"],
                             "accuracy": r["accuracy"]
                         })
-            
-                students_attempted = len(student_results)
-        
+
+                    students_attempted = len(student_results)
+
+                print("\n--- FINAL STUDENT RESULTS ---")
+                for row in student_results:
+                    print(row)
+
+                print("STUDENTS ATTEMPTED:", students_attempted)
+                print("========== END OC READING ==========\n")
             else:
                 student_results = []
                 students_attempted = 0
@@ -34647,7 +34791,7 @@ def get_student_exam_report(
     student_id: str,
     exam: str,
     date: date,
-    class_name: str | None = Query(default=None),   # ✅ ADD THIS
+    class_name: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
     print("\n📥 /api/reports/student called")
@@ -34656,7 +34800,7 @@ def get_student_exam_report(
     print("date:", date)
     print("class_name:", class_name)
 
-     # --------------------------------------------------
+    # --------------------------------------------------
     # 🔀 ROUTE TO NAPLAN HANDLER
     # --------------------------------------------------
     if class_name and class_name.lower() == "naplan":
@@ -34668,34 +34812,46 @@ def get_student_exam_report(
             date=date,
             db=db
         )
+
     # --------------------------------------------------
     # 🔀 ROUTE TO OC HANDLER
     # --------------------------------------------------
     if class_name and class_name.lower() == "oc":
         print("🔁 Routing to OC handler")
-    
+
         return get_student_exam_report_oc(
             student_id=student_id,
             exam=exam,
             date=date,
             db=db
         )
-    
+
+    # --------------------------------------------------
+    # Normalize incoming timestamp
+    # --------------------------------------------------
+    report_date = date
+
+    print("RAW DATE:", date)
+    print("REPORT DATE:", report_date)
+
     # --------------------------------------------------
     # 0️⃣ Resolve student (EXTERNAL → INTERNAL ID)
     # --------------------------------------------------
     student = (
         db.query(Student)
         .filter(
-            func.lower(Student.student_id) ==
-            func.lower(student_id.strip())
+            func.lower(Student.student_id)
+            == func.lower(student_id.strip())
         )
         .first()
     )
 
     if not student:
         print("❌ Student not found for external id:", student_id)
-        raise HTTPException(status_code=404, detail="Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
 
     print("✅ Student resolved → internal id:", student.id)
 
@@ -34705,25 +34861,35 @@ def get_student_exam_report(
     admin_report = (
         db.query(AdminExamReport)
         .filter(
-            AdminExamReport.student_id == student.student_id,  # external id stored here
+            AdminExamReport.student_id == student.student_id,
             AdminExamReport.exam_type == exam,
-            func.date(AdminExamReport.created_at) == date
+            func.date(AdminExamReport.created_at) == report_date
         )
         .first()
     )
 
     if not admin_report:
         print("❌ AdminExamReport not found")
-        raise HTTPException(status_code=404, detail="Exam attempt not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Exam attempt not found"
+        )
 
     exam_attempt_id = admin_report.exam_attempt_id
-    print("✅ Exam attempt resolved → exam_attempt_id:", exam_attempt_id)
+
+    print(
+        "✅ Exam attempt resolved → exam_attempt_id:",
+        exam_attempt_id
+    )
 
     # --------------------------------------------------
     # 2️⃣ Load correct response table
     # --------------------------------------------------
     ResponseModel = get_response_model(exam)
     print("📘 Response model:", ResponseModel.__name__)
+    print("INTERNAL ID:", student.id)
+    print("EXTERNAL ID:", student.student_id)
+    print("EXAM ATTEMPT ID:", exam_attempt_id)
 
     responses = (
         db.query(ResponseModel)
@@ -34812,7 +34978,7 @@ def get_student_exam_report(
 
     return {
         "exam": exam,
-        "date": date.isoformat(),
+        "date": date,
         "summary": summary,
         "topics": topics,
         "improvement_areas": improvement_areas,
@@ -37737,10 +37903,20 @@ def get_exam_dates(
     # --------------------------------------------------
     # 4️⃣ Format response
     # --------------------------------------------------
+    # --------------------------------------------------
+    # 4️⃣ Format response
+    # --------------------------------------------------
     dates = [
-        row.created_at.isoformat()
+        row.created_at.date().isoformat()
         for row in rows
     ]
+
+    print(f"📤 Final dates returned: {dates}")
+    print("==========================================================\n")
+
+    return {
+        "dates": dates
+    }
 
     print(f"📤 Final dates returned: {dates}")
     print("==========================================================\n")
@@ -37962,6 +38138,8 @@ def delete_oc_student_data(db: Session, student_id: str):
     
 def delete_selective_student_data(db: Session, student_id: str):
 
+    student_id = str(student_id)
+
     print("🧠 Deleting SELECTIVE data")
 
     # ==================================================
@@ -37992,19 +38170,19 @@ def delete_selective_student_data(db: Session, student_id: str):
 
     db.query(StudentHomeworkMathematicalReasoning)\
         .filter(
-            StudentHomeworkMathematicalReasoning.student_id == int(student_id)
+            StudentHomeworkMathematicalReasoning.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
     db.query(StudentHomeworkThinkingSkills)\
         .filter(
-            StudentHomeworkThinkingSkills.student_id == int(student_id)
+            StudentHomeworkThinkingSkills.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
     db.query(StudentHomeworkWriting)\
         .filter(
-            StudentHomeworkWriting.student_id == int(student_id)
+            StudentHomeworkWriting.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
@@ -38014,7 +38192,7 @@ def delete_selective_student_data(db: Session, student_id: str):
 
     db.query(StudentExamResponseWriting)\
         .filter(
-            StudentExamResponseWriting.student_id == int(student_id)
+            StudentExamResponseWriting.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
@@ -38024,19 +38202,19 @@ def delete_selective_student_data(db: Session, student_id: str):
 
     db.query(StudentExamResponseMathematicalReasoning)\
         .filter(
-            StudentExamResponseMathematicalReasoning.student_id == int(student_id)
+            StudentExamResponseMathematicalReasoning.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
     db.query(StudentExamResultsMathematicalReasoning)\
         .filter(
-            StudentExamResultsMathematicalReasoning.student_id == int(student_id)
+            StudentExamResultsMathematicalReasoning.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
     db.query(StudentExamMathematicalReasoning)\
         .filter(
-            StudentExamMathematicalReasoning.student_id == int(student_id)
+            StudentExamMathematicalReasoning.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
@@ -38046,19 +38224,19 @@ def delete_selective_student_data(db: Session, student_id: str):
 
     db.query(StudentExamResponseThinkingSkills)\
         .filter(
-            StudentExamResponseThinkingSkills.student_id == int(student_id)
+            StudentExamResponseThinkingSkills.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
     db.query(StudentExamResultsThinkingSkills)\
         .filter(
-            StudentExamResultsThinkingSkills.student_id == int(student_id)
+            StudentExamResultsThinkingSkills.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
     db.query(StudentExamThinkingSkills)\
         .filter(
-            StudentExamThinkingSkills.student_id == int(student_id)
+            StudentExamThinkingSkills.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
@@ -38068,18 +38246,17 @@ def delete_selective_student_data(db: Session, student_id: str):
 
     db.query(StudentExamReportReading)\
         .filter(
-            StudentExamReportReading.student_id == int(student_id)
+            StudentExamReportReading.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
     db.query(StudentExamReading)\
         .filter(
-            StudentExamReading.student_id == int(student_id)
+            StudentExamReading.student_id == student_id
         )\
         .delete(synchronize_session=False)
 
     print("✅ Selective data deleted")
-
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
     id: str,
@@ -38118,10 +38295,12 @@ def delete_student_exam_module(
 
     except Exception as e:
         db.rollback()
-        print("❌ Delete failed:", e)
+        print("❌ Delete failed:", repr(e))
+        traceback.print_exc()
+
         raise HTTPException(
             status_code=500,
-            detail="Failed to delete student and related data"
+            detail=str(e)
         )
 
     return {
