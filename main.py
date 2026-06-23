@@ -44981,7 +44981,7 @@ def get_naplan_reading_report(
     for t in topic_accuracy:
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+            "accuracy_percent": t["score_percent"],
             "score_percent": t["score_percent"],
             "total_questions": t["total_questions"],
             "limited_data": t["total_questions"] < 5
@@ -45293,7 +45293,7 @@ def get_naplan_reading_homework_report(
     for t in topic_accuracy:
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+            "accuracy_percent": t["score_percent"],
             "score_percent": t["score_percent"],
             "total_questions": t["total_questions"],
             "limited_data": t["total_questions"] < 5
@@ -45960,16 +45960,11 @@ def get_naplan_language_conventions_homework_report(
 
     for t in topic_accuracy:
         improvement_areas.append({
-            "topic":
-                t["topic"],
-            "accuracy_percent":
-                t["accuracy_percent"],
-            "score_percent":
-                t["score_percent"],
-            "total_questions":
-                t["total_questions"],
-            "limited_data":
-                t["total_questions"] < 5
+            "topic": t["topic"],
+            "accuracy_percent": t["score_percent"],
+            "score_percent": t["score_percent"],
+            "total_questions": t["total_questions"],
+            "limited_data": t["total_questions"] < 5
         })
 
     improvement_areas.sort(
@@ -46304,17 +46299,22 @@ def get_naplan_language_conventions_report(
     improvement_areas = []
 
     for t in topic_accuracy:
+
+        score_percent = (
+            round(
+                (t["correct"] / t["attempted"]) * 100,
+                2
+            )
+            if t["attempted"]
+            else 0
+        )
+
         improvement_areas.append({
-            "topic":
-                t["topic"],
-            "accuracy_percent":
-                t["accuracy_percent"],
-            "score_percent":
-                t["score_percent"],
-            "total_questions":
-                t["total_questions"],
-            "limited_data":
-                t["total_questions"] < 5
+            "topic": t["topic"],
+            "accuracy_percent": score_percent,
+            "score_percent": score_percent,
+            "total_questions": t["total_questions"],
+            "limited_data": t["total_questions"] < 5
         })
 
     improvement_areas.sort(
@@ -47968,6 +47968,13 @@ def get_homework_oc_mathematical_reasoning_report(
             detail="No completed OC Mathematical Reasoning homework found"
         )
 
+    print("================================")
+    print("===== HOMEWORK REPORT =====")
+    print("student:", student.student_id)
+    print("attempt_id:", attempt.id)
+    print("completed_at:", attempt.completed_at)
+    print("================================")
+
     print(f"✅ Using homework attempt_id: {attempt.id}")
 
     # --------------------------------------------------
@@ -48133,7 +48140,7 @@ def get_oc_mathematical_reasoning_report(
     
     if attempt_id is not None:
         print(f"📌 Using provided attempt_id: {attempt_id}")
-    
+
         attempt = (
             db.query(StudentExamOCMathematicalReasoning)
             .filter(
@@ -48143,7 +48150,13 @@ def get_oc_mathematical_reasoning_report(
             )
             .first()
         )
-    
+
+        print("===== EXAM REPORT =====")
+        print("student:", student.student_id)
+
+        if attempt:
+            print("attempt_id:", attempt.id)
+            print("completed_at:", attempt.completed_at)
     else:
         print("🔍 No attempt_id provided, falling back to latest...")
     
@@ -48162,6 +48175,13 @@ def get_oc_mathematical_reasoning_report(
             status_code=404,
             detail="No completed OC Mathematical Reasoning exam found"
         )
+
+    print("================================")
+    print("===== EXAM REPORT =====")
+    print("student:", student.student_id)
+    print("attempt_id:", attempt.id)
+    print("completed_at:", attempt.completed_at)
+    print("================================")
     
     print(f"✅ Using attempt_id: {attempt.id}")
     # --------------------------------------------------
@@ -48941,7 +48961,7 @@ def get_mathematical_reasoning_report(
 
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+            "accuracy_percent": t["score_percent"],
             "score_percent": t["score_percent"],
             "total_questions": t["total_questions"],
             "limited_data": limited_data
