@@ -880,6 +880,7 @@ class StudentHomeworkResponseWriting(Base):
     evaluation_json = Column(JSON, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class StudentHomeworkWriting(Base):
     __tablename__ = "student_homework_writing"
 
@@ -3158,6 +3159,7 @@ class UpdateStudentRequest(BaseModel):
     name: Optional[str] = None
     parent_email: Optional[str] = None
     class_name: Optional[str] = None
+    student_year: Optional[str] = None
     class_day: Optional[str] = None
     center_code: Optional[str] = None
     gender: str
@@ -5573,8 +5575,8 @@ def get_students_by_center(
             "student_id": student.student_id,
             "name": student.name,
             "class_name": student.class_name,
-            "class_day": student.class_day,
             "student_year": student.student_year,  # Added
+            "class_day": student.class_day,
             "parent_email": student.parent_email,
             "gender": student.gender,
             "center_code": student.center_code
@@ -19185,7 +19187,7 @@ def delete_homework_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                     )
 
                 db.query(StudentHomeworkResponseThinkingSkills).filter(
-                    StudentHomeworkResponseThinkingSkills.exam_attempt_id == latest_attempt.id
+                    StudentHomeworkResponseThinkingSkills.homework_attempt_id == latest_attempt.id
                 ).delete()
 
                 db.delete(latest_attempt)
@@ -19213,7 +19215,7 @@ def delete_homework_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                     )
 
                 db.query(StudentHomeworkResponseMathematicalReasoning).filter(
-                    StudentHomeworkResponseMathematicalReasoning.exam_attempt_id == latest_attempt.id
+                    StudentHomeworkResponseMathematicalReasoning.attempt_id == latest_attempt.id
                 ).delete()
 
                 db.delete(latest_attempt)
@@ -19269,7 +19271,7 @@ def delete_homework_exam_attempt(payload: dict, db: Session = Depends(get_db)):
                     )
 
                 db.query(StudentHomeworkResponseWriting).filter(
-                    StudentHomeworkResponseWriting.exam_attempt_id == latest_attempt.id
+                    StudentHomeworkResponseWriting.homework_attempt_id == latest_attempt.id
                 ).delete()
 
                 db.delete(latest_attempt)
@@ -31276,7 +31278,20 @@ def compute_student_scores_from_responses(raw_rows):
         })
 
     return results
- 
+
+@app.get("/api/reports/class/combined")
+def class_exam_report_combined(
+    class_name: str,
+    class_year: str,
+    center_code: str,
+    exam: str,
+    date: str,
+    db: Session = Depends(get_db)
+):
+    return {
+        "message": "combined endpoint working"
+    }
+
 @app.get("/api/reports/class")
 def class_exam_report(
     class_name: str,
@@ -31350,6 +31365,11 @@ def class_exam_report(
     for s in all_students:
         print(s)
     reports = []
+    # ==================================
+    # ACCUMULATE ALL CLASS DAYS
+    # ==================================
+    all_student_results = []
+    all_students_total = 0
 
     # ===========================
     # STEP 2: Loop per class day
@@ -31542,6 +31562,55 @@ def class_exam_report(
                 )
 
                 attempt_ids = [a[0] for a in attempt_ids]
+                print("ATTEMPT IDS:", attempt_ids)
+                print("ATTEMPT COUNT:", len(attempt_ids))
+                if not attempt_ids:
+
+                    student_results = []
+                    students_attempted = 0
+
+                else:
+
+                    ResponseModel = get_exam_response_model(exam)
+
+                    raw_rows = (
+                        db.query(
+                            ResponseModel.student_id,
+                            ResponseModel.exam_attempt_id,
+                            ResponseModel.is_correct
+                        )
+                        .filter(
+                            ResponseModel.exam_attempt_id.in_(attempt_ids)
+                        )
+                        .all()
+                    )
+
+                    raw_results = compute_student_scores_from_responses(raw_rows)
+
+                    student_results = []
+
+                    for r in raw_results:
+
+                        internal_id = next(
+                            (
+                                k
+                                for k, v in student_code_map.items()
+                                if v == r["student_id"]
+                            ),
+                            None
+                        )
+
+                        if internal_id:
+
+                            student_results.append({
+                                "student_id": internal_id,
+                                "student_code": r["student_id"],
+                                "student_name": student_name_map.get(internal_id),
+                                "score": r["score"],
+                                "accuracy": r["accuracy"]
+                            })
+
+                    students_attempted = len(student_results)
 
                 # KEEP ALL YOUR EXISTING
                 # THINKING SKILLS / MATH CODE HERE
@@ -32128,10 +32197,15 @@ def class_exam_report(
             
             print("[STEP 3] Students attempted:", students_attempted)
 
-
+        print("student_results exists:", 'student_results' in locals())
+        print("students_attempted exists:", 'students_attempted' in locals())
         # ---------------------------
         # STEP 5: Summary metrics
         # ---------------------------
+        print("CLASS KEY:", class_key)
+        print("EXAM KEY:", exam_key)
+        print("HAS student_results:", "student_results" in locals())
+        print("HAS students_attempted:", "students_attempted" in locals())
         if students_attempted == 0:
             average_score = 0
             highest_score = 0
@@ -32180,7 +32254,11 @@ def class_exam_report(
                 buckets["81-100"] += 1
 
         print("[STEP 7] Buckets:", buckets)
-
+        # ==================================
+        # ACCUMULATE FOR COMBINED REPORT
+        # ==================================
+        all_student_results.extend(student_results)
+        all_students_total += students_total
         reports.append({
             "class_day": class_day,
             "summary": {
@@ -32194,6 +32272,47 @@ def class_exam_report(
                 {"range": k, "count": v} for k, v in buckets.items()
             ]
         })
+    print("\n========== COMBINED DEBUG ==========")
+    print("ALL STUDENTS TOTAL:", all_students_total)
+    print("ALL STUDENT RESULTS:", len(all_student_results))
+
+    print("====================================")
+    # ==================================
+    # COMBINED SUMMARY
+    # ==================================
+
+    combined_students_attempted = len(all_student_results)
+
+    if combined_students_attempted == 0:
+        combined_average_score = 0
+        combined_highest_score = 0
+    else:
+        combined_average_score = round(
+            sum(s["score"] for s in all_student_results)
+            / combined_students_attempted
+        )
+
+        combined_highest_score = max(
+            s["score"] for s in all_student_results
+        )
+
+    combined_summary = {
+        "students_total": all_students_total,
+        "students_attempted": combined_students_attempted,
+        "average_score": combined_average_score,
+        "highest_score": combined_highest_score
+    }
+
+    combined_report = {
+        "class_day": "All Class Days",
+        "summary": combined_summary,
+        "leaderboard": [],
+        "score_distribution": []
+    }
+
+    print("\n========== COMBINED SUMMARY ==========")
+    print(combined_summary)
+    print("======================================")
 
     # ===========================
     # STEP 8: Final response
@@ -32202,8 +32321,18 @@ def class_exam_report(
         "class_name": class_name,
         "exam": exam,
         "date": date,
+
+        # NEW
+        "combined_report": combined_report,
+
+        # EXISTING
         "reports": reports
     }
+    print("\nCOMBINED SUMMARY IN RESPONSE:")
+    print(combined_summary)
+
+    print("\nCOMBINED REPORT IN RESPONSE:")
+    print(combined_report)
 
     print("REPORTS COUNT:", len(reports))
 
@@ -43997,7 +44126,6 @@ def edit_student_exam_module(
     )
 
     if not student:
-
         raise HTTPException(
             status_code=404,
             detail="Student not found"
@@ -44008,58 +44136,44 @@ def edit_student_exam_module(
     # =========================
 
     if payload.name is not None:
-
         student.name = payload.name
 
     if payload.parent_email is not None:
-
         student.parent_email = payload.parent_email
 
     if payload.class_name is not None:
-
         student.class_name = payload.class_name
 
-    if payload.class_day is not None:
+    if payload.student_year is not None:
+        student.student_year = payload.student_year
 
+    if payload.class_day is not None:
         student.class_day = payload.class_day
 
     if payload.gender is not None:
-
         student.gender = payload.gender
 
     if payload.center_code is not None:
-
         student.center_code = payload.center_code
 
     if payload.password is not None:
-
         # Plain text intentionally
         student.password = payload.password
 
     db.commit()
-
     db.refresh(student)
 
     return {
-
         "message": "Student updated successfully",
-
         "student": {
-
             "student_id": student.student_id,
-
             "name": student.name,
-
             "class_name": student.class_name,
-
+            "student_year": student.student_year,
             "class_day": student.class_day,
-
             "parent_email": student.parent_email,
-
             "gender": student.gender,
-
             "center_code": student.center_code
-
         }
     }
 
