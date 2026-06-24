@@ -6,6 +6,7 @@ import os
 from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel, EmailStr, Field
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash
 load_dotenv()
 
 gtk_bin = os.getenv("GTK_BIN_PATH")
@@ -257,6 +258,17 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class UserResponse(BaseModel):
+    name: str
+    email: str
+    phone_number: Optional[str] = None
+    class_name: Optional[str] = None
+    class_day: Optional[str] = None
+    student_id: str                     # <-- NEW FIELD
+
+    class Config:
+        orm_mode = True
+
 class QuestionUsageWriting(Base):
 
     __tablename__ = "question_usage_writing"
@@ -4442,7 +4454,14 @@ class SessionModel(Base):  # Handles authentication sessions
     # Establish relationship back to User
     user = relationship("User", back_populates="sessions")
 
-
+class EditUserRequest(BaseModel):
+    name: str
+    email: EmailStr
+    phone_number: str
+    class_name: str
+    class_day: str
+    student_id: str                 # <-- NEW FIELD
+    password: Optional[str] = None  # only update if provided
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -4451,6 +4470,7 @@ class User(Base):
     phone_number = Column(String, nullable=False)
     class_name = Column(String, nullable=False)
     class_day = Column(String, nullable=False)  # <-- added
+    student_id = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     # Establish relationship with sessions
@@ -4635,6 +4655,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://gamified-quiz-delta.vercel.app",
+        "https://chatbot.gemkidsacademy.com.au",
         "https://leader-board-viewer-gamified-quiz.vercel.app",
         "https://leaderboard.gemkidsacademy.com.au",
         "https://gamifiedquiz.gemkidsacademy.com.au",
@@ -5653,6 +5674,50 @@ def delete_center_admin(
     return {
         "message": "Center admin deleted successfully"
     }
+@app.put("/edit-user/{user_id}")
+def edit_user(
+    user_id: int = Path(..., description="ID of the user to update"),
+    user_request: EditUserRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    # ----- Fetch the user -----
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # ----- Check if email is being updated -----
+    if user.email != user_request.email:
+        existing_email = db.query(User).filter(User.email == user_request.email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+    # ----- Check if student_id is being updated -----
+    if user.student_id != user_request.student_id:
+        existing_student = db.query(User).filter(
+            User.student_id == user_request.student_id
+        ).first()
+        if existing_student:
+            raise HTTPException(status_code=400, detail="Student ID already registered")
+
+    # ----- Apply updates -----
+    user.name = user_request.name
+    user.email = user_request.email
+    user.phone_number = user_request.phone_number
+    user.class_name = user_request.class_name
+    user.class_day = user_request.class_day
+    user.student_id = user_request.student_id  # <-- NEW FIELD UPDATE
+
+    # ----- Update password only if provided -----
+    if user_request.password:
+        user.password = generate_password_hash(user_request.password)
+
+    user.updated_at = datetime.utcnow()  # optional tracking
+
+    db.commit()
+    db.refresh(user)
+
+    return {"message": f"User '{user.name}' updated successfully!"}
+
 
 @app.post("/center-admin/add-center-admin")
 def add_center_admin(
@@ -20189,6 +20254,7 @@ def get_naplan_numeracy_exam_dates(
         })
 
     return exam_dates
+
 @app.get("/api/student/exam-dates/naplan-numeracy-homework")
 def get_naplan_numeracy_homework_dates(
     student_id: str,
@@ -45179,7 +45245,37 @@ def get_naplan_reading_report(
         "topic_accuracy": topic_accuracy,                   # Report C
         "improvement_areas": improvement_areas              # Report D
     }
+@app.get("/users/info/{user_id}", response_model=UserResponse)
+def get_user(
+    user_id: int = Path(..., description="ID of the user to retrieve"),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve a user's information by ID for editing (excluding password).
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
+    return UserResponse(
+        name=user.name,
+        email=user.email,
+        phone_number=user.phone_number,
+        class_name=user.class_name,
+        class_day=user.class_day,
+        student_id=user.student_id   # <-- NEW FIELD
+    )
+@app.get("/user_ids")
+def get_user_ids(db: Session = Depends(get_db)):
+    users = db.query(User.id, User.name).all()
+
+    return [
+        {
+            "id": u[0],
+            "name": u[1]
+        }
+        for u in users
+    ]
 @app.get("/api/student/exam-report/naplan-reading-homework")
 def get_naplan_reading_homework_report(
     student_id: str = Query(
@@ -45442,10 +45538,10 @@ def get_naplan_reading_homework_report(
 
         score_t = (
             round(
-                (t["correct"] / attempted_t) * 100,
+                (t["correct"] / t["total"]) * 100,
                 2
             )
-            if attempted_t else 0
+            if t["total"] else 0
         )
 
         topic_accuracy.append({
@@ -46416,14 +46512,12 @@ def get_naplan_language_conventions_report(
 
     for t in topic_wise_performance:
 
-        attempted_t = t[
-            "attempted"
-        ]
+        attempted_t = t["attempted"]
 
         accuracy_t = (
             round(
                 (
-                    attempted_t
+                    t["correct"]
                     / t["total"]
                 ) * 100,
                 2
@@ -46432,37 +46526,18 @@ def get_naplan_language_conventions_report(
             else 0
         )
 
-        score_t = (
-            round(
-                (
-                    t["correct"]
-                    / attempted_t
-                ) * 100,
-                2
-            )
-            if attempted_t
-            else 0
-        )
+        score_t = accuracy_t
 
         topic_accuracy.append({
-            "topic":
-                t["topic"],
-            "total_questions":
-                t["total"],
-            "attempted":
-                attempted_t,
-            "correct":
-                t["correct"],
-            "incorrect":
-                t["incorrect"],
-            "accuracy_percent":
-                accuracy_t,
-            "score_percent":
-                score_t,
-            "pass":
-                None
+            "topic": t["topic"],
+            "total_questions": t["total"],
+            "attempted": attempted_t,
+            "correct": t["correct"],
+            "incorrect": t["incorrect"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": score_t,
+            "pass": None
         })
-
     # --------------------------------------------------
     # 7️⃣ IMPROVEMENT AREAS
     # --------------------------------------------------
@@ -46470,19 +46545,10 @@ def get_naplan_language_conventions_report(
 
     for t in topic_accuracy:
 
-        score_percent = (
-            round(
-                (t["correct"] / t["attempted"]) * 100,
-                2
-            )
-            if t["attempted"]
-            else 0
-        )
-
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": score_percent,
-            "score_percent": score_percent,
+            "accuracy_percent": t["accuracy_percent"],
+            "score_percent": t["score_percent"],
             "total_questions": t["total_questions"],
             "limited_data": t["total_questions"] < 5
         })
@@ -46501,6 +46567,10 @@ def get_naplan_language_conventions_report(
     # --------------------------------------------------
     # 8️⃣ Final response
     # --------------------------------------------------
+    print("\n📉 IMPROVEMENT AREAS DEBUG")
+    for item in improvement_areas:
+        print(item)
+
     return {
         "exam_attempt_id":
             attempt.id,
@@ -46740,7 +46810,7 @@ def get_naplan_numeracy_report(
     for t in topic_accuracy:
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+            "accuracy_percent": t["score_percent"],
             "score_percent": t["score_percent"],
             "total_questions": t["total_questions"],
             "limited_data": t["total_questions"] < 5
@@ -47873,29 +47943,19 @@ def get_oc_thinking_skills_report(
 
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+
+            # 🔥 Use performance, not participation
+            "accuracy_percent": t["score_percent"],
+
             "score_percent": t["score_percent"],
             "total_questions": t["total_questions"],
             "limited_data": limited_data
         })
 
+    # 🔥 Lowest performing topics first
     improvement_areas.sort(
-        key=lambda x: x["accuracy_percent"]
+        key=lambda x: x["score_percent"]
     )
-
-    print("Improvement Areas Ranking:")
-
-    for idx, area in enumerate(
-        improvement_areas,
-        start=1
-    ):
-        print(
-            f"{idx}. {area['topic']} | "
-            f"Accuracy={area['accuracy_percent']}% | "
-            f"Questions={area['total_questions']} | "
-            f"LimitedData={area['limited_data']}"
-        )
-
     # --------------------------------------------------
     # 8️⃣ Final response
     # --------------------------------------------------
@@ -48044,21 +48104,35 @@ def get_homework_report_oc_thinking_skills(
     # --------------------------------------------------
     # 6️⃣ Improvement areas (weakest topics first)
     # --------------------------------------------------
+    # --------------------------------------------------
+    # 6️⃣ Improvement areas (weakest topics first)
+    # --------------------------------------------------
     improvement_areas = []
 
     for t in topic_wise_performance:
-        if t["total"] == 0:
-            continue
 
-        accuracy = round((t["correct"] / t["total"]) * 100, 2)
+        attempted = t["attempted"]
+
+        accuracy = (
+            round(
+                (t["correct"] / attempted) * 100,
+                2
+            )
+            if attempted > 0
+            else 0
+        )
 
         improvement_areas.append({
             "topic": t["topic"],
             "accuracy_percent": accuracy,
+            "score_percent": accuracy,
+            "total_questions": t["total"],
             "limited_data": t["total"] < 3
         })
 
-    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+    improvement_areas.sort(
+        key=lambda x: x["accuracy_percent"]
+    )
 
     print("📉 Improvement areas computed")
 
@@ -48264,13 +48338,20 @@ def get_homework_oc_mathematical_reasoning_report(
 
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+
+            # use actual performance
+            "accuracy_percent": t["score_percent"],
+
             "score_percent": t["score_percent"],
+
             "total_questions": t["total_questions"],
+
             "limited_data": limited_data
         })
 
-    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
+    improvement_areas.sort(
+        key=lambda x: x["score_percent"]
+    )
 
     # --------------------------------------------------
     # 8️⃣ Final response
@@ -48467,18 +48548,27 @@ def get_oc_mathematical_reasoning_report(
     improvement_areas = []
 
     for t in topic_accuracy:
-        limited_data = t["total_questions"] < 5
+
+        limited_data = (
+            t["total_questions"] < 5
+        )
 
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+
+            # use actual score
+            "accuracy_percent": t["score_percent"],
+
             "score_percent": t["score_percent"],
+
             "total_questions": t["total_questions"],
+
             "limited_data": limited_data
         })
 
-    improvement_areas.sort(key=lambda x: x["accuracy_percent"])
-
+    improvement_areas.sort(
+        key=lambda x: x["score_percent"]
+    )
     # --------------------------------------------------
     # 8️⃣ Final response
     # --------------------------------------------------
@@ -91200,7 +91290,7 @@ def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
     }
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 8001))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
 
 
