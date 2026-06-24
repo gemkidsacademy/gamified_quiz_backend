@@ -28465,8 +28465,18 @@ def review_oc_reading_exam(
         .all()
     )
 
-    print(f"📝 Answer rows found: {len(reports)}")
-
+    print("\n🧪 REPORT ROWS")
+    for r in reports[:10]:
+        print({
+            "question_id": r.question_id,
+            "selected_answer": r.selected_answer,
+            "correct_answer": r.correct_answer,
+            "is_correct": r.is_correct
+        })
+    print(
+        "🧪 TOTAL REPORTS:",
+        len(reports)
+    )
     report_map = {r.question_id: r for r in reports}
 
     # --------------------------------------------------
@@ -28508,16 +28518,43 @@ def review_oc_reading_exam(
 
         for q in questions:
             if not isinstance(q, dict):
-                print("❌ Skipping invalid question:", q)
                 continue
-        
+
             qid = q.get("question_id")
+
             if not qid:
-                print("❌ Missing question_id, skipping:", q)
                 continue
-        
+
             r = report_map.get(qid)
-        
+            if len(review_questions) < 5:
+                print(
+                    "🧪 QUESTION DEBUG",
+                    {
+                        "qid": qid,
+                        "selected_answer":
+                            r.selected_answer if r else None,
+                        "correct_answer":
+                            r.correct_answer if r else None,
+                        "is_correct":
+                            r.is_correct if r else None
+                    }
+                )
+
+            # 🧪 DEBUG
+            if qid == questions[0].get("question_id"):
+                print(
+                    "🧪 MATCHED REPORT",
+                    qid,
+                    {
+                        "selected_answer":
+                            r.selected_answer if r else None,
+                        "correct_answer":
+                            r.correct_answer if r else None,
+                        "is_correct":
+                            r.is_correct if r else None
+                    }
+                )
+
             options_scope = section.get("options_scope", "per_question")
         
             # collect ALL possible question-level options
@@ -28542,6 +28579,22 @@ def review_oc_reading_exam(
                     )
                 else:
                     answer_options = question_level_options or {}
+            if qid in [
+                "date_1_Q1",
+                "comparative_analysis_1_Q1"
+            ]:
+                print("\n🔍 QUESTION DEBUG")
+                print("qid =", qid)
+                print("report found =", r is not None)
+
+                if r:
+                    print({
+                        "selected_answer": r.selected_answer,
+                        "correct_answer": r.correct_answer,
+                        "is_correct": r.is_correct
+                    })
+                else:
+                    print("NO REPORT ROW FOUND")
         
             # ✅ YOU WERE MISSING THIS BLOCK
             review_questions.append({
@@ -79209,6 +79262,13 @@ def get_oc_available_subjects(
     print("📝 OC READING EXAM CHECK")
     print("-----------------------------")
 
+    class_year = (
+        str(student.student_year)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
     exam = (
         db.query(GeneratedExamReading)
         .filter(
@@ -79217,6 +79277,16 @@ def get_oc_available_subjects(
                     GeneratedExamReading.class_name
                 )
             ) == "oc",
+
+            func.trim(
+                func.replace(
+                    func.lower(
+                        GeneratedExamReading.class_year
+                    ),
+                    "year",
+                    ""
+                )
+            ) == class_year,
 
             func.upper(
                 func.trim(
