@@ -12814,6 +12814,7 @@ def get_available_subjects(
             func.lower(func.trim(student.class_name)),
 
             Exam.subject == "mathematical_reasoning",
+            Exam.class_year == normalized_student_year,
 
             Exam.center_code == student.center_code
         )
@@ -13636,6 +13637,8 @@ def get_available_subjects(
         db.query(GeneratedExamWriting)
         .filter(
             GeneratedExamWriting.is_current == True,
+            GeneratedExamWriting.class_year ==
+            normalized_student_year,
 
             GeneratedExamWriting.center_code ==
             student.center_code
