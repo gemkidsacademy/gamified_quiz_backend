@@ -5013,6 +5013,7 @@ def serialize_blocks_for_gpt_numeracy_LC(blocks: list[dict]) -> str:
         lines.extend(metadata_lines)
 
     return "\n\n".join(line for line in lines if line)
+
 def serialize_blocks_for_gpt_cloze(blocks: list[dict]) -> str:
     """
     Serializes CLOZE (question_type 5) blocks into a deterministic,
@@ -5303,6 +5304,26 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
 
     for attempt in range(retries + 1):
         serialized = serialize_blocks_for_gpt_numeracy_LC(payload["blocks"])
+        print("\n" + "=" * 80)
+        print("SERIALIZED SENT TO GPT")
+        print("=" * 80)
+        print(serialized)
+        print("=" * 80)
+        print("\n" + "=" * 80)
+        print("[GPT-NAPLAN] SERIALIZED INPUT SENT TO GPT")
+        print("=" * 80)
+        print(serialized)
+        print("=" * 80)
+
+        print("\n" + "=" * 80)
+        print("[GPT-NAPLAN] SYSTEM PROMPT")
+        print("=" * 80)
+        print(SYSTEM_PROMPT)
+
+        print("\n" + "=" * 80)
+        print("[GPT-NAPLAN] USER MESSAGE")
+        print("=" * 80)
+        print(serialized)
 
         completion = await client_save_questions.chat.completions.create(
             model="gpt-4o-mini",
@@ -5337,6 +5358,11 @@ async def parse_with_gpt_numeracy_lc(payload: dict, retries: int = 2):
         )
 
         raw = completion.choices[0].message.content
+        print("\n" + "=" * 80)
+        print("[GPT-NAPLAN] RAW GPT RESPONSE")
+        print("=" * 80)
+        print(raw)
+        print("=" * 80)
 
         try:
             parsed = json.loads(raw)
@@ -13698,6 +13724,12 @@ def get_available_subjects(
     print("📝 WRITING EXAM CHECK")
     print("-----------------------------")
 
+    # 👇 ADD THESE LINES HERE
+    print("🔍 Searching for writing exam with:")
+    print("is_current =", True)
+    print("class_year =", repr(normalized_student_year))
+    print("center_code =", repr(student.center_code))
+
     writing_exam = (
         db.query(GeneratedExamWriting)
         .filter(
@@ -13735,10 +13767,21 @@ def get_available_subjects(
         print("❌ No writing exam found")
 
     if not writing_exam:
+        print("\n📚 Available writing exams in DB:")
 
-        print("⛔ writing_exam_enabled = False")
+        exams = (
+            db.query(GeneratedExamWriting)
+            .order_by(GeneratedExamWriting.created_at.desc())
+            .all()
+        )
 
-        writing_exam_enabled = False
+        for e in exams:
+            print(
+                f"ID={e.id}, "
+                f"class_year={repr(e.class_year)}, "
+                f"center_code={repr(e.center_code)}, "
+                f"is_current={e.is_current}"
+            )
 
     else:
 
@@ -31400,6 +31443,7 @@ def compute_student_scores_from_responses(raw_rows):
         })
 
     return results
+
 
 @app.get("/api/reports/class/combined")
 def class_exam_report_combined(
@@ -85845,11 +85889,21 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
 
         # ✅ ONE semantic line per paragraph
         line = " ".join("".join(texts).split())
+
         if not line:
             continue
 
         upper = line.upper()
-        
+
+        # 🔍 DEBUG: Check if CORRECT_ANSWER paragraph is being read
+        if "CORRECT_ANSWER" in upper:
+            print("\n" + "=" * 80)
+            print("🟢 FOUND CORRECT_ANSWER PARAGRAPH")
+            print(f"Index        : {idx}")
+            print(f"Line         : {repr(line)}")
+            print(f"Upper        : {repr(upper)}")
+            print(f"Current Mode : {current_mode}")
+            print("=" * 80)    
         # -------------------------------
         # EXAM markers
         # -------------------------------
@@ -85886,25 +85940,31 @@ def parse_docx_to_ordered_blocks_numeracy(doc):
         # Only buffer options if we are explicitly inside OPTIONS
         
         if current_mode == "options":
-            if upper in {
-               "CORRECT_ANSWER:",
-               "ANSWER_TYPE:",
-               "QUESTION_TEXT:",
-               "CLOZE:",
-           } or upper.startswith("==="):
-               
-               flush_buffer()
-               current_mode = None
-           
-               # ✅ PRESERVE the marker
-               blocks.append({
-                   "type": "text",
-                   "content": line
-               })
-           
-               continue
+            print(f"[OPTIONS] Processing: {repr(line)}")
+
+            if (
+                upper.startswith("CORRECT_ANSWER:")
+                or upper.startswith("ANSWER_TYPE:")
+                or upper.startswith("QUESTION_TEXT:")
+                or upper.startswith("CLOZE:")
+                or upper.startswith("===")
+            ):
+                print("[OPTIONS] Leaving options mode")
+
+                flush_buffer()
+                current_mode = None
+
+                # ✅ Preserve the marker so later stages can process it
+                blocks.append({
+                    "type": "text",
+                    "content": line
+                })
+
+                continue
+
             else:
-                
+                print("[OPTIONS] Buffering line")
+
                 buffer.append(line)
                 continue
 
@@ -87462,11 +87522,26 @@ async def process_exam_block(
             f"[{request_id}] 🤖 Calling legacy GPT parser "
             f"for block {block_idx}"
         )
+        print("\n" + "=" * 80)
+        print(f"[{request_id}] 📤 SENDING QUESTION BLOCK TO GPT")
+        print("=" * 80)
+
+        for i, item in enumerate(question_block):
+            print(f"[{request_id}] GPT BLOCK {i}: {item}")
+
+        print("=" * 80)
 
         questions = await parse_questions_with_gpt_naplan_numeracy_lc(
             question_block=question_block,
             request_id=request_id
         )
+        print("\n" + "=" * 80)
+        print(f"[{request_id}] 📥 RAW QUESTIONS RETURNED FROM GPT")
+
+        for q in questions:
+            print(q)
+
+        print("=" * 80)
 
         print(
             f"[{request_id}] 🤖 GPT returned "
@@ -87521,6 +87596,15 @@ async def process_exam_block(
                 f"{i}/{len(questions)} (type={question_type}) | "
                 f"blocks={len(stem_blocks)}"
             )
+            print("\n" + "=" * 80)
+            print(f"[{request_id}] 📦 QUESTION BEFORE DATABASE SAVE")
+
+            print(f"Question Type : {question_type}")
+            print(f"Question Text : {q.get('question_text')}")
+            print(f"Options       : {q.get('options')}")
+            print(f"Correct Answer: {q.get('correct_answer')}")
+
+            print("=" * 80)
 
             persist_question(
                 q=q,
@@ -88413,6 +88497,11 @@ async def upload_word_naplan(
                     f"[{request_id}] 🧩 CLOZE exam detected | "
                     f"passing full exam block"
                 )
+                print("\n" + "=" * 80)
+                print(f"[{request_id}] 📤 SENDING BLOCK TO process_exam_block()")
+
+                for i, item in enumerate(block):
+                    print(f"[{request_id}] ITEM {i}: {item}")
     
                 await process_exam_block(
                     block_idx=idx,
