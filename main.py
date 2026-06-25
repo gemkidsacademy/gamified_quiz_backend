@@ -12846,7 +12846,11 @@ def get_available_subjects(
 
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
-
+    normalized_student_year = (
+        str(student.student_year)
+        .replace("Year", "")
+        .strip()
+    )
     # ==================================================
     # 🧮 MATHEMATICAL REASONING
     # ==================================================
@@ -12948,11 +12952,7 @@ def get_available_subjects(
     print("📚 HOMEWORK CHECK")
     print("-----------------------------")
 
-    normalized_student_year = (
-        str(student.student_year)
-        .replace("Year", "")
-        .strip()
-    )
+    
 
     print("🧪 Normalized student year:", normalized_student_year)
 
