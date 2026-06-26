@@ -87735,11 +87735,14 @@ def persist_question(
         # --------------------------------------------------
         # 5. Build student-visible question text
         # --------------------------------------------------
+        filtered_blocks = filter_display_blocks(display_blocks)
+
         question_text = "\n\n".join(
             b["content"]
-            for b in display_blocks
+            for b in filtered_blocks
             if b.get("type") == "text"
         )
+        
 
         # --------------------------------------------------
         # 6. Persist
@@ -87752,7 +87755,7 @@ def persist_question(
             topic=q.get("topic"),
             difficulty=q["difficulty"],
             question_text=question_text,
-            question_blocks=filter_display_blocks(display_blocks),
+            question_blocks=filtered_blocks,
             options=q.get("options"),
             correct_answer=str(q["correct_answer"]).strip(),
             has_stem_images=has_stem_images,
