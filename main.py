@@ -258,6 +258,11 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class DeleteExamAttemptRequest(BaseModel):
+    exam: str
+    mode: str
+    subject: str
+    student_id: str
 class UserResponse(BaseModel):
     name: str
     email: str
@@ -1205,6 +1210,7 @@ class StudentHomeworkThinkingSkills(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+
 class StudentHomeworkResponseThinkingSkills(Base):
     __tablename__ = "student_homework_response_thinking_skills"
 
@@ -1306,6 +1312,7 @@ class AdminExamResponseOCReading(Base):
     is_correct = Column(Boolean)
 
     submitted_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
 class AdminExamResponseOCMathematicalReasoning(Base):
     __tablename__ = "admin_exam_response_oc_mathematical_reasoning"
 
@@ -1323,6 +1330,7 @@ class AdminExamResponseOCMathematicalReasoning(Base):
     is_correct = Column(Boolean)
 
     submitted_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
 class AdminExamResponseOCThinkingSkills(Base):
     __tablename__ = "admin_exam_response_oc_thinking_skills"
 
@@ -1358,6 +1366,7 @@ class AdminExamResponseNaplanReading(Base):
     is_correct = Column(Boolean)
 
     submitted_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
 class StudentExamOCMathematicalReasoning(Base):
     __tablename__ = "student_exams_oc_mathematical_reasoning"
 
@@ -1392,6 +1401,7 @@ class StudentExamOCMathematicalReasoning(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+
 class StudentExamResponseOCMathematicalReasoning(Base):
     __tablename__ = "student_exam_response_oc_mathematical_reasoning"
 
@@ -1716,6 +1726,7 @@ class AdminExamResponseMathematicalReasoning(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
 class AdminExamResponseWriting(Base):
      __tablename__ = "admin_exam_response_writing"
  
@@ -2300,6 +2311,7 @@ class StudentExamNaplanReadingHomework(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+
 class StudentExamResponseNaplanReadingHomework(Base):
     __tablename__ = (
         "student_exam_response_naplan_reading_homework"
@@ -2382,6 +2394,7 @@ class StudentExamResponseNaplanReadingHomework(Base):
     exam = relationship(
         "ExamNaplanReadingHomework"
     )
+
 class StudentExamNaplanNumeracy(Base):
     __tablename__ = "student_exam_naplan_numeracy"
 
@@ -2799,6 +2812,7 @@ class StudentExamNaplanLanguageConventionsHomework(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+
 class StudentExamResponseNaplanLanguageConventionsHomework(Base):
     __tablename__ = (
         "student_exam_response_naplan_language_conventions_homework"
@@ -3200,6 +3214,7 @@ class StudentExamReportReading(Base):
 
     # 🕒 Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class StudentExamReportOCReading(Base):
     __tablename__ = "student_exam_report_oc_reading"
 
@@ -19498,6 +19513,3325 @@ def delete_homework_exam_attempt(payload: dict, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+def delete_selective_exam_thinking_skills(
+    db: Session,
+    student: Student
+):
+
+    print("\n")
+    print("=" * 90)
+    print("🗑️ DELETE SELECTIVE EXAM → THINKING SKILLS")
+    print("=" * 90)
+
+    print("Student")
+    print(f"    External ID : {student.student_id}")
+    print(f"    Internal ID : {student.id}")
+    print(f"    Class       : {student.class_name}")
+    print(f"    Year        : {student.student_year}")
+
+    # ==================================================
+    # STEP 1 - Find latest completed attempt
+    # ==================================================
+
+    print("\n[STEP 1] Looking for completed Thinking Skills attempts...")
+
+    attempts = (
+        db.query(StudentExamThinkingSkills)
+        .filter(
+            StudentExamThinkingSkills.student_id == student.id,
+            StudentExamThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamThinkingSkills.completed_at.desc()
+        )
+        .all()
+    )
+
+    print(f"Completed attempts found = {len(attempts)}")
+
+    for a in attempts:
+
+        print(f"""
+----------------------------------------------------
+Attempt ID     : {a.id}
+Exam ID        : {a.exam_id}
+Started At     : {a.started_at}
+Completed At   : {a.completed_at}
+Duration       : {a.duration_minutes}
+----------------------------------------------------
+""")
+
+    if not attempts:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Thinking Skills attempts found."
+        )
+
+    attempt = attempts[0]
+    attempt_id = attempt.id
+
+    print("\n✅ ATTEMPT CHOSEN FOR DELETION")
+
+    print(f"Attempt ID : {attempt.id}")
+    print(f"Exam ID    : {attempt.exam_id}")
+    print(f"Started    : {attempt.started_at}")
+    print(f"Completed  : {attempt.completed_at}")
+
+    deleted = {}
+
+    # ==================================================
+    # STEP 2 - Delete Admin Report
+    # ==================================================
+
+    print("\n[STEP 2] Searching Admin Report")
+
+    admin_report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.exam_attempt_id == attempt_id,
+            AdminExamReport.exam_type == "thinking_skills"
+        )
+        .first()
+    )
+
+    if admin_report:
+
+        print(f"✅ Admin Report Found ({admin_report.id})")
+
+        deleted["AdminExamSectionResult"] = (
+            db.query(AdminExamSectionResult)
+            .filter(
+                AdminExamSectionResult.admin_report_id == admin_report.id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        deleted["AdminReadinessRuleApplied"] = (
+            db.query(AdminReadinessRuleApplied)
+            .filter(
+                AdminReadinessRuleApplied.admin_report_id == admin_report.id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        deleted["AdminExamReport"] = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.id == admin_report.id
+            )
+            .delete(synchronize_session=False)
+        )
+
+    else:
+
+        print("⚠️ No Admin Report found.")
+
+        deleted["AdminExamSectionResult"] = 0
+        deleted["AdminReadinessRuleApplied"] = 0
+        deleted["AdminExamReport"] = 0
+
+    # ==================================================
+    # STEP 3 - Delete Admin Snapshot
+    # ==================================================
+
+    print("\n[STEP 3] Deleting Admin Response Snapshot")
+
+    deleted["AdminExamResponseThinkingSkills"] = (
+        db.query(AdminExamResponseThinkingSkills)
+        .filter(
+            AdminExamResponseThinkingSkills.exam_attempt_id == attempt_id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # ==================================================
+    # STEP 4 - Delete Student Result
+    # ==================================================
+
+    print("\n[STEP 4] Deleting Student Result")
+
+    deleted["StudentExamResultsThinkingSkills"] = (
+        db.query(StudentExamResultsThinkingSkills)
+        .filter(
+            StudentExamResultsThinkingSkills.exam_attempt_id == attempt_id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # ==================================================
+    # STEP 5 - Delete Student Responses
+    # ==================================================
+
+    print("\n[STEP 5] Deleting Student Responses")
+
+    deleted["StudentExamResponseThinkingSkills"] = (
+        db.query(StudentExamResponseThinkingSkills)
+        .filter(
+            StudentExamResponseThinkingSkills.exam_attempt_id == attempt_id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # ==================================================
+    # STEP 6 - Delete Attempt
+    # ==================================================
+
+    print("\n[STEP 6] Deleting Attempt")
+
+    deleted["StudentExamThinkingSkills"] = (
+        db.query(StudentExamThinkingSkills)
+        .filter(
+            StudentExamThinkingSkills.id == attempt_id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # ==================================================
+    # SUMMARY
+    # ==================================================
+
+    print("\n")
+    print("=" * 90)
+    print("DELETE SUMMARY")
+    print("=" * 90)
+
+    for table, rows in deleted.items():
+        print(f"{table:<45}{rows}")
+
+    print("=" * 90)
+    print("✅ Thinking Skills exam deletion staged successfully.")
+
+    return {
+        "status": "success",
+        "exam": "selective",
+        "mode": "exam",
+        "subject": "thinking_skills",
+        "student_id": student.student_id,
+        "attempt_id": attempt_id,
+        "deleted": deleted
+    }
+def delete_selective_homework_thinking_skills(
+    db: Session,
+    student: Student
+):
+
+    print("\n")
+    print("=" * 90)
+    print("🗑️ DELETE SELECTIVE HOMEWORK → THINKING SKILLS")
+    print("=" * 90)
+
+    print("Student")
+    print(f"    External ID : {student.student_id}")
+    print(f"    Internal ID : {student.id}")
+
+    # ==================================================
+    # STEP 1 - Find latest completed homework attempt
+    # ==================================================
+
+    print("\n[STEP 1] Looking for completed homework attempts...")
+
+    attempts = (
+        db.query(StudentHomeworkThinkingSkills)
+        .filter(
+            StudentHomeworkThinkingSkills.student_id == str(student.id),
+            StudentHomeworkThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentHomeworkThinkingSkills.completed_at.desc()
+        )
+        .all()
+    )
+
+    print(f"Completed homework attempts found = {len(attempts)}")
+
+    for a in attempts:
+
+        print(f"""
+----------------------------------------------------
+Homework Attempt ID : {a.id}
+Homework Exam ID    : {a.homework_exam_id}
+Started At          : {a.started_at}
+Completed At        : {a.completed_at}
+Duration            : {a.duration_minutes}
+----------------------------------------------------
+""")
+
+    if not attempts:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Thinking Skills homework found."
+        )
+
+    attempt = attempts[0]
+    attempt_id = attempt.id
+
+    print("\n✅ HOMEWORK ATTEMPT CHOSEN")
+
+    print(f"Attempt ID : {attempt.id}")
+    print(f"Homework ID: {attempt.homework_exam_id}")
+    print(f"Started    : {attempt.started_at}")
+    print(f"Completed  : {attempt.completed_at}")
+
+    deleted = {}
+
+    # ==================================================
+    # STEP 2 - Delete Homework Responses
+    # ==================================================
+
+    print("\n[STEP 2] Deleting Homework Responses")
+
+    deleted["StudentHomeworkResponseThinkingSkills"] = (
+        db.query(StudentHomeworkResponseThinkingSkills)
+        .filter(
+            StudentHomeworkResponseThinkingSkills.homework_attempt_id
+            == attempt_id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # ==================================================
+    # STEP 3 - Delete Homework Attempt
+    # ==================================================
+
+    print("\n[STEP 3] Deleting Homework Attempt")
+
+    deleted["StudentHomeworkThinkingSkills"] = (
+        db.query(StudentHomeworkThinkingSkills)
+        .filter(
+            StudentHomeworkThinkingSkills.id == attempt_id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # ==================================================
+    # SUMMARY
+    # ==================================================
+
+    print("\n")
+    print("=" * 90)
+    print("DELETE SUMMARY")
+    print("=" * 90)
+
+    for table, rows in deleted.items():
+        print(f"{table:<45}{rows}")
+
+    print("=" * 90)
+    print("✅ Homework deletion staged successfully.")
+
+    return {
+        "status": "success",
+        "exam": "selective",
+        "mode": "homework",
+        "subject": "thinking_skills",
+        "student_id": student.student_id,
+        "attempt_id": attempt_id,
+        "deleted": deleted
+    }
+
+def delete_selective_exam_mathematical_reasoning(
+    db: Session,
+    student: Student
+):
+    print("\n")
+    print("=" * 90)
+    print("DELETE SELECTIVE EXAM - MATHEMATICAL REASONING")
+    print("=" * 90)
+
+    # --------------------------------------------------
+    # Find latest COMPLETED attempt
+    # --------------------------------------------------
+
+    attempt = (
+        db.query(StudentExamMathematicalReasoning)
+        .filter(
+            StudentExamMathematicalReasoning.student_id == student.id,
+            StudentExamMathematicalReasoning.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamMathematicalReasoning.completed_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Mathematical Reasoning exam found."
+        )
+
+    print(f"Attempt ID : {attempt.id}")
+    print(f"Exam ID    : {attempt.exam_id}")
+
+    deleted = {}
+
+    # --------------------------------------------------
+    # Admin report
+    # --------------------------------------------------
+
+    admin_report = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.exam_attempt_id == attempt.id,
+            AdminExamReport.exam_type == "mathematical_reasoning"
+        )
+        .first()
+    )
+
+    if admin_report:
+
+        deleted["AdminExamSectionResult"] = (
+            db.query(AdminExamSectionResult)
+            .filter(
+                AdminExamSectionResult.admin_report_id == admin_report.id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        deleted["AdminReadinessRuleApplied"] = (
+            db.query(AdminReadinessRuleApplied)
+            .filter(
+                AdminReadinessRuleApplied.admin_report_id == admin_report.id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        deleted["AdminExamReport"] = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.id == admin_report.id
+            )
+            .delete(synchronize_session=False)
+        )
+
+    else:
+
+        deleted["AdminExamSectionResult"] = 0
+        deleted["AdminReadinessRuleApplied"] = 0
+        deleted["AdminExamReport"] = 0
+
+    # --------------------------------------------------
+    # Admin response snapshot
+    # --------------------------------------------------
+
+    deleted["AdminExamResponseMathematicalReasoning"] = (
+        db.query(AdminExamResponseMathematicalReasoning)
+        .filter(
+            AdminExamResponseMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # --------------------------------------------------
+    # Raw score snapshot
+    # --------------------------------------------------
+
+    deleted["AdminExamRawScore"] = (
+        db.query(AdminExamRawScore)
+        .filter(
+            AdminExamRawScore.exam_attempt_id == attempt.id,
+            AdminExamRawScore.subject == "mathematical_reasoning"
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # --------------------------------------------------
+    # Student result
+    # --------------------------------------------------
+
+    deleted["StudentExamResultsMathematicalReasoning"] = (
+        db.query(StudentExamResultsMathematicalReasoning)
+        .filter(
+            StudentExamResultsMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # --------------------------------------------------
+    # Student responses
+    # --------------------------------------------------
+
+    deleted["StudentExamResponseMathematicalReasoning"] = (
+        db.query(StudentExamResponseMathematicalReasoning)
+        .filter(
+            StudentExamResponseMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # --------------------------------------------------
+    # Attempt
+    # --------------------------------------------------
+
+    deleted["StudentExamMathematicalReasoning"] = (
+        db.query(StudentExamMathematicalReasoning)
+        .filter(
+            StudentExamMathematicalReasoning.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print("\nDELETE SUMMARY")
+
+    for table, rows in deleted.items():
+        print(f"{table:<45} {rows}")
+
+    return {
+        "message": "Latest completed Selective Mathematical Reasoning exam deleted.",
+        "attempt_id": attempt.id,
+        "deleted": deleted
+    }
+
+def delete_selective_homework_mathematical_reasoning(
+    db: Session,
+    student: Student
+):
+
+    print("\n")
+    print("=" * 90)
+    print("🗑️ DELETE SELECTIVE HOMEWORK → MATHEMATICAL REASONING")
+    print("=" * 90)
+
+    print("Student")
+    print(f"    External ID : {student.student_id}")
+    print(f"    Internal ID : {student.id}")
+
+    # ==================================================
+    # STEP 1 - Find latest completed homework attempt
+    # ==================================================
+
+    print("\n[STEP 1] Looking for completed Mathematical Reasoning homework attempts...")
+
+    attempts = (
+        db.query(StudentHomeworkMathematicalReasoning)
+        .filter(
+            StudentHomeworkMathematicalReasoning.student_id == student.id,
+            StudentHomeworkMathematicalReasoning.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentHomeworkMathematicalReasoning.completed_at.desc()
+        )
+        .all()
+    )
+
+    print(f"Completed homework attempts found = {len(attempts)}")
+
+    for a in attempts:
+
+        print(f"""
+----------------------------------------------------
+Homework Attempt ID : {a.id}
+Homework ID         : {a.homework_id}
+Started At          : {a.started_at}
+Completed At        : {a.completed_at}
+Score               : {a.score}
+Total Questions     : {a.total_questions}
+----------------------------------------------------
+""")
+
+    if not attempts:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Mathematical Reasoning homework found."
+        )
+
+    attempt = attempts[0]
+    attempt_id = attempt.id
+
+    print("\n✅ HOMEWORK ATTEMPT CHOSEN")
+
+    print(f"Attempt ID : {attempt.id}")
+    print(f"Homework ID: {attempt.homework_id}")
+    print(f"Started    : {attempt.started_at}")
+    print(f"Completed  : {attempt.completed_at}")
+
+    deleted = {}
+
+    # ==================================================
+    # STEP 2 - Delete Homework Responses
+    # ==================================================
+
+    print("\n[STEP 2] Deleting Homework Responses")
+
+    deleted["StudentHomeworkResponseMathematicalReasoning"] = (
+        db.query(StudentHomeworkResponseMathematicalReasoning)
+        .filter(
+            StudentHomeworkResponseMathematicalReasoning.attempt_id
+            == attempt_id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # ==================================================
+    # STEP 3 - Delete Homework Attempt
+    # ==================================================
+
+    print("\n[STEP 3] Deleting Homework Attempt")
+
+    deleted["StudentHomeworkMathematicalReasoning"] = (
+        db.query(StudentHomeworkMathematicalReasoning)
+        .filter(
+            StudentHomeworkMathematicalReasoning.id == attempt_id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # ==================================================
+    # SUMMARY
+    # ==================================================
+
+    print("\n")
+    print("=" * 90)
+    print("DELETE SUMMARY")
+    print("=" * 90)
+
+    for table, rows in deleted.items():
+        print(f"{table:<55}{rows}")
+
+    print("=" * 90)
+    print("✅ Mathematical Reasoning homework deletion staged successfully.")
+
+    return {
+        "status": "success",
+        "exam": "selective",
+        "mode": "homework",
+        "subject": "mathematical_reasoning",
+        "student_id": student.student_id,
+        "attempt_id": attempt_id,
+        "deleted": deleted
+    }
+
+
+def delete_selective_exam_reading(
+    db: Session,
+    student: Student
+):
+    """
+    Deletes the latest COMPLETED Selective Reading exam attempt together
+    with all dependent reporting/admin records.
+
+    NOTE:
+    Reading stores the EXTERNAL student_id (e.g. Gem_selective_001)
+    rather than students.id.
+    """
+
+    print("\n")
+    print("=" * 90)
+    print("🗑️ DELETE SELECTIVE EXAM → READING")
+    print("=" * 90)
+
+    try:
+
+        # ==================================================
+        # STEP 1 - Find latest completed attempt
+        # ==================================================
+
+        print("\n[STEP 1] Looking for completed Reading attempts...")
+
+        attempts = (
+            db.query(StudentExamReading)
+            .filter(
+                StudentExamReading.student_id == str(student.id),
+                StudentExamReading.completed_at.isnot(None)
+            )
+            .order_by(
+                StudentExamReading.completed_at.desc()
+            )
+            .all()
+        )
+
+        print(f"Completed attempts found = {len(attempts)}")
+
+        for a in attempts:
+
+            print(f"""
+----------------------------------------------------
+Attempt ID     : {a.id}
+Exam ID        : {a.exam_id}
+Started At     : {a.started_at}
+Completed At   : {a.completed_at}
+Finished       : {a.finished}
+----------------------------------------------------
+""")
+
+        if not attempts:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed Reading attempts found."
+            )
+
+        attempt = attempts[0]
+        attempt_id = attempt.id
+
+        print("\n✅ ATTEMPT CHOSEN FOR DELETION")
+
+        print(f"Attempt ID : {attempt.id}")
+        print(f"Exam ID    : {attempt.exam_id}")
+        print(f"Started    : {attempt.started_at}")
+        print(f"Completed  : {attempt.completed_at}")
+
+        deleted = {}
+
+        # ==================================================
+        # STEP 2 - Delete Admin Report
+        # ==================================================
+
+        print("\n[STEP 2] Searching Admin Report")
+
+        admin_report = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.exam_attempt_id == attempt_id,
+                AdminExamReport.exam_type == "reading"
+            )
+            .first()
+        )
+
+        if admin_report:
+
+            print(f"✅ Admin Report Found ({admin_report.id})")
+
+            deleted["AdminExamSectionResult"] = (
+                db.query(AdminExamSectionResult)
+                .filter(
+                    AdminExamSectionResult.admin_report_id == admin_report.id
+                )
+                .delete(synchronize_session=False)
+            )
+
+            deleted["AdminReadinessRuleApplied"] = (
+                db.query(AdminReadinessRuleApplied)
+                .filter(
+                    AdminReadinessRuleApplied.admin_report_id == admin_report.id
+                )
+                .delete(synchronize_session=False)
+            )
+
+            deleted["AdminExamReport"] = (
+                db.query(AdminExamReport)
+                .filter(
+                    AdminExamReport.id == admin_report.id
+                )
+                .delete(synchronize_session=False)
+            )
+
+        else:
+
+            print("⚠️ No Admin Report found.")
+
+            deleted["AdminExamSectionResult"] = 0
+            deleted["AdminReadinessRuleApplied"] = 0
+            deleted["AdminExamReport"] = 0
+
+        # ==================================================
+        # STEP 3 - Delete Admin Snapshot
+        # ==================================================
+
+        print("\n[STEP 3] Deleting Admin Response Snapshot")
+
+        deleted["AdminExamResponseReading"] = (
+            db.query(AdminExamResponseReading)
+            .filter(
+                AdminExamResponseReading.exam_attempt_id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 4 - Delete Student Result
+        # ==================================================
+
+        print("\n[STEP 4] Deleting Student Result")
+
+        deleted["StudentExamResultsReading"] = (
+            db.query(StudentExamResultsReading)
+            .filter(
+                StudentExamResultsReading.exam_attempt_id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 5 - Delete Question Report Rows
+        # ==================================================
+
+        print("\n[STEP 5] Deleting Question Report Rows")
+
+        deleted["StudentExamReportReading"] = (
+            db.query(StudentExamReportReading)
+            .filter(
+                StudentExamReportReading.session_id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 6 - Delete Exam Attempt
+        # ==================================================
+
+        print("\n[STEP 6] Deleting Exam Attempt")
+
+        deleted["StudentExamReading"] = (
+            db.query(StudentExamReading)
+            .filter(
+                StudentExamReading.id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # SUMMARY
+        # ==================================================
+
+        print("\n")
+        print("=" * 90)
+        print("DELETE SUMMARY")
+        print("=" * 90)
+
+        for table, rows in deleted.items():
+            print(f"{table:<45}{rows}")
+
+        print("=" * 90)
+
+        return {
+            "status": "success",
+            "exam": "selective",
+            "mode": "exam",
+            "subject": "reading",
+            "student_id": student.student_id,
+            "attempt_id": attempt_id,
+            "deleted": deleted
+        }
+
+    except Exception:
+
+        import traceback
+
+        print("\n")
+        print("=" * 90)
+        print("DELETE FAILED")
+        print("=" * 90)
+
+        traceback.print_exc()
+
+        raise
+
+def delete_selective_homework_reading(
+    db: Session,
+    student: Student
+):
+    """
+    Deletes the latest completed Selective Reading homework attempt.
+    """
+
+    print("\n")
+    print("=" * 90)
+    print("🗑️ DELETE SELECTIVE HOMEWORK → READING")
+    print("=" * 90)
+
+    try:
+
+        # ==================================================
+        # STEP 1 - Find latest completed homework attempt
+        # ==================================================
+
+        print("\n[STEP 1] Looking for completed Reading homework attempts...")
+
+        attempts = (
+            db.query(StudentHomeworkReading)
+            .filter(
+                StudentHomeworkReading.student_id == str(student.id),
+                StudentHomeworkReading.completed_at.isnot(None)
+            )
+            .order_by(
+                StudentHomeworkReading.completed_at.desc()
+            )
+            .all()
+        )
+
+        print(f"Completed homework attempts found = {len(attempts)}")
+
+        for a in attempts:
+
+            print(f"""
+----------------------------------------------------
+Homework Attempt ID : {a.id}
+Homework Exam ID    : {a.exam_id}
+Started At          : {a.started_at}
+Completed At        : {a.completed_at}
+Finished            : {a.finished}
+----------------------------------------------------
+""")
+
+        if not attempts:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed Reading homework attempts found."
+            )
+
+        attempt = attempts[0]
+        attempt_id = attempt.id
+
+        print("\n✅ HOMEWORK ATTEMPT CHOSEN")
+
+        print(f"Attempt ID : {attempt.id}")
+        print(f"Exam ID    : {attempt.exam_id}")
+        print(f"Started    : {attempt.started_at}")
+        print(f"Completed  : {attempt.completed_at}")
+
+        deleted = {}
+
+        # ==================================================
+        # STEP 2 - Delete Homework Report Rows
+        # ==================================================
+
+        print("\n[STEP 2] Deleting Homework Report Rows")
+
+        deleted["StudentHomeworkReportReading"] = (
+            db.query(StudentHomeworkReportReading)
+            .filter(
+                StudentHomeworkReportReading.session_id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 3 - Delete Homework Attempt
+        # ==================================================
+
+        print("\n[STEP 3] Deleting Homework Attempt")
+
+        deleted["StudentHomeworkReading"] = (
+            db.query(StudentHomeworkReading)
+            .filter(
+                StudentHomeworkReading.id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # SUMMARY
+        # ==================================================
+
+        print("\n")
+        print("=" * 90)
+        print("DELETE SUMMARY")
+        print("=" * 90)
+
+        for table, rows in deleted.items():
+            print(f"{table:<45}{rows}")
+
+        print("=" * 90)
+
+        return {
+            "status": "success",
+            "exam": "selective",
+            "mode": "homework",
+            "subject": "reading",
+            "student_id": student.student_id,
+            "attempt_id": attempt_id,
+            "deleted": deleted
+        }
+
+    except Exception:
+
+        import traceback
+
+        print("\n")
+        print("=" * 90)
+        print("DELETE FAILED")
+        print("=" * 90)
+
+        traceback.print_exc()
+
+        raise
+def delete_selective_exam_writing(
+    db: Session,
+    student: Student
+):
+    """
+    Deletes the latest completed Selective Writing exam attempt.
+    """
+
+    print("\n")
+    print("=" * 90)
+    print("🗑️ DELETE SELECTIVE EXAM → WRITING")
+    print("=" * 90)
+
+    try:
+
+        # ==================================================
+        # STEP 1 - Find latest completed Writing attempt
+        # ==================================================
+
+        print("\n[STEP 1] Looking for completed Writing attempts...")
+
+        attempts = (
+            db.query(StudentExamWriting)
+            .filter(
+                StudentExamWriting.student_id == student.id,
+                StudentExamWriting.completed_at.isnot(None)
+            )
+            .order_by(
+                StudentExamWriting.completed_at.desc()
+            )
+            .all()
+        )
+
+        print(f"Completed attempts found = {len(attempts)}")
+
+        for a in attempts:
+
+            print(f"""
+----------------------------------------------------
+Attempt ID     : {a.id}
+Exam ID        : {a.exam_id}
+Started At     : {a.started_at}
+Completed At   : {a.completed_at}
+Duration       : {a.duration_minutes}
+----------------------------------------------------
+""")
+
+        if not attempts:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed Writing attempts found."
+            )
+
+        attempt = attempts[0]
+        attempt_id = attempt.id
+
+        print("\n✅ ATTEMPT CHOSEN")
+
+        print(f"Attempt ID : {attempt.id}")
+        print(f"Exam ID    : {attempt.exam_id}")
+        print(f"Started    : {attempt.started_at}")
+        print(f"Completed  : {attempt.completed_at}")
+
+        deleted = {}
+
+        # ==================================================
+        # STEP 2 - Delete Admin Report
+        # ==================================================
+
+        print("\n[STEP 2] Searching Admin Report")
+
+        admin_report = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.exam_attempt_id == attempt_id,
+                AdminExamReport.exam_type == "writing"
+            )
+            .first()
+        )
+
+        if admin_report:
+
+            print(f"✅ Admin Report Found ({admin_report.id})")
+
+            deleted["AdminExamSectionResult"] = (
+                db.query(AdminExamSectionResult)
+                .filter(
+                    AdminExamSectionResult.admin_report_id == admin_report.id
+                )
+                .delete(synchronize_session=False)
+            )
+
+            deleted["AdminReadinessRuleApplied"] = (
+                db.query(AdminReadinessRuleApplied)
+                .filter(
+                    AdminReadinessRuleApplied.admin_report_id == admin_report.id
+                )
+                .delete(synchronize_session=False)
+            )
+
+            deleted["AdminExamReport"] = (
+                db.query(AdminExamReport)
+                .filter(
+                    AdminExamReport.id == admin_report.id
+                )
+                .delete(synchronize_session=False)
+            )
+
+        else:
+
+            print("⚠️ No Admin Report found.")
+
+            deleted["AdminExamSectionResult"] = 0
+            deleted["AdminReadinessRuleApplied"] = 0
+            deleted["AdminExamReport"] = 0
+
+        # ==================================================
+        # STEP 3 - Delete Raw Score
+        # ==================================================
+
+        print("\n[STEP 3] Deleting Admin Raw Score")
+
+        deleted["AdminExamRawScore"] = (
+            db.query(AdminExamRawScore)
+            .filter(
+                AdminExamRawScore.exam_attempt_id == attempt_id,
+                AdminExamRawScore.subject == "writing"
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 4 - Delete Writing Snapshot
+        # ==================================================
+
+        print("\n[STEP 4] Deleting Student Writing Snapshot")
+
+        deleted["StudentWritingSnapshot"] = (
+            db.query(StudentWritingSnapshot)
+            .filter(
+                StudentWritingSnapshot.exam_attempt_id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 5 - Delete Student Response
+        # ==================================================
+
+        print("\n[STEP 5] Deleting Student Exam Response")
+
+        deleted["StudentExamResponseWriting"] = (
+            db.query(StudentExamResponseWriting)
+            .filter(
+                StudentExamResponseWriting.exam_attempt_id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 6 - Delete Attempt
+        # ==================================================
+
+        print("\n[STEP 6] Deleting Student Exam Attempt")
+
+        deleted["StudentExamWriting"] = (
+            db.query(StudentExamWriting)
+            .filter(
+                StudentExamWriting.id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # SUMMARY
+        # ==================================================
+
+        print("\n")
+        print("=" * 90)
+        print("DELETE SUMMARY")
+        print("=" * 90)
+
+        for table, rows in deleted.items():
+            print(f"{table:<45}{rows}")
+
+        print("=" * 90)
+
+        return {
+            "status": "success",
+            "exam": "selective",
+            "mode": "exam",
+            "subject": "writing",
+            "student_id": student.student_id,
+            "attempt_id": attempt_id,
+            "deleted": deleted
+        }
+
+    except Exception:
+
+        import traceback
+
+        print("\n")
+        print("=" * 90)
+        print("DELETE FAILED")
+        print("=" * 90)
+
+        traceback.print_exc()
+
+        raise
+def delete_selective_homework_writing(
+    db: Session,
+    student: Student
+):
+    """
+    Deletes the latest completed Selective Writing homework attempt.
+    """
+
+    print("\n")
+    print("=" * 90)
+    print("🗑️ DELETE SELECTIVE HOMEWORK → WRITING")
+    print("=" * 90)
+
+    try:
+
+        # ==================================================
+        # STEP 1 - Find latest completed homework attempt
+        # ==================================================
+
+        print("\n[STEP 1] Looking for completed Writing homework attempts...")
+
+        attempts = (
+            db.query(StudentHomeworkWriting)
+            .filter(
+                StudentHomeworkWriting.student_id == str(student.id),
+                StudentHomeworkWriting.completed_at.isnot(None)
+            )
+            .order_by(
+                StudentHomeworkWriting.completed_at.desc()
+            )
+            .all()
+        )
+
+        print(f"Completed homework attempts found = {len(attempts)}")
+
+        for a in attempts:
+
+            print(f"""
+----------------------------------------------------
+Homework Attempt ID : {a.id}
+Homework ID         : {a.homework_id}
+Started At          : {a.started_at}
+Completed At        : {a.completed_at}
+Duration            : {a.duration_minutes}
+----------------------------------------------------
+""")
+
+        if not attempts:
+            raise HTTPException(
+                status_code=404,
+                detail="No completed Writing homework attempts found."
+            )
+
+        attempt = attempts[0]
+        attempt_id = attempt.id
+
+        print("\n✅ HOMEWORK ATTEMPT CHOSEN")
+
+        print(f"Attempt ID : {attempt.id}")
+        print(f"Homework ID: {attempt.homework_id}")
+        print(f"Started    : {attempt.started_at}")
+        print(f"Completed  : {attempt.completed_at}")
+
+        deleted = {}
+
+        # ==================================================
+        # STEP 2 - Delete Homework Response
+        # ==================================================
+
+        # ==================================================
+        # STEP 2 - Delete Homework Response
+        # ==================================================
+
+        print("\n[STEP 2] Deleting Homework Response")
+
+        deleted["StudentHomeworkResponseWriting"] = (
+            db.query(StudentHomeworkResponseWriting)
+            .filter(
+                StudentHomeworkResponseWriting.homework_attempt_id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 3 - Delete Homework Snapshot
+        # ==================================================
+
+        print("\n[STEP 3] Deleting Homework Snapshot")
+
+        deleted["StudentHomeworkWritingSnapshot"] = (
+            db.query(StudentHomeworkWritingSnapshot)
+            .filter(
+                StudentHomeworkWritingSnapshot.exam_attempt_id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+
+        # ==================================================
+        # STEP 4 - Delete Homework Attempt
+        # ==================================================
+
+        print("\n[STEP 4] Deleting Homework Attempt")
+
+        deleted["StudentHomeworkWriting"] = (
+            db.query(StudentHomeworkWriting)
+            .filter(
+                StudentHomeworkWriting.id == attempt_id
+            )
+            .delete(synchronize_session=False)
+        )
+        # ==================================================
+        # SUMMARY
+        # ==================================================
+
+        print("\n")
+        print("=" * 90)
+        print("DELETE SUMMARY")
+        print("=" * 90)
+
+        for table, rows in deleted.items():
+            print(f"{table:<45}{rows}")
+
+        print("=" * 90)
+
+        return {
+            "status": "success",
+            "exam": "selective",
+            "mode": "homework",
+            "subject": "writing",
+            "student_id": student.student_id,
+            "attempt_id": attempt_id,
+            "deleted": deleted
+        }
+
+    except Exception:
+
+        import traceback
+
+        print("\n")
+        print("=" * 90)
+        print("DELETE FAILED")
+        print("=" * 90)
+
+        traceback.print_exc()
+
+        raise
+def delete_oc_exam_thinking_skills(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE OC EXAM THINKING SKILLS")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(
+            StudentExamOCThinkingSkills.student_id == str(student.id),
+            StudentExamOCThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamOCThinkingSkills.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+        print("❌ No completed OC Thinking Skills exam attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed OC Thinking Skills exam attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    admin_deleted = (
+        db.query(AdminExamResponseOCThinkingSkills)
+        .filter(
+            AdminExamResponseOCThinkingSkills.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted AdminExamResponseOCThinkingSkills: "
+        f"{admin_deleted}"
+    )
+
+    student_response_deleted = (
+        db.query(StudentExamResponseOCThinkingSkills)
+        .filter(
+            StudentExamResponseOCThinkingSkills.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResponseOCThinkingSkills: "
+        f"{student_response_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(
+            StudentExamOCThinkingSkills.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamOCThinkingSkills: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "oc",
+        "mode": "exam",
+        "subject": "thinking_skills",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_admin_responses": admin_deleted,
+        "deleted_student_responses": student_response_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("OC THINKING SKILLS EXAM DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+
+def delete_oc_homework_thinking_skills(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE OC HOMEWORK THINKING SKILLS")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentHomeworkOCThinkingSkills)
+        .filter(
+            StudentHomeworkOCThinkingSkills.student_id == str(student.id),
+            StudentHomeworkOCThinkingSkills.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentHomeworkOCThinkingSkills.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed OC Thinking Skills homework attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed OC Thinking Skills homework attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "homework_exam_id": attempt.homework_exam_id,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "homework_exam_id": attempt.homework_exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    student_response_deleted = (
+        db.query(StudentHomeworkResponseOCThinkingSkills)
+        .filter(
+            StudentHomeworkResponseOCThinkingSkills.homework_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentHomeworkResponseOCThinkingSkills: "
+        f"{student_response_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentHomeworkOCThinkingSkills)
+        .filter(
+            StudentHomeworkOCThinkingSkills.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentHomeworkOCThinkingSkills: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "oc",
+        "mode": "homework",
+        "subject": "thinking_skills",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_student_responses": student_response_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("OC HOMEWORK THINKING SKILLS DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_oc_exam_mathematical_reasoning(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE OC EXAM MATHEMATICAL REASONING")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(
+            StudentExamOCMathematicalReasoning.student_id == str(student.id),
+            StudentExamOCMathematicalReasoning.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamOCMathematicalReasoning.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed OC Mathematical Reasoning exam attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed OC Mathematical Reasoning exam attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    admin_deleted = (
+        db.query(AdminExamResponseOCMathematicalReasoning)
+        .filter(
+            AdminExamResponseOCMathematicalReasoning.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted AdminExamResponseOCMathematicalReasoning: "
+        f"{admin_deleted}"
+    )
+
+    student_response_deleted = (
+        db.query(StudentExamResponseOCMathematicalReasoning)
+        .filter(
+            StudentExamResponseOCMathematicalReasoning.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResponseOCMathematicalReasoning: "
+        f"{student_response_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(
+            StudentExamOCMathematicalReasoning.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamOCMathematicalReasoning: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "oc",
+        "mode": "exam",
+        "subject": "mathematical_reasoning",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_admin_responses": admin_deleted,
+        "deleted_student_responses": student_response_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("OC MATHEMATICAL REASONING EXAM DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_oc_homework_mathematical_reasoning(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE OC HOMEWORK MATHEMATICAL REASONING")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentHomeworkOCMathematicalReasoning)
+        .filter(
+            StudentHomeworkOCMathematicalReasoning.student_id == str(student.id),
+            StudentHomeworkOCMathematicalReasoning.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentHomeworkOCMathematicalReasoning.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed OC Mathematical Reasoning homework attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed OC Mathematical Reasoning homework attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "homework_exam_id": attempt.homework_exam_id,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "homework_exam_id": attempt.homework_exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    student_response_deleted = (
+        db.query(StudentHomeworkResponseOCMathematicalReasoning)
+        .filter(
+            StudentHomeworkResponseOCMathematicalReasoning.homework_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentHomeworkResponseOCMathematicalReasoning: "
+        f"{student_response_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentHomeworkOCMathematicalReasoning)
+        .filter(
+            StudentHomeworkOCMathematicalReasoning.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentHomeworkOCMathematicalReasoning: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "oc",
+        "mode": "homework",
+        "subject": "mathematical_reasoning",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_student_responses": student_response_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("OC HOMEWORK MATHEMATICAL REASONING DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_oc_exam_reading(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE OC EXAM READING")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamReadingOC)
+        .filter(
+            StudentExamReadingOC.student_id == student.student_id,
+            StudentExamReadingOC.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamReadingOC.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed OC Reading exam attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed OC Reading exam attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at,
+            "finished": attempt.finished
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at,
+        "finished": attempt.finished
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    admin_deleted = (
+        db.query(AdminExamResponseOCReading)
+        .filter(
+            AdminExamResponseOCReading.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted AdminExamResponseOCReading: "
+        f"{admin_deleted}"
+    )
+
+    report_deleted = (
+        db.query(StudentExamReportOCReading)
+        .filter(
+            StudentExamReportOCReading.session_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamReportOCReading: "
+        f"{report_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentExamReadingOC)
+        .filter(
+            StudentExamReadingOC.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamReadingOC: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "oc",
+        "mode": "exam",
+        "subject": "reading",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_admin_responses": admin_deleted,
+        "deleted_student_reports": report_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("OC READING EXAM DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_oc_homework_reading(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE OC HOMEWORK READING")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentHomeworkReadingOC)
+        .filter(
+            StudentHomeworkReadingOC.student_id == student.student_id,
+            StudentHomeworkReadingOC.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentHomeworkReadingOC.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed OC Reading homework attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed OC Reading homework attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at,
+            "finished": attempt.finished
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at,
+        "finished": attempt.finished
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    report_deleted = (
+        db.query(StudentHomeworkReportOCReading)
+        .filter(
+            StudentHomeworkReportOCReading.session_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentHomeworkReportOCReading: "
+        f"{report_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentHomeworkReadingOC)
+        .filter(
+            StudentHomeworkReadingOC.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentHomeworkReadingOC: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "oc",
+        "mode": "homework",
+        "subject": "reading",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_student_reports": report_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("OC HOMEWORK READING DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_naplan_exam_numeracy(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE NAPLAN EXAM NUMERACY")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamNaplanNumeracy)
+        .filter(
+            StudentExamNaplanNumeracy.student_id == str(student.id),
+            StudentExamNaplanNumeracy.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanNumeracy.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed NAPLAN Numeracy exam attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed NAPLAN Numeracy exam attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "year": attempt.year,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "year": attempt.year,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    admin_deleted = (
+        db.query(AdminExamResponseNaplanNumeracy)
+        .filter(
+            AdminExamResponseNaplanNumeracy.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted AdminExamResponseNaplanNumeracy: "
+        f"{admin_deleted}"
+    )
+
+    results_deleted = (
+        db.query(StudentExamResultsNaplanNumeracy)
+        .filter(
+            StudentExamResultsNaplanNumeracy.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResultsNaplanNumeracy: "
+        f"{results_deleted}"
+    )
+
+    responses_deleted = (
+        db.query(StudentExamResponseNaplanNumeracy)
+        .filter(
+            StudentExamResponseNaplanNumeracy.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResponseNaplanNumeracy: "
+        f"{responses_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentExamNaplanNumeracy)
+        .filter(
+            StudentExamNaplanNumeracy.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamNaplanNumeracy: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "naplan",
+        "mode": "exam",
+        "subject": "numeracy",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_admin_responses": admin_deleted,
+        "deleted_student_results": results_deleted,
+        "deleted_student_responses": responses_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("NAPLAN NUMERACY EXAM DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_naplan_homework_numeracy(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE NAPLAN HOMEWORK NUMERACY")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamNaplanNumeracyHomework)
+        .filter(
+            StudentExamNaplanNumeracyHomework.student_id == str(student.id),
+            StudentExamNaplanNumeracyHomework.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanNumeracyHomework.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed NAPLAN Numeracy homework attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed NAPLAN Numeracy homework attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "year": attempt.year,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "year": attempt.year,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    responses_deleted = (
+        db.query(StudentExamResponseNaplanNumeracyHomework)
+        .filter(
+            StudentExamResponseNaplanNumeracyHomework.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResponseNaplanNumeracyHomework: "
+        f"{responses_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentExamNaplanNumeracyHomework)
+        .filter(
+            StudentExamNaplanNumeracyHomework.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamNaplanNumeracyHomework: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "naplan",
+        "mode": "homework",
+        "subject": "numeracy",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_student_responses": responses_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("NAPLAN HOMEWORK NUMERACY DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_naplan_exam_language_conventions(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE NAPLAN EXAM LANGUAGE CONVENTIONS")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamNaplanLanguageConventions)
+        .filter(
+            StudentExamNaplanLanguageConventions.student_id == str(student.id),
+            StudentExamNaplanLanguageConventions.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventions.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed NAPLAN Language Conventions exam attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed NAPLAN Language Conventions exam attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "year": attempt.year,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "year": attempt.year,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    admin_deleted = (
+        db.query(AdminExamResponseNaplanLanguageConventions)
+        .filter(
+            AdminExamResponseNaplanLanguageConventions.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted AdminExamResponseNaplanLanguageConventions: "
+        f"{admin_deleted}"
+    )
+
+    results_deleted = (
+        db.query(StudentExamResultsNaplanLanguageConventions)
+        .filter(
+            StudentExamResultsNaplanLanguageConventions.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResultsNaplanLanguageConventions: "
+        f"{results_deleted}"
+    )
+
+    responses_deleted = (
+        db.query(StudentExamResponseNaplanLanguageConventions)
+        .filter(
+            StudentExamResponseNaplanLanguageConventions.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResponseNaplanLanguageConventions: "
+        f"{responses_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentExamNaplanLanguageConventions)
+        .filter(
+            StudentExamNaplanLanguageConventions.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamNaplanLanguageConventions: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "naplan",
+        "mode": "exam",
+        "subject": "language_conventions",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_admin_responses": admin_deleted,
+        "deleted_student_results": results_deleted,
+        "deleted_student_responses": responses_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("NAPLAN LANGUAGE CONVENTIONS EXAM DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_naplan_homework_language_conventions(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE NAPLAN HOMEWORK LANGUAGE CONVENTIONS")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamNaplanLanguageConventionsHomework)
+        .filter(
+            StudentExamNaplanLanguageConventionsHomework.student_id == str(student.id),
+            StudentExamNaplanLanguageConventionsHomework.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanLanguageConventionsHomework.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed NAPLAN Language Conventions homework attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed NAPLAN Language Conventions homework attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "year": attempt.year,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "year": attempt.year,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    responses_deleted = (
+        db.query(StudentExamResponseNaplanLanguageConventionsHomework)
+        .filter(
+            StudentExamResponseNaplanLanguageConventionsHomework.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResponseNaplanLanguageConventionsHomework: "
+        f"{responses_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempt_deleted = (
+        db.query(StudentExamNaplanLanguageConventionsHomework)
+        .filter(
+            StudentExamNaplanLanguageConventionsHomework.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamNaplanLanguageConventionsHomework: "
+        f"{attempt_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "naplan",
+        "mode": "homework",
+        "subject": "language_conventions",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_student_responses": responses_deleted,
+        "deleted_attempts": attempt_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("NAPLAN HOMEWORK LANGUAGE CONVENTIONS DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+
+def delete_naplan_exam_reading(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE NAPLAN EXAM READING")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamNaplanReading)
+        .filter(
+            StudentExamNaplanReading.student_id == str(student.id),
+            StudentExamNaplanReading.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanReading.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed NAPLAN Reading exam attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed NAPLAN Reading exam attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "year": attempt.year,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "year": attempt.year,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    results_deleted = (
+        db.query(StudentExamResultsNaplanReading)
+        .filter(
+            StudentExamResultsNaplanReading.exam_attempt_id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResultsNaplanReading: "
+        f"{results_deleted}"
+    )
+
+    admin_deleted = (
+        db.query(AdminExamResponseNaplanReading)
+        .filter(
+            AdminExamResponseNaplanReading.exam_attempt_id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted AdminExamResponseNaplanReading: "
+        f"{admin_deleted}"
+    )
+
+    responses_deleted = (
+        db.query(StudentExamResponseNaplanReading)
+        .filter(
+            StudentExamResponseNaplanReading.exam_attempt_id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResponseNaplanReading: "
+        f"{responses_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete attempt")
+
+    attempts_deleted = (
+        db.query(StudentExamNaplanReading)
+        .filter(
+            StudentExamNaplanReading.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamNaplanReading: "
+        f"{attempts_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "naplan",
+        "mode": "exam",
+        "subject": "reading",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_results": results_deleted,
+        "deleted_admin_responses": admin_deleted,
+        "deleted_student_responses": responses_deleted,
+        "deleted_attempts": attempts_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("NAPLAN READING EXAM DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+def delete_naplan_homework_reading(
+    db: Session,
+    student: Student
+):
+    print("\n" + "=" * 80)
+    print("DELETE NAPLAN HOMEWORK READING")
+    print("=" * 80)
+
+    # --------------------------------------------------
+    # STEP 1
+    # Resolve latest completed attempts
+    # --------------------------------------------------
+
+    print("\nSTEP 1: Resolve latest completed attempts")
+
+    attempts = (
+        db.query(StudentExamNaplanReadingHomework)
+        .filter(
+            StudentExamNaplanReadingHomework.student_id == str(student.id),
+            StudentExamNaplanReadingHomework.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamNaplanReadingHomework.completed_at.desc()
+        )
+        .all()
+    )
+
+    if not attempts:
+
+        print("❌ No completed NAPLAN Reading homework attempts found.")
+
+        return {
+            "deleted": False,
+            "message": "No completed NAPLAN Reading homework attempt found."
+        }
+
+    # --------------------------------------------------
+    # STEP 2
+    # Print every completed attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 2: Completed attempts")
+
+    for i, attempt in enumerate(attempts, start=1):
+
+        print({
+            "index": i,
+            "attempt_id": attempt.id,
+            "exam_id": attempt.exam_id,
+            "year": attempt.year,
+            "started_at": attempt.started_at,
+            "completed_at": attempt.completed_at
+        })
+
+    # --------------------------------------------------
+    # STEP 3
+    # Choose newest completed attempt
+    # --------------------------------------------------
+
+    attempt = attempts[0]
+
+    print("\nSTEP 3: Selected newest completed attempt")
+
+    print({
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "year": attempt.year,
+        "started_at": attempt.started_at,
+        "completed_at": attempt.completed_at
+    })
+
+    # --------------------------------------------------
+    # STEP 4
+    # Delete dependent tables
+    # --------------------------------------------------
+
+    print("\nSTEP 4: Delete dependent tables")
+
+    responses_deleted = (
+        db.query(StudentExamResponseNaplanReadingHomework)
+        .filter(
+            StudentExamResponseNaplanReadingHomework.exam_attempt_id
+            == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamResponseNaplanReadingHomework: "
+        f"{responses_deleted}"
+    )
+
+    # --------------------------------------------------
+    # STEP 5
+    # Delete parent attempt
+    # --------------------------------------------------
+
+    print("\nSTEP 5: Delete parent attempt")
+
+    attempts_deleted = (
+        db.query(StudentExamNaplanReadingHomework)
+        .filter(
+            StudentExamNaplanReadingHomework.id == attempt.id
+        )
+        .delete(synchronize_session=False)
+    )
+
+    print(
+        f"🗑️ Deleted StudentExamNaplanReadingHomework: "
+        f"{attempts_deleted}"
+    )
+
+    # --------------------------------------------------
+    # DELETE SUMMARY
+    # --------------------------------------------------
+
+    print("\nDELETE SUMMARY")
+
+    summary = {
+        "deleted": True,
+        "exam": "naplan",
+        "mode": "homework",
+        "subject": "reading",
+        "student_id": student.student_id,
+        "attempt_id": attempt.id,
+        "deleted_student_responses": responses_deleted,
+        "deleted_attempts": attempts_deleted
+    }
+
+    print(summary)
+
+    print("=" * 80)
+    print("NAPLAN HOMEWORK READING DELETE COMPLETE")
+    print("=" * 80 + "\n")
+
+    return summary
+@app.post("/api/admin/delete-exam-attempt-2")
+def delete_exam_attempt_2(
+    req: DeleteExamAttemptRequest,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # Normalize payload
+    # --------------------------------------------------
+
+    exam = req.exam.lower().strip()
+    mode = req.mode.lower().strip()
+    subject = req.subject.lower().strip()
+
+    # --------------------------------------------------
+    # Resolve student once
+    # --------------------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(req.student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found."
+        )
+
+    try:
+
+        # ==================================================
+        # SELECTIVE
+        # ==================================================
+
+        if exam == "selective":
+
+            # -------------------------------
+            # EXAMS
+            # -------------------------------
+
+            if mode == "exam":
+
+                if subject == "thinking_skills":
+
+                    result = delete_selective_exam_thinking_skills(
+                        db,
+                        student
+                    )
+
+                elif subject == "mathematical_reasoning":
+
+                    result = delete_selective_exam_mathematical_reasoning(
+                        db,
+                        student
+                    )
+
+                elif subject == "reading":
+
+                    result = delete_selective_exam_reading(
+                        db=db,
+                        student=student
+                    )
+
+                elif subject == "writing":
+                    result = delete_selective_exam_writing(
+                        db,
+                        student
+                    )
+
+                else:
+
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unsupported subject: {subject}"
+                    )
+
+            # -------------------------------
+            # HOMEWORK
+            # -------------------------------
+
+            elif mode == "homework":
+
+                if subject == "thinking_skills":
+
+                    result = delete_selective_homework_thinking_skills(
+                        db,
+                        student
+                    )
+
+                elif subject == "mathematical_reasoning":
+
+                    result = delete_selective_homework_mathematical_reasoning(
+                        db=db,
+                        student=student
+                    )
+
+                elif subject == "reading":
+                    
+                    result = delete_selective_homework_reading(
+                        db=db,
+                        student=student
+                    )
+
+                elif subject == "writing":
+                    
+                    result = delete_selective_homework_writing(
+                        db,
+                        student
+                    )
+
+                else:
+
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unsupported subject: {subject}"
+                    )
+
+            else:
+
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported mode: {mode}"
+                )
+
+        # ==================================================
+        # OC
+        # ==================================================
+
+        elif exam == "oc":
+
+            if mode == "exam":
+
+                if subject == "thinking_skills":
+                    result = delete_oc_exam_thinking_skills(
+                        db,
+                        student
+                    )
+
+                elif subject == "reading":
+                    result = delete_oc_exam_reading(
+                        db,
+                        student
+                    )
+
+                elif subject == "mathematical_reasoning":
+                    result = delete_oc_exam_mathematical_reasoning(
+                        db,
+                        student
+                    )
+
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unsupported OC exam subject: {subject}"
+                    )
+
+            elif mode == "homework":
+
+                if subject == "thinking_skills":
+                    result = delete_oc_homework_thinking_skills(
+                        db,
+                        student
+                    )
+
+                elif subject == "reading":
+                    result = delete_oc_homework_reading(
+                        db,
+                        student
+                    )
+
+                elif subject == "mathematical_reasoning":
+                    result = delete_oc_homework_mathematical_reasoning(
+                        db,
+                        student
+                    )
+
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unsupported OC homework subject: {subject}"
+                    )
+
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported OC mode: {mode}"
+                )
+
+        # ==================================================
+        # NAPLAN
+        # ==================================================
+
+        elif exam == "naplan":
+
+            if mode == "exam":
+
+                if subject == "numeracy":
+                    result = delete_naplan_exam_numeracy(
+                        db,
+                        student
+                    )
+
+                elif subject == "language_conventions":
+                    result = delete_naplan_exam_language_conventions(
+                        db,
+                        student
+                    )
+
+                elif subject == "reading":
+                    result = delete_naplan_exam_reading(
+                        db,
+                        student
+                    )
+
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unsupported NAPLAN exam subject: {subject}"
+                    )
+
+            elif mode == "homework":
+
+                if subject == "numeracy":
+                    result = delete_naplan_homework_numeracy(
+                        db,
+                        student
+                    )
+
+                elif subject == "language_conventions":
+                    result = delete_naplan_homework_language_conventions(
+                        db,
+                        student
+                    )
+
+                elif subject == "reading":
+                    result = delete_naplan_homework_reading(
+                        db,
+                        student
+                    )
+
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unsupported NAPLAN homework subject: {subject}"
+                    )
+
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported NAPLAN mode: {mode}"
+                )
+
+        else:
+
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported exam: {exam}"
+            )
+
+        # --------------------------------------------------
+        # Commit once
+        # --------------------------------------------------
+
+        db.commit()
+
+        return result
+
+    except Exception:
+
+        db.rollback()
+        raise
+    
 @app.delete("/api/delete-exam-attempt")
 def delete_exam_attempt(payload: dict, db: Session = Depends(get_db)):
 
@@ -79956,6 +83290,7 @@ def generate_admin_exam_report(
     print("🧠 ================== GENERATE ADMIN EXAM REPORT END ==================\n")
 
     return admin_report
+
 def resolve_option_value(raw_opt, db):
     """
     Normalize a single option value into:
