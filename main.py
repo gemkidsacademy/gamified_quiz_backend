@@ -16,6 +16,10 @@ if gtk_bin and os.name == "nt":
 from weasyprint import HTML  
 import docx   
 from datetime import date    
+import csv
+import io
+
+from fastapi.responses import StreamingResponse
 from fastapi.encoders import jsonable_encoder   
 from io import BytesIO   
 from typing import List,Union  
@@ -54,7 +58,7 @@ import base64
  
 import json
 
-from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey,or_,select, func, text, Boolean, Date, Text, desc, Float, Index, case, Numeric, distinct, cast, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey,or_,select, func, text, Boolean, Date, Text, desc, Float, Index, case, Numeric, distinct, cast, UniqueConstraint, Time
 from fastapi.responses import JSONResponse, HTMLResponse
 
 
@@ -258,6 +262,525 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
+class AcademicTermsRequest(BaseModel):
+
+    center_code: str
+
+class LeaderboardRequest(BaseModel):
+
+    center_code: str
+
+    term_id: int
+
+    session: int
+
+from sqlalchemy.ext.mutable import MutableDict
+class StudentGamifiedQuizAttempt(Base):
+
+    __tablename__ = "student_gamified_quiz_attempts"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    # --------------------------------
+    # Student
+    # --------------------------------
+
+    student_id = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    # --------------------------------
+    # Quiz Reference
+    # --------------------------------
+
+    generated_quiz_id = Column(
+        Integer,
+        ForeignKey("generated_gamified_quizzes.id"),
+        nullable=False,
+        index=True
+    )
+
+    # --------------------------------
+    # Snapshot Information
+    # --------------------------------
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    category = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    class_year = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    class_day = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    term_id = Column(
+        Integer,
+        ForeignKey("academic_terms.id"),
+        nullable=False,
+        index=True
+    )
+
+    session = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    # --------------------------------
+    # Student Progress
+    # --------------------------------
+
+    current_score = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+    total_questions = Column(
+        Integer,
+        nullable=False
+    )
+
+    answers_json = Column(
+        MutableDict.as_mutable(JSON),
+        default=dict,
+        nullable=False
+    )
+
+    is_completed = Column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
+
+    # --------------------------------
+    # Audit
+    # --------------------------------
+
+    started_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime,
+        nullable=True
+    )
+
+class SubmitQuizAnswerRequest(BaseModel):
+
+    student_id: str
+
+    question_index: int
+
+    selected_option: str
+
+class CurrentQuizRequest(BaseModel):
+    student_id: str
+
+class RunSchedulerRequest(BaseModel):
+
+    center_code: str
+
+class SchedulerConfigurationLoadRequest(BaseModel):
+
+    center_code: str
+class SchedulerConfiguration(Base):
+
+    __tablename__ = "scheduler_configuration"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    scheduler_enabled = Column(
+        Boolean,
+        default=True
+    )
+
+    run_time = Column(
+        Time,
+        nullable=False
+    )
+
+    timezone = Column(
+        String,
+        nullable=False
+    )
+
+    monday = Column(
+        Boolean,
+        default=False
+    )
+
+    tuesday = Column(
+        Boolean,
+        default=False
+    )
+
+    wednesday = Column(
+        Boolean,
+        default=False
+    )
+
+    thursday = Column(
+        Boolean,
+        default=False
+    )
+
+    friday = Column(
+        Boolean,
+        default=False
+    )
+
+    saturday = Column(
+        Boolean,
+        default=False
+    )
+
+    sunday = Column(
+        Boolean,
+        default=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+class SchedulerConfigurationRequest(BaseModel):
+
+    center_code: str
+
+    scheduler_enabled: bool
+
+    run_time: str
+
+    timezone: str
+
+    monday: bool
+
+    tuesday: bool
+
+    wednesday: bool
+
+    thursday: bool
+
+    friday: bool
+
+    saturday: bool
+
+    sunday: bool
+
+class ActivityTypeListRequest(BaseModel):
+
+    center_code: str
+
+class UpdateActivityStatusRequest(BaseModel):
+
+    is_enabled: bool
+class UpdateActivityRequest(BaseModel):
+
+    
+    activity_name: str
+
+    is_enabled: bool
+
+class ActivityType(Base):
+
+    __tablename__ = "activity_types"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    activity_name = Column(
+        String,
+        nullable=False
+    )
+
+    is_enabled = Column(
+        Boolean,
+        default=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+class AddActivityTypeRequest(BaseModel):
+
+    center_code: str
+
+    activity_name: str
+
+    is_enabled: bool
+
+class DownloadSessionTemplateRequest(BaseModel):
+    center_code: str
+class SessionTopic(Base):
+    __tablename__ = "session_topics"
+
+    id = Column(Integer, primary_key=True)
+
+    center_code = Column(String, nullable=False, index=True)
+
+    category = Column(String, nullable=False)
+
+    class_year = Column(String, nullable=False)
+
+    class_day = Column(String, nullable=False)
+
+    session = Column(
+        Integer,
+        nullable=False
+    )
+
+    topic = Column(
+        Text,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+class GeneratedGamifiedQuiz(Base):
+    __tablename__ = "generated_gamified_quizzes"
+
+    id = Column(Integer, primary_key=True)
+
+    center_code = Column(String, nullable=False)
+
+    category = Column(String, nullable=False)
+
+    class_year = Column(String, nullable=False)
+
+    class_day = Column(String, nullable=False)
+
+    session = Column(
+        Integer,
+        nullable=False
+    )
+
+    activity_type = Column(
+        String,
+        nullable=False
+    )
+
+    topic = Column(
+        Text,
+        nullable=False
+    )
+
+    quiz_json = Column(
+        JSON,
+        nullable=False
+    )
+
+    generated_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+class UpdateClassConfigurationRequest(BaseModel):
+    category: str
+    class_year: str
+    class_day: str
+
+class CenterCodeRequest(BaseModel):
+    center_code: str
+
+class ClassConfiguration(Base):
+    __tablename__ = "class_configurations"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    category = Column(
+        String,
+        nullable=False
+    )
+
+    class_year = Column(
+        String,
+        nullable=False
+    )
+
+    class_day = Column(
+        String,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+class CreateClassConfigurationRequest(BaseModel):
+    center_code: str
+    category: str
+    class_year: str
+    class_day: str
+class CenterCodeRequest(BaseModel):
+    center_code: str
+
+class CategoryRequest(BaseModel):
+    center_code: str
+    category: str
+
+class ClassYearRequest(BaseModel):
+    center_code: str
+    category: str
+    class_year: str
+class AcademicTermRequest(BaseModel):
+    center_code: str
+    term_name: str
+    start_date: date
+    end_date: date
+
+class AcademicTermCreate(BaseModel):
+    center_code: str
+    term_name: str
+    start_date: date
+    end_date: date
+
+class AcademicTermResponse(BaseModel):
+    id: int
+    center_code: str
+    term_name: str
+    start_date: date
+    end_date: date
+    number_of_weeks: int
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+class AcademicTerm(Base):
+    __tablename__ = "academic_terms"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    term_name = Column(
+        String,
+        nullable=False
+    )
+
+    start_date = Column(
+        Date,
+        nullable=False
+    )
+
+    end_date = Column(
+        Date,
+        nullable=False
+    )
+
+    number_of_weeks = Column(
+        Integer,
+        nullable=False
+    )
+
+    is_active = Column(
+        Boolean,
+        default=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+class StudentLoginRequest(BaseModel):
+    student_id: str
+    password: str
+
+
 class DeleteExamAttemptRequest(BaseModel):
     exam: str
     mode: str
@@ -3943,6 +4466,8 @@ class ReadingExamConfigCreate(BaseModel):
 
     topics: List[ReadingTopicItem]
 
+class ClassDropdownRequest(BaseModel):
+    center_code: str
 
 class ReadingHomeworkConfigCreate(
     ReadingExamConfigCreate
@@ -5530,10 +6055,1526 @@ def generate_exam_questions_latest(
 # Get available upload dates
 # --------------------------------------------------
 from sqlalchemy import func
+from datetime import datetime
 
+@app.post("/leaderboard")
+def load_leaderboard(
+    request: LeaderboardRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("LOAD LEADERBOARD")
+    print("==============================")
+
+    print(f"Center Code : {request.center_code}")
+    print(f"Term ID     : {request.term_id}")
+    print(f"Session     : {request.session}")
+
+    leaderboard = (
+        db.query(StudentGamifiedQuizAttempt)
+        .filter(
+            StudentGamifiedQuizAttempt.center_code == request.center_code,
+            StudentGamifiedQuizAttempt.term_id == request.term_id,
+            StudentGamifiedQuizAttempt.session == request.session,
+            StudentGamifiedQuizAttempt.is_completed == True,
+        )
+        .order_by(
+            StudentGamifiedQuizAttempt.current_score.desc(),
+            StudentGamifiedQuizAttempt.completed_at.asc(),
+        )
+        .all()
+    )
+
+    print(f"Rows Found : {len(leaderboard)}")
+
+    response = []
+
+    for row in leaderboard:
+
+        response.append({
+
+            "id": row.id,
+
+            "student_id": row.student_id,
+
+            "category": row.category,
+
+            "class_year": row.class_year,
+
+            "class_day": row.class_day,
+
+            "current_score": row.current_score,
+
+            "total_questions": row.total_questions,
+
+            "is_completed": row.is_completed,
+
+        })
+
+    return response
+
+
+@app.post("/academic-terms/list")
+def get_academic_terms(
+    request: AcademicTermsRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("LOAD ACADEMIC TERMS")
+    print("==============================")
+    print(f"Center Code : {request.center_code}")
+
+    terms = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == request.center_code
+        )
+        .order_by(
+            AcademicTerm.start_date.desc()
+        )
+        .all()
+    )
+
+    print(f"Terms Found : {len(terms)}")
+
+    response = []
+
+    for term in terms:
+
+        print("--------------------------------")
+        print(f"ID      : {term.id}")
+        print(f"Name    : {term.term_name}")
+        print(f"Weeks   : {term.number_of_weeks}")
+
+        response.append({
+
+            "id": term.id,
+
+            "term_name": term.term_name,
+
+            "weeks": term.number_of_weeks,
+
+        })
+
+    return response
+@app.post("/student/current-gamified-quiz")
+def get_current_gamified_quiz(
+    request: CurrentQuizRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("FETCH CURRENT GAMIFIED QUIZ")
+    print("==============================")
+
+    print(f"Student ID: {request.student_id}")
+
+    # ------------------------------------
+    # Load Student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.student_id == request.student_id
+        )
+        .first()
+    )
+
+    if not student:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found."
+        )
+
+    print("\nStudent Found")
+    print("--------------------------------")
+    print(f"Name         : {student.name}")
+    print(f"Center Code  : {student.center_code}")
+    print(f"Category     : {student.class_name}")
+    print(f"Class Year   : {student.student_year}")
+    print(f"Class Day    : {student.class_day}")
+
+    # ------------------------------------
+    # Load Active Academic Term
+    # ------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not term:
+
+        raise HTTPException(
+            status_code=400,
+            detail="No active academic term found."
+        )
+
+    print("\nActive Academic Term")
+    print("--------------------------------")
+    print(f"Term Name    : {term.term_name}")
+    print(f"Start Date   : {term.start_date}")
+    print(f"End Date     : {term.end_date}")
+    print(f"Weeks        : {term.number_of_weeks}")
+
+    # ------------------------------------
+    # Determine Current Session
+    # ------------------------------------
+
+    today = date.today()
+
+    days_since_start = (
+        today - term.start_date
+    ).days
+
+    current_session = (
+        days_since_start // 7
+    ) + 1
+
+    print("\nCurrent Session")
+    print("--------------------------------")
+    print(f"Today         : {today}")
+    print(f"Days Elapsed  : {days_since_start}")
+    print(f"Session       : {current_session}")
+    print("--------------------------------")
+
+    # ------------------------------------
+    # Find Generated Quiz
+    # ------------------------------------
+
+    generated_quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code == student.center_code,
+            GeneratedGamifiedQuiz.category == student.class_name,
+            GeneratedGamifiedQuiz.class_year == student.student_year,
+            GeneratedGamifiedQuiz.class_day == student.class_day,
+            GeneratedGamifiedQuiz.session == current_session,
+        )
+        .first()
+    )
+
+    if not generated_quiz:
+
+        print("\nGenerated Quiz: NOT FOUND")
+
+        raise HTTPException(
+            status_code=404,
+            detail="No quiz has been generated for this class."
+        )
+
+    print("\nGenerated Quiz Found")
+    print("--------------------------------")
+    print(f"ID            : {generated_quiz.id}")
+    print(f"Category      : {generated_quiz.category}")
+    print(f"Class Year    : {generated_quiz.class_year}")
+    print(f"Class Day     : {generated_quiz.class_day}")
+    print(f"Session       : {generated_quiz.session}")
+    print(f"Topic         : {generated_quiz.topic}")
+    print(f"Activity      : {generated_quiz.activity_type}")
+    print("--------------------------------")
+    # ------------------------------------
+    # Check Existing Attempt
+    # ------------------------------------
+
+    attempt = (
+        db.query(StudentGamifiedQuizAttempt)
+        .filter(
+            StudentGamifiedQuizAttempt.student_id == student.student_id,
+            StudentGamifiedQuizAttempt.generated_quiz_id == generated_quiz.id,
+        )
+        .first()
+    )
+
+    if attempt:
+
+        print("\nStudent Attempt Found")
+        print("--------------------------------")
+        print(f"Score      : {attempt.current_score}")
+        print(f"Completed  : {attempt.is_completed}")
+
+        if attempt.is_completed:
+
+            print("\nStudent has already completed this quiz.")
+
+            return {
+
+                "already_attempted": True,
+
+                "current_score": attempt.current_score,
+
+                "total_questions": attempt.total_questions,
+
+                "message":
+                    "You have already attempted this week's quiz."
+
+            }
+
+    return generated_quiz.quiz_json
+
+
+@app.post("/scheduler/run")
+def run_scheduler(
+    request: RunSchedulerRequest,
+    db: Session = Depends(get_db)
+):
+
+    print("\n==============================")
+    print("SCHEDULER STARTED")
+    print("==============================")
+
+    # ------------------------------------
+    # Load Scheduler Configuration
+    # ------------------------------------
+
+    configuration = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code == request.center_code
+        )
+        .first()
+    )
+
+    if not configuration:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Scheduler configuration not found."
+        )
+
+    print("Scheduler configuration loaded.")
+
+    # ------------------------------------
+    # Check Scheduler Enabled
+    # ------------------------------------
+
+    if not configuration.scheduler_enabled:
+
+        return {
+            "message": "Scheduler is disabled."
+        }
+
+    print("Scheduler is enabled.")
+
+    # ------------------------------------
+    # Check Today
+    # ------------------------------------
+
+    today = datetime.today().strftime("%A").lower()
+
+    print(f"Today is: {today}")
+
+    run_today = getattr(configuration, today)
+
+    if not run_today:
+
+        return {
+            "message": f"Scheduler is not configured to run on {today.title()}."
+        }
+
+    print("Today is a scheduled run day.")
+
+    # ------------------------------------
+    # Load Active Academic Term
+    # ------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == request.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not term:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Active academic term not found."
+        )
+
+    print(f"Academic Term: {term.term_name}")
+
+    # ------------------------------------
+    # Calculate Current Session
+    # ------------------------------------
+
+    today_date = datetime.today().date()
+
+    days_elapsed = (today_date - term.start_date).days
+
+    current_session = (days_elapsed // 7) + 1
+
+    print(f"Current Session: {current_session}")
+    # ------------------------------------
+    # Load Configured Classes
+    # ------------------------------------
+
+    classes = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.center_code == request.center_code
+        )
+        .all()
+    )
+
+    print(f"\nConfigured Classes: {len(classes)}")
+    # ------------------------------------
+    # Load Enabled Activity Types
+    # ------------------------------------
+
+    enabled_activities = (
+        db.query(ActivityType)
+        .filter(
+            ActivityType.center_code == request.center_code,
+            ActivityType.is_enabled == True
+        )
+        .all()
+    )
+
+    if not enabled_activities:
+
+        raise HTTPException(
+            status_code=400,
+            detail="No enabled activity types found."
+        )
+
+    print(f"\nEnabled Activities: {len(enabled_activities)}")
+    # ------------------------------------
+    # Load Franchise Location
+    # ------------------------------------
+
+    row = db.execute(
+        select(FranchiseLocation)
+    ).scalar_one_or_none()
+
+    if row:
+
+        country = row.country
+
+        state = row.state
+
+    else:
+
+        country = "Australia"
+
+        state = "NSW"
+
+    for cls in classes:
+
+        print("--------------------------------")
+
+        print(f"Category   : {cls.category}")
+
+        print(f"Class Year : {cls.class_year}")
+
+        print(f"Class Day  : {cls.class_day}")
+
+        # ------------------------------------
+        # Find Topic for Current Session
+        # ------------------------------------
+
+        topic = (
+            db.query(SessionTopic)
+            .filter(
+                SessionTopic.center_code == request.center_code,
+                SessionTopic.category == cls.category,
+                SessionTopic.class_year == cls.class_year,
+                SessionTopic.class_day == cls.class_day,
+                SessionTopic.session == current_session,
+            )
+            .first()
+        )
+
+        if not topic:
+
+            print("Topic      : NOT FOUND")
+
+            continue
+
+        print(f"Session    : {topic.session}")
+
+        print(f"Topic      : {topic.topic}")
+
+        # ------------------------------------
+        # Randomly Select Activity
+        # ------------------------------------
+
+        selected_activity = random.choice(
+            enabled_activities
+        )
+
+        print(
+            f"Activity   : "
+            f"{selected_activity.activity_name}"
+        )
+        category = cls.category
+
+        class_year = cls.class_year
+
+        class_day = cls.class_day
+
+        topic_name = topic.topic
+
+        activity_type = selected_activity.activity_name
+
+        print("\n----- GPT INPUT -----")
+        print(f"Category      : {category}")
+        print(f"Year          : {class_year}")
+        print(f"Day           : {class_day}")
+        print(f"Session       : {current_session}")
+        print(f"Topic         : {topic_name}")
+        print(f"Activity Type : {activity_type}")
+        print("----------------------")
+        # ------------------------------------
+        # Build GPT Prompt
+        # ------------------------------------
+
+        system_prompt = '''
+        You are an expert quiz-generating AI and a creative educator.
+
+        Create a gamified quiz for {country}, {state}, {category}, {class_year} students.
+
+        Topic:
+        {topic_name}
+
+        Activity Type:
+        {activity_type}
+
+        Return ONLY one valid JSON object.
+
+        The JSON MUST have exactly this structure:
+
+        {{
+            "quiz_title": "Quiz Title",
+            "instructions": "Instructions",
+            "questions": [
+                {{
+                    "category": "{topic_name}",
+                    "prompt": "Question",
+                    "options": [
+                        "A) Option 1",
+                        "B) Option 2",
+                        "C) Option 3",
+                        "D) Option 4"
+                    ],
+                    "answer": "A) Option 1"
+                }}
+            ]
+        }}
+
+        Generate exactly FIVE questions.
+
+        Each question must:
+
+        - contain ONE clear question.
+        - have exactly FOUR options.
+        - have exactly ONE correct answer.
+        - be suitable for {class_year} students.
+
+        IMPORTANT:
+
+        - The "answer" field MUST contain the COMPLETE correct option text.
+        - The answer MUST exactly match one of the strings in the "options" array.
+        - Do NOT return only the letter such as "A", "B", "C", or "D".
+        - For example, if the correct option is "A) Sydney", then the answer MUST be:
+        "answer": "A) Sydney"
+
+        The activity type MUST influence the style of the questions.
+        '''.format(
+            country=country,
+            state=state,
+            category=category,
+            class_year=class_year,
+            topic_name=topic_name,
+            activity_type=activity_type,
+        )
+
+        # ------------------------------------
+        # Call GPT
+        # ------------------------------------
+
+        parsed_json = None
+
+        try:
+
+            print("\nCalling GPT...")
+
+            response = client.chat.completions.create(
+
+                model="gpt-4o-mini",
+
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt
+                    }
+                ],
+
+                temperature=0.5
+
+            )
+
+            quiz_text = response.choices[0].message.content.strip()
+
+            print("\n========== RAW GPT RESPONSE ==========")
+
+            print(quiz_text)
+
+            print("======================================")
+
+            parsed_json = json.loads(quiz_text)
+            generated_quiz = GeneratedGamifiedQuiz(
+
+                center_code=request.center_code,
+
+                category=category,
+
+                class_year=class_year,
+
+                class_day=class_day,
+
+                session=current_session,
+
+                topic=topic_name,
+
+                activity_type=activity_type,
+
+                quiz_json=parsed_json
+
+            )
+
+            db.add(generated_quiz)
+
+            print("\n✅ JSON parsed successfully.")
+
+            print(f"Quiz Title : {parsed_json['quiz_title']}")
+
+            print(f"Questions  : {len(parsed_json['questions'])}")
+
+        except json.JSONDecodeError as e:
+
+            print("\n❌ JSON parsing failed")
+
+            print(e)
+
+        except Exception as e:
+
+            print("\n❌ GPT call failed")
+
+            print(e)
+    
+    db.commit()
+
+    print("\n=================================")
+    print("ALL GENERATED QUIZZES SAVED")
+    print("=================================")
+
+    return {
+
+        "message": "Scheduler initialisation successful.",
+
+        "current_session": current_session,
+
+        "today": today.title(),
+
+        "term": term.term_name
+
+    }
+
+@app.post("/scheduler/configuration")
+def save_scheduler_configuration(
+    request: SchedulerConfigurationRequest,
+    db: Session = Depends(get_db)
+):
+
+    configuration = (
+
+        db.query(SchedulerConfiguration)
+
+        .filter(
+            SchedulerConfiguration.center_code == request.center_code
+        )
+
+        .first()
+
+    )
+
+    run_time = datetime.strptime(
+        request.run_time,
+        "%H:%M"
+    ).time()
+
+    if configuration:
+
+        configuration.scheduler_enabled = request.scheduler_enabled
+
+        configuration.run_time = run_time
+
+        configuration.timezone = request.timezone
+
+        configuration.monday = request.monday
+
+        configuration.tuesday = request.tuesday
+
+        configuration.wednesday = request.wednesday
+
+        configuration.thursday = request.thursday
+
+        configuration.friday = request.friday
+
+        configuration.saturday = request.saturday
+
+        configuration.sunday = request.sunday
+
+        db.commit()
+
+        db.refresh(configuration)
+
+        return {
+            "message": "Scheduler configuration updated successfully."
+        }
+
+    configuration = SchedulerConfiguration(
+
+        center_code=request.center_code,
+
+        scheduler_enabled=request.scheduler_enabled,
+
+        run_time=run_time,
+
+        timezone=request.timezone,
+
+        monday=request.monday,
+
+        tuesday=request.tuesday,
+
+        wednesday=request.wednesday,
+
+        thursday=request.thursday,
+
+        friday=request.friday,
+
+        saturday=request.saturday,
+
+        sunday=request.sunday,
+
+    )
+
+    db.add(configuration)
+
+    db.commit()
+
+    db.refresh(configuration)
+
+    return {
+        "message": "Scheduler configuration saved successfully."
+    }
+@app.post("/scheduler/configuration/load")
+def load_scheduler_configuration(
+    request: SchedulerConfigurationLoadRequest,
+    db: Session = Depends(get_db)
+):
+
+    configuration = (
+
+        db.query(SchedulerConfiguration)
+
+        .filter(
+            SchedulerConfiguration.center_code == request.center_code
+        )
+
+        .first()
+
+    )
+
+    if not configuration:
+
+        return {
+            "configuration": None
+        }
+
+    return {
+
+        "configuration": {
+
+            "scheduler_enabled": configuration.scheduler_enabled,
+
+            "run_time": configuration.run_time.strftime("%H:%M"),
+
+            "timezone": configuration.timezone,
+
+            "monday": configuration.monday,
+
+            "tuesday": configuration.tuesday,
+
+            "wednesday": configuration.wednesday,
+
+            "thursday": configuration.thursday,
+
+            "friday": configuration.friday,
+
+            "saturday": configuration.saturday,
+
+            "sunday": configuration.sunday,
+
+        }
+
+    }
+@app.post("/activity-types/list")
+def list_activity_types(
+    request: ActivityTypeListRequest,
+    db: Session = Depends(get_db)
+):
+
+    activities = (
+
+        db.query(ActivityType)
+
+        .filter(
+            ActivityType.center_code == request.center_code
+        )
+
+        .order_by(
+            ActivityType.activity_name
+        )
+
+        .all()
+
+    )
+
+    return {
+
+        "activities": [
+
+            {
+
+                "id": activity.id,
+
+                "activity_name": activity.activity_name,
+
+                "is_enabled": activity.is_enabled,
+
+                "updated_at": activity.updated_at.strftime(
+                    "%d %b %Y %I:%M %p"
+                )
+
+            }
+
+            for activity in activities
+
+        ]
+
+    }
+@app.put("/activity-types/{activity_id}/status")
+def update_activity_status(
+    activity_id: int,
+    request: UpdateActivityStatusRequest,
+    db: Session = Depends(get_db)
+):
+
+    activity = (
+
+        db.query(ActivityType)
+
+        .filter(
+            ActivityType.id == activity_id
+        )
+
+        .first()
+
+    )
+
+    if not activity:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Activity not found."
+        )
+
+    activity.is_enabled = request.is_enabled
+
+    db.commit()
+
+    db.refresh(activity)
+
+    return {
+
+        "message": "Activity updated successfully."
+
+    }
+@app.put("/activity-types/{activity_id}")
+def update_activity(
+    activity_id: int,
+    request: UpdateActivityRequest,
+    db: Session = Depends(get_db)
+):
+
+    activity = (
+
+        db.query(ActivityType)
+
+        .filter(
+            ActivityType.id == activity_id
+        )
+
+        .first()
+
+    )
+
+    if not activity:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Activity not found."
+        )
+
+    duplicate = (
+
+        db.query(ActivityType)
+
+        .filter(
+
+            ActivityType.center_code == activity.center_code,
+
+            ActivityType.activity_name == request.activity_name.strip(),
+
+            ActivityType.id != activity_id
+
+        )
+
+        .first()
+
+    )
+
+    if duplicate:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Activity already exists."
+        )
+
+    activity.activity_name = request.activity_name.strip()
+    activity.is_enabled = request.is_enabled
+
+    db.commit()
+
+    db.refresh(activity)
+
+    return {
+
+        "message": "Activity updated successfully."
+
+    }
+@app.delete("/activity-types/{activity_id}")
+def delete_activity(
+    activity_id: int,
+    db: Session = Depends(get_db)
+):
+
+    activity = (
+
+        db.query(ActivityType)
+
+        .filter(
+            ActivityType.id == activity_id
+        )
+
+        .first()
+
+    )
+
+    if not activity:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Activity not found."
+        )
+
+    db.delete(activity)
+
+    db.commit()
+
+    return {
+
+        "message": "Activity deleted successfully."
+
+    }
+@app.post("/activity-types")
+def add_activity_type(
+    request: AddActivityTypeRequest,
+    db: Session = Depends(get_db)
+):
+
+    # ---------------------------------------
+    # Check duplicate
+    # ---------------------------------------
+
+    existing = (
+        db.query(ActivityType)
+        .filter(
+            ActivityType.center_code == request.center_code,
+            ActivityType.activity_name == request.activity_name.strip()
+        )
+        .first()
+    )
+
+    if existing:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Activity already exists."
+        )
+
+    # ---------------------------------------
+    # Save
+    # ---------------------------------------
+
+    activity = ActivityType(
+
+        center_code=request.center_code,
+
+        activity_name=request.activity_name.strip(),
+
+        is_enabled=request.is_enabled
+
+    )
+
+    db.add(activity)
+
+    db.commit()
+
+    db.refresh(activity)
+
+    return {
+
+        "message": "Activity created successfully.",
+
+        "activity": {
+
+            "id": activity.id,
+
+            "activity_name": activity.activity_name,
+
+            "is_enabled": activity.is_enabled,
+
+        }
+
+    }
+
+@app.post("/class-configuration/list")
+def get_class_configurations(
+    request: CenterCodeRequest,
+    db: Session = Depends(get_db)
+):
+
+    classes = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.center_code == request.center_code
+        )
+        .order_by(
+            ClassConfiguration.category,
+            ClassConfiguration.class_year,
+            ClassConfiguration.class_day
+        )
+        .all()
+    )
+
+    return {
+        "classes": [
+            {
+                "id": item.id,
+                "category": item.category,
+                "year": item.class_year,
+                "day": item.class_day,
+            }
+            for item in classes
+        ]
+    }
+
+@app.delete("/class-configuration/{class_id}")
+def delete_class_configuration(
+    class_id: int,
+    db: Session = Depends(get_db)
+):
+
+    class_config = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.id == class_id
+        )
+        .first()
+    )
+
+    if not class_config:
+        raise HTTPException(
+            status_code=404,
+            detail="Class configuration not found."
+        )
+
+    # ---------------------------------------
+    # Delete Session Topics
+    # ---------------------------------------
+
+    db.query(SessionTopic).filter(
+        SessionTopic.center_code == class_config.center_code,
+        SessionTopic.category == class_config.category,
+        SessionTopic.class_year == class_config.class_year,
+        SessionTopic.class_day == class_config.class_day,
+    ).delete()
+
+    # ---------------------------------------
+    # Delete Generated Quizzes
+    # ---------------------------------------
+
+    db.query(GeneratedGamifiedQuiz).filter(
+        GeneratedGamifiedQuiz.center_code == class_config.center_code,
+        GeneratedGamifiedQuiz.category == class_config.category,
+        GeneratedGamifiedQuiz.class_year == class_config.class_year,
+        GeneratedGamifiedQuiz.class_day == class_config.class_day,
+    ).delete()
+
+    # ---------------------------------------
+    # Delete Class
+    # ---------------------------------------
+
+    db.delete(class_config)
+
+    db.commit()
+
+    return {
+        "message": "Class configuration deleted successfully."
+    }
+@app.post("/session-topics/download-template")
+def download_session_template(
+    request: DownloadSessionTemplateRequest,
+    db: Session = Depends(get_db)
+):
+
+    # ---------------------------------------
+    # Find Active Academic Term
+    # ---------------------------------------
+
+    academic_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == request.center_code,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not academic_term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ---------------------------------------
+    # Get Configured Classes
+    # ---------------------------------------
+
+    classes = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.center_code == request.center_code
+        )
+        .order_by(
+            ClassConfiguration.category,
+            ClassConfiguration.class_year,
+            ClassConfiguration.class_day,
+        )
+        .all()
+    )
+
+    if not classes:
+        raise HTTPException(
+            status_code=404,
+            detail="No classes configured."
+        )
+
+    # ---------------------------------------
+    # Generate CSV
+    # ---------------------------------------
+
+    output = io.StringIO()
+
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "Category",
+        "Class Year",
+        "Class Day",
+        "Session",
+        "Topic",
+    ])
+
+    for class_config in classes:
+
+        for session in range(
+            1,
+            academic_term.number_of_weeks + 1
+        ):
+
+            writer.writerow([
+                class_config.category,
+                class_config.class_year,
+                class_config.class_day,
+                session,
+                "",
+            ])
+
+    output.seek(0)
+
+    # ---------------------------------------
+    # Return CSV
+    # ---------------------------------------
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition":
+                "attachment; filename=SessionTopicsTemplate.csv"
+        },
+    )
+@app.put("/class-configuration/{class_id}")
+def update_class_configuration(
+    class_id: int,
+    request: UpdateClassConfigurationRequest,
+    db: Session = Depends(get_db)
+):
+
+    item = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.id == class_id
+        )
+        .first()
+    )
+
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail="Class configuration not found."
+        )
+
+    duplicate = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.center_code == item.center_code,
+            ClassConfiguration.category == request.category,
+            ClassConfiguration.class_year == request.class_year,
+            ClassConfiguration.class_day == request.class_day,
+            ClassConfiguration.id != class_id
+        )
+        .first()
+    )
+
+    if duplicate:
+        raise HTTPException(
+            status_code=400,
+            detail="This class configuration already exists."
+        )
+
+    item.category = request.category
+    item.class_year = request.class_year
+    item.class_day = request.class_day
+
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "message": "Class configuration updated successfully."
+    }
+
+@app.post("/class-configuration/categories")
+def get_categories(
+    request: CenterCodeRequest,
+    db: Session = Depends(get_db)
+):
+    categories = [
+        row[0]
+        for row in db.query(Student.class_name)
+            .filter(Student.center_code == request.center_code)
+            .distinct()
+            .order_by(Student.class_name)
+            .all()
+    ]
+
+    return {
+        "categories": categories
+    }
+@app.post("/class-configuration/class-years")
+def get_class_years(
+    request: CategoryRequest,
+    db: Session = Depends(get_db)
+):
+    years = [
+        row[0]
+        for row in db.query(Student.student_year)
+            .filter(
+                Student.center_code == request.center_code,
+                Student.class_name == request.category
+            )
+            .distinct()
+            .order_by(Student.student_year)
+            .all()
+    ]
+
+    return {
+        "class_years": years
+    }
+@app.post("/class-configuration")
+def create_class_configuration(
+    request: CreateClassConfigurationRequest,
+    db: Session = Depends(get_db)
+):
+
+    # ----------------------------------
+    # Check for duplicate
+    # ----------------------------------
+
+    existing = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.center_code == request.center_code,
+            ClassConfiguration.category == request.category,
+            ClassConfiguration.class_year == request.class_year,
+            ClassConfiguration.class_day == request.class_day,
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="This class has already been configured."
+        )
+
+    # ----------------------------------
+    # Save Class Configuration
+    # ----------------------------------
+
+    new_class = ClassConfiguration(
+        center_code=request.center_code,
+        category=request.category,
+        class_year=request.class_year,
+        class_day=request.class_day,
+    )
+
+    db.add(new_class)
+    db.commit()
+    db.refresh(new_class)
+
+    return {
+        "message": "Class configuration created successfully.",
+        "class_configuration": {
+            "id": new_class.id,
+            "center_code": new_class.center_code,
+            "category": new_class.category,
+            "class_year": new_class.class_year,
+            "class_day": new_class.class_day,
+        }
+    }
+@app.post("/class-configuration/class-days")
+def get_class_days(
+    request: ClassYearRequest,
+    db: Session = Depends(get_db)
+):
+    days = [
+        row[0]
+        for row in db.query(Student.class_day)
+            .filter(
+                Student.center_code == request.center_code,
+                Student.class_name == request.category,
+                Student.student_year == request.class_year
+            )
+            .distinct()
+            .order_by(Student.class_day)
+            .all()
+    ]
+
+    return {
+        "class_days": days
+    }
+
+@app.post("/class-configuration/dropdowns")
+def get_class_dropdowns(
+    request: ClassDropdownRequest,
+    db: Session = Depends(get_db)
+):
+    students = (
+        db.query(Student)
+        .filter(Student.center_code == request.center_code)
+        .all()
+    )
+
+    categories = sorted(
+        {student.class_name for student in students if student.class_name}
+    )
+
+    class_years = sorted(
+        {student.student_year for student in students if student.student_year}
+    )
+
+    class_days = sorted(
+        {student.class_day for student in students if student.class_day}
+    )
+
+    return {
+        "categories": categories,
+        "class_years": class_years,
+        "class_days": class_days,
+    }
+
+@app.post("/academic-term-gamified")
+def create_academic_term(
+    request: AcademicTermRequest,
+    db: Session = Depends(get_db)
+):
+    # -----------------------------
+    # Validate Dates
+    # -----------------------------
+    if request.end_date < request.start_date:
+        raise HTTPException(
+            status_code=400,
+            detail="End date cannot be before start date."
+        )
+
+    # -----------------------------
+    # Calculate Number of Weeks
+    # -----------------------------
+    number_of_weeks = (
+        (request.end_date - request.start_date).days // 7
+    ) + 1
+
+    # -----------------------------
+    # Deactivate Existing Active Term
+    # -----------------------------
+    db.query(AcademicTerm).filter(
+        AcademicTerm.center_code == request.center_code,
+        AcademicTerm.is_active == True
+    ).update(
+        {
+            AcademicTerm.is_active: False,
+            AcademicTerm.updated_at: datetime.utcnow()
+        }
+    )
+
+    # -----------------------------
+    # Create New Academic Term
+    # -----------------------------
+    new_term = AcademicTerm(
+        center_code=request.center_code,
+        term_name=request.term_name,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        number_of_weeks=number_of_weeks,
+        is_active=True,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+
+    db.add(new_term)
+    db.commit()
+    db.refresh(new_term)
+
+    return {
+        "message": "Academic term created successfully.",
+        "academic_term": {
+            "id": new_term.id,
+            "center_code": new_term.center_code,
+            "term_name": new_term.term_name,
+            "start_date": new_term.start_date,
+            "end_date": new_term.end_date,
+            "number_of_weeks": new_term.number_of_weeks,
+            "is_active": new_term.is_active
+        }
+    }
+@app.post("/student-login")
+def student_login(
+    request: StudentLoginRequest,
+    db: Session = Depends(get_db)
+):
+    login_id = request.student_id.strip()
+
+    # --------------------------------------------------
+    # First check AdminUser
+    # --------------------------------------------------
+    admin = (
+        db.query(AdminUser)
+        .filter(AdminUser.username == login_id)
+        .first()
+    )
+
+    if admin:
+        if admin.password != request.password:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid Username or Password"
+            )
+
+        return {
+            "message": "Login successful",
+            "user_type": "admin",
+            "admin": {
+                "id": admin.id,
+                "username": admin.username,
+                "role": admin.role,
+                "center_code": admin.center_code,
+            },
+        }
+
+    # --------------------------------------------------
+    # If not an admin, check Student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == login_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Username or Password"
+        )
+
+    if student.password != request.password:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Username or Password"
+        )
+
+    return {
+        "message": "Login successful",
+        "user_type": "student",
+        "student": {
+            "student_id": student.student_id,
+            "name": student.name,
+            "class_name": student.class_name,
+            "class_day": student.class_day,
+            "student_year": student.student_year,
+            "center_code": student.center_code,
+            "center_name": student.center_name,
+            "parent_email": student.parent_email,
+        },
+    }
 # =========================
 # Update Center Admin API
 # =========================
+
 
 @app.put("/center-admin/update-center-admin/{admin_id}")
 def update_center_admin(
@@ -23981,6 +26022,68 @@ from fastapi import UploadFile, File, Form, Depends, HTTPException
 import tempfile
 import shutil
 
+
+@app.post("/session-topics/upload")
+async def upload_session_topics(
+    center_code: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+
+    contents = await file.read()
+
+    csv_file = io.StringIO(
+        contents.decode("utf-8")
+    )
+
+    reader = csv.DictReader(csv_file)
+
+    # -----------------------------
+    # Delete previous topics
+    # -----------------------------
+
+    db.query(SessionTopic).filter(
+        SessionTopic.center_code == center_code
+    ).delete()
+
+    db.commit()
+
+    # -----------------------------
+    # Insert new topics
+    # -----------------------------
+
+    for row in reader:
+
+        topic = row["Topic"].strip()
+
+        if topic == "":
+            continue
+
+        db.add(
+
+            SessionTopic(
+
+                center_code=center_code,
+
+                category=row["Category"].strip(),
+
+                class_year=row["Class Year"].strip(),
+
+                class_day=row["Class Day"].strip(),
+
+                session=int(row["Session"]),
+
+                topic=topic,
+
+            )
+
+        )
+
+    db.commit()
+
+    return {
+        "message": "Topics uploaded successfully."
+    }
 
 @app.post("/api/admin/send-selective-report-email")
 def send_selective_report_email(
@@ -93931,29 +96034,93 @@ def get_quizzes(db: Session = Depends(get_db)):
 def generate_otp():
     return random.randint(100000, 999999)
 
+#@app.post("/send-otp")
+#def send_otp_endpoint(request: OTPRequest, db: Session = Depends(get_db)):
+ #   email = request.email.strip().lower()
+  #  print(f"[DEBUG] Received OTP request for email: {email}")
+
+   # if not email:
+    #    raise HTTPException(status_code=400, detail="Email is required")
+
+   # user = db.query(User).filter(User.email == email).first()
+    #if not user:
+     #   raise HTTPException(status_code=404, detail="Email not registered")
+
+    #otp = generate_otp()
+    #otp_store[email] = {"otp": otp, "expiry": time.time() + 300}
+
+    # Call your email sending function
+    #try:
+     #   send_otp_email(email, otp)
+    #except Exception as e:
+     #   raise HTTPException(status_code=500, detail=f"Error sending email: {e}")
+
+    #return {"message": "OTP sent successfully"} 
+
 @app.post("/send-otp")
-def send_otp_endpoint(request: OTPRequest, db: Session = Depends(get_db)):
+def send_otp_endpoint(
+    request: OTPRequest,
+    db: Session = Depends(get_db)
+):
     email = request.email.strip().lower()
+
     print(f"[DEBUG] Received OTP request for email: {email}")
 
     if not email:
-        raise HTTPException(status_code=400, detail="Email is required")
+        raise HTTPException(
+            status_code=400,
+            detail="Email is required"
+        )
 
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Email not registered")
+    # --------------------------------------------------
+    # First check AdminUser
+    # --------------------------------------------------
+    admin = (
+        db.query(AdminUser)
+        .filter(AdminUser.email == email)
+        .first()
+    )
 
+    # --------------------------------------------------
+    # If not found, check Student (Parent Email)
+    # --------------------------------------------------
+    if not admin:
+        student = (
+            db.query(Student)
+            .filter(Student.parent_email == email)
+            .first()
+        )
+
+        if not student:
+            raise HTTPException(
+                status_code=404,
+                detail="Email not registered"
+            )
+
+    # --------------------------------------------------
+    # Generate OTP
+    # --------------------------------------------------
     otp = generate_otp()
-    otp_store[email] = {"otp": otp, "expiry": time.time() + 300}
 
-    # Call your email sending function
+    otp_store[email] = {
+        "otp": otp,
+        "expiry": time.time() + 300
+    }
+
+    # --------------------------------------------------
+    # Send Email
+    # --------------------------------------------------
     try:
         send_otp_email(email, otp)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error sending email: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error sending email: {e}"
+        )
 
-    return {"message": "OTP sent successfully"} 
-
+    return {
+        "message": "OTP sent successfully"
+    }
 @app.post("/retrieve-term-start-date", response_model=TermStartDateResponse)
 def retrieve_term_start_date(db: Session = Depends(get_db)):
     try:
@@ -94706,98 +96873,416 @@ def calculate_week_number(date_str: str) -> int:
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
+@app.post("/student/submit-quiz-answer-old")
+def submit_quiz_answer(
+    request: SubmitQuizAnswerRequest,
+    db: Session = Depends(get_db),
+):
 
-@app.post("/submit-quiz-answer")
-def submit_quiz_answer(payload: AnswerPayload, db: Session = Depends(get_db)):
-    """
-    Submit a single answer for the current quiz question.
-    Records answers in StudentQuiz, but creates only one QuizResult per student per quiz.
-    """
-    print("\n--- SUBMIT QUIZ ANSWER ---")
-    print("Received payload:", payload)
+    print("\n==============================")
+    print("SUBMIT QUIZ ANSWER")
+    print("==============================")
 
-    # Fetch the latest quiz for this class
-    quiz = (
-        db.query(StudentQuiz)
-        .filter(StudentQuiz.class_name == payload.class_name)
-        .order_by(StudentQuiz.created_at.desc())
+    print(f"Student ID      : {request.student_id}")
+    print(f"Question Index  : {request.question_index}")
+    print(f"Selected Option : {request.selected_option}")
+
+    # ------------------------------------
+    # Load Student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.student_id == request.student_id
+        )
         .first()
     )
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
 
-    # Start quiz if not started
-    if not quiz.started_at:
-        quiz.started_at = datetime.now(timezone.utc)
+    if not student:
 
-    # Load or initialize student_answers
-    student_answers = quiz.quiz_json.get("student_answers") or {}
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found."
+        )
 
-    # Record current answer
-    q_key = f"q{payload.question_index + 1}"
-    student_answers[q_key] = payload.selected_option
-    quiz.quiz_json["student_answers"] = student_answers  # MutableDict tracks changes
+    print("\nStudent Loaded")
+    print("--------------------------------")
+    print(f"Category   : {student.class_name}")
+    print(f"Year       : {student.student_year}")
+    print(f"Day        : {student.class_day}")
 
-    # Calculate current score
-    correct_count = 0
-    for idx, question in enumerate(quiz.quiz_json.get("questions", [])):
-        q_key_check = f"q{idx+1}"
-        student_answer = student_answers.get(q_key_check)
-        if student_answer == question.get("answer"):
-            correct_count += 1
+    # ------------------------------------
+    # Load Active Academic Term
+    # ------------------------------------
 
-    quiz.quiz_json["score"] = correct_count
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
 
-    # Check if quiz is completed
-    total_questions = len(quiz.quiz_json.get("questions", []))
-    answered_questions = len(student_answers)
-    quiz_completed = answered_questions >= total_questions
+    if not term:
 
-    if quiz_completed:
-        quiz.status = "completed"
-        quiz.completed_at = datetime.now(timezone.utc)
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term."
+        )
 
-        # Check if a result already exists for this student for this quiz
-        existing_result = db.query(QuizResult).filter(
-            QuizResult.student_id == payload.student_id,
-            QuizResult.quiz_id == quiz.quiz_id
-        ).first()
+    today = date.today()
 
-        if existing_result:
-            print("Result already exists, not creating a new row")
-        else:
-            admin_date_entry = db.query(AdminDate).first()
-            date_to_use = admin_date_entry.date
-            week_number = calculate_week_number(date_to_use)
+    current_session = (
+        (today - term.start_date).days // 7
+    ) + 1
 
-            result = QuizResult(
-                quiz_id=quiz.quiz_id,
-                student_id=payload.student_id,
-                student_name=payload.student_name,
-                class_name=payload.class_name,
-                class_day=getattr(payload, "class_day", None),
-                week_number=week_number,   # <-- new
-                total_score=correct_count,
-                total_questions=total_questions,
-                submitted_at=datetime.now(timezone.utc)
-            )
-            db.add(result)
-            print("Result saved successfully")
+    print(f"\nCurrent Session : {current_session}")
 
-    else:
-        quiz.status = "in_progress"
+    # ------------------------------------
+    # Load Generated Quiz
+    # ------------------------------------
 
-    # Commit quiz updates (answers & score)
-    db.commit()
+    generated_quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code == student.center_code,
+            GeneratedGamifiedQuiz.category == student.class_name,
+            GeneratedGamifiedQuiz.class_year == student.student_year,
+            GeneratedGamifiedQuiz.class_day == student.class_day,
+            GeneratedGamifiedQuiz.session == current_session,
+        )
+        .first()
+    )
+
+    if not generated_quiz:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Generated quiz not found."
+        )
+
+    print("\nGenerated Quiz Loaded")
+
+    questions = generated_quiz.quiz_json.get(
+        "questions",
+        []
+    )
+
+    if request.question_index >= len(questions):
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid question index."
+        )
+
+    question = questions[
+        request.question_index
+    ]
+
+    print("--------------------------------")
+    print(f"Prompt         : {question['prompt']}")
+    print(f"Correct Answer : {question['answer']}")
+
+    # ------------------------------------
+    # Validate Answer
+    # ------------------------------------
+
+    is_correct = (
+        request.selected_option.strip()
+        ==
+        question["answer"].strip()
+    )
+
+    print(f"Student Answer : {request.selected_option}")
+    print(f"Correct        : {is_correct}")
 
     return {
-        "message": "Answer recorded",
-        "current_score": correct_count,
-        "quiz_status": quiz.status
+
+        "correct": is_correct,
+
+        "message":
+            "Correct!"
+            if is_correct
+            else "Incorrect.",
+
+    }
+            
+@app.post("/student/submit-quiz-answer")
+def submit_quiz_answer(
+    request: SubmitQuizAnswerRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("SUBMIT QUIZ ANSWER")
+    print("==============================")
+
+    print(f"Student ID      : {request.student_id}")
+    print(f"Question Index  : {request.question_index}")
+    print(f"Selected Option : {request.selected_option}")
+
+    # ------------------------------------
+    # Load Student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.student_id == request.student_id
+        )
+        .first()
+    )
+
+    if not student:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found."
+        )
+
+    print("\nStudent Loaded")
+    print("--------------------------------")
+    print(f"Category   : {student.class_name}")
+    print(f"Year       : {student.student_year}")
+    print(f"Day        : {student.class_day}")
+
+    # ------------------------------------
+    # Load Active Academic Term
+    # ------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not term:
+
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term."
+        )
+
+    today = date.today()
+
+    current_session = (
+        (today - term.start_date).days // 7
+    ) + 1
+
+    print(f"\nCurrent Session : {current_session}")
+
+    # ------------------------------------
+    # Load Generated Quiz
+    # ------------------------------------
+
+    generated_quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code == student.center_code,
+            GeneratedGamifiedQuiz.category == student.class_name,
+            GeneratedGamifiedQuiz.class_year == student.student_year,
+            GeneratedGamifiedQuiz.class_day == student.class_day,
+            GeneratedGamifiedQuiz.session == current_session,
+        )
+        .first()
+    )
+
+    if not generated_quiz:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Generated quiz not found."
+        )
+
+    print("\nGenerated Quiz Loaded")
+
+    questions = generated_quiz.quiz_json.get(
+        "questions",
+        []
+    )
+
+    if request.question_index >= len(questions):
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid question index."
+        )
+
+    question = questions[
+        request.question_index
+    ]
+
+    print("--------------------------------")
+    print(f"Prompt         : {question['prompt']}")
+    print(f"Correct Answer : {question['answer']}")
+
+    # ------------------------------------
+    # Validate Answer
+    # ------------------------------------
+
+    is_correct = (
+        request.selected_option.strip()
+        ==
+        question["answer"].strip()
+    )
+
+    print(f"Student Answer : {request.selected_option}")
+    print(f"Correct        : {is_correct}")
+
+    # ------------------------------------
+    # Load Existing Attempt
+    # ------------------------------------
+
+    attempt = (
+        db.query(StudentGamifiedQuizAttempt)
+        .filter(
+            StudentGamifiedQuizAttempt.student_id == student.student_id,
+            StudentGamifiedQuizAttempt.generated_quiz_id == generated_quiz.id,
+        )
+        .first()
+    )
+
+    if attempt:
+
+        print("\nExisting Attempt Found")
+        print("--------------------------------")
+        print(f"Attempt ID : {attempt.id}")
+        print(f"Score      : {attempt.current_score}")
+        print(f"Completed  : {attempt.is_completed}")
+
+    else:
+
+        print("\nCreating New Attempt")
+
+        attempt = StudentGamifiedQuizAttempt(
+
+            student_id=student.student_id,
+
+            generated_quiz_id=generated_quiz.id,
+
+            center_code=student.center_code,
+
+            category=student.class_name,
+
+            class_year=student.student_year,
+
+            class_day=student.class_day,
+
+            term_id=term.id,
+
+            session=current_session,
+
+            current_score=0,
+
+            total_questions=len(questions),
+
+            answers_json={},
+
+            is_completed=False,
+
+        )
+
+        db.add(attempt)
+
+        db.commit()
+
+        db.refresh(attempt)
+
+        print(f"Attempt Created : {attempt.id}")
+
+    # ------------------------------------
+    # Save Student Answer
+    # ------------------------------------
+
+    answers = attempt.answers_json or {}
+
+    answers[str(request.question_index)] = request.selected_option
+
+    attempt.answers_json = answers
+
+    print("\nAnswers JSON")
+    print("--------------------------------")
+    print(attempt.answers_json)
+
+    # ------------------------------------
+    # Recalculate Score
+    # ------------------------------------
+
+    score = 0
+
+    for index, question in enumerate(questions):
+
+        student_answer = answers.get(str(index))
+
+        if student_answer == question["answer"]:
+
+            score += 1
+
+    attempt.current_score = score
+
+    print("\nScore Recalculated")
+    print("--------------------------------")
+    print(f"Current Score : {score}")
+
+    # ------------------------------------
+    # Check Completion
+    # ------------------------------------
+
+    answered_questions = len(answers)
+
+    print(f"Answered Questions : {answered_questions}")
+    print(f"Total Questions    : {attempt.total_questions}")
+
+    if answered_questions >= attempt.total_questions:
+
+        attempt.is_completed = True
+
+        attempt.completed_at = datetime.utcnow()
+
+        print("\nQuiz Completed")
+
+    else:
+
+        print("\nQuiz Still In Progress")
+
+    # ------------------------------------
+    # Save Changes
+    # ------------------------------------
+
+    db.commit()
+
+    db.refresh(attempt)
+    print("\nSaved Answers In Database")
+    print("--------------------------------")
+    print(attempt.answers_json)
+    return {
+
+        "correct": is_correct,
+
+        "current_score": attempt.current_score,
+
+        "answered_questions": answered_questions,
+
+        "total_questions": attempt.total_questions,
+
+        "completed": attempt.is_completed,
+
+        "message": (
+            "Correct!"
+            if is_correct
+            else "Incorrect."
+        )
+
     }
 
+    
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8001))
+    port = int(os.environ.get("PORT", 8002))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
 
 
