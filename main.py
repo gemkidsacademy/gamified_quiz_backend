@@ -96243,40 +96243,75 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
 
-    # --- Check if OTP exists for this email ---
     record = otp_store.get(email)
     if not record:
         raise HTTPException(status_code=400, detail="OTP not sent")
 
-    # --- Check expiry ---
     if time.time() > record["expiry"]:
         otp_store.pop(email, None)
         raise HTTPException(status_code=400, detail="OTP expired")
 
-    # --- Check OTP match ---
     if otp != str(record["otp"]):
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
-    # --- Fetch user by email ---
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Email not registered")
+    # --------------------------------------------------
+    # Check Admin
+    # --------------------------------------------------
+    admin = (
+        db.query(AdminUser)
+        .filter(AdminUser.email == email)
+        .first()
+    )
 
-    # --- Remove OTP after successful verification ---
+    # --------------------------------------------------
+    # If Admin
+    # --------------------------------------------------
+    if admin:
+        otp_store.pop(email, None)
+
+        return {
+            "message": "OTP verified",
+            "user_type": "admin",
+            "admin": {
+                "id": admin.id,
+                "username": admin.username,
+                "role": admin.role,
+                "center_code": admin.center_code,
+                "email": admin.email
+            }
+        }
+
+    # --------------------------------------------------
+    # Otherwise check Student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.parent_email == email)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Email not registered"
+        )
+
     otp_store.pop(email, None)
 
-    # --- Respond with user info ---
     return {
         "message": "OTP verified",
-        "user": {
-            "student_id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "class_name": user.class_name,
-            "class_day": user.class_day
+        "user_type": "student",
+        "student": {
+            "student_id": student.student_id,
+            "name": student.name,
+            "class_name": student.class_name,
+            "class_day": student.class_day,
+            "student_year": student.student_year,
+            "center_code": student.center_code,
+            "center_name": student.center_name,
+            "parent_email": student.parent_email
         }
-    }
-    
+    }    
     
 @app.post("/login")
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
