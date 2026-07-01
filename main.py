@@ -1,5 +1,7 @@
 # main.py (new feature branch)
 from fastapi import FastAPI, HTTPException, Depends, Response, Query, Path, File, UploadFile, Body, Request    
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from passlib.context import CryptContext     
 import uvicorn       
 import os
@@ -252,6 +254,73 @@ def get_db():
     finally:
         db.close()
 
+#running the scheduler for gamified quiz
+def scheduler_job():
+
+    print("\n===================================")
+    print("AUTOMATIC SCHEDULER TICK")
+    print(datetime.now())
+    print("===================================")
+
+    db = SessionLocal()
+
+    try:
+
+        centers = (
+            db.query(Center)
+            .filter(
+                Center.status == "ACTIVE"
+            )
+            .all()
+        )
+
+        print(f"Active Centers Found: {len(centers)}")
+
+        for center in centers:
+
+            try:
+
+                generate_weekly_quizzes(
+                    center_code=center.center_code,
+                    db=db,
+                )
+
+            except Exception as e:
+
+                print("--------------------------------")
+                print(f"Center Failed : {center.center_code}")
+                print(e)
+                print("--------------------------------")
+
+    
+
+    finally:
+
+        db.close()
+    
+scheduler = BackgroundScheduler()
+
+scheduler.add_job(
+
+    scheduler_job,
+
+    trigger="interval",
+
+    hours=6,
+
+    id="gamified_scheduler",
+
+    replace_existing=True,
+
+)
+
+scheduler.start()
+
+print("\n===================================")
+print("Automatic Scheduler Started")
+print("Runs Every 1 Minute")
+print("===================================")
+
 # ---------------------------
 # OpenAI Client
 # ---------------------------
@@ -262,10 +331,9 @@ otp_store = {}
 # ---------------------------
 # Models
 # ---------------------------
-class AcademicTermsRequest(BaseModel):
+class LeaderboardCategoryRequest(BaseModel):
 
     center_code: str
-
 class LeaderboardRequest(BaseModel):
 
     center_code: str
@@ -273,6 +341,14 @@ class LeaderboardRequest(BaseModel):
     term_id: int
 
     session: int
+
+    category: str
+
+class AcademicTermsRequest(BaseModel):
+
+    center_code: str
+
+
 
 from sqlalchemy.ext.mutable import MutableDict
 class StudentGamifiedQuizAttempt(Base):
@@ -5395,12 +5471,12 @@ def generate_quizzes():
 
 
 # ---------------------------
-# APScheduler Setup (weekly run)
+# APScheduler Setup (weekly run)---> old code
 # ---------------------------
-scheduler = BackgroundScheduler()
-scheduler.add_job(generate_quizzes, 'interval', weeks=1)
+#scheduler = BackgroundScheduler()
+#scheduler.add_job(generate_quizzes, 'interval', weeks=1)
 
-scheduler.start()
+#scheduler.start()
 
 # ---------------------------
 # Endpoints
@@ -6057,6 +6133,40 @@ def generate_exam_questions_latest(
 from sqlalchemy import func
 from datetime import datetime
 
+@app.post("/leaderboard/categories")
+def get_leaderboard_categories(
+    request: LeaderboardCategoryRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("LOAD LEADERBOARD CATEGORIES")
+    print("==============================")
+
+    print(f"Center Code : {request.center_code}")
+
+    categories = (
+        db.query(ClassConfiguration.category)
+        .filter(
+            ClassConfiguration.center_code == request.center_code
+        )
+        .distinct()
+        .order_by(ClassConfiguration.category)
+        .all()
+    )
+
+    print(f"Categories Found : {len(categories)}")
+
+    response = []
+
+    for category in categories:
+
+        print(category[0])
+
+        response.append(category[0])
+
+    return response
+
 @app.post("/leaderboard")
 def load_leaderboard(
     request: LeaderboardRequest,
@@ -6073,10 +6183,11 @@ def load_leaderboard(
 
     leaderboard = (
         db.query(StudentGamifiedQuizAttempt)
-        .filter(
+         .filter(
             StudentGamifiedQuizAttempt.center_code == request.center_code,
             StudentGamifiedQuizAttempt.term_id == request.term_id,
             StudentGamifiedQuizAttempt.session == request.session,
+            StudentGamifiedQuizAttempt.category == request.category,
             StudentGamifiedQuizAttempt.is_completed == True,
         )
         .order_by(
@@ -6320,11 +6431,9 @@ def get_current_gamified_quiz(
 
     return generated_quiz.quiz_json
 
-
-@app.post("/scheduler/run")
-def run_scheduler(
-    request: RunSchedulerRequest,
-    db: Session = Depends(get_db)
+def generate_weekly_quizzes(
+    center_code: str,
+    db: Session,
 ):
 
     print("\n==============================")
@@ -6338,7 +6447,7 @@ def run_scheduler(
     configuration = (
         db.query(SchedulerConfiguration)
         .filter(
-            SchedulerConfiguration.center_code == request.center_code
+            SchedulerConfiguration.center_code == center_code
         )
         .first()
     )
@@ -6377,7 +6486,10 @@ def run_scheduler(
     if not run_today:
 
         return {
-            "message": f"Scheduler is not configured to run on {today.title()}."
+            "message": (
+                f"Scheduler is not configured "
+                f"to run on {today.title()}."
+            )
         }
 
     print("Today is a scheduled run day.")
@@ -6389,7 +6501,7 @@ def run_scheduler(
     term = (
         db.query(AcademicTerm)
         .filter(
-            AcademicTerm.center_code == request.center_code,
+            AcademicTerm.center_code == center_code,
             AcademicTerm.is_active == True
         )
         .first()
@@ -6410,11 +6522,16 @@ def run_scheduler(
 
     today_date = datetime.today().date()
 
-    days_elapsed = (today_date - term.start_date).days
+    days_elapsed = (
+        today_date - term.start_date
+    ).days
 
-    current_session = (days_elapsed // 7) + 1
+    current_session = (
+        days_elapsed // 7
+    ) + 1
 
     print(f"Current Session: {current_session}")
+
     # ------------------------------------
     # Load Configured Classes
     # ------------------------------------
@@ -6422,12 +6539,13 @@ def run_scheduler(
     classes = (
         db.query(ClassConfiguration)
         .filter(
-            ClassConfiguration.center_code == request.center_code
+            ClassConfiguration.center_code == center_code
         )
         .all()
     )
 
     print(f"\nConfigured Classes: {len(classes)}")
+
     # ------------------------------------
     # Load Enabled Activity Types
     # ------------------------------------
@@ -6435,7 +6553,7 @@ def run_scheduler(
     enabled_activities = (
         db.query(ActivityType)
         .filter(
-            ActivityType.center_code == request.center_code,
+            ActivityType.center_code == center_code,
             ActivityType.is_enabled == True
         )
         .all()
@@ -6448,7 +6566,11 @@ def run_scheduler(
             detail="No enabled activity types found."
         )
 
-    print(f"\nEnabled Activities: {len(enabled_activities)}")
+    print(
+        f"\nEnabled Activities: "
+        f"{len(enabled_activities)}"
+    )
+
     # ------------------------------------
     # Load Franchise Location
     # ------------------------------------
@@ -6469,6 +6591,10 @@ def run_scheduler(
 
         state = "NSW"
 
+    # ------------------------------------
+    # Generate Quizzes
+    # ------------------------------------
+
     for cls in classes:
 
         print("--------------------------------")
@@ -6486,7 +6612,7 @@ def run_scheduler(
         topic = (
             db.query(SessionTopic)
             .filter(
-                SessionTopic.center_code == request.center_code,
+                SessionTopic.center_code == center_code,
                 SessionTopic.category == cls.category,
                 SessionTopic.class_year == cls.class_year,
                 SessionTopic.class_day == cls.class_day,
@@ -6526,6 +6652,33 @@ def run_scheduler(
         topic_name = topic.topic
 
         activity_type = selected_activity.activity_name
+        # ------------------------------------
+        # Check Existing Generated Quiz
+        # ------------------------------------
+
+        existing_quiz = (
+            db.query(GeneratedGamifiedQuiz)
+            .filter(
+                GeneratedGamifiedQuiz.center_code == center_code,
+                GeneratedGamifiedQuiz.category == category,
+                GeneratedGamifiedQuiz.class_year == class_year,
+                GeneratedGamifiedQuiz.class_day == class_day,
+                GeneratedGamifiedQuiz.session == current_session,
+            )
+            .first()
+        )
+
+        if existing_quiz:
+
+            print("\nGenerated Quiz Already Exists")
+            print("--------------------------------")
+            print(f"Category : {category}")
+            print(f"Year     : {class_year}")
+            print(f"Day      : {class_day}")
+            print(f"Session  : {current_session}")
+            print("Skipping generation.")
+
+            continue
 
         print("\n----- GPT INPUT -----")
         print(f"Category      : {category}")
@@ -6635,7 +6788,7 @@ def run_scheduler(
             parsed_json = json.loads(quiz_text)
             generated_quiz = GeneratedGamifiedQuiz(
 
-                center_code=request.center_code,
+                center_code=center_code,
 
                 category=category,
 
@@ -6672,7 +6825,9 @@ def run_scheduler(
             print("\n❌ GPT call failed")
 
             print(e)
-    
+
+        
+
     db.commit()
 
     print("\n=================================")
@@ -6687,9 +6842,22 @@ def run_scheduler(
 
         "today": today.title(),
 
-        "term": term.term_name
+        "term": term.term_name,
 
     }
+
+@app.post("/scheduler/run")
+def run_scheduler(
+    request: RunSchedulerRequest,
+    db: Session = Depends(get_db)
+):
+
+    return generate_weekly_quizzes(
+        center_code=request.center_code,
+        db=db,
+    )
+
+
 
 @app.post("/scheduler/configuration")
 def save_scheduler_configuration(
@@ -7226,12 +7394,24 @@ def download_session_template(
             academic_term.number_of_weeks + 1
         ):
 
+            topic = (
+                db.query(SessionTopic)
+                .filter(
+                    SessionTopic.center_code == request.center_code,
+                    SessionTopic.category == class_config.category,
+                    SessionTopic.class_year == class_config.class_year,
+                    SessionTopic.class_day == class_config.class_day,
+                    SessionTopic.session == session,
+                )
+                .first()
+            )
+
             writer.writerow([
                 class_config.category,
                 class_config.class_year,
                 class_config.class_day,
                 session,
-                "",
+                topic.topic if topic else "",
             ])
 
     output.seek(0)
