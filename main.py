@@ -5,6 +5,14 @@ from apscheduler.triggers.cron import CronTrigger
 from passlib.context import CryptContext     
 import uvicorn       
 import os
+
+# Google APIs
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+from google.oauth2.service_account import Credentials
+from googleapiclient.errors import HttpError
+from google.cloud import storage
+
 from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel, EmailStr, Field
 from dotenv import load_dotenv
@@ -268,15 +276,104 @@ def scheduler_job():
 
         centers = (
             db.query(Center)
-            .filter(
-                Center.status == "ACTIVE"
-            )
+            .filter(Center.status == "ACTIVE")
             .all()
         )
 
         print(f"Active Centers Found: {len(centers)}")
 
+        today = datetime.today().strftime("%A").lower()
+
+        print(f"Today is: {today}")
+
         for center in centers:
+            # ------------------------------------
+            # Create scheduler run log row
+            # ------------------------------------
+
+            run_log = SchedulerRunLog(
+                center_code=center.center_code,
+                status="STARTED",
+                message="Scheduler started for center.",
+                run_started_at=datetime.utcnow(),
+            )
+
+            db.add(run_log)
+            db.commit()
+            db.refresh(run_log)
+
+            print("\n--------------------------------")
+            print(f"Center Code : {center.center_code}")
+            print(f"Center Name : {center.center_name}")
+            print("--------------------------------")
+
+            # ------------------------------------
+            # Load scheduler configuration
+            # ------------------------------------
+
+            configuration = (
+                db.query(SchedulerConfiguration)
+                .filter(
+                    SchedulerConfiguration.center_code == center.center_code
+                )
+                .first()
+            )
+
+            if not configuration:
+
+                print("Scheduler configuration not found.")
+                print("Skipping center.")
+
+                run_log.status = "SKIPPED"
+                run_log.message = "Scheduler configuration not found."
+                run_log.run_completed_at = datetime.utcnow()
+                db.commit()
+
+                continue
+
+            # ------------------------------------
+            # Check if scheduler is enabled
+            # ------------------------------------
+
+            if not configuration.scheduler_enabled:
+
+                print("Scheduler is disabled for this center.")
+                print("Skipping center.")
+
+                run_log.status = "SKIPPED"
+                run_log.message = "Scheduler is disabled for this center."
+                run_log.run_completed_at = datetime.utcnow()
+                db.commit()
+
+                continue
+
+            # ------------------------------------
+            # Check if today is enabled
+            # ------------------------------------
+
+            run_today = getattr(configuration, today, False)
+
+            if not run_today:
+
+                print(f"Scheduler is not configured to run on {today.title()}.")
+                print("Skipping center.")
+
+                run_log.status = "SKIPPED"
+                run_log.message = (
+                    f"Scheduler is not configured to run on {today.title()}."
+                )
+                run_log.run_completed_at = datetime.utcnow()
+                db.commit()
+
+                continue
+
+            # ------------------------------------
+            # Passed all checks → generate quizzes
+            # ------------------------------------
+
+            print("Scheduler is enabled.")
+            print(f"{today.title()} is a scheduled run day.")
+            print("Running quiz generation...")
 
             try:
 
@@ -285,41 +382,45 @@ def scheduler_job():
                     db=db,
                 )
 
+                run_log.status = "SUCCESS"
+                run_log.message = "Scheduler completed successfully."
+                run_log.run_completed_at = datetime.utcnow()
+                db.commit()
+
             except Exception as e:
 
-                print("--------------------------------")
-                print(f"Center Failed : {center.center_code}")
+                print(f"Quiz generation failed for {center.center_code}")
                 print(e)
-                print("--------------------------------")
 
-    
+                run_log.status = "FAILED"
+                run_log.message = str(e)
+                run_log.run_completed_at = datetime.utcnow()
+                db.commit()
+
+    except Exception as e:
+
+        print("\n❌ Scheduler Job Failed")
+        print(e)
 
     finally:
 
-        db.close()
-    
+        db.close()    
+
 scheduler = BackgroundScheduler()
 
 scheduler.add_job(
-
     scheduler_job,
-
-    trigger="interval",
-
-    hours=6,
-
+    trigger="cron",
+    hour=18,
+    minute=0,
+    timezone="Australia/Sydney",
     id="gamified_scheduler",
-
     replace_existing=True,
-
 )
 
 scheduler.start()
 
-print("\n===================================")
-print("Automatic Scheduler Started")
-print("Runs Every 1 Minute")
-print("===================================")
+
 
 # ---------------------------
 # OpenAI Client
@@ -328,9 +429,52 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "your_openai_api_key"))
 client_save_questions = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 otp_store = {}
+
+from googleapiclient.errors import HttpError
+# -----------------------------
+# Google Drive Setup
+# -----------------------------
+SERVICE_ACCOUNT_INFO = json.loads(os.environ["GCP_SERVICE_ACCOUNT_JSON"])
+SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+creds = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
+drive_service = build("drive", "v3", credentials=creds)
+
+
+#DEMO_FOLDER_ID = "1sWrRxOeH3MEVtc75Vk5My7MoDUk41gmf"
+DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
+
+
 # ---------------------------
 # Models
 # ---------------------------
+class DashboardSummaryRequest(BaseModel):
+    center_code: str
+
+class SchedulerRunLog(Base):
+    __tablename__ = "scheduler_run_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(String, nullable=False, index=True)
+
+    run_started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    run_completed_at = Column(DateTime, nullable=True)
+
+    status = Column(String, nullable=False)  
+    # e.g. SUCCESS / FAILED / SKIPPED
+
+    message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class CurrentTerm(Base):
+    __tablename__ = "current_term"  # table name in DB
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    term_name = Column(String(50), nullable=False)
+
 class LeaderboardCategoryRequest(BaseModel):
 
     center_code: str
@@ -801,6 +945,19 @@ class AcademicTermResponse(BaseModel):
 
     class Config:
         from_attributes = True
+class AcademicTermResponse(BaseModel):
+    id: int
+    center_code: str
+    term_name: str
+    start_date: date
+    end_date: date
+    number_of_weeks: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
 class AcademicTerm(Base):
     __tablename__ = "academic_terms"
 
@@ -6133,6 +6290,229 @@ def generate_exam_questions_latest(
 from sqlalchemy import func
 from datetime import datetime
 
+@app.post("/dashboard/summary")
+def load_dashboard_summary(
+    request: DashboardSummaryRequest,
+    db: Session = Depends(get_db),
+):
+    print("\n==============================")
+    print("LOAD DASHBOARD SUMMARY")
+    print("==============================")
+    print(f"Center Code : {request.center_code}")
+
+    # ------------------------------------
+    # Active Academic Term
+    # ------------------------------------
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == request.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    academic_term_name = (
+        active_term.term_name
+        if active_term
+        else "Not Configured"
+    )
+
+    # ------------------------------------
+    # Configured Classes Count
+    # ------------------------------------
+    configured_classes = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.center_code == request.center_code
+        )
+        .count()
+    )
+
+    # ------------------------------------
+    # Enabled Activity Types Count
+    # ------------------------------------
+    enabled_activity_types = (
+        db.query(ActivityType)
+        .filter(
+            ActivityType.center_code == request.center_code,
+            ActivityType.is_enabled == True
+        )
+        .count()
+    )
+
+    # ------------------------------------
+    # Imported Topics Count
+    # ------------------------------------
+    topics_imported = (
+        db.query(SessionTopic)
+        .filter(
+            SessionTopic.center_code == request.center_code
+        )
+        .count()
+    )
+
+    # ------------------------------------
+    # Scheduler Configuration
+    # ------------------------------------
+    scheduler_config = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code == request.center_code
+        )
+        .first()
+    )
+
+    scheduler_enabled = False
+    next_scheduled_run = "Not Configured"
+
+    if scheduler_config:
+        scheduler_enabled = scheduler_config.scheduler_enabled
+
+        # Build human-readable next scheduled run
+        enabled_days = []
+
+        if scheduler_config.monday:
+            enabled_days.append("Monday")
+        if scheduler_config.tuesday:
+            enabled_days.append("Tuesday")
+        if scheduler_config.wednesday:
+            enabled_days.append("Wednesday")
+        if scheduler_config.thursday:
+            enabled_days.append("Thursday")
+        if scheduler_config.friday:
+            enabled_days.append("Friday")
+        if scheduler_config.saturday:
+            enabled_days.append("Saturday")
+        if scheduler_config.sunday:
+            enabled_days.append("Sunday")
+
+        if enabled_days:
+            run_time = (
+                scheduler_config.run_time.strftime("%I:%M %p")
+                if scheduler_config.run_time
+                else "6:00 PM"
+            )
+
+            # Example: Monday 6:00 PM
+            next_scheduled_run = f"{enabled_days[0]} {run_time.lstrip('0')}"
+        else:
+            next_scheduled_run = "No days selected"
+
+    # ------------------------------------
+    # Last Scheduler Run Log
+    # ------------------------------------
+    last_run = (
+        db.query(SchedulerRunLog)
+        .filter(
+            SchedulerRunLog.center_code == request.center_code
+        )
+        .order_by(
+            SchedulerRunLog.run_started_at.desc()
+        )
+        .first()
+    )
+
+    if last_run:
+        last_scheduler_run = (
+            last_run.run_started_at.strftime("%d %b %Y %I:%M %p")
+            if last_run.run_started_at
+            else "N/A"
+        )
+        last_run_result = last_run.status.title()
+    else:
+        last_scheduler_run = "Never"
+        last_run_result = "Not Run"
+
+    # ------------------------------------
+    # Build System Summary
+    # ------------------------------------
+    system_summary = []
+
+    if active_term:
+        system_summary.append(
+            "One active academic term is configured."
+        )
+    else:
+        system_summary.append(
+            "No active academic term is configured."
+        )
+
+    if configured_classes > 0:
+        system_summary.append(
+            "Classes have been configured and linked to chatbot student batches."
+        )
+    else:
+        system_summary.append(
+            "No class configurations have been added yet."
+        )
+
+    if topics_imported > 0:
+        system_summary.append(
+            "Session topics have been imported successfully."
+        )
+    else:
+        system_summary.append(
+            "No session topics have been imported yet."
+        )
+
+    if enabled_activity_types > 0:
+        system_summary.append(
+            "Enabled activity types are available for random selection."
+        )
+    else:
+        system_summary.append(
+            "No activity types are currently enabled."
+        )
+
+    if scheduler_config and scheduler_enabled:
+        system_summary.append(
+            "The scheduler is configured and ready to generate quizzes."
+        )
+    elif scheduler_config and not scheduler_enabled:
+        system_summary.append(
+            "The scheduler is configured but currently disabled."
+        )
+    else:
+        system_summary.append(
+            "The scheduler has not been configured yet."
+        )
+
+    return {
+        "academic_term": academic_term_name,
+        "configured_classes": configured_classes,
+        "enabled_activity_types": enabled_activity_types,
+        "topics_imported": topics_imported,
+        "scheduler_enabled": scheduler_enabled,
+        "next_scheduled_run": next_scheduled_run,
+        "last_scheduler_run": last_scheduler_run,
+        "last_run_result": last_run_result,
+        "system_summary": system_summary,
+    }
+
+@app.get(
+    "/academic-term-gamified/{center_code}",
+    response_model=AcademicTermResponse
+)
+def get_academic_term_gamified(center_code: str, db: Session = Depends(get_db)):
+    academic_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == center_code,
+            AcademicTerm.is_active == True
+        )
+        .order_by(AcademicTerm.created_at.desc())
+        .first()
+    )
+
+    if not academic_term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found for this center."
+        )
+
+    return academic_term
+
 @app.post("/leaderboard/categories")
 def get_leaderboard_categories(
     request: LeaderboardCategoryRequest,
@@ -6441,60 +6821,6 @@ def generate_weekly_quizzes(
     print("==============================")
 
     # ------------------------------------
-    # Load Scheduler Configuration
-    # ------------------------------------
-
-    configuration = (
-        db.query(SchedulerConfiguration)
-        .filter(
-            SchedulerConfiguration.center_code == center_code
-        )
-        .first()
-    )
-
-    if not configuration:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Scheduler configuration not found."
-        )
-
-    print("Scheduler configuration loaded.")
-
-    # ------------------------------------
-    # Check Scheduler Enabled
-    # ------------------------------------
-
-    if not configuration.scheduler_enabled:
-
-        return {
-            "message": "Scheduler is disabled."
-        }
-
-    print("Scheduler is enabled.")
-
-    # ------------------------------------
-    # Check Today
-    # ------------------------------------
-
-    today = datetime.today().strftime("%A").lower()
-
-    print(f"Today is: {today}")
-
-    run_today = getattr(configuration, today)
-
-    if not run_today:
-
-        return {
-            "message": (
-                f"Scheduler is not configured "
-                f"to run on {today.title()}."
-            )
-        }
-
-    print("Today is a scheduled run day.")
-
-    # ------------------------------------
     # Load Active Academic Term
     # ------------------------------------
 
@@ -6509,18 +6835,29 @@ def generate_weekly_quizzes(
 
     if not term:
 
-        raise HTTPException(
-            status_code=404,
-            detail="Active academic term not found."
-        )
+        print("Active academic term not found.")
+        return {
+            "message": "Active academic term not found."
+        }
 
     print(f"Academic Term: {term.term_name}")
 
     # ------------------------------------
-    # Calculate Current Session
+    # Validate Today Is Within Term
     # ------------------------------------
 
     today_date = datetime.today().date()
+
+    if today_date < term.start_date or today_date > term.end_date:
+
+        print("Today is outside the active academic term.")
+        return {
+            "message": "Today is outside the active academic term."
+        }
+
+    # ------------------------------------
+    # Calculate Current Session
+    # ------------------------------------
 
     days_elapsed = (
         today_date - term.start_date
@@ -6531,6 +6868,13 @@ def generate_weekly_quizzes(
     ) + 1
 
     print(f"Current Session: {current_session}")
+
+    if current_session < 1 or current_session > term.number_of_weeks:
+
+        print("Current session is outside the configured term range.")
+        return {
+            "message": "Current session is outside the term range."
+        }
 
     # ------------------------------------
     # Load Configured Classes
@@ -6545,6 +6889,13 @@ def generate_weekly_quizzes(
     )
 
     print(f"\nConfigured Classes: {len(classes)}")
+
+    if not classes:
+
+        print("No configured classes found.")
+        return {
+            "message": "No configured classes found."
+        }
 
     # ------------------------------------
     # Load Enabled Activity Types
@@ -6561,18 +6912,15 @@ def generate_weekly_quizzes(
 
     if not enabled_activities:
 
-        raise HTTPException(
-            status_code=400,
-            detail="No enabled activity types found."
-        )
+        print("No enabled activity types found.")
+        return {
+            "message": "No enabled activity types found."
+        }
 
-    print(
-        f"\nEnabled Activities: "
-        f"{len(enabled_activities)}"
-    )
+    print(f"\nEnabled Activities: {len(enabled_activities)}")
 
     # ------------------------------------
-    # Load Franchise Location
+    # Load Location Context
     # ------------------------------------
 
     row = db.execute(
@@ -6582,34 +6930,25 @@ def generate_weekly_quizzes(
     if row:
 
         country = row.country
-
         state = row.state
 
     else:
 
         country = "Australia"
-
         state = "NSW"
 
     # ------------------------------------
-    # Generate Quizzes
+    # Generate Quizzes Only For Matching SessionTopic Rows
     # ------------------------------------
 
     for cls in classes:
 
         print("--------------------------------")
-
         print(f"Category   : {cls.category}")
-
         print(f"Class Year : {cls.class_year}")
-
         print(f"Class Day  : {cls.class_day}")
 
-        # ------------------------------------
-        # Find Topic for Current Session
-        # ------------------------------------
-
-        topic = (
+        topic_row = (
             db.query(SessionTopic)
             .filter(
                 SessionTopic.center_code == center_code,
@@ -6621,48 +6960,26 @@ def generate_weekly_quizzes(
             .first()
         )
 
-        if not topic:
+        if not topic_row:
 
-            print("Topic      : NOT FOUND")
-
+            print("Matching session topic not found.")
+            print("Skipping class.")
             continue
 
-        print(f"Session    : {topic.session}")
-
-        print(f"Topic      : {topic.topic}")
+        print(f"Session    : {topic_row.session}")
+        print(f"Topic      : {topic_row.topic}")
 
         # ------------------------------------
-        # Randomly Select Activity
-        # ------------------------------------
-
-        selected_activity = random.choice(
-            enabled_activities
-        )
-
-        print(
-            f"Activity   : "
-            f"{selected_activity.activity_name}"
-        )
-        category = cls.category
-
-        class_year = cls.class_year
-
-        class_day = cls.class_day
-
-        topic_name = topic.topic
-
-        activity_type = selected_activity.activity_name
-        # ------------------------------------
-        # Check Existing Generated Quiz
+        # Prevent Duplicate Quiz Generation
         # ------------------------------------
 
         existing_quiz = (
             db.query(GeneratedGamifiedQuiz)
             .filter(
                 GeneratedGamifiedQuiz.center_code == center_code,
-                GeneratedGamifiedQuiz.category == category,
-                GeneratedGamifiedQuiz.class_year == class_year,
-                GeneratedGamifiedQuiz.class_day == class_day,
+                GeneratedGamifiedQuiz.category == cls.category,
+                GeneratedGamifiedQuiz.class_year == cls.class_year,
+                GeneratedGamifiedQuiz.class_day == cls.class_day,
                 GeneratedGamifiedQuiz.session == current_session,
             )
             .first()
@@ -6672,13 +6989,26 @@ def generate_weekly_quizzes(
 
             print("\nGenerated Quiz Already Exists")
             print("--------------------------------")
-            print(f"Category : {category}")
-            print(f"Year     : {class_year}")
-            print(f"Day      : {class_day}")
+            print(f"Category : {cls.category}")
+            print(f"Year     : {cls.class_year}")
+            print(f"Day      : {cls.class_day}")
             print(f"Session  : {current_session}")
             print("Skipping generation.")
-
             continue
+
+        # ------------------------------------
+        # Select Activity
+        # ------------------------------------
+
+        selected_activity = random.choice(
+            enabled_activities
+        )
+
+        activity_type = selected_activity.activity_name
+        category = cls.category
+        class_year = cls.class_year
+        class_day = cls.class_day
+        topic_name = topic_row.topic
 
         print("\n----- GPT INPUT -----")
         print(f"Category      : {category}")
@@ -6688,9 +7018,6 @@ def generate_weekly_quizzes(
         print(f"Topic         : {topic_name}")
         print(f"Activity Type : {activity_type}")
         print("----------------------")
-        # ------------------------------------
-        # Build GPT Prompt
-        # ------------------------------------
 
         system_prompt = '''
         You are an expert quiz-generating AI and a creative educator.
@@ -6728,19 +7055,15 @@ def generate_weekly_quizzes(
         Generate exactly FIVE questions.
 
         Each question must:
-
-        - contain ONE clear question.
-        - have exactly FOUR options.
-        - have exactly ONE correct answer.
-        - be suitable for {class_year} students.
+        - contain ONE clear question
+        - have exactly FOUR options
+        - have exactly ONE correct answer
+        - be suitable for {class_year} students
 
         IMPORTANT:
-
-        - The "answer" field MUST contain the COMPLETE correct option text.
-        - The answer MUST exactly match one of the strings in the "options" array.
-        - Do NOT return only the letter such as "A", "B", "C", or "D".
-        - For example, if the correct option is "A) Sydney", then the answer MUST be:
-        "answer": "A) Sydney"
+        - The "answer" field MUST contain the COMPLETE correct option text
+        - The answer MUST exactly match one of the strings in the "options" array
+        - Do NOT return only the letter such as "A", "B", "C", or "D"
 
         The activity type MUST influence the style of the questions.
         '''.format(
@@ -6752,81 +7075,55 @@ def generate_weekly_quizzes(
             activity_type=activity_type,
         )
 
-        # ------------------------------------
-        # Call GPT
-        # ------------------------------------
-
-        parsed_json = None
-
         try:
 
             print("\nCalling GPT...")
 
             response = client.chat.completions.create(
-
                 model="gpt-4o-mini",
-
                 messages=[
                     {
                         "role": "system",
                         "content": system_prompt
                     }
                 ],
-
                 temperature=0.5
-
             )
 
             quiz_text = response.choices[0].message.content.strip()
 
             print("\n========== RAW GPT RESPONSE ==========")
-
             print(quiz_text)
-
             print("======================================")
 
             parsed_json = json.loads(quiz_text)
+
             generated_quiz = GeneratedGamifiedQuiz(
-
                 center_code=center_code,
-
                 category=category,
-
                 class_year=class_year,
-
                 class_day=class_day,
-
                 session=current_session,
-
                 topic=topic_name,
-
                 activity_type=activity_type,
-
                 quiz_json=parsed_json
-
             )
 
             db.add(generated_quiz)
 
             print("\n✅ JSON parsed successfully.")
-
             print(f"Quiz Title : {parsed_json['quiz_title']}")
-
             print(f"Questions  : {len(parsed_json['questions'])}")
 
         except json.JSONDecodeError as e:
 
             print("\n❌ JSON parsing failed")
-
             print(e)
 
         except Exception as e:
 
             print("\n❌ GPT call failed")
-
             print(e)
-
-        
 
     db.commit()
 
@@ -6835,17 +7132,10 @@ def generate_weekly_quizzes(
     print("=================================")
 
     return {
-
-        "message": "Scheduler initialisation successful.",
-
+        "message": "Scheduler run completed.",
         "current_session": current_session,
-
-        "today": today.title(),
-
         "term": term.term_name,
-
     }
-
 @app.post("/scheduler/run")
 def run_scheduler(
     request: RunSchedulerRequest,
@@ -7682,6 +7972,7 @@ def create_academic_term(
             "is_active": new_term.is_active
         }
     }
+
 @app.post("/student-login")
 def student_login(
     request: StudentLoginRequest,
@@ -54986,6 +55277,352 @@ def save_exam_results_thinkingskills(
     db.commit()
 
     return {"status": "saved"}
+def apply_drive_restrictions(file_id: str):
+    """
+    Apply Google Drive restrictions to reduce what viewers can do.
+
+    Intended effect:
+    - viewers/commenters should not be able to download / print / copy
+    - editors should not be able to re-share if editor access ever exists
+    """
+    try:
+        print("Applying Drive restrictions...")
+        print(f"Target File/Folder ID: {file_id}")
+
+        updated = drive_service.files().update(
+            fileId=file_id,
+            body={
+                "copyRequiresWriterPermission": True,
+                "writersCanShare": False
+            },
+            fields="id,name,copyRequiresWriterPermission,writersCanShare"
+        ).execute()
+
+        print("DEBUG: Restriction update response:")
+        print(updated)
+
+        return updated
+
+    except HttpError as e:
+        print("========== DRIVE RESTRICTION ERROR ==========")
+        print(f"File/Folder ID : {file_id}")
+        try:
+            print("Response:")
+            print(e.content.decode())
+        except:
+            pass
+        print(str(e))
+        print("============================================")
+        return None
+
+def list_files_in_folder(folder_id: str):
+    """
+    List files directly inside a Drive folder.
+    """
+    try:
+        print("Listing files inside folder...")
+        print(f"Folder ID: {folder_id}")
+
+        response = drive_service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false",
+            spaces="drive",
+            fields="files(id, name, mimeType)"
+        ).execute()
+
+        files = response.get("files", [])
+
+        if not files:
+            print("DEBUG: No files found inside folder.")
+            return []
+
+        print("DEBUG: Files found inside folder:")
+        for f in files:
+            print(
+                f"    name={f['name']}, "
+                f"id={f['id']}, "
+                f"mimeType={f['mimeType']}"
+            )
+
+        return files
+
+    except HttpError as e:
+        print("========== LIST FILES ERROR ==========")
+        print(f"Folder ID : {folder_id}")
+        try:
+            print("Response:")
+            print(e.content.decode())
+        except:
+            pass
+        print(str(e))
+        print("======================================")
+        return []
+     
+def give_drive_access(file_id: str, emails: str, role: str = "reader", db: Session = None):
+    """
+    Grants Google Drive access to a specific Year/Term folder:
+      Root Folder → Year Folder → Term Folder
+
+    :param file_id: Root Drive folder ID (e.g., GEM_AI_ROOT_FOLDER)
+    :param emails: Comma-separated list of emails
+    :param role: Drive permission role ('reader' or 'writer')
+    :param db: SQLAlchemy Session
+    """
+
+    if db is None:
+        raise ValueError("A database session must be provided via `db` argument.")
+
+    print("==== Starting Drive access process ====")
+
+    # -------------------------
+    # Split & sanitize emails
+    # -------------------------
+    email_list = [email.strip() for email in emails.split(",") if email.strip()]
+    if not email_list:
+        print("No emails provided. Exiting.")
+        return
+
+    print(f"DEBUG: Emails to process: {email_list}")
+
+
+    # -------------------------
+    # Fetch students using parent_email
+    # -------------------------
+    students = db.query(Student).filter(Student.parent_email.in_(email_list)).all()
+
+    if not students:
+        print("No matching students found in DB. Exiting.")
+        return
+
+    found_parent_emails = {s.parent_email.strip().lower() for s in students if s.parent_email}
+    missing = {email.strip().lower() for email in email_list} - found_parent_emails
+
+    if missing:
+        print(f"WARNING: Parent emails not found in DB: {missing}")
+
+    print("DEBUG: Students fetched from DB:")
+    for s in students:
+        print(
+            f"    student_id={s.student_id}, "
+            f"name={s.name}, "
+            f"parent_email={s.parent_email}, "
+            f"class_name={s.class_name}, "
+            f"student_year={s.student_year}"
+        )
+
+    # -------------------------
+    # Load current term from DB
+    # -------------------------
+    current_term_record = db.query(CurrentTerm).first()
+    if not current_term_record:
+        print("ERROR: No current term found in DB. Exiting.")
+        return
+
+    current_term = current_term_record.term_name.strip().lower()
+    print(f"DEBUG: Current term from DB: '{current_term}'")
+
+    # -------------------------
+    # Helper to fetch subfolders
+    # -------------------------
+    def get_subfolders(parent_id: str):
+        try:
+            response = drive_service.files().list(
+                q=f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder'",
+                spaces="drive",
+                fields="files(id, name)"
+            ).execute()
+            return response.get("files", [])
+        except HttpError as e:
+            print(f"ERROR: Failed fetching subfolders for parent {parent_id}: {e}")
+            return []
+
+    # -------------------------
+    # 1. Fetch Class folders under root
+    # -------------------------
+    class_folders = get_subfolders(file_id)
+    print(f"DEBUG: Found Class folders: {[f['name'] for f in class_folders]}")
+
+    # -------------------------
+    # 2. Build Class → Year → Term → folderId map
+    # -------------------------
+    folder_map = {}
+
+    for class_folder in class_folders:
+        class_name = class_folder["name"].strip().lower()
+        class_id = class_folder["id"]
+
+        year_folders = get_subfolders(class_id)
+
+        folder_map[class_name] = {}
+
+        for year_folder in year_folders:
+            year_name = year_folder["name"].strip().lower()
+            year_id = year_folder["id"]
+
+            term_folders = get_subfolders(year_id)
+
+            folder_map[class_name][year_name] = {
+                term["name"].strip().lower(): term["id"]
+                for term in term_folders
+            }
+
+    print("DEBUG: Folder map:")
+    for class_name, years in folder_map.items():
+        print(f"  CLASS: {class_name}")
+        for year_name, terms in years.items():
+            print(f"    YEAR: {year_name}")
+            print(f"      TERMS: {list(terms.keys())}")
+
+    # -------------------------
+    # 3. Grant access
+    # -------------------------
+    for student in students:
+
+        if not student.class_name:
+            print(f"Skipping {student.parent_email}: class_name is empty.")
+            continue
+
+        print(f"DEBUG: Raw class_name from DB = '{student.class_name}'")
+        print(f"DEBUG: Raw student_year from DB = '{student.student_year}'")
+
+        student_classes = [c.strip().lower() for c in student.class_name.split(",") if c.strip()]
+        student_year = student.student_year.strip().lower() if student.student_year else ""
+
+        print(
+            f"DEBUG: Processing student_id={student.student_id}, "
+            f"parent_email={student.parent_email}, "
+            f"class_name={student_classes}, "
+            f"student_year={student_year}"
+        )
+
+        if not student_year:
+            print(f"Skipping {student.parent_email}: student_year is empty.")
+            continue
+
+        for class_key in student_classes:
+
+            # Check Class folder exists
+            if class_key not in folder_map:
+                print(
+                    f"WARNING: Class folder '{class_key}' not found in Drive. "
+                    f"Available class folders: {list(folder_map.keys())}"
+                )
+                continue
+
+            # Check Year folder exists under class
+            if student_year not in folder_map[class_key]:
+                print(
+                    f"WARNING: Year folder '{student_year}' not found under Class '{class_key}'. "
+                    f"Available years: {list(folder_map[class_key].keys())}"
+                )
+                continue
+
+            # Check Term folder exists under class/year
+            if current_term not in folder_map[class_key][student_year]:
+                print(
+                    f"WARNING: Term '{current_term}' not found under "
+                    f"Class '{class_key}' → Year '{student_year}'."
+                )
+                continue
+
+            # Final target folder
+            folder_id_to_share = folder_map[class_key][student_year][current_term]
+
+            print(f"DRIVE URL: https://drive.google.com/drive/folders/{folder_id_to_share}")
+            print(
+                f"DEBUG: Sharing Class='{class_key}', Year='{student_year}', "
+                f"Term='{current_term}' (ID={folder_id_to_share}) "
+                f"with parent {student.parent_email}"
+            )
+
+            try:
+                print("--------------------------------------------------")
+                print(f"Creating permission...")
+                print(f"Parent Email : {student.parent_email}")
+                print(f"Folder ID  : {folder_id_to_share}")
+                print(f"Role       : {role}")
+                print("--------------------------------------------------")
+                folder_meta = drive_service.files().get(
+                    fileId=folder_id_to_share,
+                    fields="id,name"
+                ).execute()
+
+                print("DEBUG: Target Folder Metadata")
+                print(folder_meta)
+
+                permission = drive_service.permissions().create(
+                    fileId=folder_id_to_share,
+                    body={
+                        "type": "user",
+                        "role": role,
+                        "emailAddress": student.parent_email
+                    },
+                    fields="id",
+                    sendNotificationEmail=False
+                ).execute()
+                print(
+                    f"SUCCESS: Permission created. "
+                    f"Permission ID={permission.get('id')}"
+                )
+                # ---------------------------------------
+                # Apply Drive restrictions to the shared folder
+                # ---------------------------------------
+                restriction_result = apply_drive_restrictions(folder_id_to_share)
+
+                if restriction_result:
+                    print("SUCCESS: Drive restrictions applied.")
+                else:
+                    print("WARNING: Failed to apply Drive restrictions.")
+
+                # Verify permission exists
+                permissions = drive_service.permissions().list(
+                    fileId=folder_id_to_share,
+                    fields="permissions(id,emailAddress,role)"
+                ).execute()
+
+                print("DEBUG: Folder permissions after share:")
+
+                user_found = False
+
+                for p in permissions.get("permissions", []):
+                    print(
+                        f"    email={p.get('emailAddress')} "
+                        f"role={p.get('role')} "
+                        f"id={p.get('id')}"
+                    )
+
+                    if p.get("emailAddress", "").lower() == student.parent_email.lower():
+                        user_found = True
+
+                if user_found:
+                    print(f"VERIFIED: {student.parent_email} exists in folder permissions")
+                else:
+                    print(f"WARNING: {student.parent_email} NOT FOUND in folder permissions")
+
+                print(
+                    f"SUCCESS: Permission created. "
+                    f"Permission ID={permission.get('id')}"
+                )
+
+                print(f"SUCCESS: Shared folder {folder_id_to_share} with {student.parent_email}")
+                files_in_term = list_files_in_folder(folder_id_to_share)
+                
+
+            except HttpError as e:
+
+                print("========== GOOGLE DRIVE ERROR ==========")
+                print(f"Parent Email : {student.parent_email}")
+                print(f"Folder ID  : {folder_id_to_share}")
+
+                try:
+                    print("Response:")
+                    print(e.content.decode())
+                except:
+                    pass
+
+                print(str(e))
+                print("========================================")
+
+    print("==== Drive access process completed ====")
 
 @app.post("/add_student_exam_module")
 def add_student_exam_module(
@@ -55106,6 +55743,27 @@ def add_student_exam_module(
     print("Student saved successfully")
 
     print("========== ADD STUDENT END ==========\n")
+    # ---------------------------------------
+    # Grant Google Drive access
+    # ---------------------------------------
+    try:
+        print("Starting Google Drive access grant...")
+
+        give_drive_access(
+            file_id=DEMO_FOLDER_ID,   # or your actual root folder constant
+            emails=student.parent_email,
+            role="reader",
+            db=db
+        )
+
+        print("Google Drive access grant completed successfully.")
+
+    except Exception as e:
+        print("========== DRIVE ACCESS ERROR ==========")
+        print(f"Student ID    : {student.student_id}")
+        print(f"Parent Email  : {student.parent_email}")
+        print(f"Error         : {str(e)}")
+        print("========================================")
 
     return {
 
