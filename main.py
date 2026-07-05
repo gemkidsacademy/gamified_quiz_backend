@@ -54737,17 +54737,24 @@ def get_homework_mathematical_reasoning_report(
 
     # --------------------------------------------------
     # 8️⃣ IMPROVEMENT AREAS
+    # Client wants: correct / total_questions
     # --------------------------------------------------
     improvement_areas = []
 
     for t in topic_accuracy:
         limited_data = t["total_questions"] < 5
 
+        improvement_percent = (
+            round((t["correct"] / t["total_questions"]) * 100, 2)
+            if t["total_questions"] else 0
+        )
+
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+            "accuracy_percent": improvement_percent,   # keep key for frontend compatibility
             "score_percent": t["score_percent"],
             "total_questions": t["total_questions"],
+            "correct": t["correct"],
             "limited_data": limited_data
         })
 
@@ -55166,20 +55173,33 @@ def get_mathematical_reasoning_report(
 
     # --------------------------------------------------
     # 7️⃣ IMPROVEMENT AREAS (Report D)
+    # Client wants this based on:
+    # correct / total_questions * 100
+    # not correct / attempted
     # --------------------------------------------------
     improvement_areas = []
 
     for t in topic_accuracy:
-        limited_data = t["total_questions"] < 5
+        total_q = t["total_questions"]
+        correct_q = t["correct"]
+
+        improvement_percent = (
+            round((correct_q / total_q) * 100, 2)
+            if total_q else 0
+        )
+
+        limited_data = total_q < 5
 
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["score_percent"],
-            "score_percent": t["score_percent"],
-            "total_questions": t["total_questions"],
+            "accuracy_percent": improvement_percent,   # keep key name so frontend doesn't break
+            "score_percent": t["score_percent"],       # optional: keep if you still want it for debugging
+            "correct": correct_q,
+            "total_questions": total_q,
             "limited_data": limited_data
         })
 
+    # lower to higher representation stays the same
     improvement_areas.sort(key=lambda x: x["accuracy_percent"])
 
     # --------------------------------------------------
