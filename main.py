@@ -51164,30 +51164,26 @@ def get_naplan_reading_report(
 
     # --------------------------------------------------
     # 7️⃣ IMPROVEMENT AREAS (Report D)
+    # Use correct / total_questions, not correct / attempted
     # --------------------------------------------------
     improvement_areas = []
 
     for t in topic_accuracy:
+        improvement_percent = (
+            round((t["correct"] / t["total_questions"]) * 100, 2)
+            if t["total_questions"] else 0
+        )
+
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["score_percent"],
-            "score_percent": t["score_percent"],
+            "accuracy_percent": improvement_percent,   # keep same key so frontend keeps working
+            "score_percent": t["score_percent"],       # optional: keep for debugging / future use
             "total_questions": t["total_questions"],
+            "correct": t["correct"],
             "limited_data": t["total_questions"] < 5
         })
 
     improvement_areas.sort(key=lambda x: x["accuracy_percent"])
-
-    print("📉 IMPROVEMENT AREAS (sorted by accuracy)")
-    for i in improvement_areas:
-        print(
-            f"   {i['topic']} → "
-            f"accuracy={i['accuracy_percent']}%, "
-            f"score={i['score_percent']}%, "
-            f"total={i['total_questions']}"
-        )
-
-    print("================ END READING REPORT =================\n")
 
     # --------------------------------------------------
     # 8️⃣ Final response
@@ -51198,6 +51194,7 @@ def get_naplan_reading_report(
         "topic_accuracy": topic_accuracy,                   # Report C
         "improvement_areas": improvement_areas              # Report D
     }
+
 @app.get("/users/info/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: int = Path(..., description="ID of the user to retrieve"),
