@@ -6287,9 +6287,36 @@ def generate_exam_questions_latest(
 # --------------------------------------------------
 # Get available upload dates
 # --------------------------------------------------
-from sqlalchemy import func
-from datetime import datetime
 
+@app.get("/api/student/profile")
+def get_student_profile(
+    student_id: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    class_year = student_year_to_int_2(student.student_year)
+    print("📘 Student class_year:", class_year)
+
+    if class_year is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid student_year value: {student.student_year}"
+        )
+
+    return {
+        "class_year": class_year
+    }
 @app.post("/dashboard/summary")
 def load_dashboard_summary(
     request: DashboardSummaryRequest,
@@ -86398,12 +86425,40 @@ def normalize_thinking_skills_questions(raw_questions, db):
             continue
 
     return normalized
-def student_year_to_int(student_year: str | None) -> int | None:
+def student_year_to_int_2(student_year: str | None) -> int | None:
     if student_year == "Year 3":
         return 3
     if student_year == "Year 5":
         return 5
     return None
+
+import re
+
+def student_year_to_int_2(raw_value):
+    print("\n=== student_year_to_int DEBUG START ===")
+    print("RAW INPUT:", raw_value)
+    print("RAW INPUT repr:", repr(raw_value))
+    print("RAW INPUT type:", type(raw_value))
+
+    if raw_value is None:
+        print("❌ raw_value is None")
+        return None
+
+    cleaned = str(raw_value).strip()
+    print("CLEANED VALUE:", cleaned)
+    print("CLEANED VALUE repr:", repr(cleaned))
+
+    match = re.search(r"\d+", cleaned)
+    print("REGEX MATCH:", match)
+
+    if not match:
+        print("❌ No year found")
+        return None
+
+    year = int(match.group())
+    print("✅ EXTRACTED YEAR:", year)
+    print("=== student_year_to_int DEBUG END ===\n")
+    return year
 
 
 def normalize_naplan_evaluation_answer_value(answer):
