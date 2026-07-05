@@ -4948,6 +4948,7 @@ class QuestionNumeracyLC(Base):
         DateTime(timezone=True),
         server_default=func.now()
     )
+
 class Question(Base):
     __tablename__ = "questions"
 
@@ -52148,52 +52149,27 @@ def get_naplan_language_conventions_homework_report(
     topic_accuracy = []
 
     for t in topic_wise_performance:
+        total_t = t["total"]
+        attempted_t = t["attempted"]
+        correct_t = t["correct"]
 
-        attempted_t = t[
-            "attempted"
-        ]
-
+        # Topic performance for improvement bars = correct / total questions in topic
         accuracy_t = (
-            round(
-                (
-                    attempted_t
-                    / t["total"]
-                ) * 100,
-                2
-            )
-            if t["total"]
-            else 0
-        )
-
-        score_t = (
-            round(
-                (
-                    t["correct"]
-                    / attempted_t
-                ) * 100,
-                2
-            )
-            if attempted_t
+            round((correct_t / total_t) * 100, 2)
+            if total_t > 0
             else 0
         )
 
         topic_accuracy.append({
-            "topic":
-                t["topic"],
-            "total_questions":
-                t["total"],
-            "attempted":
-                attempted_t,
-            "correct":
-                t["correct"],
-            "incorrect":
-                t["incorrect"],
-            "accuracy_percent":
-                accuracy_t,
-            "score_percent":
-                score_t,
-            "pass":
-                None
+            "topic": t["topic"],
+            "total_questions": total_t,
+            "attempted": attempted_t,
+            "correct": correct_t,
+            "incorrect": t["incorrect"],
+            "not_attempted": t["not_attempted"],
+            "accuracy_percent": accuracy_t,
+            "score_percent": accuracy_t,
+            "pass": None
         })
 
     # --------------------------------------------------
@@ -52204,22 +52180,11 @@ def get_naplan_language_conventions_homework_report(
     for t in topic_accuracy:
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["score_percent"],
+            "accuracy_percent": t["accuracy_percent"],
             "score_percent": t["score_percent"],
             "total_questions": t["total_questions"],
             "limited_data": t["total_questions"] < 5
         })
-
-    improvement_areas.sort(
-        key=lambda x: x[
-            "accuracy_percent"
-        ]
-    )
-
-    print(
-        "=========== END HOMEWORK "
-        "REPORT ===========\n"
-    )
 
     # --------------------------------------------------
     # 8. Final response
@@ -52488,31 +52453,25 @@ def get_naplan_language_conventions_report(
     topic_accuracy = []
 
     for t in topic_wise_performance:
-
         attempted_t = t["attempted"]
+        correct_t = t["correct"]
 
+        # accuracy for improvement areas = correct / attempted
         accuracy_t = (
-            round(
-                (
-                    t["correct"]
-                    / t["total"]
-                ) * 100,
-                2
-            )
-            if t["total"]
+            round((correct_t / attempted_t) * 100, 2)
+            if attempted_t > 0
             else 0
         )
-
-        score_t = accuracy_t
 
         topic_accuracy.append({
             "topic": t["topic"],
             "total_questions": t["total"],
             "attempted": attempted_t,
-            "correct": t["correct"],
+            "correct": correct_t,
             "incorrect": t["incorrect"],
+            "not_attempted": t["not_attempted"],
             "accuracy_percent": accuracy_t,
-            "score_percent": score_t,
+            "score_percent": accuracy_t,
             "pass": None
         })
     # --------------------------------------------------
