@@ -52943,25 +52943,36 @@ def get_naplan_numeracy_homework_report(
 
     for t in topic_wise_performance:
         attempted_t = t["attempted"]
+        total_t = t["total"]
+        correct_t = t["correct"]
 
+        # attempted / total
         accuracy_t = (
-            round((attempted_t / t["total"]) * 100, 2)
-            if t["total"] else 0
+            round((attempted_t / total_t) * 100, 2)
+            if total_t else 0
         )
 
+        # correct / attempted
         score_t = (
-            round((t["correct"] / attempted_t) * 100, 2)
+            round((correct_t / attempted_t) * 100, 2)
             if attempted_t else 0
+        )
+
+        # correct / total  <-- use this for Improvement Areas
+        mastery_t = (
+            round((correct_t / total_t) * 100, 2)
+            if total_t else 0
         )
 
         topic_accuracy.append({
             "topic": t["topic"],
-            "total_questions": t["total"],
+            "total_questions": total_t,
             "attempted": attempted_t,
-            "correct": t["correct"],
+            "correct": correct_t,
             "incorrect": t["incorrect"],
             "accuracy_percent": accuracy_t,
             "score_percent": score_t,
+            "mastery_percent": mastery_t,
             "pass": None
         })
 
@@ -52973,17 +52984,18 @@ def get_naplan_numeracy_homework_report(
     for t in topic_accuracy:
         improvement_areas.append({
             "topic": t["topic"],
-            "accuracy_percent": t["accuracy_percent"],
+            "accuracy_percent": t["mastery_percent"],  # 👈 bar will now show correct / total
             "score_percent": t["score_percent"],
+            "mastery_percent": t["mastery_percent"],
             "total_questions": t["total_questions"],
+            "correct": t["correct"],
+            "attempted": t["attempted"],
             "limited_data": t["total_questions"] < 5
         })
 
     improvement_areas.sort(
         key=lambda x: x["accuracy_percent"]
     )
-
-    print("=========== END HOMEWORK REPORT ===========\n")
 
     # --------------------------------------------------
     # 8. Final response
