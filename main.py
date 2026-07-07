@@ -89696,6 +89696,11 @@ def get_naplan_numeracy_review(
         qid = str(q.get("id"))
         if qid in response_map:
             q["correct_answer"] = response_map[qid]
+    print("\n===== NUMERACY REVIEW NORMALIZED QUESTIONS =====")
+    for q in normalized_questions:
+        if q.get("question_type") == 6:
+            print("\n----- TYPE 6 QUESTION -----")
+            print(json.dumps(q, indent=2, default=str))
     # --------------------------------------------------
     # 6. Return review payload
     # --------------------------------------------------
@@ -89703,6 +89708,8 @@ def get_naplan_numeracy_review(
         "questions": normalized_questions,
         "student_answers": student_answers
     }
+
+
 @app.get("/api/student/exam-review/naplan-numeracy-homework")
 def get_naplan_numeracy_homework_review(
     student_id: str,
