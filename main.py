@@ -488,13 +488,10 @@ class LeaderboardCategoryRequest(BaseModel):
 
     center_code: str
 class LeaderboardRequest(BaseModel):
-
     center_code: str
-
+    class_year: str
     term_id: int
-
     session: int
-
     category: str
 
 class AcademicTermsRequest(BaseModel):
@@ -588,6 +585,10 @@ class StudentGamifiedQuizAttempt(Base):
     total_questions = Column(
         Integer,
         nullable=False
+    )
+    time_taken_seconds = Column(
+        Integer,
+        nullable=True
     )
 
     answers_json = Column(
@@ -1093,6 +1094,7 @@ class AcademicTermResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
 class AcademicTerm(Base):
     __tablename__ = "academic_terms"
 
@@ -1112,6 +1114,8 @@ class AcademicTerm(Base):
         String,
         nullable=False
     )
+
+    
 
     start_date = Column(
         Date,
@@ -6895,13 +6899,16 @@ def load_leaderboard(
     print("==============================")
 
     print(f"Center Code : {request.center_code}")
+    print(f"Class Year  : {request.class_year}")
     print(f"Term ID     : {request.term_id}")
     print(f"Session     : {request.session}")
+    print(f"Category    : {request.category}")
 
     leaderboard = (
         db.query(StudentGamifiedQuizAttempt)
-         .filter(
+        .filter(
             StudentGamifiedQuizAttempt.center_code == request.center_code,
+            StudentGamifiedQuizAttempt.class_year == request.class_year,
             StudentGamifiedQuizAttempt.term_id == request.term_id,
             StudentGamifiedQuizAttempt.session == request.session,
             StudentGamifiedQuizAttempt.category == request.category,
@@ -6909,7 +6916,8 @@ def load_leaderboard(
         )
         .order_by(
             StudentGamifiedQuizAttempt.current_score.desc(),
-            StudentGamifiedQuizAttempt.completed_at.asc(),
+            StudentGamifiedQuizAttempt.time_taken_seconds.asc(),
+            StudentGamifiedQuizAttempt.started_at.asc(),
         )
         .all()
     )
@@ -6919,29 +6927,20 @@ def load_leaderboard(
     response = []
 
     for row in leaderboard:
-
         response.append({
-
             "id": row.id,
-
             "student_id": row.student_id,
-
             "category": row.category,
-
             "class_year": row.class_year,
-
             "class_day": row.class_day,
-
             "current_score": row.current_score,
-
             "total_questions": row.total_questions,
-
             "is_completed": row.is_completed,
-
+            "time_taken_seconds": row.time_taken_seconds,
+            "started_at": row.started_at,
         })
 
     return response
-
 
 @app.post("/academic-terms/list")
 def get_academic_terms(
@@ -7012,7 +7011,6 @@ def get_current_gamified_quiz(
     )
 
     if not student:
-
         raise HTTPException(
             status_code=404,
             detail="Student not found."
@@ -7040,7 +7038,6 @@ def get_current_gamified_quiz(
     )
 
     if not term:
-
         raise HTTPException(
             status_code=400,
             detail="No active academic term found."
@@ -7048,6 +7045,7 @@ def get_current_gamified_quiz(
 
     print("\nActive Academic Term")
     print("--------------------------------")
+    print(f"Term ID      : {term.id}")
     print(f"Term Name    : {term.term_name}")
     print(f"Start Date   : {term.start_date}")
     print(f"End Date     : {term.end_date}")
@@ -7058,18 +7056,16 @@ def get_current_gamified_quiz(
     # ------------------------------------
 
     today = date.today()
+    days_since_start = (today - term.start_date).days
 
-    days_since_start = (
-        today - term.start_date
-    ).days
     if today < term.start_date or today > term.end_date:
         raise HTTPException(
             status_code=400,
             detail="There is no active quiz for the current date because today is outside the active academic term."
         )
-    current_session = (
-        days_since_start // 7
-    ) + 1
+
+    current_session = (days_since_start // 7) + 1
+
     if current_session < 1 or current_session > term.number_of_weeks:
         raise HTTPException(
             status_code=400,
@@ -7101,7 +7097,6 @@ def get_current_gamified_quiz(
     )
 
     if not generated_quiz:
-
         print("\nGenerated Quiz: NOT FOUND")
 
         raise HTTPException(
@@ -7119,6 +7114,7 @@ def get_current_gamified_quiz(
     print(f"Topic         : {generated_quiz.topic}")
     print(f"Activity      : {generated_quiz.activity_type}")
     print("--------------------------------")
+
     # ------------------------------------
     # Check Existing Attempt
     # ------------------------------------
@@ -7132,29 +7128,66 @@ def get_current_gamified_quiz(
         .first()
     )
 
-    if attempt:
+    # ------------------------------------
+    # If Attempt Exists And Is Completed
+    # ------------------------------------
 
+    if attempt:
         print("\nStudent Attempt Found")
         print("--------------------------------")
-        print(f"Score      : {attempt.current_score}")
-        print(f"Completed  : {attempt.is_completed}")
+        print(f"Attempt ID   : {attempt.id}")
+        print(f"Score        : {attempt.current_score}")
+        print(f"Completed    : {attempt.is_completed}")
+        print(f"Started At   : {attempt.started_at}")
+        print(f"Completed At : {attempt.completed_at}")
 
         if attempt.is_completed:
-
             print("\nStudent has already completed this quiz.")
 
             return {
-
                 "already_attempted": True,
-
                 "current_score": attempt.current_score,
-
                 "total_questions": attempt.total_questions,
-
-                "message":
-                    "You have already attempted this week's quiz."
-
+                "message": "You have already attempted this week's quiz."
             }
+
+    # ------------------------------------
+    # Create Attempt On First Quiz Access
+    # ------------------------------------
+
+    if not attempt:
+        print("\nNo existing attempt found. Creating new attempt...")
+
+        questions = generated_quiz.quiz_json.get("questions", [])
+
+        attempt = StudentGamifiedQuizAttempt(
+            student_id=student.student_id,
+            generated_quiz_id=generated_quiz.id,
+            center_code=student.center_code,
+            category=student.class_name,
+            class_year=student.student_year,
+            class_day=student.class_day,
+            term_id=term.id,
+            session=current_session,
+            current_score=0,
+            total_questions=len(questions),
+            answers_json={},
+            is_completed=False,
+            started_at=datetime.utcnow()
+        )
+
+        db.add(attempt)
+        db.commit()
+        db.refresh(attempt)
+
+        print("\nAttempt Created")
+        print("--------------------------------")
+        print(f"Attempt ID   : {attempt.id}")
+        print(f"Started At   : {attempt.started_at}")
+
+    # ------------------------------------
+    # Return Quiz JSON
+    # ------------------------------------
 
     return generated_quiz.quiz_json
 
@@ -7220,13 +7253,18 @@ def generate_weekly_quizzes(
         }
 
     # ------------------------------------
-    # Load Configured Classes for ACTIVE TERM ONLY
+    # Load Configured Classes for ACTIVE TERM + TODAY ONLY
     # ------------------------------------
+    today_class_day = datetime.today().strftime("%A")
+
+    print(f"Scheduler Class Day Filter : {today_class_day}")
+
     classes = (
         db.query(ClassConfiguration)
         .filter(
             ClassConfiguration.center_code == center_code,
             ClassConfiguration.term_id == term.id,
+            ClassConfiguration.class_day == today_class_day,
         )
         .order_by(
             ClassConfiguration.category,
@@ -7236,16 +7274,17 @@ def generate_weekly_quizzes(
         .all()
     )
 
-    print(f"\nConfigured Classes: {len(classes)}")
+    print(f"\nConfigured Classes For {today_class_day}: {len(classes)}")
 
     if not classes:
-        print("No configured classes found for active term.")
+        print(f"No configured classes found for active term on {today_class_day}.")
         return {
-            "message": "No configured classes found for the active term.",
+            "message": f"No configured classes found for the active term on {today_class_day}.",
             "status": "error",
             "term_id": term.id,
             "term_name": term.term_name,
             "current_session": current_session,
+            "class_day": today_class_day,
         }
 
     # ------------------------------------
@@ -8217,6 +8256,7 @@ def get_categories(
     return {
         "categories": categories
     }
+
 @app.post("/class-configuration/class-years")
 def get_class_years(
     request: CategoryRequest,
@@ -8233,6 +8273,35 @@ def get_class_years(
             .order_by(Student.student_year)
             .all()
     ]
+
+    return {
+        "class_years": years
+    }
+
+@app.post("/leaderboard/class-years")
+def get_leaderboard_class_years(
+    request: CenterCodeRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n==============================")
+    print("LOAD LEADERBOARD CLASS YEARS")
+    print("==============================")
+    print(f"Center Code : {request.center_code}")
+
+    years = [
+        row[0]
+        for row in db.query(Student.student_year)
+        .filter(
+            Student.center_code == request.center_code
+        )
+        .distinct()
+        .order_by(Student.student_year)
+        .all()
+    ]
+
+    print(f"Class Years Found : {len(years)}")
+    for year in years:
+        print(year)
 
     return {
         "class_years": years
@@ -98388,7 +98457,6 @@ def submit_quiz_answer(
     )
 
     if not student:
-
         raise HTTPException(
             status_code=404,
             detail="Student not found."
@@ -98414,7 +98482,6 @@ def submit_quiz_answer(
     )
 
     if not term:
-
         raise HTTPException(
             status_code=404,
             detail="No active academic term."
@@ -98436,6 +98503,7 @@ def submit_quiz_answer(
         db.query(GeneratedGamifiedQuiz)
         .filter(
             GeneratedGamifiedQuiz.center_code == student.center_code,
+            GeneratedGamifiedQuiz.term_id == term.id,
             GeneratedGamifiedQuiz.category == student.class_name,
             GeneratedGamifiedQuiz.class_year == student.student_year,
             GeneratedGamifiedQuiz.class_day == student.class_day,
@@ -98445,7 +98513,6 @@ def submit_quiz_answer(
     )
 
     if not generated_quiz:
-
         raise HTTPException(
             status_code=404,
             detail="Generated quiz not found."
@@ -98459,15 +98526,12 @@ def submit_quiz_answer(
     )
 
     if request.question_index >= len(questions):
-
         raise HTTPException(
             status_code=400,
             detail="Invalid question index."
         )
 
-    question = questions[
-        request.question_index
-    ]
+    question = questions[request.question_index]
 
     print("--------------------------------")
     print(f"Prompt         : {question['prompt']}")
@@ -98499,62 +98563,35 @@ def submit_quiz_answer(
         .first()
     )
 
-    if attempt:
-
-        print("\nExisting Attempt Found")
-        print("--------------------------------")
-        print(f"Attempt ID : {attempt.id}")
-        print(f"Score      : {attempt.current_score}")
-        print(f"Completed  : {attempt.is_completed}")
-
-    else:
-
-        print("\nCreating New Attempt")
-
-        attempt = StudentGamifiedQuizAttempt(
-
-            student_id=student.student_id,
-
-            generated_quiz_id=generated_quiz.id,
-
-            center_code=student.center_code,
-
-            category=student.class_name,
-
-            class_year=student.student_year,
-
-            class_day=student.class_day,
-
-            term_id=term.id,
-
-            session=current_session,
-
-            current_score=0,
-
-            total_questions=len(questions),
-
-            answers_json={},
-
-            is_completed=False,
-
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="Quiz attempt not found. Please fetch the quiz first."
         )
 
-        db.add(attempt)
+    print("\nExisting Attempt Found")
+    print("--------------------------------")
+    print(f"Attempt ID   : {attempt.id}")
+    print(f"Score        : {attempt.current_score}")
+    print(f"Completed    : {attempt.is_completed}")
+    print(f"Started At   : {attempt.started_at}")
 
-        db.commit()
+    # ------------------------------------
+    # Prevent Re-Submitting Completed Quiz
+    # ------------------------------------
 
-        db.refresh(attempt)
-
-        print(f"Attempt Created : {attempt.id}")
+    if attempt.is_completed:
+        raise HTTPException(
+            status_code=400,
+            detail="This quiz has already been completed."
+        )
 
     # ------------------------------------
     # Save Student Answer
     # ------------------------------------
 
     answers = attempt.answers_json or {}
-
     answers[str(request.question_index)] = request.selected_option
-
     attempt.answers_json = answers
 
     print("\nAnswers JSON")
@@ -98568,11 +98605,9 @@ def submit_quiz_answer(
     score = 0
 
     for index, question in enumerate(questions):
-
         student_answer = answers.get(str(index))
 
         if student_answer == question["answer"]:
-
             score += 1
 
     attempt.current_score = score
@@ -98596,10 +98631,16 @@ def submit_quiz_answer(
 
         attempt.completed_at = datetime.utcnow()
 
+        if attempt.started_at:
+            attempt.time_taken_seconds = int(
+                (attempt.completed_at - attempt.started_at).total_seconds()
+            )
+
         print("\nQuiz Completed")
-
+        print(f"Started At         : {attempt.started_at}")
+        print(f"Completed At       : {attempt.completed_at}")
+        print(f"Time Taken Seconds : {attempt.time_taken_seconds}")
     else:
-
         print("\nQuiz Still In Progress")
 
     # ------------------------------------
@@ -98607,31 +98648,24 @@ def submit_quiz_answer(
     # ------------------------------------
 
     db.commit()
-
     db.refresh(attempt)
+
     print("\nSaved Answers In Database")
     print("--------------------------------")
     print(attempt.answers_json)
+
     return {
-
         "correct": is_correct,
-
         "current_score": attempt.current_score,
-
         "answered_questions": answered_questions,
-
         "total_questions": attempt.total_questions,
-
         "completed": attempt.is_completed,
-
         "message": (
             "Correct!"
             if is_correct
             else "Incorrect."
         )
-
     }
-
     
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8002))
