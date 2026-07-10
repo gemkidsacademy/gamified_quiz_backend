@@ -448,6 +448,220 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # ---------------------------
+
+class GamifiedWelcomeQuoteRequest(BaseModel):
+    student_id: str
+
+
+class GamifiedWelcomeQuoteResponse(BaseModel):
+    quote: str
+    author: str
+class SchedulerRunsRequest(BaseModel):
+    center_code: str
+
+
+class SchedulerRunDetailsRequest(BaseModel):
+    scheduler_run_id: int
+
+class SchedulerRun(Base):
+    __tablename__ = "scheduler_runs"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    term_id = Column(
+        Integer,
+        ForeignKey("academic_terms.id"),
+        nullable=True,
+        index=True
+    )
+
+    term_name = Column(
+        String,
+        nullable=True
+    )
+
+    scheduler_trigger = Column(
+        String,
+        nullable=False
+    )
+    # examples:
+    # "automatic"
+    # "manual"
+
+    run_date = Column(
+        Date,
+        nullable=False
+    )
+
+    weekday = Column(
+        String,
+        nullable=False
+    )
+
+    current_session = Column(
+        Integer,
+        nullable=True
+    )
+
+    total_classes = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    generated_quizzes = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    skipped_missing_topic = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    skipped_existing_quiz = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    failed_generations = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    status = Column(
+        String,
+        nullable=False
+    )
+    # examples:
+    # "success"
+    # "partial_success"
+    # "failed"
+
+    message = Column(
+        Text,
+        nullable=True
+    )
+
+    started_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    completed_at = Column(
+        DateTime,
+        nullable=True
+    )
+
+class SchedulerRunDetail(Base):
+    __tablename__ = "scheduler_run_details"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    scheduler_run_id = Column(
+        Integer,
+        ForeignKey("scheduler_runs.id"),
+        nullable=False,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    term_id = Column(
+        Integer,
+        ForeignKey("academic_terms.id"),
+        nullable=True,
+        index=True
+    )
+
+    term_name = Column(
+        String,
+        nullable=True
+    )
+
+    category = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    class_year = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    class_day = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    session = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    topic = Column(
+        Text,
+        nullable=True
+    )
+
+    selected_activity_type = Column(
+        String,
+        nullable=True
+    )
+
+    generated_quiz_id = Column(
+        Integer,
+        ForeignKey("generated_gamified_quizzes.id"),
+        nullable=True,
+        index=True
+    )
+
+    status = Column(
+        String,
+        nullable=False
+    )
+    # examples:
+    # "generated"
+    # "skipped"
+    # "failed"
+
+    message = Column(
+        Text,
+        nullable=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
 class SetCurrentAcademicTermRequest(BaseModel):
     center_code: str
 
@@ -6423,8 +6637,199 @@ def generate_exam_questions_latest(
 
     return all_questions
 
+@app.post("/student/gamified-welcome-quote", response_model=GamifiedWelcomeQuoteResponse)
+def get_gamified_welcome_quote(
+    request: GamifiedWelcomeQuoteRequest,
+    db: Session = Depends(get_db),
+):
+    print("\n==============================")
+    print("GAMIFIED WELCOME QUOTE")
+    print("==============================")
+    print(f"Student ID : {request.student_id}")
 
+    fallback_quotes = [
+        {
+            "quote": "Success is the sum of small efforts, repeated day in and day out.",
+            "author": "Robert Collier",
+        },
+        {
+            "quote": "Learning never exhausts the mind.",
+            "author": "Leonardo da Vinci",
+        },
+        {
+            "quote": "The beautiful thing about learning is that no one can take it away from you.",
+            "author": "B.B. King",
+        },
+        {
+            "quote": "Education is the passport to the future, for tomorrow belongs to those who prepare for it today.",
+            "author": "Malcolm X",
+        },
+        {
+            "quote": "The expert in anything was once a beginner.",
+            "author": "Helen Hayes",
+        },
+    ]
 
+    try:
+        prompt = """
+You are generating a welcome quote for a school student's weekly gamified quiz.
+
+Return exactly ONE short educational or inspirational quote suitable for students.
+The quote must have a real author/writer name.
+Do not invent authors.
+Do not include any explanation.
+
+Return ONLY valid JSON in this exact format:
+{
+  "quote": "string",
+  "author": "string"
+}
+"""
+
+        # -----------------------------
+        # OPTION A: if you already use the new OpenAI client in your backend
+        # -----------------------------
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You generate short motivational educational quotes for students in strict JSON format."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                },
+            ],
+            temperature=0.8,
+        )
+
+        raw_content = response.choices[0].message.content.strip()
+        print("Raw GPT quote response:", raw_content)
+
+        parsed = json.loads(raw_content)
+
+        quote = (parsed.get("quote") or "").strip()
+        author = (parsed.get("author") or "").strip()
+
+        if not quote or not author:
+            raise ValueError("Quote or author missing in GPT response")
+
+        return {
+            "quote": quote,
+            "author": author,
+        }
+
+    except Exception as e:
+        print("Error generating gamified welcome quote:", str(e))
+        fallback = random.choice(fallback_quotes)
+        return fallback
+    
+@app.post("/scheduler/runs")
+def get_scheduler_runs(
+    request: SchedulerRunsRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n==============================")
+    print("LOAD SCHEDULER RUNS")
+    print("==============================")
+    print(f"Center Code : {request.center_code}")
+
+    runs = (
+        db.query(SchedulerRun)
+        .filter(
+            SchedulerRun.center_code == request.center_code
+        )
+        .order_by(
+            SchedulerRun.id.desc()
+        )
+        .all()
+    )
+
+    print(f"Scheduler Runs Found : {len(runs)}")
+
+    response = []
+
+    for run in runs:
+        response.append({
+            "id": run.id,
+            "center_code": run.center_code,
+            "term_id": run.term_id,
+            "term_name": run.term_name,
+            "scheduler_trigger": run.scheduler_trigger,
+            "run_date": (
+                run.run_date.isoformat()
+                if run.run_date else None
+            ),
+            "weekday": run.weekday,
+            "current_session": run.current_session,
+            "total_classes": run.total_classes,
+            "generated_quizzes": run.generated_quizzes,
+            "skipped_missing_topic": run.skipped_missing_topic,
+            "skipped_existing_quiz": run.skipped_existing_quiz,
+            "failed_generations": run.failed_generations,
+            "status": run.status,
+            "message": run.message,
+            "started_at": (
+                run.started_at.isoformat()
+                if run.started_at else None
+            ),
+            "completed_at": (
+                run.completed_at.isoformat()
+                if run.completed_at else None
+            ),
+        })
+
+    return response
+
+@app.post("/scheduler/run-details")
+def get_scheduler_run_details(
+    request: SchedulerRunDetailsRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n==============================")
+    print("LOAD SCHEDULER RUN DETAILS")
+    print("==============================")
+    print(f"Scheduler Run ID : {request.scheduler_run_id}")
+
+    details = (
+        db.query(SchedulerRunDetail)
+        .filter(
+            SchedulerRunDetail.scheduler_run_id == request.scheduler_run_id
+        )
+        .order_by(
+            SchedulerRunDetail.id.asc()
+        )
+        .all()
+    )
+
+    print(f"Scheduler Run Detail Rows Found : {len(details)}")
+
+    response = []
+
+    for row in details:
+        response.append({
+            "id": row.id,
+            "scheduler_run_id": row.scheduler_run_id,
+            "center_code": row.center_code,
+            "term_id": row.term_id,
+            "term_name": row.term_name,
+            "category": row.category,
+            "class_year": row.class_year,
+            "class_day": row.class_day,
+            "session": row.session,
+            "topic": row.topic,
+            "selected_activity_type": row.selected_activity_type,
+            "generated_quiz_id": row.generated_quiz_id,
+            "status": row.status,
+            "message": row.message,
+            "created_at": (
+                row.created_at.isoformat()
+                if row.created_at else None
+            ),
+        })
+
+    return response
 
 @app.put("/academic-term-gamified/{term_id}/set-current")
 def set_current_academic_term(
@@ -7144,11 +7549,30 @@ def get_current_gamified_quiz(
         if attempt.is_completed:
             print("\nStudent has already completed this quiz.")
 
+            questions = generated_quiz.quiz_json.get("questions", [])
+            answers = attempt.answers_json or {}
+
+            review = []
+
+            for index, q in enumerate(questions):
+                selected_option = answers.get(str(index), "")
+                correct_answer = q.get("answer", "")
+
+                review.append({
+                    "question_number": index + 1,
+                    "prompt": q.get("prompt", ""),
+                    "selected_option": selected_option,
+                    "correct_answer": correct_answer,
+                    "is_correct": selected_option.strip() == correct_answer.strip()
+                })
+
             return {
                 "already_attempted": True,
+                "completed": True,
                 "current_score": attempt.current_score,
                 "total_questions": attempt.total_questions,
-                "message": "You have already attempted this week's quiz."
+                "message": "You have already attempted this week's quiz.",
+                "review": review
             }
 
     # ------------------------------------
@@ -7199,6 +7623,24 @@ def generate_weekly_quizzes(
     print("SCHEDULER STARTED")
     print("==============================")
 
+    today_date = datetime.today().date()
+    today_class_day = datetime.today().strftime("%A")
+
+    # ------------------------------------
+    # Create Scheduler Run Header
+    # ------------------------------------
+    scheduler_run = SchedulerRun(
+        center_code=center_code,
+        scheduler_trigger="automatic",
+        run_date=today_date,
+        weekday=today_class_day,
+        status="running",
+        started_at=datetime.utcnow(),
+    )
+
+    db.add(scheduler_run)
+    db.commit()
+    db.refresh(scheduler_run)
     # ------------------------------------
     # Load Active Academic Term
     # ------------------------------------
@@ -7213,17 +7655,25 @@ def generate_weekly_quizzes(
 
     if not term:
         print("Active academic term not found.")
+
+        scheduler_run.status = "failed"
+        scheduler_run.message = "Active academic term not found."
+        scheduler_run.completed_at = datetime.utcnow()
+        db.commit()
+
         return {
             "message": "Active academic term not found.",
             "status": "error"
         }
 
     print(f"Academic Term: {term.term_name}")
-
+    scheduler_run.term_id = term.id
+    scheduler_run.term_name = term.term_name
+    db.commit()
     # ------------------------------------
     # Validate Today Is Within Term
     # ------------------------------------
-    today_date = datetime.today().date()
+    
 
     if today_date < term.start_date or today_date > term.end_date:
         print("Today is outside the active academic term.")
@@ -7241,6 +7691,8 @@ def generate_weekly_quizzes(
     current_session = (days_elapsed // 7) + 1
 
     print(f"Current Session: {current_session}")
+    scheduler_run.current_session = current_session
+    db.commit()
 
     if current_session < 1 or current_session > term.number_of_weeks:
         print("Current session is outside the configured term range.")
@@ -7344,6 +7796,16 @@ def generate_weekly_quizzes(
         print(f"Category   : {cls.category}")
         print(f"Class Year : {cls.class_year}")
         print(f"Class Day  : {cls.class_day}")
+        detail_row = SchedulerRunDetail(
+            scheduler_run_id=scheduler_run.id,
+            center_code=center_code,
+            term_id=term.id,
+            term_name=term.term_name,
+            category=cls.category,
+            class_year=cls.class_year,
+            class_day=cls.class_day,
+            session=current_session,
+        )
 
         result_row = {
             "category": cls.category,
@@ -7379,6 +7841,12 @@ def generate_weekly_quizzes(
             skipped_missing_topic += 1
             result_row["status"] = "skipped"
             result_row["message"] = "No session topic found for this class and session."
+
+            detail_row.status = "skipped"
+            detail_row.message = "No session topic found for this class and session."
+
+            db.add(detail_row)
+
             results.append(result_row)
             continue
 
@@ -7386,6 +7854,8 @@ def generate_weekly_quizzes(
         print(f"Topic      : {topic_row.topic}")
 
         result_row["topic"] = topic_row.topic
+
+        detail_row.topic = topic_row.topic
 
         # ------------------------------------
         # Prevent duplicate quiz generation
@@ -7416,6 +7886,13 @@ def generate_weekly_quizzes(
             skipped_existing_quiz += 1
             result_row["status"] = "skipped"
             result_row["message"] = "Quiz already exists for this class and session."
+
+            detail_row.status = "skipped"
+            detail_row.message = "Quiz already exists for this class and session."
+            detail_row.generated_quiz_id = existing_quiz.id
+
+            db.add(detail_row)
+
             results.append(result_row)
             continue
 
@@ -7431,6 +7908,7 @@ def generate_weekly_quizzes(
         topic_name = topic_row.topic
 
         result_row["activity_type"] = activity_type
+        detail_row.selected_activity_type = activity_type
 
         print("\n----- GPT INPUT -----")
         print(f"Term          : {term.term_name}")
@@ -7534,10 +8012,17 @@ def generate_weekly_quizzes(
             )
 
             db.add(generated_quiz)
+            db.flush()
 
             generated_count += 1
             result_row["status"] = "generated"
             result_row["message"] = "Quiz generated successfully."
+
+            detail_row.status = "generated"
+            detail_row.message = "Quiz generated successfully."
+            detail_row.generated_quiz_id = generated_quiz.id
+
+            db.add(detail_row)
 
             print("\n✅ JSON parsed successfully.")
             print(f"Quiz Title : {parsed_json['quiz_title']}")
@@ -7551,6 +8036,11 @@ def generate_weekly_quizzes(
             result_row["status"] = "failed"
             result_row["message"] = f"JSON parsing failed: {str(e)}"
 
+            detail_row.status = "failed"
+            detail_row.message = f"JSON parsing failed: {str(e)}"
+
+            db.add(detail_row)
+
         except Exception as e:
             print("\n❌ GPT call failed")
             print(e)
@@ -7559,7 +8049,31 @@ def generate_weekly_quizzes(
             result_row["status"] = "failed"
             result_row["message"] = f"Quiz generation failed: {str(e)}"
 
+            detail_row.status = "failed"
+            detail_row.message = f"Quiz generation failed: {str(e)}"
+
+            db.add(detail_row)
+
         results.append(result_row)
+
+    # ------------------------------------
+    # Finalise Scheduler Run Header
+    # ------------------------------------
+    scheduler_run.total_classes = len(classes)
+    scheduler_run.generated_quizzes = generated_count
+    scheduler_run.skipped_missing_topic = skipped_missing_topic
+    scheduler_run.skipped_existing_quiz = skipped_existing_quiz
+    scheduler_run.failed_generations = failed_generation
+    scheduler_run.completed_at = datetime.utcnow()
+
+    if failed_generation > 0 and generated_count == 0:
+        scheduler_run.status = "failed"
+    elif failed_generation > 0:
+        scheduler_run.status = "partial_success"
+    else:
+        scheduler_run.status = "success"
+
+    scheduler_run.message = "Scheduler run completed."
 
     db.commit()
 
@@ -98654,6 +99168,23 @@ def submit_quiz_answer(
     print("--------------------------------")
     print(attempt.answers_json)
 
+    review = None
+
+    if attempt.is_completed:
+        review = []
+
+        for index, q in enumerate(questions):
+            selected_option = answers.get(str(index), "")
+            correct_answer = q.get("answer", "")
+
+            review.append({
+                "question_number": index + 1,
+                "prompt": q.get("prompt", ""),
+                "selected_option": selected_option,
+                "correct_answer": correct_answer,
+                "is_correct": selected_option.strip() == correct_answer.strip()
+            })
+
     return {
         "correct": is_correct,
         "current_score": attempt.current_score,
@@ -98664,7 +99195,8 @@ def submit_quiz_answer(
             "Correct!"
             if is_correct
             else "Incorrect."
-        )
+        ),
+        "review": review
     }
     
 if __name__ == "__main__":
