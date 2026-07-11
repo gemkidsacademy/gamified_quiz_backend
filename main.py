@@ -1572,6 +1572,45 @@ class AdminUser(Base):
         DateTime,
         default=datetime.utcnow
     )
+
+
+from sqlalchemy import Column, Integer, String, DateTime
+from datetime import datetime
+
+from pydantic import BaseModel, EmailStr
+
+
+class AddCenterTeacherRequest(BaseModel):
+    username: str
+    password: str
+    full_name: str
+    center_code: str
+    email: EmailStr
+    phone_number: str
+
+
+class CenterTeacher(Base):
+    __tablename__ = "center_teachers"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    username = Column(String, unique=True, nullable=False)
+
+    password = Column(String, nullable=False)
+
+    full_name = Column(String, nullable=False)
+
+    center_code = Column(String, nullable=False)
+
+    email = Column(String, nullable=True)
+
+    phone_number = Column(String, nullable=True)
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
 class QuestionUsage(Base):
     __tablename__ = "question_usage"
 
@@ -6636,7 +6675,206 @@ def generate_exam_questions_latest(
     print("=" * 70 + "\n")
 
     return all_questions
+@app.delete("/delete-center-teacher/{teacher_id}")
+def delete_center_teacher(
+    teacher_id: int,
+    db: Session = Depends(get_db),
+):
 
+    print("\n==============================")
+    print("DELETE CENTER TEACHER")
+    print("==============================")
+    print(f"Teacher ID : {teacher_id}")
+
+    teacher = (
+        db.query(CenterTeacher)
+        .filter(CenterTeacher.id == teacher_id)
+        .first()
+    )
+
+    if not teacher:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher not found."
+        )
+
+    db.delete(teacher)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Teacher deleted successfully."
+    }
+
+@app.put("/update-center-teacher/{teacher_id}")
+def update_center_teacher(
+    teacher_id: int,
+    request: AddCenterTeacherRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("UPDATE CENTER TEACHER")
+    print("==============================")
+    print(f"Teacher ID : {teacher_id}")
+
+    teacher = (
+        db.query(CenterTeacher)
+        .filter(CenterTeacher.id == teacher_id)
+        .first()
+    )
+
+    if not teacher:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher not found."
+        )
+
+    # Check duplicate username
+    existing_username = (
+        db.query(CenterTeacher)
+        .filter(
+            CenterTeacher.username == request.username,
+            CenterTeacher.id != teacher_id
+        )
+        .first()
+    )
+
+    if existing_username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists."
+        )
+
+    # Check duplicate email
+    existing_email = (
+        db.query(CenterTeacher)
+        .filter(
+            CenterTeacher.email == request.email,
+            CenterTeacher.id != teacher_id
+        )
+        .first()
+    )
+
+    if existing_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already exists."
+        )
+
+    teacher.username = request.username
+    teacher.password = request.password
+    teacher.full_name = request.full_name
+    teacher.center_code = request.center_code
+    teacher.email = request.email
+    teacher.phone_number = request.phone_number
+
+    db.commit()
+    db.refresh(teacher)
+
+    return {
+        "success": True,
+        "message": "Teacher updated successfully."
+    }
+@app.get("/get-all-center-teachers")
+def get_all_center_teachers(
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("GET ALL CENTER TEACHERS")
+    print("==============================")
+
+    teachers = (
+        db.query(CenterTeacher)
+        .order_by(CenterTeacher.full_name)
+        .all()
+    )
+
+    result = []
+
+    for teacher in teachers:
+
+        result.append({
+
+            "id": teacher.id,
+
+            "center_code": teacher.center_code,
+
+            "full_name": teacher.full_name,
+
+            "username": teacher.username,
+
+            "email": teacher.email,
+
+            "phone_number": teacher.phone_number,
+
+            "password": teacher.password,
+
+        })
+
+    print(f"Teachers Found : {len(result)}")
+
+    return {
+        "teachers": result
+    }
+@app.post("/center-teacher/add-center-teacher")
+def add_center_teacher(
+    request: AddCenterTeacherRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("ADD CENTER TEACHER")
+    print("==============================")
+    print(f"Username      : {request.username}")
+    print(f"Teacher Name  : {request.full_name}")
+    print(f"Center Code   : {request.center_code}")
+
+    # Check username
+    existing_username = (
+        db.query(CenterTeacher)
+        .filter(CenterTeacher.username == request.username)
+        .first()
+    )
+
+    if existing_username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists."
+        )
+
+    # Check email
+    existing_email = (
+        db.query(CenterTeacher)
+        .filter(CenterTeacher.email == request.email)
+        .first()
+    )
+
+    if existing_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already exists."
+        )
+
+    teacher = CenterTeacher(
+        username=request.username,
+        password=request.password,
+        full_name=request.full_name,
+        center_code=request.center_code,
+        email=request.email,
+        phone_number=request.phone_number,
+    )
+
+    db.add(teacher)
+    db.commit()
+    db.refresh(teacher)
+
+    return {
+        "success": True,
+        "message": "Center teacher created successfully.",
+        "teacher_id": teacher.id,
+    }
 @app.post("/student/gamified-welcome-quote", response_model=GamifiedWelcomeQuoteResponse)
 def get_gamified_welcome_quote(
     request: GamifiedWelcomeQuoteRequest,
@@ -96360,6 +96598,72 @@ def login_exam_module(
         print("================ LOGIN REQUEST END ================\n")
 
         return admin_response
+    # ==================================================
+    # STEP 2: CHECK CENTER TEACHERS TABLE
+    # ==================================================
+
+    print("\nAdmin user not found")
+    print("Checking center_teachers table...")
+
+    teacher = (
+        db.query(CenterTeacher)
+        .filter(
+            CenterTeacher.username == login_data.student_id
+        )
+        .first()
+    )
+
+    # --------------------------------------------------
+    # TEACHER FOUND
+    # --------------------------------------------------
+
+    if teacher:
+
+        print("Teacher record found")
+        print(f"Database Username: {teacher.username}")
+        print(f"Teacher Name: {teacher.full_name}")
+
+        print("Checking teacher password...")
+
+        if teacher.password != login_data.password:
+
+            print("Teacher password mismatch")
+            print("Returning 401 Unauthorized")
+
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid credentials"
+            )
+
+        print("Teacher password verified successfully")
+        print("Teacher login successful")
+
+        teacher_response = {
+
+            "user_type": "CENTER_TEACHER",
+
+            "role": "CENTER_TEACHER",
+
+            "username": teacher.username,
+
+            "name": teacher.full_name,
+
+            "center_code": teacher.center_code,
+
+            "email": teacher.email,
+
+            "phone_number": teacher.phone_number,
+
+            "redirect_to": "ADMIN_PANEL",
+
+        }
+
+        print("Returning teacher response:")
+        print(teacher_response)
+
+        print("================ LOGIN REQUEST END ================\n")
+
+        return teacher_response
 
     # ==================================================
     # STEP 2: CHECK STUDENT TABLE
