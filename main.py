@@ -448,6 +448,13 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # ---------------------------
+class LeaderboardRequest(BaseModel):
+    center_code: str
+    class_year: str
+    term_id: int
+    session: int
+    category: str
+
 
 class GamifiedWelcomeQuoteRequest(BaseModel):
     student_id: str
@@ -701,12 +708,6 @@ class CurrentTerm(Base):
 class LeaderboardCategoryRequest(BaseModel):
 
     center_code: str
-class LeaderboardRequest(BaseModel):
-    center_code: str
-    class_year: str
-    term_id: int
-    session: int
-    category: str
 
 class AcademicTermsRequest(BaseModel):
 
@@ -6675,6 +6676,85 @@ def generate_exam_questions_latest(
     print("=" * 70 + "\n")
 
     return all_questions
+
+from sqlalchemy import extract
+class LeaderboardYearRequest(BaseModel):
+    center_code: str
+
+class LeaderboardSessionsRequest(BaseModel):
+    center_code: str
+    term_id: int
+
+@app.post("/leaderboard/sessions")
+def get_leaderboard_sessions(
+    request: LeaderboardSessionsRequest,
+    db: Session = Depends(get_db),
+):
+    print("\n==============================")
+    print("LOAD LEADERBOARD SESSIONS")
+    print("==============================")
+    print(f"Center Code : {request.center_code}")
+    print(f"Term ID     : {request.term_id}")
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.id == request.term_id,
+            AcademicTerm.center_code == request.center_code,
+        )
+        .first()
+    )
+
+    if not term:
+        print("Academic term not found.")
+
+        return {
+            "sessions": []
+        }
+
+    print(f"Term Name        : {term.term_name}")
+    print(f"Number of Weeks  : {term.number_of_weeks}")
+
+    sessions = []
+
+    for session in range(1, term.number_of_weeks + 1):
+        sessions.append({
+            "session_number": session,
+            "session_name": f"Session {session}"
+        })
+
+    print(f"Sessions Generated : {len(sessions)}")
+
+    return {
+        "term_id": term.id,
+        "term_name": term.term_name,
+        "number_of_weeks": term.number_of_weeks,
+        "sessions": sessions,
+    }
+
+@app.post("/leaderboard/academic-years")
+def get_academic_years(
+    request: LeaderboardYearRequest,
+    db: Session = Depends(get_db)
+):
+    years = (
+        db.query(
+            extract("year", AcademicTerm.created_at).label("year")
+        )
+        .filter(
+            AcademicTerm.center_code == request.center_code
+        )
+        .distinct()
+        .order_by(
+            extract("year", AcademicTerm.created_at).desc()
+        )
+        .all()
+    )
+
+    return {
+        "academic_years": [int(row.year) for row in years]
+    }
+
 @app.delete("/delete-center-teacher/{teacher_id}")
 def delete_center_teacher(
     teacher_id: int,
@@ -7585,6 +7665,78 @@ def load_leaderboard(
 
     return response
 
+
+class LeaderboardClassFiltersRequest(BaseModel):
+    center_code: str
+    calendar_year: int
+    term_id: int
+
+@app.post("/leaderboard/class-filters")
+def get_leaderboard_class_filters(
+    request: LeaderboardClassFiltersRequest,
+    db: Session = Depends(get_db),
+):
+    print("\n==============================")
+    print("LOAD LEADERBOARD CLASS FILTERS")
+    print("==============================")
+    print(f"Center Code   : {request.center_code}")
+    print(f"Calendar Year : {request.calendar_year}")
+    print(f"Term ID       : {request.term_id}")
+
+    query = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.center_code == request.center_code,
+            ClassConfiguration.term_id == request.term_id,
+        )
+        .all()
+    )
+
+    print(f"Class Configurations Found : {len(query)}")
+
+    categories = sorted(
+        list(
+            {
+                row.category
+                for row in query
+                if row.category
+            }
+        )
+    )
+
+    class_years = sorted(
+        list(
+            {
+                row.class_year
+                for row in query
+                if row.class_year
+            }
+        )
+    )
+
+    class_days = sorted(
+        list(
+            {
+                row.class_day
+                for row in query
+                if row.class_day
+            }
+        )
+    )
+
+    print(f"Categories  : {categories}")
+    print(f"Class Years : {class_years}")
+    print(f"Class Days  : {class_days}")
+
+    return {
+        "categories": categories,
+        "class_years": class_years,
+        "class_days": class_days,
+    }
+
+
+
+
 @app.post("/academic-terms/list")
 def get_academic_terms(
     request: AcademicTermsRequest,
@@ -7628,6 +7780,46 @@ def get_academic_terms(
     return response
 
 
+class AcademicTermsRequest(BaseModel):
+    center_code: str
+    calendar_year: int
+
+@app.post("/leaderboard/academic-terms")
+def get_leaderboard_academic_terms(
+    request: AcademicTermsRequest,
+    db: Session = Depends(get_db),
+):
+    print("\n==============================")
+    print("LOAD LEADERBOARD ACADEMIC TERMS")
+    print("==============================")
+    print(f"Center Code   : {request.center_code}")
+    print(f"Calendar Year : {request.calendar_year}")
+
+    terms = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == request.center_code,
+            extract("year", AcademicTerm.created_at) == int(request.calendar_year),
+        )
+        .order_by(AcademicTerm.start_date.desc())
+        .all()
+    )
+
+    print(f"Terms Found : {len(terms)}")
+
+    response = []
+
+    for term in terms:
+        response.append({
+            "id": term.id,
+            "term_name": term.term_name,
+            "start_date": term.start_date,
+            "end_date": term.end_date,
+            "number_of_weeks": term.number_of_weeks,
+            "is_active": term.is_active,
+        })
+
+    return response
 
 @app.post("/student/current-gamified-quiz")
 def get_current_gamified_quiz(
@@ -7852,6 +8044,8 @@ def get_current_gamified_quiz(
     # ------------------------------------
 
     return generated_quiz.quiz_json
+from zoneinfo import ZoneInfo
+SYDNEY_TZ = ZoneInfo("Australia/Sydney")
 
 def generate_weekly_quizzes(
     center_code: str,
@@ -7867,13 +8061,20 @@ def generate_weekly_quizzes(
     # ------------------------------------
     # Create Scheduler Run Header
     # ------------------------------------
+    sydney_now = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
+
+    print("===================================")
+    print("Sydney now :", sydney_now)
+    print("tzinfo     :", sydney_now.tzinfo)
+    print("===================================")
+
     scheduler_run = SchedulerRun(
         center_code=center_code,
         scheduler_trigger="automatic",
         run_date=today_date,
         weekday=today_class_day,
         status="running",
-        started_at=datetime.utcnow(),
+        started_at=sydney_now,
     )
 
     db.add(scheduler_run)
@@ -7896,7 +8097,7 @@ def generate_weekly_quizzes(
 
         scheduler_run.status = "failed"
         scheduler_run.message = "Active academic term not found."
-        scheduler_run.completed_at = datetime.utcnow()
+        scheduler_run.completed_at = datetime.now(SYDNEY_TZ)
         db.commit()
 
         return {
@@ -8302,7 +8503,7 @@ def generate_weekly_quizzes(
     scheduler_run.skipped_missing_topic = skipped_missing_topic
     scheduler_run.skipped_existing_quiz = skipped_existing_quiz
     scheduler_run.failed_generations = failed_generation
-    scheduler_run.completed_at = datetime.utcnow()
+    scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
 
     if failed_generation > 0 and generated_count == 0:
         scheduler_run.status = "failed"
