@@ -6684,6 +6684,78 @@ class LeaderboardYearRequest(BaseModel):
 class LeaderboardSessionsRequest(BaseModel):
     center_code: str
     term_id: int
+@app.get("/api/quizzes-writing/oc")
+def get_oc_writing_quiz_setup(
+    class_year: str = Query(...),
+    center_code: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    quiz = (
+        db.query(QuizSetupWriting)
+        .filter(
+            QuizSetupWriting.class_name == "OC",
+            QuizSetupWriting.class_year == class_year,
+            QuizSetupWriting.subject == "writing",
+            QuizSetupWriting.center_code == center_code,
+        )
+        .order_by(QuizSetupWriting.created_at.desc())
+        .first()
+    )
+
+    if quiz is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No OC Writing setup found for the selected class year."
+        )
+
+    return {
+        "id": quiz.id,
+        "class_name": quiz.class_name,
+        "class_year": quiz.class_year,
+        "subject": quiz.subject,
+        "topic": quiz.topic,
+        "difficulty": quiz.difficulty,
+        "center_code": quiz.center_code,
+        "created_at": quiz.created_at,
+    }
+
+@app.get("/writing/topics")
+def get_topics(
+    class_name: str = Query(...),
+    class_year: str = Query(...),
+    difficulty: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    topics = (
+        db.query(distinct(WritingQuestionBank.topic))
+        .filter(
+            WritingQuestionBank.class_name == class_name,
+            WritingQuestionBank.class_year == class_year,
+            WritingQuestionBank.difficulty == difficulty,
+        )
+        .order_by(WritingQuestionBank.topic)
+        .all()
+    )
+
+    return [row[0] for row in topics if row[0]]
+
+@app.get("/writing/difficulty-levels")
+def get_difficulty_levels(
+    class_name: str = Query(...),
+    class_year: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    difficulties = (
+        db.query(distinct(WritingQuestionBank.difficulty))
+        .filter(
+            WritingQuestionBank.class_name == class_name,
+            WritingQuestionBank.class_year == class_year,
+        )
+        .order_by(WritingQuestionBank.difficulty)
+        .all()
+    )
+
+    return [row[0] for row in difficulties if row[0]]
 
 @app.post("/leaderboard/sessions")
 def get_leaderboard_sessions(
@@ -16733,6 +16805,7 @@ def get_history_by_attempt(
         }
         for s in snapshots
     ]
+
 @app.get("/api/student/homework-writing-history-by-attempt")
 def get_homework_history_by_attempt(
     attempt_id: int,
@@ -20179,6 +20252,335 @@ def generate_naplan_numeracy_homework(
         "total_questions":
             len(assembled_questions),
     }
+
+@app.get("/api/quizzes-oc-writing-homework")
+def get_oc_writing_homework_quiz_setup(
+    class_year: str = Query(...),
+    center_code: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    quiz = (
+        db.query(QuizSetupWritingHomework)
+        .filter(
+            QuizSetupWritingHomework.class_name == "OC",
+            QuizSetupWritingHomework.class_year == class_year,
+            QuizSetupWritingHomework.subject == "writing",
+            QuizSetupWritingHomework.center_code == center_code,
+        )
+        .order_by(QuizSetupWritingHomework.created_at.desc())
+        .first()
+    )
+
+    if quiz is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No OC Writing homework setup found for the selected class year."
+        )
+
+    return {
+        "id": quiz.id,
+        "class_name": quiz.class_name,
+        "class_year": quiz.class_year,
+        "subject": quiz.subject,
+        "topic": quiz.topic,
+        "difficulty": quiz.difficulty,
+        "center_code": quiz.center_code,
+        "created_at": quiz.created_at,
+    }
+
+@app.post("/api/exams/generate-oc-writing-homework")
+def generate_oc_writing_homework(
+    payload: WritingGenerateSchemaHomeWork,
+    db: Session = Depends(get_db)
+):
+    try:
+
+        print(
+            "\n=========== GENERATE OC WRITING HOMEWORK ==========="
+        )
+
+        # -------------------------------------------------
+        # Helpers
+        # -------------------------------------------------
+        def normalize_text_helper(value: str) -> str:
+            return value.strip().lower()
+
+        def normalize_year_digits_helper(value: str) -> str:
+            return "".join(
+                ch for ch in value
+                if ch.isdigit()
+            )
+
+        # -------------------------------------------------
+        # Inputs
+        # -------------------------------------------------
+        class_name = "OC"
+
+        class_name_norm = normalize_text_helper(
+            class_name
+        )
+
+        class_year_raw = payload.class_year
+
+        class_year_norm = normalize_text_helper(
+            class_year_raw
+        )
+
+        class_year_digits = normalize_year_digits_helper(
+            class_year_raw
+        )
+
+        center_code = payload.center_code.strip().upper()
+
+        print("\n📥 INPUTS:")
+        print(f"   class_name     = '{class_name}'")
+        print(f"   class_year     = '{class_year_raw}'")
+        print(f"   center_code    = '{center_code}'")
+
+        # -------------------------------------------------
+        # Load homework setup
+        # -------------------------------------------------
+        setup = (
+            db.query(QuizSetupWritingHomework)
+            .filter(
+                func.lower(func.trim(
+                    QuizSetupWritingHomework.class_name
+                )) == class_name_norm,
+
+                func.lower(func.trim(
+                    QuizSetupWritingHomework.class_year
+                )) == class_year_norm,
+
+                func.lower(func.trim(
+                    QuizSetupWritingHomework.center_code
+                )) == center_code.lower()
+            )
+            .order_by(
+                QuizSetupWritingHomework.id.desc()
+            )
+            .first()
+        )
+
+        if not setup:
+            raise HTTPException(
+                status_code=404,
+                detail="No OC writing homework setup found."
+            )
+
+        topic = normalize_text_helper(setup.topic)
+        difficulty = normalize_text_helper(setup.difficulty)
+
+        # -------------------------------------------------
+        # Delete previous homework for this centre/year
+        # -------------------------------------------------
+        homework_ids = (
+            db.query(GeneratedHomeworkWriting.id)
+            .filter(
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.class_year
+                    )
+                ) == class_year_norm,
+
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.center_code
+                    )
+                ) == center_code.lower()
+            )
+            .all()
+        )
+
+        homework_ids = [h[0] for h in homework_ids]
+
+        if homework_ids:
+
+            db.query(StudentHomeworkResponseWriting).filter(
+                StudentHomeworkResponseWriting.homework_id.in_(homework_ids)
+            ).delete(synchronize_session=False)
+
+            db.query(StudentHomeworkWriting).filter(
+                StudentHomeworkWriting.homework_id.in_(homework_ids)
+            ).delete(synchronize_session=False)
+
+            db.query(GeneratedHomeworkWriting).filter(
+                GeneratedHomeworkWriting.id.in_(homework_ids)
+            ).delete(synchronize_session=False)
+
+            db.commit()
+
+        # -------------------------------------------------
+        # Previously used questions
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                func.lower(
+                    func.trim(
+                        QuestionUsageWriting.center_code
+                    )
+                ) == center_code.lower()
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        # -------------------------------------------------
+        # Pick unused question
+        # -------------------------------------------------
+        question_query = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.difficulty
+                    )
+                ) == difficulty,
+
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.topic
+                    )
+                ) == topic,
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits
+            )
+        )
+
+        if used_question_ids:
+
+            question_query = question_query.filter(
+                ~WritingQuestionBank.id.in_(
+                    used_question_ids
+                )
+            )
+
+        question = (
+            question_query
+            .order_by(func.random())
+            .first()
+        )
+
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail="No unused OC writing homework question available."
+            )
+
+        # -------------------------------------------------
+        # Build exam text
+        # -------------------------------------------------
+        parts = []
+
+        if question.title:
+            parts.append(
+                f"TITLE:\n{question.title}\n"
+            )
+
+        parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
+
+        if question.statement:
+            parts.append(
+                f"STATEMENT:\n{question.statement}\n"
+            )
+
+        parts.append(
+            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+            parts.append(
+                f"OPENING SENTENCE:\n{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+            formatted = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            parts.append(
+                f"GUIDELINES:\n{formatted}\n"
+            )
+
+        full_exam_text = "\n".join(parts).strip()
+
+        # -------------------------------------------------
+        # Save homework
+        # -------------------------------------------------
+        exam = GeneratedHomeworkWriting(
+            class_name=class_name,
+            class_year=class_year_raw,
+            subject="writing",
+            topic=question.topic,
+            difficulty=difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            is_current=True,
+            center_code=center_code
+        )
+
+        db.add(exam)
+        db.commit()
+        db.refresh(exam)
+
+        # -------------------------------------------------
+        # Register question usage
+        # -------------------------------------------------
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+        db.commit()
+
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "center_code": exam.center_code,
+            "exam_text": full_exam_text,
+        }
+
+    except Exception as e:
+
+        db.rollback()
+
+        traceback.print_exc()
+
+        raise e
 @app.post("/api/exams/generate-writing-homework")
 def generate_writing_homework(
     payload: WritingGenerateSchemaHomeWork,
@@ -34930,6 +35332,7 @@ def reuse_used_questions_naplan_numeracy(
 @app.put("/api/admin/reset-writing-questions")
 def reset_writing_questions(
     center_code: str = Query(...),
+    class_name: str = Query(...),
     db: Session = Depends(get_db),
 ):
 
@@ -34938,15 +35341,13 @@ def reset_writing_questions(
         "QUESTION USAGE START ==="
     )
 
-    print(
-        f"[INPUT] center_code="
-        f"{center_code}"
-    )
+    print(f"[INPUT] center_code={center_code}")
+    print(f"[INPUT] class_name={class_name}")
 
     try:
 
         # --------------------------------------------------
-        # Normalize center code
+        # Normalize values
         # --------------------------------------------------
 
         normalized_center_code = (
@@ -34955,18 +35356,34 @@ def reset_writing_questions(
             .upper()
         )
 
+        normalized_class_name = (
+            class_name
+            .strip()
+            .lower()
+        )
+
         print(
             f"🏢 Normalized center_code="
             f"{normalized_center_code}"
         )
 
+        print(
+            f"📘 Normalized class_name="
+            f"{normalized_class_name}"
+        )
+
         # --------------------------------------------------
-        # Debug existing usage rows
+        # Find usage rows for this class
         # --------------------------------------------------
 
         usage_rows = (
             db.query(
                 QuestionUsageWriting
+            )
+            .join(
+                WritingQuestionBank,
+                QuestionUsageWriting.question_id
+                == WritingQuestionBank.id
             )
             .filter(
                 func.upper(
@@ -34975,7 +35392,15 @@ def reset_writing_questions(
                     )
                 )
                 ==
-                normalized_center_code
+                normalized_center_code,
+
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                )
+                ==
+                normalized_class_name
             )
             .all()
         )
@@ -34986,40 +35411,43 @@ def reset_writing_questions(
         )
 
         question_ids = [
-
             row.question_id
-
             for row in usage_rows
         ]
 
-        print(
-            "\n🧠 Question IDs "
-            "To Reset:"
-        )
-
+        print("\n🧠 Question IDs To Reset:")
         print(question_ids)
 
         # --------------------------------------------------
         # Delete usage rows
         # --------------------------------------------------
 
-        deleted_count = (
-            db.query(
-                QuestionUsageWriting
-            )
-            .filter(
-                func.upper(
-                    func.trim(
-                        QuestionUsageWriting.center_code
+        if question_ids:
+
+            deleted_count = (
+                db.query(
+                    QuestionUsageWriting
+                )
+                .filter(
+                    func.upper(
+                        func.trim(
+                            QuestionUsageWriting.center_code
+                        )
+                    )
+                    ==
+                    normalized_center_code,
+
+                    QuestionUsageWriting.question_id.in_(
+                        question_ids
                     )
                 )
-                ==
-                normalized_center_code
+                .delete(
+                    synchronize_session=False
+                )
             )
-            .delete(
-                synchronize_session=False
-            )
-        )
+
+        else:
+            deleted_count = 0
 
         db.commit()
 
@@ -35034,11 +35462,8 @@ def reset_writing_questions(
         )
 
         return {
-
             "message":
-                "Writing questions "
-                "reset successfully",
-
+                "Writing questions reset successfully",
             "deleted_count":
                 deleted_count
         }
@@ -35057,10 +35482,9 @@ def reset_writing_questions(
         raise HTTPException(
             status_code=500,
             detail=(
-                "Failed to reset "
-                "writing questions."
+                "Failed to reset writing questions."
             ),
-        ) 
+        )
 @app.get("/api/writing/available-batches")
 def get_writing_available_batches(
     class_year: str,
@@ -60651,6 +61075,9 @@ def get_foundational_classes(db: Session = Depends(get_db)):
     )
 
     return [{"class_name": r.class_name} for r in rows]
+
+
+
  
 @app.post("/api/student/start-homework-writing")
 def start_homework_writing(
@@ -60694,7 +61121,11 @@ def start_homework_writing(
     )
 
     student_year_normalized = (
-        student_year_raw.strip().lower()
+        student_year_raw
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
         if student_year_raw
         else None
     )
@@ -60772,7 +61203,11 @@ def start_homework_writing(
         )
 
         hw_year_normalized = (
-            hw.class_year.strip().lower()
+            hw.class_year
+            .strip()
+            .lower()
+            .replace("year", "")
+            .strip()
             if hw.class_year
             else None
         )
@@ -61091,7 +61526,10 @@ def start_writing_exam(
     all_exams = (
         db.query(GeneratedExamWriting)
         .filter(
-            GeneratedExamWriting.is_current.is_(True)
+            GeneratedExamWriting.is_current.is_(True),
+            func.lower(
+                func.trim(GeneratedExamWriting.class_name)
+            ) == "selective"
         )
         .order_by(
             GeneratedExamWriting.created_at.desc()
@@ -61116,11 +61554,12 @@ def start_writing_exam(
 
         print(
             f"""
-📘 Exam
-   ID={e.id}
-   YEAR_RAW={repr(raw)}
-   YEAR_NORMALIZED={repr(normalized)}
-   CENTER_CODE={repr(e.center_code)}
+        📘 Exam
+        ID={e.id}
+        CLASS_NAME={repr(e.class_name)}
+        YEAR_RAW={repr(raw)}
+        YEAR_NORMALIZED={repr(normalized)}
+        CENTER_CODE={repr(e.center_code)}
             """.strip()
         )
 
@@ -61151,15 +61590,16 @@ def start_writing_exam(
 
         print(
             f"""
-🔎 COMPARISON
+        🔎 COMPARISON
 
-student_year='{student_year_normalized}'
-exam_year='{exam_year_normalized}'
+        exam_id={e.id}
+        class_name={e.class_name}
 
-student_center='{student_center_code_normalized}'
-exam_center='{exam_center_code}'
+        student_year='{student_year_normalized}'
+        exam_year='{exam_year_normalized}'
 
-exam_id={e.id}
+        student_center='{student_center_code_normalized}'
+        exam_center='{exam_center_code}'
             """.strip()
         )
 
@@ -61350,6 +61790,376 @@ exam_id={e.id}
         "class_year":
             student.student_year
     }    
+
+
+@app.post("/api/student/start-oc-writing-exam")
+def start_oc_writing_exam(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+
+    print(
+        "\n================ START OC WRITING EXAM ================="
+    )
+
+    print(
+        f"👉 Incoming student_id: "
+        f"{repr(student_id)}"
+    )
+
+    # --------------------------------------------------
+    # 0️⃣ Fetch student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(
+                Student.student_id
+            ) == student_id.lower()
+        )
+        .first()
+    )
+
+    if not student:
+
+        print("❌ Student not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    student_year_raw = (
+        student.student_year
+    )
+
+    student_year_normalized = (
+        str(student_year_raw)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+        if student_year_raw
+        else None
+    )
+
+    student_center_code = (
+        student.center_code
+    )
+
+    print(
+        f"🎯 Student DB ID: "
+        f"{student.id}"
+    )
+
+    print(
+        f"🎯 student_year RAW: "
+        f"{repr(student_year_raw)}"
+    )
+
+    print(
+        f"🎯 student_year NORMALIZED: "
+        f"{repr(student_year_normalized)}"
+    )
+
+    print(
+        f"🏢 student_center_code: "
+        f"{repr(student_center_code)}"
+    )
+
+    if not student_year_normalized:
+
+        print(
+            "❌ student_year is "
+            "missing or invalid"
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail="Student year is missing"
+        )
+
+    if not student_center_code:
+
+        print(
+            "❌ student_center_code "
+            "is missing"
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail="Student center code is missing"
+        )
+
+    # --------------------------------------------------
+    # 🔍 STEP 1: Fetch ALL active exams
+    # --------------------------------------------------
+    all_exams = (
+        db.query(GeneratedExamWriting)
+        .filter(
+            GeneratedExamWriting.is_current.is_(True),
+            func.lower(
+                func.trim(GeneratedExamWriting.class_name)
+            ) == "oc"
+        )
+        .order_by(
+            GeneratedExamWriting.created_at.desc()
+        )
+        .all()
+    )
+
+    print(
+        f"\n📦 Total active exams found: "
+        f"{len(all_exams)}"
+    )
+
+    for e in all_exams:
+
+        raw = e.class_year
+
+        normalized = (
+            raw.strip().lower()
+            if raw
+            else None
+        )
+
+        print(
+            f"""
+📘 Exam
+   ID={e.id}
+   YEAR_RAW={repr(raw)}
+   YEAR_NORMALIZED={repr(normalized)}
+   CENTER_CODE={repr(e.center_code)}
+            """.strip()
+        )
+
+    # --------------------------------------------------
+    # 🔍 STEP 2: Manual strict matching
+    # --------------------------------------------------
+    matched_exam = None
+
+    for e in all_exams:
+
+        exam_year_normalized = (
+            e.class_year.strip().lower()
+            if e.class_year
+            else None
+        )
+
+        exam_center_code = (
+            e.center_code.strip().upper()
+            if e.center_code
+            else None
+        )
+
+        student_center_code_normalized = (
+            student_center_code
+            .strip()
+            .upper()
+        )
+
+        print(
+            f"""
+🔎 COMPARISON
+
+student_year='{student_year_normalized}'
+exam_year='{exam_year_normalized}'
+
+student_center='{student_center_code_normalized}'
+exam_center='{exam_center_code}'
+
+exam_id={e.id}
+            """.strip()
+        )
+
+        # --------------------------------------------------
+        # STRICT MATCH:
+        # year + center_code
+        # --------------------------------------------------
+        if (
+            exam_year_normalized
+            == student_year_normalized
+
+            and
+
+            exam_center_code
+            == student_center_code_normalized
+        ):
+
+            print(
+                f"✅ MATCH FOUND → "
+                f"Exam ID={e.id}"
+            )
+
+            matched_exam = e
+
+            break
+
+    if not matched_exam:
+
+        print(
+            "\n❌ NO MATCHING EXAM FOUND"
+        )
+
+        print(
+            f"Student year: "
+            f"{student_year_normalized}"
+        )
+
+        print(
+            f"Student center: "
+            f"{student_center_code}"
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No active OC writing exam "
+                f"found for year="
+                f"'{student.student_year}' "
+                f"and center="
+                f"'{student_center_code}'"
+            )
+        )
+
+    exam = matched_exam
+
+    print(
+        f"\n🎉 FINAL SELECTED EXAM ID: "
+        f"{exam.id}"
+    )
+
+    print(
+        f"🎉 FINAL SELECTED EXAM YEAR: "
+        f"{repr(exam.class_year)}"
+    )
+
+    print(
+        f"🎉 FINAL SELECTED EXAM CENTER: "
+        f"{repr(exam.center_code)}"
+    )
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch latest attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.student_id
+            == student.id,
+
+            StudentExamWriting.exam_id
+            == exam.id
+        )
+        .order_by(
+            StudentExamWriting.started_at.desc()
+        )
+        .first()
+    )
+
+    print(
+        f"\n🧪 Attempt found: "
+        f"{bool(attempt)}"
+    )
+
+    # --------------------------------------------------
+    # 🟥 CASE A — Completed
+    # --------------------------------------------------
+    if attempt and attempt.completed_at:
+
+        print(
+            "🟥 CASE A → Already completed"
+        )
+
+        return {
+            "completed": True,
+            "class_year": student.student_year
+        }
+
+    # --------------------------------------------------
+    # 🟡 CASE B — Resume
+    # --------------------------------------------------
+    if attempt and attempt.completed_at is None:
+
+        print(
+            "🟡 CASE B → Resuming attempt"
+        )
+
+        started_at = attempt.started_at
+
+        if started_at.tzinfo is None:
+
+            started_at = started_at.replace(
+                tzinfo=timezone.utc
+            )
+
+        now = datetime.now(timezone.utc)
+
+        elapsed = int(
+            (now - started_at).total_seconds()
+        )
+
+        remaining = max(
+            0,
+            attempt.duration_minutes * 60
+            - elapsed
+        )
+
+        print(
+            f"⏱️ elapsed={elapsed}s | "
+            f"remaining={remaining}s"
+        )
+
+        if remaining == 0:
+
+            print(
+                "⏹️ Time over → "
+                "marking completed"
+            )
+
+            attempt.completed_at = now
+
+            db.commit()
+
+            return {
+                "completed": True,
+                "class_year": student.student_year
+            }
+
+        return {
+            "completed": False,
+            "remaining_time": remaining,
+            "class_year": student.student_year
+        }
+
+    # --------------------------------------------------
+    # 🔵 CASE C — New attempt
+    # --------------------------------------------------
+    print(
+        "🔵 CASE C → Starting new attempt"
+    )
+
+    new_attempt = StudentExamWriting(
+        student_id=student.id,
+        exam_id=exam.id,
+        started_at=datetime.now(timezone.utc),
+        duration_minutes=exam.duration_minutes
+    )
+
+    db.add(new_attempt)
+
+    db.commit()
+
+    db.refresh(new_attempt)
+
+    return {
+        "completed": False,
+        "remaining_time":
+            new_attempt.duration_minutes * 60,
+        "class_year":
+            student.student_year
+    }    
+
 
 @app.get("/api/get-quizzes-writing")
 def get_quizzes_writing(db: Session = Depends(get_db)):
@@ -61773,6 +62583,26 @@ def submit_writing_exam(
         .filter(GeneratedExamWriting.id == exam_state.exam_id)
         .first()
     )
+    # --------------------------------------------------
+    # Determine exam type
+    # --------------------------------------------------
+    is_oc = (
+        generated_exam
+        and generated_exam.class_name
+        and generated_exam.class_name.strip().lower() == "oc"
+    )
+
+    exam_label = (
+        "NSW Opportunity Class"
+        if is_oc
+        else "NSW Selective School"
+    )
+
+    exam_short_name = (
+        "OC"
+        if is_oc
+        else "Selective"
+    )
     
     topic = generated_exam.topic if generated_exam else None
     
@@ -61815,8 +62645,15 @@ def submit_writing_exam(
     # --------------------------------------------------
     # STRICT EMPTY / LOW-EFFORT CHECK (IMPROVED)
     # --------------------------------------------------
+    readiness_bands = f"""
+    - 22–25: Strong {exam_short_name} standard – very competitive
+    - 18–21: On track for {exam_short_name} with minor improvements
+    - 14–17: Developing – {exam_short_name} readiness needs strengthening
+    - 10–13: Below {exam_short_name} standard – significant improvement needed
+    - Below 10: Well below {exam_short_name} standard at this stage
+    """
     prompt = f"""
-    You are an expert NSW Selective School writing marker.
+    You are an expert {exam_label} writing marker.
     
     CRITICAL OUTPUT RULES (MUST FOLLOW EXACTLY):
     - Respond with ONLY a valid JSON object
@@ -61827,7 +62664,7 @@ def submit_writing_exam(
     - Use double quotes for all JSON keys and string values
     
     TASK:
-    Assess the student's writing response strictly according to NSW Selective School writing standards.
+    Assess the student's writing response strictly according to {exam_label} writing standards.
     
     INPUTS PROVIDED:
     1. Writing type
@@ -61906,11 +62743,7 @@ def submit_writing_exam(
     SELECTIVE READINESS BAND (MANDATORY):
     Based on the overall score out of 25, assign ONE descriptor only:
     
-    - 22–25: Strong selective standard – very competitive
-    - 18–21: On track for selective with minor improvements
-    - 14–17: Developing – selective readiness needs strengthening
-    - 10–13: Below selective standard – significant improvement needed
-    - Below 10: Well below selective standard at this stage
+    {readiness_bands}
     
     REQUIRED JSON RESPONSE FORMAT:
     Return a JSON object with the following keys ONLY:
@@ -61951,7 +62784,7 @@ def submit_writing_exam(
     if is_low_quality:
         evaluation = {
             "overall_score": 0,
-            "selective_readiness_band": "Well below selective standard at this stage",
+            "selective_readiness_band": f"Well below {exam_short_name} standard at this stage",
             "categories": {
                 "audience_purpose_form": {"score": 0, "strengths": [], "improvements": ["No response provided"]},
                 "ideas_content": {"score": 0, "strengths": [], "improvements": ["No ideas presented"]},
@@ -62005,11 +62838,11 @@ def submit_writing_exam(
         
 
         EXPECTED_BANDS = {
-            range(22, 26): "Strong selective standard – very competitive",
-            range(18, 22): "On track for selective with minor improvements",
-            range(14, 18): "Developing – selective readiness needs strengthening",
-            range(10, 14): "Below selective standard – significant improvement needed",
-            range(0, 10): "Well below selective standard at this stage"
+            range(22, 26): f"Strong {exam_short_name} standard – very competitive",
+            range(18, 22): f"On track for {exam_short_name} with minor improvements",
+            range(14, 18): f"Developing – {exam_short_name} readiness needs strengthening",
+            range(10, 14): f"Below {exam_short_name} standard – significant improvement needed",
+            range(0, 10): f"Well below {exam_short_name} standard at this stage",
         }
         
         expected_band = None
@@ -62279,6 +63112,7 @@ def submit_writing_exam(
         "exam_id": exam_state.exam_id,
         "writing_score": writing_score
     } 
+
 @app.get("/api/student/homework-writing-report")
 def get_homework_writing_report(
     student_id: str,
@@ -62444,75 +63278,75 @@ def build_writing_topic_report_by_attempt(
         "evaluation": evaluation
     }
 
-@app.get("/api/exams/writing/result")
-def get_writing_result(
-    student_id: str,
-    db: Session = Depends(get_db)
-):
-    # --------------------------------------------------
-    # 1️⃣ Resolve student (EXTERNAL → INTERNAL)
-    # --------------------------------------------------
-    student = (
-        db.query(Student)
-        .filter(func.lower(Student.student_id) == func.lower(student_id))
-        .first()
-    )
-
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    # --------------------------------------------------
-    # 2️⃣ Load latest admin report (SOURCE OF TRUTH)
-    # --------------------------------------------------
-    admin_report = (
-        db.query(AdminExamReport)
-        .filter(
-            AdminExamReport.student_id == student.student_id,  # ✅ external ID
-            AdminExamReport.exam_type == "writing"
-        )
-        .order_by(AdminExamReport.created_at.desc())
-        .first()
-    )
-
-    if not admin_report:
-        raise HTTPException(
-            status_code=404,
-            detail="Writing result not found"
+    @app.get("/api/exams/writing/result")
+    def get_writing_result(
+        student_id: str,
+        db: Session = Depends(get_db)
+    ):
+        # --------------------------------------------------
+        # 1️⃣ Resolve student (EXTERNAL → INTERNAL)
+        # --------------------------------------------------
+        student = (
+            db.query(Student)
+            .filter(func.lower(Student.student_id) == func.lower(student_id))
+            .first()
         )
 
-    # --------------------------------------------------
-    # 3️⃣ Load writing attempt (for AI details)
-    # --------------------------------------------------
-    exam_state = (
-        db.query(StudentExamWriting)
-        .filter(
-            StudentExamWriting.id == admin_report.exam_attempt_id
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        # --------------------------------------------------
+        # 2️⃣ Load latest admin report (SOURCE OF TRUTH)
+        # --------------------------------------------------
+        admin_report = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.student_id == student.student_id,  # ✅ external ID
+                AdminExamReport.exam_type == "writing"
+            )
+            .order_by(AdminExamReport.created_at.desc())
+            .first()
         )
-        .first()
-    )
 
-    if not exam_state or not exam_state.ai_evaluation_json:
-        raise HTTPException(
-            status_code=500,
-            detail="AI evaluation missing for writing exam"
+        if not admin_report:
+            raise HTTPException(
+                status_code=404,
+                detail="Writing result not found"
+            )
+
+        # --------------------------------------------------
+        # 3️⃣ Load writing attempt (for AI details)
+        # --------------------------------------------------
+        exam_state = (
+            db.query(StudentExamWriting)
+            .filter(
+                StudentExamWriting.id == admin_report.exam_attempt_id
+            )
+            .first()
         )
 
-    # --------------------------------------------------
-    # 4️⃣ Final response (UI SAFE)
-    # --------------------------------------------------
-    return {
-        "exam_type": "Writing",
-        "score": admin_report.overall_score,
-        "max_score": 25,
+        if not exam_state or not exam_state.ai_evaluation_json:
+            raise HTTPException(
+                status_code=500,
+                detail="AI evaluation missing for writing exam"
+            )
 
-        # ✅ canonical readiness band
-        "selective_readiness_band": admin_report.readiness_band,
+        # --------------------------------------------------
+        # 4️⃣ Final response (UI SAFE)
+        # --------------------------------------------------
+        return {
+            "exam_type": "Writing",
+            "score": admin_report.overall_score,
+            "max_score": 25,
 
-        # ✅ full AI breakdown
-        "evaluation": exam_state.ai_evaluation_json,
+            # ✅ canonical readiness band
+            "selective_readiness_band": admin_report.readiness_band,
 
-        "advisory": "This report is advisory only and does not guarantee placement."
-    }
+            # ✅ full AI breakdown
+            "evaluation": exam_state.ai_evaluation_json,
+
+            "advisory": "This report is advisory only and does not guarantee placement."
+        }
 
 
 
@@ -62610,11 +63444,535 @@ def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
         }
     }
  
+@app.get("/api/exams/oc-writing/current")
+def get_current_oc_writing_exam(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
 
+    # --------------------------------------------------
+    # 0️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id)
+            == func.lower(student_id)
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    class_year = (
+        str(student.student_year)
+        .strip()
+        .lower()
+        .replace("year", "")
+        .strip()
+    )
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch ACTIVE OC writing attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamWriting)
+        .filter(
+            StudentExamWriting.student_id == student.id,
+            StudentExamWriting.completed_at.is_(None)
+        )
+        .order_by(
+            StudentExamWriting.started_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="No active OC writing exam"
+        )
+
+    # --------------------------------------------------
+    # 2️⃣ Load OC exam
+    # --------------------------------------------------
+    exam = (
+        db.query(GeneratedExamWriting)
+        .filter(
+            GeneratedExamWriting.id == attempt.exam_id,
+
+            func.lower(
+                func.trim(
+                    GeneratedExamWriting.class_name
+                )
+            ) == "oc",
+
+            func.trim(
+                func.replace(
+                    func.lower(
+                        GeneratedExamWriting.class_year
+                    ),
+                    "year",
+                    ""
+                )
+            ) == class_year
+        )
+        .first()
+    )
+
+    if not exam:
+
+        attempt.completed_at = datetime.now(timezone.utc)
+        db.commit()
+
+        raise HTTPException(
+            status_code=403,
+            detail="Exam does not match student's class year"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Remaining time
+    # --------------------------------------------------
+    started_at = attempt.started_at
+
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(
+            tzinfo=timezone.utc
+        )
+
+    now = datetime.now(timezone.utc)
+
+    elapsed = int(
+        (now - started_at).total_seconds()
+    )
+
+    total_seconds = (
+        attempt.duration_minutes * 60
+    )
+
+    remaining = max(
+        0,
+        total_seconds - elapsed
+    )
+
+    # --------------------------------------------------
+    # 4️⃣ Auto timeout
+    # --------------------------------------------------
+    if remaining == 0:
+
+        attempt.completed_at = now
+
+        db.commit()
+
+        return {
+            "completed": True
+        }
+
+    # --------------------------------------------------
+    # 5️⃣ Response
+    # --------------------------------------------------
+    return {
+        "completed": False,
+        "remaining_seconds": remaining,
+        "exam": {
+            "exam_id": exam.id,
+            "difficulty": exam.difficulty,
+            "writing_type": exam.topic,
+            "question_text": exam.question_text,
+            "duration_minutes": attempt.duration_minutes
+        }
+    }
 
 import traceback
 def normalize_year_digits(value: str) -> str:
     return "".join(ch for ch in value if ch.isdigit())
+
+@app.post("/api/exams/generate-oc-writing")
+def generate_oc_exam_writing(
+    payload: WritingGenerateSchema,
+    db: Session = Depends(get_db)
+):
+    try:
+
+        print(
+            "\n================= GENERATE OC WRITING EXAM ================="
+        )
+
+        # -------------------------------------------------
+        # Helpers
+        # -------------------------------------------------
+        def normalize_text_helper(value: str) -> str:
+            return value.strip().lower()
+
+        def normalize_year_helper(value: str) -> str:
+            return value.strip().lower().replace(" ", "")
+
+        # -------------------------------------------------
+        # Inputs
+        # -------------------------------------------------
+        class_name = "OC"
+
+        class_name_norm = normalize_text_helper(
+            class_name
+        )
+
+        class_year_raw = payload.class_year
+
+        class_year_norm = normalize_text_helper(
+            class_year_raw
+        )
+
+        class_year_digits = normalize_year_digits(
+            class_year_raw
+        )
+
+        center_code = payload.center_code
+
+        print("\n📥 INPUTS:")
+        print(
+            f"   class_name      = '{class_name}'"
+        )
+        print(
+            f"   class_year_raw  = '{class_year_raw}'"
+        )
+        print(
+            f"   center_code     = '{center_code}'"
+        )
+
+        # -------------------------------------------------
+        # Debug all setups
+        # -------------------------------------------------
+        all_setups = (
+            db.query(QuizSetupWriting).all()
+        )
+
+        print(
+            f"\n📊 TOTAL setups in DB: "
+            f"{len(all_setups)}"
+        )
+
+        for s in all_setups:
+
+            print(
+                f"   → class='{s.class_name}', "
+                f"year='{s.class_year}', "
+                f"difficulty='{s.difficulty}', "
+                f"topic='{s.topic}', "
+                f"center='{s.center_code}'"
+            )
+
+        # -------------------------------------------------
+        # Fetch setup using center code
+        # -------------------------------------------------
+        setup = (
+            db.query(QuizSetupWriting)
+            .filter(
+                func.lower(
+                    func.trim(
+                        QuizSetupWriting.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        QuizSetupWriting.class_year
+                    )
+                ) == class_year_norm,
+
+                func.lower(
+                    func.trim(
+                        QuizSetupWriting.center_code
+                    )
+                ) == center_code.strip().lower()
+            )
+            .order_by(
+                QuizSetupWriting.id.desc()
+            )
+            .first()
+        )
+
+        print(f"\n🔍 MATCHED SETUP: {setup}")
+
+        if not setup:
+
+            print("❌ No setup matched")
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No setup found for "
+                    f"class='{class_name}', "
+                    f"year='{class_year_raw}', "
+                    f"center='{center_code}'."
+                )
+            )
+
+        # -------------------------------------------------
+        # Extract setup config
+        # -------------------------------------------------
+        difficulty = normalize_text_helper(
+            setup.difficulty
+        )
+
+        topic = normalize_text_helper(
+            setup.topic
+        )
+
+        print("\n✅ USING SETUP:")
+        print(
+            f"   difficulty = '{difficulty}'"
+        )
+        print(
+            f"   topic      = '{topic}'"
+        )
+
+        # -------------------------------------------------
+        # Previously used questions
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                QuestionUsageWriting.center_code
+                == center_code
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        print(
+            f"\n🚫 USED QUESTION IDS: "
+            f"{used_question_ids}"
+        )
+
+        # -------------------------------------------------
+        # Debug question bank
+        # -------------------------------------------------
+        all_questions = (
+            db.query(WritingQuestionBank).all()
+        )
+
+        print(
+            f"\n📊 TOTAL questions in bank: "
+            f"{len(all_questions)}"
+        )
+
+        # -------------------------------------------------
+        # Fetch UNUSED question
+        # -------------------------------------------------
+        question_query = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.difficulty
+                    )
+                ) == difficulty,
+
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.topic
+                    )
+                ) == topic,
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits
+            )
+        )
+
+        # -------------------------------------------------
+        # Exclude previously used questions
+        # -------------------------------------------------
+        if used_question_ids:
+
+            question_query = (
+                question_query.filter(
+                    ~WritingQuestionBank.id.in_(
+                        used_question_ids
+                    )
+                )
+            )
+
+        question = (
+            question_query
+            .order_by(func.random())
+            .first()
+        )
+
+        print(
+            f"\n🔍 MATCHED UNUSED QUESTION: "
+            f"{question}"
+        )
+
+        if not question:
+
+            print(
+                "❌ No unused question matched"
+            )
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "No unused writing question "
+                    "available for this center."
+                )
+            )
+
+        # -------------------------------------------------
+        # Build exam text
+        # -------------------------------------------------
+        print("\n📝 Building exam text...")
+
+        parts = []
+
+        if question.title:
+
+            parts.append(
+                f"TITLE:\n{question.title}\n"
+            )
+
+        parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
+
+        if question.statement:
+
+            parts.append(
+                f"STATEMENT:\n"
+                f"{question.statement}\n"
+            )
+
+        parts.append(
+            f"INSTRUCTIONS:\n"
+            f"{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+
+            parts.append(
+                f"OPENING SENTENCE:\n"
+                f"{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+
+            formatted_guidelines = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            parts.append(
+                f"GUIDELINES:\n"
+                f"{formatted_guidelines}\n"
+            )
+
+        full_exam_text = (
+            "\n".join(parts).strip()
+        )
+
+        print(
+            "✅ Exam text built successfully"
+        )
+
+        # -------------------------------------------------
+        # Save generated exam
+        # -------------------------------------------------
+        print("\n💾 Saving generated exam...")
+
+        exam = GeneratedExamWriting(
+            class_name=class_name,
+            class_year=class_year_raw,
+            subject="writing",
+            topic=question.topic,
+            difficulty=difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            center_code=center_code
+        )
+
+        db.add(exam)
+
+        db.commit()
+
+        db.refresh(exam)
+
+        print(
+            f"✅ Exam saved with ID: {exam.id}"
+        )
+
+        # -------------------------------------------------
+        # Register question usage
+        # -------------------------------------------------
+        print(
+            "\n📝 Registering question usage..."
+        )
+
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+
+        db.commit()
+
+        print(
+            "✅ Question usage registered"
+        )
+
+        print(
+            "========================================================\n"
+        )
+
+        # -------------------------------------------------
+        # Response
+        # -------------------------------------------------
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "center_code": exam.center_code,
+            "exam_text": full_exam_text,
+        }
+
+    except Exception as e:
+
+        db.rollback()
+
+        print("\n🔥 FULL ERROR TRACE:")
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
 
 @app.post("/api/exams/generate-writing")
 def generate_exam_writing(
@@ -63923,6 +65281,8 @@ async def upload_word_writing(
         "question_ids":
             saved_ids
     }
+
+
 
 @app.post("/api/quizzes-writing-homework")
 def save_writing_homework_quiz(
@@ -87426,9 +88786,198 @@ def get_oc_available_subjects(
     print("\n==================================================")
     print("📖 OC READING DEBUG END")
     print("==================================================\n")
+
+    # ==================================================
+    # ✍️ OC WRITING
+    # ==================================================
+
+    print("\n==================================================")
+    print("✍️ OC WRITING DEBUG START")
+    print("==================================================")
+
+    writing_exam_enabled = True
+    writing_homework_enabled = True
+
+    # ==================================================
+    # 1️⃣ WRITING EXAM
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📝 OC WRITING EXAM CHECK")
+    print("-----------------------------")
+
+    exam = (
+        db.query(GeneratedExamWriting)
+        .filter(
+            GeneratedExamWriting.is_current.is_(True),
+
+            func.lower(
+                func.trim(
+                    GeneratedExamWriting.class_name
+                )
+            ) == "oc",
+
+            func.trim(
+                func.replace(
+                    func.lower(
+                        GeneratedExamWriting.class_year
+                    ),
+                    "year",
+                    ""
+                )
+            ) == class_year,
+
+            func.upper(
+                func.trim(
+                    GeneratedExamWriting.center_code
+                )
+            ) == student_center_code
+        )
+        .order_by(
+            GeneratedExamWriting.created_at.desc()
+        )
+        .first()
+    )
+
+    if not exam:
+
+        print("❌ No OC writing exam found")
+
+        writing_exam_enabled = False
+
+    else:
+
+        print("✅ Exam ID:", exam.id)
+
+        attempt = (
+            db.query(StudentExamWriting)
+            .filter(
+                StudentExamWriting.student_id == student.id,
+                StudentExamWriting.exam_id == exam.id
+            )
+            .order_by(
+                StudentExamWriting.started_at.desc()
+            )
+            .first()
+        )
+
+        if not attempt:
+
+            print("🆕 No previous writing attempt")
+
+            writing_exam_enabled = True
+
+        elif attempt.completed_at is None:
+
+            print("🟡 Writing attempt in progress")
+
+            writing_exam_enabled = True
+
+        else:
+
+            print("⛔ Writing exam already completed")
+
+            writing_exam_enabled = False
+
+    print(
+        "🎯 Final writing_exam_enabled =",
+        writing_exam_enabled
+    )
+
+    # ==================================================
+    # 2️⃣ WRITING HOMEWORK
+    # ==================================================
+
+    print("\n-----------------------------")
+    print("📚 OC WRITING HOMEWORK CHECK")
+    print("-----------------------------")
+
+    homework = (
+        db.query(GeneratedHomeworkWriting)
+        .filter(
+            GeneratedHomeworkWriting.is_current.is_(True),
+
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkWriting.class_name
+                )
+            ) == "oc",
+
+            func.trim(
+                func.replace(
+                    func.lower(
+                        GeneratedHomeworkWriting.class_year
+                    ),
+                    "year",
+                    ""
+                )
+            ) == class_year,
+
+            func.upper(
+                func.trim(
+                    GeneratedHomeworkWriting.center_code
+                )
+            ) == student_center_code
+        )
+        .order_by(
+            GeneratedHomeworkWriting.created_at.desc()
+        )
+        .first()
+    )
+
+    if not homework:
+
+        print("❌ No OC writing homework found")
+
+        writing_homework_enabled = False
+
+    else:
+
+        print("✅ Homework ID:", homework.id)
+
+        attempt = (
+            db.query(StudentHomeworkWriting)
+            .filter(
+                StudentHomeworkWriting.student_id == student.id,
+                StudentHomeworkWriting.homework_id == homework.id
+            )
+            .order_by(
+                StudentHomeworkWriting.started_at.desc()
+            )
+            .first()
+        )
+
+        if not attempt:
+
+            print("🆕 No previous homework attempt")
+
+            writing_homework_enabled = True
+
+        elif attempt.completed_at is None:
+
+            print("🟡 Homework attempt in progress")
+
+            writing_homework_enabled = True
+
+        else:
+
+            print("⛔ Homework already completed")
+
+            writing_homework_enabled = False
+
+    print(
+        "🎯 Final writing_homework_enabled =",
+        writing_homework_enabled
+    )
+
+    print("\n==================================================")
+    print("✍️ OC WRITING DEBUG END")
+    print("==================================================")
+
     # ==================================================
     # 🎯 FINAL RESPONSE
     # ==================================================
+
     response = {
         "oc_thinking_skills": {
             "exam": thinking_exam_enabled,
@@ -87441,6 +88990,10 @@ def get_oc_available_subjects(
         "reading": {
             "exam": reading_exam_enabled,
             "homework": reading_homework_enabled
+        },
+        "writing": {
+            "exam": writing_exam_enabled,
+            "homework": writing_homework_enabled
         }
     }
 
