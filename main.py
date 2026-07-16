@@ -448,6 +448,58 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # ---------------------------
+
+class AdminOverallOCReport(Base):
+    __tablename__ = "admin_overall_oc_reports"
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(String, index=True)
+    exam_date = Column(Date, index=True)
+
+    overall_percent = Column(Float)
+    readiness_band = Column(String)
+
+    school_recommendation = Column(JSON)
+
+    override_flag = Column(Boolean, default=False)
+    override_message = Column(Text, nullable=True)
+
+    components = Column(JSON)
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+class AdminExamOCReport(Base):
+    __tablename__ = "admin_exam_oc_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Student
+    student_id = Column(String, nullable=False, index=True)
+
+    # Exam
+    exam_attempt_id = Column(Integer, nullable=False, index=True)
+    exam_type = Column(String, nullable=False)   # reading, writing, thinking_skills, mathematical_reasoning
+
+    # Overall result
+    overall_score = Column(Float, nullable=False)
+
+    # Readiness
+    readiness_band = Column(String, nullable=True)
+    school_guidance_level = Column(Text, nullable=True)
+
+    # Summary
+    summary_notes = Column(Text, nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
 class LeaderboardRequest(BaseModel):
     center_code: str
     class_year: str
@@ -6684,6 +6736,38 @@ class LeaderboardYearRequest(BaseModel):
 class LeaderboardSessionsRequest(BaseModel):
     center_code: str
     term_id: int
+
+@app.get("/api/admin/oc-students")
+def get_oc_students(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+
+    print("\n================ OC STUDENTS ================")
+    print("Center:", center_code)
+
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code,
+            Student.class_name == "OC"
+        )
+        .order_by(Student.name)
+        .all()
+    )
+
+    print(f"Found {len(students)} OC students")
+
+    return [
+        {
+            "student_id": student.student_id,
+            "name": student.name,
+            "student_year": student.student_year,
+            "class_name": student.class_name
+        }
+        for student in students
+    ]
+
 @app.get("/api/quizzes-writing/oc")
 def get_oc_writing_quiz_setup(
     class_year: str = Query(...),
@@ -28873,28 +28957,34 @@ def generate_pdf_from_html(html_content: str) -> str:
 from sendgrid.helpers.mail import Mail, Email, Attachment, FileContent, FileName, FileType, Disposition
 import base64
 
-def send_report_email_with_pdf(to_email: str, pdf_path: str):
+def send_report_email_with_pdf(
+    to_email: str,
+    pdf_path: str,
+    subject: str = "Selective Readiness Report",
+    body: str = "Please find attached the Selective Readiness Report.",
+    attachment_name: str = "Selective_Readiness_Report.pdf"
+):
     with open(pdf_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode()
 
     message = Mail(
-        from_email='noreply@gemkidsacademy.com.au',
+        from_email="noreply@gemkidsacademy.com.au",
         to_emails=to_email,
-        subject='Selective Readiness Report',
-        html_content="""
-            <p>Please find attached the Selective Readiness Report.</p>
+        subject=subject,
+        html_content=f"""
+            <p>{body}</p>
         """,
     )
 
     attachment = Attachment(
         FileContent(encoded_file),
-        FileName("Selective_Readiness_Report.pdf"),
+        FileName(attachment_name),
         FileType("application/pdf"),
         Disposition("attachment")
     )
 
     message.attachment = attachment
-    message.reply_to = Email('do-not-reply@gemkidsacademy.com.au')
+    message.reply_to = Email("do-not-reply@gemkidsacademy.com.au")
 
     try:
         sg = SendGridAPIClient(SENDGRID_API_KEY)
@@ -28902,7 +28992,7 @@ def send_report_email_with_pdf(to_email: str, pdf_path: str):
         print(f"[INFO] Report email sent, status code {response.status_code}")
     except Exception as e:
         print(f"[ERROR] Failed to send report email: {e}")
-        raise 
+        raise
 # Replace your current email endpoint with this version
 
 from fastapi import UploadFile, File, Form, Depends, HTTPException
@@ -28989,6 +29079,62 @@ async def upload_session_topics(
         "message": f"Topics uploaded successfully for {term_name}.",
         "inserted_topics": inserted_count,
     }
+@app.post("/api/admin/send-oc-report-email")
+def send_oc_report_email(
+    student_id: Optional[str] = Form(None),
+    exam_date: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    print("student_id:", student_id)
+    print("exam_date:", exam_date)
+    print("file:", file)
+
+    # ----------------------------------------
+    # 1️⃣ Fetch student email
+    # ----------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Student with ID {student_id} not found"
+        )
+
+    to_email = student.parent_email
+
+    # ----------------------------------------
+    # 2️⃣ Save uploaded PDF temporarily
+    # ----------------------------------------
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".pdf"
+    ) as temp_file:
+
+        shutil.copyfileobj(file.file, temp_file)
+        pdf_path = temp_file.name
+
+    # ----------------------------------------
+    # 3️⃣ Send email with attached PDF
+    # ----------------------------------------
+    send_report_email_with_pdf(
+        to_email=to_email,
+        pdf_path=pdf_path,
+        subject="OC Readiness Report",
+        body="Please find attached the OC Readiness Report.",
+        attachment_name="OC_Readiness_Report.pdf"
+    )
+
+    # ----------------------------------------
+    # 4️⃣ Response
+    # ----------------------------------------
+    return {
+        "message": f"OC Readiness Report sent successfully to {to_email} ✅"
+    }
 
 @app.post("/api/admin/send-selective-report-email")
 def send_selective_report_email(
@@ -29042,6 +29188,7 @@ def send_selective_report_email(
     return {
         "message": f"Email sent successfully to {to_email} ✅"
     }
+
 def build_selective_report_html(report):
     student_name = report.get("student_name", report["student_id"])
     student_id = report["student_id"]
@@ -46049,6 +46196,248 @@ def compute_subject_benchmark_bands(
         ),
     }
 
+@app.post("/api/admin/students/{student_id}/overall-oc-report")
+def generate_overall_oc_report(
+    student_id: str,
+    exam_date: date,
+    db: Session = Depends(get_db)
+):
+
+    print("\n================ GENERATE OVERALL OC REPORT ================")
+    print("Student:", student_id)
+    print("Exam Date:", exam_date)
+
+    # --------------------------------------------------
+    # 1️⃣ Verify student exists
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student found")
+
+    # --------------------------------------------------
+    # 2️⃣ Load OC subject reports
+    # --------------------------------------------------
+    reports = (
+        db.query(AdminExamOCReport)
+        .filter(
+            AdminExamOCReport.student_id == student_id,
+            func.date(AdminExamOCReport.created_at) == exam_date
+        )
+        .all()
+    )
+
+    print(f"📦 Found {len(reports)} OC reports")
+
+    if not reports:
+        raise HTTPException(
+            status_code=404,
+            detail="No OC reports found"
+        )
+
+    # --------------------------------------------------
+    # 3️⃣ Build lookup
+    # --------------------------------------------------
+    reports_by_subject = {
+        r.exam_type: r
+        for r in reports
+    }
+
+    print("Subjects found:", list(reports_by_subject.keys()))
+
+    required_subjects = {
+        "reading",
+        "writing",
+        "thinking_skills",
+        "mathematical_reasoning"
+    }
+
+    missing = required_subjects - reports_by_subject.keys()
+
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Missing OC subjects: {list(missing)}"
+        )
+
+    print("✅ All four OC subjects present")
+
+    # --------------------------------------------------
+    # 4️⃣ Build components
+    # --------------------------------------------------
+    components = {}
+
+    for subject, report in reports_by_subject.items():
+
+        components[subject] = {
+            "percent": report.overall_score
+        }
+
+    print("Components:", components)
+
+    # --------------------------------------------------
+    # 5️⃣ Overall percentage
+    # --------------------------------------------------
+    overall_percent = round(
+        sum(
+            c["percent"]
+            for c in components.values()
+        ) / len(components),
+        2
+    )
+
+    print("Overall Percent:", overall_percent)
+
+    # --------------------------------------------------
+    # 7️⃣ Generate recommendations
+    # --------------------------------------------------
+    print("🧠 Generating readiness recommendations...")
+
+    result = generate_school_recommendations_and_override(
+        components,
+        overall_percent
+    )
+
+    readiness_band = result["band"]
+
+    school_recommendation = result["school_recommendation"]
+
+    override_flag = result["override_flag"]
+
+    override_message = result["override_message"]
+
+    print({
+        "band": readiness_band,
+        "override": override_flag
+    })
+
+    # --------------------------------------------------
+    # 7️⃣ Store report
+    # --------------------------------------------------
+    overall_report = AdminOverallOCReport(
+        student_id=student_id,
+        exam_date=exam_date,
+        overall_percent=overall_percent,
+        readiness_band=readiness_band,
+        school_recommendation=school_recommendation,
+        override_flag=override_flag,
+        override_message=override_message,
+        components=components
+    )
+
+    db.add(overall_report)
+    db.commit()
+    db.refresh(overall_report)
+
+    print("🧠 Building Thinking Skills diagnostics...")
+
+    thinking_report = build_oc_thinking_skills_topic_report(
+        student_id=student_id,
+        exam_attempt_id=reports_by_subject["thinking_skills"].exam_attempt_id,
+        db=db
+    )
+
+    print("✅ Thinking Skills diagnostics ready")
+
+    
+
+    print("🧠 Building Mathematical Reasoning diagnostics...")
+
+    maths_attempt = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(
+            StudentExamOCMathematicalReasoning.id ==
+            reports_by_subject["mathematical_reasoning"].exam_attempt_id
+        )
+        .first()
+    )
+
+    if not maths_attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="OC Mathematical Reasoning attempt not found"
+        )
+
+    maths_report = build_oc_mathematical_reasoning_topic_report(
+        student_id=student_id,
+        exam_id=maths_attempt.exam_id,
+        db=db
+    )
+
+    print("✅ Mathematical Reasoning diagnostics ready")
+
+    print("🧠 Building Reading diagnostics...")
+
+    reading_attempt = (
+        db.query(StudentExamReadingOC)
+        .filter(
+            StudentExamReadingOC.id ==
+            reports_by_subject["reading"].exam_attempt_id
+        )
+        .first()
+    )
+
+    if not reading_attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="OC Reading attempt not found"
+        )
+
+    reading_report = build_oc_reading_topic_report(
+        student_id=student_id,
+        exam_id=reading_attempt.exam_id,
+        db=db
+    )
+
+    print("✅ Reading diagnostics ready")
+
+    print("🧠 Building Writing diagnostics...")
+
+    writing_report = build_oc_writing_topic_report_by_attempt(
+        attempt_id=reports_by_subject["writing"].exam_attempt_id,
+        db=db
+    )
+
+    print("✅ Writing diagnostics ready")
+
+    return {
+
+        "id": overall_report.id,
+        "student_id": overall_report.student_id,
+        "student_name": student.name,
+        "exam_date": overall_report.exam_date,
+
+        "overall_percent": overall_report.overall_percent,
+        "readiness_band": overall_report.readiness_band,
+
+        "school_recommendation": overall_report.school_recommendation,
+        "override_flag": overall_report.override_flag,
+        "override_message": overall_report.override_message,
+
+        "components": overall_report.components,
+
+        "section_diagnostics": {
+
+            "reading": reading_report,
+
+            "thinking_skills": thinking_report,
+
+            "mathematical_reasoning": maths_report,
+
+            "writing": writing_report
+        }
+
+    }
+
 @app.post("/api/admin/students/{student_id}/overall-selective-report")
 def generate_overall_selective_report(
     student_id: str,
@@ -46578,15 +46967,37 @@ def get_exam_dates(
         "dates": dates
     }
 
-    print(f"📤 Final dates returned: {dates}")
-    print("==========================================================\n")
-
-    return {
-        "dates": dates
-    }
+    
 
 
 from fastapi import Query
+
+
+@app.get("/api/admin/students/{student_id}/oc-report-dates")
+def get_oc_report_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+
+    dates = (
+        db.query(
+            func.date(AdminExamOCReport.created_at)
+        )
+        .filter(
+            AdminExamOCReport.student_id == student_id
+        )
+        .distinct()
+        .order_by(
+            func.date(AdminExamOCReport.created_at).desc()
+        )
+        .all()
+    )
+
+    return [
+        str(d[0])
+        for d in dates
+        if d[0] is not None
+    ]
 
 @app.get("/api/admin/students_center_specific")
 def get_admin_students(
@@ -53346,6 +53757,252 @@ def build_reading_topic_report(
     print("===============================================\n")
 
     return final_payload
+
+def build_oc_reading_topic_report(
+    student_id: str,
+    exam_id: int,
+    db: Session
+):
+    print("\n=========== BUILD READING TOPIC REPORT ===========")
+    print("📥 Incoming:", {
+        "student_id": student_id,
+        "exam_id": exam_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student resolved:", {
+        "internal_id": student.id,
+        "student_id": student.student_id,
+        "name": student.name
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Resolve latest finished reading attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamReadingOC)
+        .filter(
+            StudentExamReadingOC.student_id == student.student_id,
+            StudentExamReadingOC.exam_id == exam_id,
+            StudentExamReadingOC.finished == True
+        )
+        .order_by(
+            StudentExamReadingOC.started_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No finished reading attempt found")
+        raise HTTPException(
+            status_code=404,
+            detail="Reading report not found"
+        )
+
+    print("✅ Attempt resolved:", {
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "started_at": str(attempt.started_at),
+        "has_report_json": bool(attempt.report_json)
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Ensure report_json exists
+    # --------------------------------------------------
+    report = attempt.report_json
+
+    if not report:
+        print("❌ report_json missing")
+        raise HTTPException(
+            status_code=404,
+            detail="Reading report_json missing"
+        )
+
+    print("✅ report_json loaded")
+    print("📦 report_json keys:", list(report.keys()))
+
+    # --------------------------------------------------
+    # 4️⃣ Try common topic arrays inside report_json
+    # --------------------------------------------------
+    possible_keys = [
+        "topic_accuracy",
+        "topic_breakdown",
+        "topic_wise_performance",
+        "topics",
+        "skills_breakdown",
+        "question_type_breakdown"
+    ]
+
+    raw_topics = None
+    matched_key = None
+
+    for key in possible_keys:
+        if isinstance(report.get(key), list):
+            raw_topics = report.get(key)
+            matched_key = key
+            break
+
+    if raw_topics is not None:
+        print("✅ Topic array found:", matched_key)
+        print("📊 Topic rows detected:", len(raw_topics))
+    else:
+        print("⚠️ No topic list found in report_json")
+
+    # --------------------------------------------------
+    # 5️⃣ Fallback summary only
+    # --------------------------------------------------
+    if raw_topics is None:
+        print("↩️ Returning summary-only payload")
+        print("===============================================\n")
+
+        return {
+            "exam_id": exam_id,
+            "exam_attempt_id": attempt.id,
+            "overall": report,
+            "topic_breakdown": [],
+            "top_strengths": [],
+            "improvement_areas": []
+        }
+
+    # --------------------------------------------------
+    # 6️⃣ Normalize rows
+    # --------------------------------------------------
+    topic_breakdown = []
+
+    for idx, row in enumerate(raw_topics, start=1):
+        topic = row.get("topic", "Unknown")
+
+        total_questions = (
+            row.get("total_questions")
+            or row.get("total")
+            or 0
+        )
+
+        correct = row.get("correct", 0)
+        incorrect = row.get("incorrect", 0)
+        not_attempted = row.get("not_attempted", 0)
+
+        accuracy = (
+            row.get("accuracy_percent")
+            or row.get("percent")
+        )
+
+        if accuracy is None:
+            accuracy = (
+                (correct / total_questions) * 100
+                if total_questions else 0
+            )
+
+        accuracy = round(float(accuracy), 2)
+
+        if accuracy >= 80:
+            feedback = (
+                "Excellent understanding. "
+                "Continue maintaining this level."
+            )
+        elif accuracy >= 50:
+            feedback = (
+                "Good progress, but needs more practice "
+                "to improve consistency."
+            )
+        else:
+            feedback = (
+                "Requires immediate attention. "
+                "Focus on fundamentals and additional practice."
+            )
+
+        normalized = {
+            "topic": topic,
+            "total_questions": total_questions,
+            "correct": correct,
+            "incorrect": incorrect,
+            "not_attempted": not_attempted,
+            "accuracy_percent": accuracy,
+            "feedback": feedback
+        }
+
+        topic_breakdown.append(normalized)
+
+        print(f"📘 Topic {idx}:", normalized)
+
+    # --------------------------------------------------
+    # 7️⃣ Sort best/worst
+    # --------------------------------------------------
+    sorted_topics = sorted(
+        topic_breakdown,
+        key=lambda x: x["accuracy_percent"],
+        reverse=True
+    )
+
+    top_strengths = sorted_topics[:2]
+    improvement_areas = sorted_topics[-2:]
+
+    print("🏆 Top strengths:",
+          [x["topic"] for x in top_strengths])
+
+    print("⚠️ Improvement areas:",
+          [x["topic"] for x in improvement_areas])
+
+    # --------------------------------------------------
+    # 8️⃣ Overall summary
+    # --------------------------------------------------
+    overall = report.get("overall", report)
+
+    if isinstance(overall, dict):
+        if overall.get("accuracy_percent") is None:
+            score = overall.get("score", 0)
+            total = overall.get("total_questions", 30)
+
+            # If score already looks like a percent, use directly
+            if score > total:
+                overall["accuracy_percent"] = round(float(score), 2)
+            else:
+                overall["accuracy_percent"] = (
+                    round((score / total) * 100, 2)
+                    if total else 0
+                )
+
+    print("📈 Overall summary keys:",
+          list(overall.keys()) if isinstance(overall, dict) else "non-dict")
+
+    # --------------------------------------------------
+    # 9️⃣ Final payload
+    # --------------------------------------------------
+    final_payload = {
+        "exam_id": exam_id,
+        "exam_attempt_id": attempt.id,
+        "overall": overall,
+        "topic_breakdown": topic_breakdown,
+        "top_strengths": top_strengths,
+        "improvement_areas": improvement_areas
+    }
+
+    print("✅ Final payload ready")
+    print("📦 topic_breakdown rows:", len(topic_breakdown))
+    print("===============================================\n")
+
+    return final_payload
+
+
+
 @app.get("/api/student/exam-report/reading")
 def get_exam_report_by_exam_id(
     student_id: str = Query(...),
@@ -55867,6 +56524,262 @@ def build_thinking_skills_topic_report(
 
     return final_payload
 
+def build_oc_thinking_skills_topic_report(
+    student_id: str,
+    exam_attempt_id: Optional[int],
+    db: Session
+):
+    print("\n===== BUILD THINKING SKILLS TOPIC REPORT =====")
+    print("📥 Incoming Request:", {
+        "student_id": student_id,
+        "exam_attempt_id": exam_attempt_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student using external student_id
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student resolved:", {
+        "internal_id": student.id,
+        "student_id": student.student_id,
+        "name": student.name
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Resolve exam attempt
+    # --------------------------------------------------
+    if exam_attempt_id:
+        print("🔍 Looking for specific attempt id:", exam_attempt_id)
+
+        attempt = (
+            db.query(StudentExamOCThinkingSkills)
+            .filter(
+                StudentExamOCThinkingSkills.id == exam_attempt_id,
+                StudentExamOCThinkingSkills.student_id == student.id
+            )
+            .first()
+        )
+    else:
+        print("🔍 Looking for latest completed attempt")
+
+        attempt = (
+            db.query(StudentExamOCThinkingSkills)
+            .filter(
+                StudentExamOCThinkingSkills.student_id == student.id,
+                StudentExamOCThinkingSkills.completed_at.isnot(None)
+            )
+            .order_by(
+                StudentExamOCThinkingSkills.completed_at.desc()
+            )
+            .first()
+        )
+
+    if not attempt:
+        print("❌ No completed Thinking Skills attempt found")
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Thinking Skills exam found"
+        )
+
+    print("✅ Attempt resolved:", {
+        "attempt_id": attempt.id,
+        "student_id": attempt.student_id,
+        "exam_id": attempt.exam_id,
+        "completed_at": str(attempt.completed_at)
+    })
+
+    # --------------------------------------------------
+    # 3️⃣ Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseOCThinkingSkills)
+        .filter(
+            StudentExamResponseOCThinkingSkills.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        print("❌ No responses found")
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for Thinking Skills exam"
+        )
+
+    print("✅ Responses loaded:", len(responses))
+
+    # --------------------------------------------------
+    # 4️⃣ Overall summary
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.is_correct is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+
+    incorrect = sum(
+        1 for r in responses
+        if r.is_correct is False
+    )
+
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
+
+    score_percent = (
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent
+    }
+
+    print("📊 Overall summary:", overall)
+
+    # --------------------------------------------------
+    # 5️⃣ Group by topic
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic or "Unknown"
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total_questions": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        row = topic_map[topic]
+
+        row["total_questions"] += 1
+
+        if r.is_correct is None:
+            row["not_attempted"] += 1
+        else:
+            row["attempted"] += 1
+
+            if r.is_correct:
+                row["correct"] += 1
+            else:
+                row["incorrect"] += 1
+
+    print("📚 Topics discovered:", len(topic_map))
+    print("🧾 Topic names:", list(topic_map.keys()))
+
+    # --------------------------------------------------
+    # 6️⃣ Topic accuracy + feedback
+    # --------------------------------------------------
+    topic_breakdown = []
+
+    for index, item in enumerate(topic_map.values(), start=1):
+        attempted_topic = item["attempted"]
+
+        accuracy = (
+            round(
+                (item["correct"] / attempted_topic) * 100,
+                2
+            )
+            if attempted_topic else 0
+        )
+
+        if accuracy >= 80:
+            feedback = (
+                "Excellent understanding. "
+                "Continue maintaining this level."
+            )
+        elif accuracy >= 50:
+            feedback = (
+                "Good progress, but needs more practice "
+                "to improve consistency."
+            )
+        else:
+            feedback = (
+                "Requires immediate attention. "
+                "Focus on fundamentals and additional practice."
+            )
+
+        topic_row = {
+            "topic": item["topic"],
+            "total_questions": item["total_questions"],
+            "correct": item["correct"],
+            "incorrect": item["incorrect"],
+            "not_attempted": item["not_attempted"],
+            "accuracy_percent": accuracy,
+            "feedback": feedback
+        }
+
+        topic_breakdown.append(topic_row)
+
+        print(f"📘 Topic {index}:", topic_row)
+
+    # --------------------------------------------------
+    # 7️⃣ Sort best/worst topics
+    # --------------------------------------------------
+    sorted_topics = sorted(
+        topic_breakdown,
+        key=lambda x: x["accuracy_percent"],
+        reverse=True
+    )
+
+    top_strengths = sorted_topics[:2]
+    improvement_areas = sorted_topics[-2:]
+
+    print("🏆 Top strengths:",
+          [x["topic"] for x in top_strengths])
+
+    print("⚠️ Improvement areas:",
+          [x["topic"] for x in improvement_areas])
+
+    # --------------------------------------------------
+    # 8️⃣ Final payload
+    # --------------------------------------------------
+    final_payload = {
+        "exam_attempt_id": attempt.id,
+        "overall": overall,
+        "topic_breakdown": topic_breakdown,
+        "top_strengths": top_strengths,
+        "improvement_areas": improvement_areas
+    }
+
+    print("✅ Final payload ready")
+    print("📦 topic_breakdown rows:", len(topic_breakdown))
+    print("===============================================\n")
+
+    return final_payload
+
 
 @app.get("/api/student/exam-report/thinking-skills")
 def get_thinking_skills_report(
@@ -57457,6 +58370,253 @@ def build_mathematical_reasoning_topic_report(
 
     return final_payload
 
+def build_oc_mathematical_reasoning_topic_report(
+    student_id: str,
+    exam_id: int,
+    db: Session
+):
+    print("\n===== BUILD MATHEMATICAL REASONING TOPIC REPORT =====")
+    print("📥 Incoming Request:", {
+        "student_id": student_id,
+        "exam_id": exam_id
+    })
+
+    # --------------------------------------------------
+    # 1️⃣ Resolve student using external student_id
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student resolved:", {
+        "internal_id": student.id,
+        "student_id": student.student_id,
+        "name": student.name
+    })
+
+    # --------------------------------------------------
+    # 2️⃣ Resolve completed exam attempt
+    # --------------------------------------------------
+    attempt = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(
+            StudentExamOCMathematicalReasoning.student_id == student.id,
+            StudentExamOCMathematicalReasoning.exam_id == exam_id,
+            StudentExamOCMathematicalReasoning.completed_at.isnot(None)
+        )
+        .order_by(
+            StudentExamOCMathematicalReasoning.completed_at.desc()
+        )
+        .first()
+    )
+
+    if not attempt:
+        print("❌ No completed Mathematical Reasoning attempt found")
+        raise HTTPException(
+            status_code=404,
+            detail="No completed Mathematical Reasoning exam found"
+        )
+
+    print("✅ Attempt resolved:", {
+        "attempt_id": attempt.id,
+        "student_id": attempt.student_id,
+        "exam_id": attempt.exam_id,
+        "completed_at": str(attempt.completed_at)
+    })
+    print("ATTEMPT ID:", attempt.id)
+
+    
+    # --------------------------------------------------
+    # 3️⃣ Load responses
+    # --------------------------------------------------
+    responses = (
+        db.query(StudentExamResponseOCMathematicalReasoning)
+        .filter(
+            StudentExamResponseOCMathematicalReasoning.exam_attempt_id == attempt.id
+        )
+        .all()
+    )
+
+    if not responses:
+        print("❌ No responses found")
+        raise HTTPException(
+            status_code=404,
+            detail="No responses found for Mathematical Reasoning exam"
+        )
+
+    print("✅ Responses loaded:", len(responses))
+
+    # --------------------------------------------------
+    # 4️⃣ Overall summary
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.is_correct is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct is True
+    )
+
+    incorrect = sum(
+        1 for r in responses
+        if r.is_correct is False
+    )
+
+    not_attempted = total_questions - attempted
+
+    accuracy_percent = (
+        round((correct / attempted) * 100, 2)
+        if attempted else 0
+    )
+
+    score_percent = (
+        round((correct / total_questions) * 100, 2)
+        if total_questions else 0
+    )
+
+    overall = {
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "incorrect": incorrect,
+        "not_attempted": not_attempted,
+        "accuracy_percent": accuracy_percent,
+        "score_percent": score_percent
+    }
+
+    print("📊 Overall summary:", overall)
+
+    # --------------------------------------------------
+    # 5️⃣ Group by topic
+    # --------------------------------------------------
+    topic_map = {}
+
+    for r in responses:
+        topic = r.topic or "Unknown"
+
+        if topic not in topic_map:
+            topic_map[topic] = {
+                "topic": topic,
+                "total_questions": 0,
+                "attempted": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "not_attempted": 0
+            }
+
+        row = topic_map[topic]
+
+        row["total_questions"] += 1
+
+        if r.is_correct is None:
+            row["not_attempted"] += 1
+        else:
+            row["attempted"] += 1
+
+            if r.is_correct:
+                row["correct"] += 1
+            else:
+                row["incorrect"] += 1
+
+    print("📚 Topics discovered:", len(topic_map))
+    print("🧾 Topic names:", list(topic_map.keys()))
+
+    # --------------------------------------------------
+    # 6️⃣ Topic accuracy + feedback
+    # --------------------------------------------------
+    topic_breakdown = []
+
+    for index, item in enumerate(topic_map.values(), start=1):
+        attempted_topic = item["attempted"]
+
+        accuracy = (
+            round(
+                (item["correct"] / attempted_topic) * 100,
+                2
+            )
+            if attempted_topic else 0
+        )
+
+        if accuracy >= 80:
+            feedback = (
+                "Excellent understanding. "
+                "Continue maintaining this level."
+            )
+        elif accuracy >= 50:
+            feedback = (
+                "Good progress, but needs more practice "
+                "to improve consistency."
+            )
+        else:
+            feedback = (
+                "Requires immediate attention. "
+                "Focus on fundamentals and additional practice."
+            )
+
+        topic_row = {
+            "topic": item["topic"],
+            "total_questions": item["total_questions"],
+            "correct": item["correct"],
+            "incorrect": item["incorrect"],
+            "not_attempted": item["not_attempted"],
+            "accuracy_percent": accuracy,
+            "feedback": feedback
+        }
+
+        topic_breakdown.append(topic_row)
+
+        print(f"📘 Topic {index}:", topic_row)
+
+    # --------------------------------------------------
+    # 7️⃣ Sort best/worst topics
+    # --------------------------------------------------
+    sorted_topics = sorted(
+        topic_breakdown,
+        key=lambda x: x["accuracy_percent"],
+        reverse=True
+    )
+
+    top_strengths = sorted_topics[:2]
+    improvement_areas = sorted_topics[-2:]
+
+    print("🏆 Top strengths:",
+          [x["topic"] for x in top_strengths])
+
+    print("⚠️ Improvement areas:",
+          [x["topic"] for x in improvement_areas])
+
+    # --------------------------------------------------
+    # 8️⃣ Final payload
+    # --------------------------------------------------
+    final_payload = {
+        "exam_id": exam_id,
+        "exam_attempt_id": attempt.id,
+        "overall": overall,
+        "topic_breakdown": topic_breakdown,
+        "top_strengths": top_strengths,
+        "improvement_areas": improvement_areas
+    }
+
+    print("✅ Final payload ready")
+    print("📦 topic_breakdown rows:", len(topic_breakdown))
+    print("===============================================\n")
+
+    return final_payload
+
+
 @app.get("/api/student/exam-report/mathematical-reasoning")
 def get_mathematical_reasoning_report(
     student_id: str = Query(...),
@@ -58357,11 +59517,17 @@ def copy_to_admin_snapshot_oc_reading(
     db: Session,
     session_id: int
 ):
+    print("\n================ OC READING ADMIN SNAPSHOT ================")
     print("📸 Creating OC READING SNAPSHOT for session:", session_id)
 
+    # --------------------------------------------------
+    # Prevent duplicate snapshot
+    # --------------------------------------------------
     existing = (
         db.query(AdminExamResponseOCReading)
-        .filter(AdminExamResponseOCReading.exam_attempt_id == session_id)
+        .filter(
+            AdminExamResponseOCReading.exam_attempt_id == session_id
+        )
         .first()
     )
 
@@ -58369,9 +59535,14 @@ def copy_to_admin_snapshot_oc_reading(
         print("⚠️ Snapshot already exists, skipping...")
         return
 
+    # --------------------------------------------------
+    # Load student responses
+    # --------------------------------------------------
     responses = (
         db.query(StudentExamReportOCReading)
-        .filter(StudentExamReportOCReading.session_id == session_id)
+        .filter(
+            StudentExamReportOCReading.session_id == session_id
+        )
         .all()
     )
 
@@ -58395,7 +59566,206 @@ def copy_to_admin_snapshot_oc_reading(
         )
 
     db.bulk_save_objects(admin_rows)
+    print("✅ Admin snapshot rows created")
 
+    # --------------------------------------------------
+    # Calculate Reading performance
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.selected_answer is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct
+    )
+
+    accuracy = round(
+        (correct / total_questions) * 100,
+        2
+    ) if total_questions else 0
+
+    print("📊 Reading Performance")
+    print({
+        "total_questions": total_questions,
+        "attempted": attempted,
+        "correct": correct,
+        "accuracy": accuracy
+    })
+
+    # --------------------------------------------------
+    # Determine readiness
+    # --------------------------------------------------
+    if accuracy >= 85:
+        performance_band = "Strong"
+        readiness_status = "Very Competitive"
+        guidance_text = (
+            "Student demonstrates strong Opportunity Class reading skills."
+        )
+
+    elif accuracy >= 70:
+        performance_band = "On Track"
+        readiness_status = "Ready"
+        guidance_text = (
+            "Student is on track for Opportunity Class placement."
+        )
+
+    elif accuracy >= 55:
+        performance_band = "Developing"
+        readiness_status = "Borderline"
+        guidance_text = (
+            "Student requires further development in reading comprehension."
+        )
+
+    else:
+        performance_band = "Weak"
+        readiness_status = "Not Ready"
+        guidance_text = (
+            "Student requires significant improvement in reading comprehension."
+        )
+
+    print("🎯 Readiness Classification")
+    print({
+        "performance_band": performance_band,
+        "readiness_status": readiness_status
+    })
+
+    # --------------------------------------------------
+    # Load Reading Session
+    # --------------------------------------------------
+    print("📥 Loading StudentExamReadingOC...")
+
+    attempt = (
+        db.query(StudentExamReadingOC)
+        .filter(
+            StudentExamReadingOC.id == session_id
+        )
+        .first()
+    )
+
+    if not attempt:
+        print("❌ Reading session not found:", session_id)
+        return
+
+    print("✅ Reading session found")
+    print({
+        "session_id": attempt.id,
+        "student_id": attempt.student_id,
+        "exam_id": attempt.exam_id
+    })
+
+
+    # --------------------------------------------------
+    # Load Student
+    # --------------------------------------------------
+    print("👤 Loading Student...")
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.student_id == attempt.student_id
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found:", attempt.student_id)
+        return
+
+    print("✅ Student found")
+    print({
+        "student_pk": student.id,
+        "student_code": student.student_id
+    })
+
+    # --------------------------------------------------
+    # Check existing report
+    # --------------------------------------------------
+    print("🔍 Checking existing AdminExamOCReport...")
+
+    existing_report = (
+        db.query(AdminExamOCReport)
+        .filter(
+            AdminExamOCReport.exam_attempt_id == session_id,
+            AdminExamOCReport.exam_type == "reading"
+        )
+        .first()
+    )
+
+    print("Existing report:", existing_report)
+
+    if existing_report:
+        print("⚠️ Reading AdminExamOCReport already exists.")
+        return
+
+    # --------------------------------------------------
+    # Create AdminExamOCReport
+    # --------------------------------------------------
+    print("📝 Creating AdminExamOCReport...")
+
+    admin_report = AdminExamOCReport(
+        exam_attempt_id=session_id,
+        student_id=student.student_id,
+        exam_type="reading",
+        overall_score=accuracy,
+        readiness_band=readiness_status,
+        school_guidance_level=guidance_text,
+        summary_notes=(
+            f"Reading accuracy: "
+            f"{correct}/{total_questions}"
+        )
+    )
+
+    db.add(admin_report)
+    db.flush()
+
+    print("✅ AdminExamOCReport created")
+    print({
+        "report_id": admin_report.id
+    })
+
+    # --------------------------------------------------
+    # Section Result
+    # --------------------------------------------------
+    print("📝 Creating AdminExamSectionResult...")
+
+    db.add(
+        AdminExamSectionResult(
+            admin_report_id=admin_report.id,
+            section_name="Reading",
+            raw_score=accuracy,
+            performance_band=performance_band,
+            strengths_summary="Auto-generated from Reading performance",
+            improvement_summary="Refer to topic diagnostics"
+        )
+    )
+
+    print("✅ Section Result created")
+
+    # --------------------------------------------------
+    # Readiness Rule
+    # --------------------------------------------------
+    print("📝 Creating AdminReadinessRuleApplied...")
+
+    db.add(
+        AdminReadinessRuleApplied(
+            admin_report_id=admin_report.id,
+            rule_code="reading_accuracy",
+            rule_result=readiness_status,
+            rule_description=(
+                f"Reading accuracy "
+                f"{accuracy}% classified as {performance_band}"
+            )
+        )
+    )
+
+    print("✅ Readiness Rule created")
+
+    print("🎉 OC Reading Admin Snapshot completed successfully")
+    print("=========================================================\n")
 @app.post("/api/exams/submit-oc-reading-homework")
 def submit_oc_reading_homework(payload: dict, db: Session = Depends(get_db)):
 
@@ -58602,7 +59972,7 @@ def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
 
         print("🆔 session_id:", session_id)
         print("📝 answers keys:",
-              list(answers.keys()) if isinstance(answers, dict) else answers)
+            list(answers.keys()) if isinstance(answers, dict) else answers)
 
         if not session_id:
             print("❌ ERROR: session_id missing")
@@ -62819,8 +64189,9 @@ def start_oc_writing_exam(
             GeneratedExamWriting.is_current.is_(True),
             func.lower(
                 func.trim(GeneratedExamWriting.class_name)
-            ) == "naplan"
+            ) == "oc"
         )
+        .all()
     )
 
     print(
@@ -63925,13 +65296,19 @@ def submit_writing_exam(
     # --------------------------------------------------
     # A) Idempotency guard (CRITICAL)
     # --------------------------------------------------
+    # --------------------------------------------------
+    # Select report table
+    # --------------------------------------------------
+    if class_name == "oc":
+        report_model = AdminExamOCReport
+    else:
+        report_model = AdminExamReport
     existing_report = (
-        db.query(AdminExamReport)
+        db.query(report_model)
         .filter(
-            AdminExamReport.exam_attempt_id == exam_state.id,
-            AdminExamReport.exam_type == "writing"
+            report_model.exam_attempt_id == exam_state.id,
+            report_model.exam_type == "writing"
         )
-
         .first()
     )
 
@@ -63970,9 +65347,9 @@ def submit_writing_exam(
         # --------------------------------------------------
         # C) Insert admin_exam_reports
         # --------------------------------------------------
-        admin_report = AdminExamReport(
+        admin_report = report_model(
             exam_attempt_id=exam_state.id,
-            student_id=student.student_id,   # external id string (Gem002)
+            student_id=student.student_id,
             exam_type="writing",
             overall_score=writing_score,
             readiness_band=readiness_status,
@@ -63980,13 +65357,16 @@ def submit_writing_exam(
             summary_notes=f"Writing score: {writing_score}/25"
         )
 
-
-
-    
         db.add(admin_report)
-        db.flush()  # 🔑 Needed to get admin_report.id
+        db.flush()
+
+
+
     
-        print("✅ AdminExamReport created:", {
+        
+    
+        print("✅ Admin report created:", {
+            "report_model": report_model.__name__,
             "report_id": admin_report.id
         })
     
@@ -64282,7 +65662,188 @@ def build_writing_topic_report_by_attempt(
             "advisory": "This report is advisory only and does not guarantee placement."
         }
 
+def build_oc_writing_topic_report_by_attempt(
+    attempt_id: int,
+    db: Session
+):
+    print("\n===== BUILD OC WRITING TOPIC REPORT =====")
+    print("📥 Incoming:", {
+        "attempt_id": attempt_id
+    })
 
+    # --------------------------------------------------
+    # Load OC Writing Response
+    # --------------------------------------------------
+    response = (
+        db.query(StudentExamResponseWriting)
+        .filter(
+            StudentExamResponseWriting.exam_attempt_id == attempt_id
+        )
+        .first()
+    )
+
+    if not response:
+        print("❌ OC Writing response not found")
+
+        raise HTTPException(
+            status_code=404,
+            detail="OC Writing response not found"
+        )
+
+    print("✅ OC Writing response found")
+
+    evaluation = response.ai_evaluation_json or {}
+
+    categories = evaluation.get(
+        "categories",
+        {}
+    )
+
+    label_map = {
+        "audience_purpose_form":
+            "Audience, Purpose & Form",
+
+        "ideas_content":
+            "Ideas & Content",
+
+        "structure_organisation":
+            "Structure & Organisation",
+
+        "language_vocabulary":
+            "Language & Vocabulary",
+
+        "grammar_spelling_punctuation":
+            "Grammar, Spelling & Punctuation"
+    }
+
+    topic_breakdown = []
+
+    # --------------------------------------------------
+    # Build category report
+    # --------------------------------------------------
+    for key, label in label_map.items():
+
+        item = categories.get(key, {})
+
+        score = item.get("score", 0)
+
+        max_score = 5
+
+        accuracy = round(
+            (score / max_score) * 100,
+            2
+        )
+
+        if accuracy >= 80:
+            feedback = "Excellent"
+
+        elif accuracy >= 50:
+            feedback = "Moderate"
+
+        else:
+            feedback = "Needs Attention"
+
+        topic_breakdown.append({
+
+            "topic": label,
+
+            "total_questions": max_score,
+
+            "correct": score,
+
+            "incorrect": max_score - score,
+
+            "not_attempted": 0,
+
+            "accuracy_percent": accuracy,
+
+            "feedback": feedback,
+
+            "strengths": item.get(
+                "strengths",
+                []
+            ),
+
+            "improvements": item.get(
+                "improvements",
+                []
+            )
+        })
+
+    # --------------------------------------------------
+    # Sort strengths / weaknesses
+    # --------------------------------------------------
+    sorted_topics = sorted(
+        topic_breakdown,
+        key=lambda x: x["accuracy_percent"],
+        reverse=True
+    )
+
+    top_strengths = sorted_topics[:2]
+
+    improvement_areas = sorted_topics[-2:]
+
+    score = evaluation.get(
+        "overall_score",
+        response.writing_score or 0
+    )
+
+    overall = {
+
+        "total_questions": 25,
+
+        "attempted": 25,
+
+        "correct": score,
+
+        "incorrect": 25 - score,
+
+        "accuracy_percent": round(
+            (score / 25) * 100,
+            2
+        ),
+
+        "score_percent": round(
+            (score / 25) * 100,
+            2
+        ),
+
+        "readiness_band": response.readiness_band,
+
+        "teacher_feedback": evaluation.get(
+            "teacher_feedback",
+            ""
+        ),
+
+        "writing_type": response.writing_type,
+
+        "topic": response.topic,
+
+        "word_count": response.word_count
+    }
+
+    print("🏆 Top strengths:",
+          [x["topic"] for x in top_strengths])
+
+    print("⚠️ Improvement areas:",
+          [x["topic"] for x in improvement_areas])
+
+    print("✅ OC Writing Topic Report Ready")
+
+    return {
+
+        "exam_attempt_id": attempt_id,
+
+        "overall": overall,
+
+        "topic_breakdown": topic_breakdown,
+
+        "top_strengths": top_strengths,
+
+        "improvement_areas": improvement_areas,
+
+        "evaluation": evaluation
+    }
 
 @app.get("/api/exams/writing/current")
 def get_current_writing_exam(student_id: str, db: Session = Depends(get_db)):
@@ -68974,7 +70535,130 @@ def copy_to_admin_snapshot_oc_mathematical_reasoning(
         )
 
     db.bulk_save_objects(admin_rows)
- 
+
+    # --------------------------------------------------
+    # Calculate Mathematical Reasoning performance
+    # --------------------------------------------------
+    total_questions = len(responses)
+
+    attempted = sum(
+        1 for r in responses
+        if r.selected_option is not None
+    )
+
+    correct = sum(
+        1 for r in responses
+        if r.is_correct
+    )
+
+    wrong = attempted - correct
+
+    accuracy = round(
+        (correct / total_questions) * 100,
+        2
+    ) if total_questions else 0
+    if accuracy >= 85:
+        performance_band = "Strong"
+        readiness_status = "Very Competitive"
+        guidance_text = (
+            "Student demonstrates strong Opportunity Class mathematical reasoning skills."
+        )
+
+    elif accuracy >= 70:
+        performance_band = "On Track"
+        readiness_status = "Ready"
+        guidance_text = (
+            "Student is on track for Opportunity Class placement."
+        )
+
+    elif accuracy >= 55:
+        performance_band = "Developing"
+        readiness_status = "Borderline"
+        guidance_text = (
+            "Student requires further development in mathematical reasoning."
+        )
+
+    else:
+        performance_band = "Weak"
+        readiness_status = "Not Ready"
+        guidance_text = (
+            "Student requires significant improvement in mathematical reasoning."
+        )
+    attempt = (
+        db.query(StudentExamOCMathematicalReasoning)
+        .filter(
+            StudentExamOCMathematicalReasoning.id == attempt_id
+        )
+        .first()
+    )
+
+    if not attempt:
+        print("❌ OC Mathematical Reasoning attempt not found:", attempt_id)
+        return
+
+    student = (
+        db.query(Student)
+        .filter(Student.id == attempt.student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found:", attempt.student_id)
+        return
+    existing_report = (
+        db.query(AdminExamOCReport)
+        .filter(
+            AdminExamOCReport.exam_attempt_id == attempt_id,
+            AdminExamOCReport.exam_type == "mathematical_reasoning"
+        )
+        .first()
+    )
+    if not existing_report:
+
+        admin_report = AdminExamOCReport(
+            exam_attempt_id=attempt_id,
+            student_id=student.student_id,
+            exam_type="mathematical_reasoning",
+            overall_score=accuracy,
+            readiness_band=readiness_status,
+            school_guidance_level=guidance_text,
+            summary_notes=(
+                f"Mathematical Reasoning accuracy: "
+                f"{correct}/{total_questions}"
+            )
+        )
+
+        db.add(admin_report)
+        db.flush()
+
+        db.add(
+            AdminExamSectionResult(
+                admin_report_id=admin_report.id,
+                section_name="Mathematical Reasoning",
+                raw_score=accuracy,
+                performance_band=performance_band,
+                strengths_summary="Auto-generated from Mathematical Reasoning performance",
+                improvement_summary="Refer to topic diagnostics"
+            )
+        )
+
+        db.add(
+            AdminReadinessRuleApplied(
+                admin_report_id=admin_report.id,
+                rule_code="mathematical_reasoning_accuracy",
+                rule_result=readiness_status,
+                rule_description=(
+                    f"Mathematical Reasoning accuracy "
+                    f"{accuracy}% classified as {performance_band}"
+                )
+            )
+        )
+
+        print("✅ OC Mathematical Reasoning Admin Report created:", {
+            "report_id": admin_report.id,
+            "student": student.student_id,
+            "accuracy": accuracy
+        })
 
 @app.post("/api/student/finish-homework-oc-mathematical-reasoning")
 def finish_homework_oc_mathematical_reasoning(
@@ -94777,8 +96461,116 @@ def copy_to_admin_snapshot_oc_thinking_skills(
         )
 
     db.bulk_save_objects(admin_rows)
+    # --------------------------------------------------
+    # Calculate Thinking Skills performance
+    # --------------------------------------------------
+    total_questions = len(responses)
 
+    attempted = sum(
+        1 for r in responses
+        if r.selected_option is not None
+    )
 
+    correct = sum(
+        1 for r in responses
+        if r.is_correct
+    )
+
+    wrong = attempted - correct
+
+    accuracy = round(
+        (correct / total_questions) * 100,
+        2
+    ) if total_questions else 0
+    if accuracy >= 85:
+        performance_band = "Strong"
+        readiness_status = "Very Competitive"
+        guidance_text = (
+            "Student demonstrates strong Opportunity Class thinking skills."
+        )
+
+    elif accuracy >= 70:
+        performance_band = "On Track"
+        readiness_status = "Ready"
+        guidance_text = (
+            "Student is on track for Opportunity Class placement."
+        )
+
+    elif accuracy >= 55:
+        performance_band = "Developing"
+        readiness_status = "Borderline"
+        guidance_text = (
+            "Student requires further development in thinking skills."
+        )
+
+    else:
+        performance_band = "Weak"
+        readiness_status = "Not Ready"
+        guidance_text = (
+            "Student requires significant improvement in thinking skills."
+        )
+    attempt = (
+        db.query(StudentExamOCThinkingSkills)
+        .filter(
+            StudentExamOCThinkingSkills.id == attempt_id
+        )
+        .first()
+    )
+    if not attempt:
+        print("❌ OC Thinking Skills attempt not found:", attempt_id)
+        return
+
+    student = (
+        db.query(Student)
+        .filter(Student.id == attempt.student_id)
+        .first()
+    )
+    existing_report = (
+        db.query(AdminExamOCReport)
+        .filter(
+            AdminExamOCReport.exam_attempt_id == attempt_id,
+            AdminExamOCReport.exam_type == "thinking_skills"
+        )
+        .first()
+    )
+    if not existing_report:
+
+        admin_report = AdminExamOCReport(
+            exam_attempt_id=attempt_id,
+            student_id=student.student_id,
+            exam_type="thinking_skills",
+            overall_score=accuracy,
+            readiness_band=readiness_status,
+            school_guidance_level=guidance_text,
+            summary_notes=(
+                f"Thinking Skills accuracy: "
+                f"{correct}/{total_questions}"
+            )
+        )
+
+        db.add(admin_report)
+        db.flush()
+        db.add(
+            AdminExamSectionResult(
+                admin_report_id=admin_report.id,
+                section_name="Thinking Skills",
+                raw_score=accuracy,
+                performance_band=performance_band,
+                strengths_summary="Auto-generated from Thinking Skills performance",
+                improvement_summary="Refer to topic diagnostics"
+            )
+        )
+        db.add(
+            AdminReadinessRuleApplied(
+                admin_report_id=admin_report.id,
+                rule_code="thinking_skills_accuracy",
+                rule_result=readiness_status,
+                rule_description=(
+                    f"Thinking Skills accuracy "
+                    f"{accuracy}% classified as {performance_band}"
+                )
+            )
+        )
 
 @app.post("/api/student/submit-homework-oc-thinking-skills")
 def submit_homework_oc_thinking_skills(
