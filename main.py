@@ -500,12 +500,16 @@ class AdminExamOCReport(Base):
         nullable=False
     )
 
+from typing import Optional
+from pydantic import BaseModel
+
 class LeaderboardRequest(BaseModel):
     center_code: str
     class_year: str
     term_id: int
-    session: int
+    session: Optional[int] = None
     category: str
+    class_day: str
 
 
 class GamifiedWelcomeQuoteRequest(BaseModel):
@@ -721,6 +725,7 @@ class SchedulerRunDetail(Base):
         default=datetime.utcnow,
         nullable=False
     )
+
 class SetCurrentAcademicTermRequest(BaseModel):
     center_code: str
 
@@ -1076,6 +1081,7 @@ class ActivityType(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow
     )
+
 class CreateActivityTypeRequest(BaseModel):
     center_code: str
     term_id: int
@@ -7783,17 +7789,26 @@ def load_leaderboard(
     print(f"Session     : {request.session}")
     print(f"Category    : {request.category}")
 
-    leaderboard = (
+    query = (
         db.query(StudentGamifiedQuizAttempt)
         .filter(
             StudentGamifiedQuizAttempt.center_code == request.center_code,
             StudentGamifiedQuizAttempt.class_year == request.class_year,
             StudentGamifiedQuizAttempt.term_id == request.term_id,
-            StudentGamifiedQuizAttempt.session == request.session,
             StudentGamifiedQuizAttempt.category == request.category,
+            StudentGamifiedQuizAttempt.class_day == request.class_day,
             StudentGamifiedQuizAttempt.is_completed == True,
         )
-        .order_by(
+    )
+
+    # Apply session filter only if the user selected one
+    if request.session is not None:
+        query = query.filter(
+            StudentGamifiedQuizAttempt.session == request.session
+        )
+
+    leaderboard = (
+        query.order_by(
             StudentGamifiedQuizAttempt.current_score.desc(),
             StudentGamifiedQuizAttempt.time_taken_seconds.asc(),
             StudentGamifiedQuizAttempt.started_at.asc(),
@@ -7820,7 +7835,6 @@ def load_leaderboard(
         })
 
     return response
-
 
 class LeaderboardClassFiltersRequest(BaseModel):
     center_code: str
@@ -8210,485 +8224,531 @@ def generate_weekly_quizzes(
     print("\n==============================")
     print("SCHEDULER STARTED")
     print("==============================")
+    scheduler_run = None
 
-    today_date = datetime.today().date()
-    today_class_day = datetime.today().strftime("%A")
+    try:
+        today_date = datetime.today().date()
+        today_class_day = datetime.today().strftime("%A")
 
-    # ------------------------------------
-    # Create Scheduler Run Header
-    # ------------------------------------
-    sydney_now = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
+        # ------------------------------------
+        # Create Scheduler Run Header
+        # ------------------------------------
+        sydney_now = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
 
-    print("===================================")
-    print("Sydney now :", sydney_now)
-    print("tzinfo     :", sydney_now.tzinfo)
-    print("===================================")
+        print("===================================")
+        print("Sydney now :", sydney_now)
+        print("tzinfo     :", sydney_now.tzinfo)
+        print("===================================")
 
-    scheduler_run = SchedulerRun(
-        center_code=center_code,
-        scheduler_trigger="automatic",
-        run_date=today_date,
-        weekday=today_class_day,
-        status="running",
-        started_at=sydney_now,
-    )
-
-    db.add(scheduler_run)
-    db.commit()
-    db.refresh(scheduler_run)
-    # ------------------------------------
-    # Load Active Academic Term
-    # ------------------------------------
-    term = (
-        db.query(AcademicTerm)
-        .filter(
-            AcademicTerm.center_code == center_code,
-            AcademicTerm.is_active == True
+        scheduler_run = SchedulerRun(
+            center_code=center_code,
+            scheduler_trigger="automatic",
+            run_date=today_date,
+            weekday=today_class_day,
+            status="running",
+            started_at=sydney_now,
         )
-        .first()
-    )
 
-    if not term:
-        print("Active academic term not found.")
+        db.add(scheduler_run)
+        db.commit()
+        db.refresh(scheduler_run)
+        # ------------------------------------
+        # Load Active Academic Term
+        # ------------------------------------
+        term = (
+            db.query(AcademicTerm)
+            .filter(
+                AcademicTerm.center_code == center_code,
+                AcademicTerm.is_active == True
+            )
+            .first()
+        )
 
-        scheduler_run.status = "failed"
-        scheduler_run.message = "Active academic term not found."
-        scheduler_run.completed_at = datetime.now(SYDNEY_TZ)
+        if not term:
+            print("Active academic term not found.")
+
+            scheduler_run.status = "failed"
+            scheduler_run.message = "Active academic term not found."
+            scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
+            db.commit()
+
+            return {
+                "message": "Active academic term not found.",
+                "status": "error"
+            }
+
+        print(f"Academic Term: {term.term_name}")
+        scheduler_run.term_id = term.id
+        scheduler_run.term_name = term.term_name
+        db.commit()
+        # ------------------------------------
+        # Validate Today Is Within Term
+        # ------------------------------------
+        
+
+        if today_date < term.start_date or today_date > term.end_date:
+            print("Today is outside the active academic term.")
+
+            scheduler_run.status = "failed"
+            scheduler_run.message = "Today is outside the active academic term."
+            scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
+
+            db.commit()
+
+            return {
+                "message": "Today is outside the active academic term.",
+                "status": "error",
+                "term_id": term.id,
+                "term_name": term.term_name,
+            }
+
+        # ------------------------------------
+        # Calculate Current Session
+        # ------------------------------------
+        days_elapsed = (today_date - term.start_date).days
+        current_session = (days_elapsed // 7) + 1
+
+        print(f"Current Session: {current_session}")
+        scheduler_run.current_session = current_session
         db.commit()
 
-        return {
-            "message": "Active academic term not found.",
-            "status": "error"
-        }
+        if current_session < 1 or current_session > term.number_of_weeks:
+            print("Current session is outside the configured term range.")
 
-    print(f"Academic Term: {term.term_name}")
-    scheduler_run.term_id = term.id
-    scheduler_run.term_name = term.term_name
-    db.commit()
-    # ------------------------------------
-    # Validate Today Is Within Term
-    # ------------------------------------
-    
+            scheduler_run.status = "failed"
+            scheduler_run.message = "Current session is outside the configured term range."
+            scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
 
-    if today_date < term.start_date or today_date > term.end_date:
-        print("Today is outside the active academic term.")
-        return {
-            "message": "Today is outside the active academic term.",
-            "status": "error",
-            "term_id": term.id,
-            "term_name": term.term_name,
-        }
+            db.commit()
 
-    # ------------------------------------
-    # Calculate Current Session
-    # ------------------------------------
-    days_elapsed = (today_date - term.start_date).days
-    current_session = (days_elapsed // 7) + 1
-
-    print(f"Current Session: {current_session}")
-    scheduler_run.current_session = current_session
-    db.commit()
-
-    if current_session < 1 or current_session > term.number_of_weeks:
-        print("Current session is outside the configured term range.")
-        return {
-            "message": "Current session is outside the term range.",
-            "status": "error",
-            "term_id": term.id,
-            "term_name": term.term_name,
-            "current_session": current_session,
-        }
-
-    # ------------------------------------
-    # Load Configured Classes for ACTIVE TERM + TODAY ONLY
-    # ------------------------------------
-    today_class_day = datetime.today().strftime("%A")
-
-    print(f"Scheduler Class Day Filter : {today_class_day}")
-
-    classes = (
-        db.query(ClassConfiguration)
-        .filter(
-            ClassConfiguration.center_code == center_code,
-            ClassConfiguration.term_id == term.id,
-            ClassConfiguration.class_day == today_class_day,
-        )
-        .order_by(
-            ClassConfiguration.category,
-            ClassConfiguration.class_year,
-            ClassConfiguration.class_day,
-        )
-        .all()
-    )
-
-    print(f"\nConfigured Classes For {today_class_day}: {len(classes)}")
-
-    if not classes:
-        print(f"No configured classes found for active term on {today_class_day}.")
-        return {
-            "message": f"No configured classes found for the active term on {today_class_day}.",
-            "status": "error",
-            "term_id": term.id,
-            "term_name": term.term_name,
-            "current_session": current_session,
-            "class_day": today_class_day,
-        }
-
-    # ------------------------------------
-    # Load Enabled Activity Types for ACTIVE TERM ONLY
-    # ------------------------------------
-    enabled_activities = (
-        db.query(ActivityType)
-        .filter(
-            ActivityType.center_code == center_code,
-            ActivityType.term_id == term.id,
-            ActivityType.is_enabled == True
-        )
-        .all()
-    )
-
-    if not enabled_activities:
-        print("No enabled activity types found for active term.")
-        return {
-            "message": "No enabled activity types found for the active term.",
-            "status": "error",
-            "term_id": term.id,
-            "term_name": term.term_name,
-            "current_session": current_session,
-        }
-
-    print(f"\nEnabled Activities: {len(enabled_activities)}")
-
-    # ------------------------------------
-    # Load Location Context
-    # ------------------------------------
-    row = db.execute(
-        select(FranchiseLocation)
-    ).scalar_one_or_none()
-
-    if row:
-        country = row.country
-        state = row.state
-    else:
-        country = "Australia"
-        state = "NSW"
-
-    # ------------------------------------
-    # Scheduler run stats
-    # ------------------------------------
-    generated_count = 0
-    skipped_missing_topic = 0
-    skipped_existing_quiz = 0
-    failed_generation = 0
-
-    results = []
-
-    # ------------------------------------
-    # Generate quizzes for each configured class
-    # ------------------------------------
-    for cls in classes:
-        print("--------------------------------")
-        print(f"Category   : {cls.category}")
-        print(f"Class Year : {cls.class_year}")
-        print(f"Class Day  : {cls.class_day}")
-        detail_row = SchedulerRunDetail(
-            scheduler_run_id=scheduler_run.id,
-            center_code=center_code,
-            term_id=term.id,
-            term_name=term.term_name,
-            category=cls.category,
-            class_year=cls.class_year,
-            class_day=cls.class_day,
-            session=current_session,
-        )
-
-        result_row = {
-            "category": cls.category,
-            "class_year": cls.class_year,
-            "class_day": cls.class_day,
-            "session": current_session,
-            "status": None,
-            "topic": None,
-            "activity_type": None,
-            "message": None,
-        }
+            return {
+                "message": "Current session is outside the term range.",
+                "status": "error",
+                "term_id": term.id,
+                "term_name": term.term_name,
+                "current_session": current_session,
+            }
 
         # ------------------------------------
-        # Find session topic for current session
+        # Load Configured Classes for ACTIVE TERM + TODAY ONLY
         # ------------------------------------
-        topic_row = (
-            db.query(SessionTopic)
+        today_class_day = datetime.today().strftime("%A")
+
+        print(f"Scheduler Class Day Filter : {today_class_day}")
+
+        classes = (
+            db.query(ClassConfiguration)
             .filter(
-                SessionTopic.center_code == center_code,
-                SessionTopic.term_id == term.id,
-                SessionTopic.category == cls.category,
-                SessionTopic.class_year == cls.class_year,
-                SessionTopic.class_day == cls.class_day,
-                SessionTopic.session == current_session,
+                ClassConfiguration.center_code == center_code,
+                ClassConfiguration.term_id == term.id,
+                ClassConfiguration.class_day == today_class_day,
             )
-            .first()
+            .order_by(
+                ClassConfiguration.category,
+                ClassConfiguration.class_year,
+                ClassConfiguration.class_day,
+            )
+            .all()
         )
 
-        if not topic_row:
-            print("Matching session topic not found for active term.")
-            print("Skipping class.")
+        print(f"\nConfigured Classes For {today_class_day}: {len(classes)}")
 
-            skipped_missing_topic += 1
-            result_row["status"] = "skipped"
-            result_row["message"] = "No session topic found for this class and session."
+        if not classes:
+            print(f"No configured classes found for active term on {today_class_day}.")
 
-            detail_row.status = "skipped"
-            detail_row.message = "No session topic found for this class and session."
+            scheduler_run.status = "failed"
+            scheduler_run.message = (
+                f"No configured classes found for the active term on {today_class_day}."
+            )
+            scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
 
-            db.add(detail_row)
+            db.commit()
 
-            results.append(result_row)
-            continue
-
-        print(f"Session    : {topic_row.session}")
-        print(f"Topic      : {topic_row.topic}")
-
-        result_row["topic"] = topic_row.topic
-
-        detail_row.topic = topic_row.topic
+            return {
+                "message": f"No configured classes found for the active term on {today_class_day}.",
+                "status": "error",
+                "term_id": term.id,
+                "term_name": term.term_name,
+                "current_session": current_session,
+                "class_day": today_class_day,
+            }
 
         # ------------------------------------
-        # Prevent duplicate quiz generation
+        # Load Enabled Activity Types for ACTIVE TERM ONLY
         # ------------------------------------
-        existing_quiz = (
-            db.query(GeneratedGamifiedQuiz)
+        enabled_activities = (
+            db.query(ActivityType)
             .filter(
-                GeneratedGamifiedQuiz.center_code == center_code,
-                GeneratedGamifiedQuiz.term_id == term.id,
-                GeneratedGamifiedQuiz.category == cls.category,
-                GeneratedGamifiedQuiz.class_year == cls.class_year,
-                GeneratedGamifiedQuiz.class_day == cls.class_day,
-                GeneratedGamifiedQuiz.session == current_session,
+                ActivityType.center_code == center_code,
+                ActivityType.term_id == term.id,
+                ActivityType.is_enabled == True
             )
-            .first()
+            .all()
         )
 
-        if existing_quiz:
-            print("\nGenerated Quiz Already Exists")
+        if not enabled_activities:
+            print("No enabled activity types found for active term.")
+
+            scheduler_run.status = "failed"
+            scheduler_run.message = "No enabled activity types found for the active term."
+            scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
+
+            db.commit()
+
+            return {
+                "message": "No enabled activity types found for the active term.",
+                "status": "error",
+                "term_id": term.id,
+                "term_name": term.term_name,
+                "current_session": current_session,
+            }
+
+        print(f"\nEnabled Activities: {len(enabled_activities)}")
+
+        # ------------------------------------
+        # Load Location Context
+        # ------------------------------------
+        row = db.execute(
+            select(FranchiseLocation)
+        ).scalar_one_or_none()
+
+        if row:
+            country = row.country
+            state = row.state
+        else:
+            country = "Australia"
+            state = "NSW"
+
+        # ------------------------------------
+        # Scheduler run stats
+        # ------------------------------------
+        generated_count = 0
+        skipped_missing_topic = 0
+        skipped_existing_quiz = 0
+        failed_generation = 0
+
+        results = []
+
+        # ------------------------------------
+        # Generate quizzes for each configured class
+        # ------------------------------------
+        for cls in classes:
             print("--------------------------------")
-            print(f"Category : {cls.category}")
-            print(f"Year     : {cls.class_year}")
-            print(f"Day      : {cls.class_day}")
-            print(f"Session  : {current_session}")
-            print(f"Term     : {term.term_name}")
-            print("Skipping generation.")
-
-            skipped_existing_quiz += 1
-            result_row["status"] = "skipped"
-            result_row["message"] = "Quiz already exists for this class and session."
-
-            detail_row.status = "skipped"
-            detail_row.message = "Quiz already exists for this class and session."
-            detail_row.generated_quiz_id = existing_quiz.id
-
-            db.add(detail_row)
-
-            results.append(result_row)
-            continue
-
-        # ------------------------------------
-        # Select random enabled activity
-        # ------------------------------------
-        selected_activity = random.choice(enabled_activities)
-
-        activity_type = selected_activity.activity_name
-        category = cls.category
-        class_year = cls.class_year
-        class_day = cls.class_day
-        topic_name = topic_row.topic
-
-        result_row["activity_type"] = activity_type
-        detail_row.selected_activity_type = activity_type
-
-        print("\n----- GPT INPUT -----")
-        print(f"Term          : {term.term_name}")
-        print(f"Category      : {category}")
-        print(f"Year          : {class_year}")
-        print(f"Day           : {class_day}")
-        print(f"Session       : {current_session}")
-        print(f"Topic         : {topic_name}")
-        print(f"Activity Type : {activity_type}")
-        print("----------------------")
-
-        system_prompt = '''
-        You are an expert quiz-generating AI and a creative educator.
-
-        Create a gamified quiz for {country}, {state}, {category}, {class_year} students.
-
-        Topic:
-        {topic_name}
-
-        Activity Type:
-        {activity_type}
-
-        Return ONLY one valid JSON object.
-
-        The JSON MUST have exactly this structure:
-
-        {{
-            "quiz_title": "Quiz Title",
-            "instructions": "Instructions",
-            "questions": [
-                {{
-                    "category": "{topic_name}",
-                    "prompt": "Question",
-                    "options": [
-                        "A) Option 1",
-                        "B) Option 2",
-                        "C) Option 3",
-                        "D) Option 4"
-                    ],
-                    "answer": "A) Option 1"
-                }}
-            ]
-        }}
-
-        Generate exactly FIVE questions.
-
-        Each question must:
-        - contain ONE clear question
-        - have exactly FOUR options
-        - have exactly ONE correct answer
-        - be suitable for {class_year} students
-
-        IMPORTANT:
-        - The "answer" field MUST contain the COMPLETE correct option text
-        - The answer MUST exactly match one of the strings in the "options" array
-        - Do NOT return only the letter such as "A", "B", "C", or "D"
-
-        The activity type MUST influence the style of the questions.
-        '''.format(
-            country=country,
-            state=state,
-            category=category,
-            class_year=class_year,
-            topic_name=topic_name,
-            activity_type=activity_type,
-        )
-
-        try:
-            print("\nCalling GPT...")
-
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt
-                    }
-                ],
-                temperature=0.5
-            )
-
-            quiz_text = response.choices[0].message.content.strip()
-
-            print("\n========== RAW GPT RESPONSE ==========")
-            print(quiz_text)
-            print("======================================")
-
-            parsed_json = json.loads(quiz_text)
-
-            generated_quiz = GeneratedGamifiedQuiz(
+            print(f"Category   : {cls.category}")
+            print(f"Class Year : {cls.class_year}")
+            print(f"Class Day  : {cls.class_day}")
+            detail_row = SchedulerRunDetail(
+                scheduler_run_id=scheduler_run.id,
                 center_code=center_code,
                 term_id=term.id,
                 term_name=term.term_name,
-                category=category,
-                class_year=class_year,
-                class_day=class_day,
+                category=cls.category,
+                class_year=cls.class_year,
+                class_day=cls.class_day,
                 session=current_session,
-                topic=topic_name,
-                activity_type=activity_type,
-                quiz_json=parsed_json
             )
 
-            db.add(generated_quiz)
-            db.flush()
+            result_row = {
+                "category": cls.category,
+                "class_year": cls.class_year,
+                "class_day": cls.class_day,
+                "session": current_session,
+                "status": None,
+                "topic": None,
+                "activity_type": None,
+                "message": None,
+            }
 
-            generated_count += 1
-            result_row["status"] = "generated"
-            result_row["message"] = "Quiz generated successfully."
+            # ------------------------------------
+            # Find session topic for current session
+            # ------------------------------------
+            topic_row = (
+                db.query(SessionTopic)
+                .filter(
+                    SessionTopic.center_code == center_code,
+                    SessionTopic.term_id == term.id,
+                    SessionTopic.category == cls.category,
+                    SessionTopic.class_year == cls.class_year,
+                    SessionTopic.class_day == cls.class_day,
+                    SessionTopic.session == current_session,
+                )
+                .first()
+            )
 
-            detail_row.status = "generated"
-            detail_row.message = "Quiz generated successfully."
-            detail_row.generated_quiz_id = generated_quiz.id
+            if not topic_row:
+                print("Matching session topic not found for active term.")
+                print("Skipping class.")
 
-            db.add(detail_row)
+                skipped_missing_topic += 1
+                result_row["status"] = "skipped"
+                result_row["message"] = "No session topic found for this class and session."
 
-            print("\n✅ JSON parsed successfully.")
-            print(f"Quiz Title : {parsed_json['quiz_title']}")
-            print(f"Questions  : {len(parsed_json['questions'])}")
+                detail_row.status = "skipped"
+                detail_row.message = "No session topic found for this class and session."
 
-        except json.JSONDecodeError as e:
-            print("\n❌ JSON parsing failed")
-            print(e)
+                db.add(detail_row)
 
-            failed_generation += 1
-            result_row["status"] = "failed"
-            result_row["message"] = f"JSON parsing failed: {str(e)}"
+                results.append(result_row)
+                continue
 
-            detail_row.status = "failed"
-            detail_row.message = f"JSON parsing failed: {str(e)}"
+            print(f"Session    : {topic_row.session}")
+            print(f"Topic      : {topic_row.topic}")
 
-            db.add(detail_row)
+            result_row["topic"] = topic_row.topic
 
-        except Exception as e:
-            print("\n❌ GPT call failed")
-            print(e)
+            detail_row.topic = topic_row.topic
 
-            failed_generation += 1
-            result_row["status"] = "failed"
-            result_row["message"] = f"Quiz generation failed: {str(e)}"
+            # ------------------------------------
+            # Prevent duplicate quiz generation
+            # ------------------------------------
+            existing_quiz = (
+                db.query(GeneratedGamifiedQuiz)
+                .filter(
+                    GeneratedGamifiedQuiz.center_code == center_code,
+                    GeneratedGamifiedQuiz.term_id == term.id,
+                    GeneratedGamifiedQuiz.category == cls.category,
+                    GeneratedGamifiedQuiz.class_year == cls.class_year,
+                    GeneratedGamifiedQuiz.class_day == cls.class_day,
+                    GeneratedGamifiedQuiz.session == current_session,
+                )
+                .first()
+            )
 
-            detail_row.status = "failed"
-            detail_row.message = f"Quiz generation failed: {str(e)}"
+            if existing_quiz:
+                print("\nGenerated Quiz Already Exists")
+                print("--------------------------------")
+                print(f"Category : {cls.category}")
+                print(f"Year     : {cls.class_year}")
+                print(f"Day      : {cls.class_day}")
+                print(f"Session  : {current_session}")
+                print(f"Term     : {term.term_name}")
+                print("Skipping generation.")
 
-            db.add(detail_row)
+                skipped_existing_quiz += 1
+                result_row["status"] = "skipped"
+                result_row["message"] = "Quiz already exists for this class and session."
 
-        results.append(result_row)
+                detail_row.status = "skipped"
+                detail_row.message = "Quiz already exists for this class and session."
+                detail_row.generated_quiz_id = existing_quiz.id
 
-    # ------------------------------------
-    # Finalise Scheduler Run Header
-    # ------------------------------------
-    scheduler_run.total_classes = len(classes)
-    scheduler_run.generated_quizzes = generated_count
-    scheduler_run.skipped_missing_topic = skipped_missing_topic
-    scheduler_run.skipped_existing_quiz = skipped_existing_quiz
-    scheduler_run.failed_generations = failed_generation
-    scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
+                db.add(detail_row)
 
-    if failed_generation > 0 and generated_count == 0:
-        scheduler_run.status = "failed"
-    elif failed_generation > 0:
-        scheduler_run.status = "partial_success"
-    else:
-        scheduler_run.status = "success"
+                results.append(result_row)
+                continue
 
-    scheduler_run.message = "Scheduler run completed."
+            # ------------------------------------
+            # Select random enabled activity
+            # ------------------------------------
+            selected_activity = random.choice(enabled_activities)
 
-    db.commit()
+            activity_type = selected_activity.activity_name
+            category = cls.category
+            class_year = cls.class_year
+            class_day = cls.class_day
+            topic_name = topic_row.topic
 
-    print("\n=================================")
-    print("ALL GENERATED QUIZZES SAVED")
-    print("=================================")
+            result_row["activity_type"] = activity_type
+            detail_row.selected_activity_type = activity_type
 
-    return {
-        "message": "Scheduler run completed.",
-        "status": "success",
-        "term_id": term.id,
-        "term_name": term.term_name,
-        "current_session": current_session,
-        "total_classes": len(classes),
-        "generated_quizzes": generated_count,
-        "skipped_missing_topic": skipped_missing_topic,
-        "skipped_existing_quiz": skipped_existing_quiz,
-        "failed_generations": failed_generation,
-        "results": results,
-    }
+            print("\n----- GPT INPUT -----")
+            print(f"Term          : {term.term_name}")
+            print(f"Category      : {category}")
+            print(f"Year          : {class_year}")
+            print(f"Day           : {class_day}")
+            print(f"Session       : {current_session}")
+            print(f"Topic         : {topic_name}")
+            print(f"Activity Type : {activity_type}")
+            print("----------------------")
+
+            system_prompt = '''
+            You are an expert quiz-generating AI and a creative educator.
+
+            Create a gamified quiz for {country}, {state}, {category}, {class_year} students.
+
+            Topic:
+            {topic_name}
+
+            Activity Type:
+            {activity_type}
+
+            Return ONLY one valid JSON object.
+
+            The JSON MUST have exactly this structure:
+
+            {{
+                "quiz_title": "Quiz Title",
+                "instructions": "Instructions",
+                "questions": [
+                    {{
+                        "category": "{topic_name}",
+                        "prompt": "Question",
+                        "options": [
+                            "A) Option 1",
+                            "B) Option 2",
+                            "C) Option 3",
+                            "D) Option 4"
+                        ],
+                        "answer": "A) Option 1"
+                    }}
+                ]
+            }}
+
+            Generate exactly FIVE questions.
+
+            Each question must:
+            - contain ONE clear question
+            - have exactly FOUR options
+            - have exactly ONE correct answer
+            - be suitable for {class_year} students
+
+            IMPORTANT:
+            - The "answer" field MUST contain the COMPLETE correct option text
+            - The answer MUST exactly match one of the strings in the "options" array
+            - Do NOT return only the letter such as "A", "B", "C", or "D"
+
+            The activity type MUST influence the style of the questions.
+            '''.format(
+                country=country,
+                state=state,
+                category=category,
+                class_year=class_year,
+                topic_name=topic_name,
+                activity_type=activity_type,
+            )
+
+            try:
+                print("\nCalling GPT...")
+
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": system_prompt
+                        }
+                    ],
+                    temperature=0.5
+                )
+
+                quiz_text = response.choices[0].message.content.strip()
+
+                print("\n========== RAW GPT RESPONSE ==========")
+                print(quiz_text)
+                print("======================================")
+
+                parsed_json = json.loads(quiz_text)
+
+                generated_quiz = GeneratedGamifiedQuiz(
+                    center_code=center_code,
+                    term_id=term.id,
+                    term_name=term.term_name,
+                    category=category,
+                    class_year=class_year,
+                    class_day=class_day,
+                    session=current_session,
+                    topic=topic_name,
+                    activity_type=activity_type,
+                    quiz_json=parsed_json
+                )
+
+                db.add(generated_quiz)
+                db.flush()
+
+                generated_count += 1
+                result_row["status"] = "generated"
+                result_row["message"] = "Quiz generated successfully."
+
+                detail_row.status = "generated"
+                detail_row.message = "Quiz generated successfully."
+                detail_row.generated_quiz_id = generated_quiz.id
+
+                db.add(detail_row)
+
+                print("\n✅ JSON parsed successfully.")
+                print(f"Quiz Title : {parsed_json['quiz_title']}")
+                print(f"Questions  : {len(parsed_json['questions'])}")
+
+            except json.JSONDecodeError as e:
+                print("\n❌ JSON parsing failed")
+                print(e)
+
+                failed_generation += 1
+                result_row["status"] = "failed"
+                result_row["message"] = f"JSON parsing failed: {str(e)}"
+
+                detail_row.status = "failed"
+                detail_row.message = f"JSON parsing failed: {str(e)}"
+
+                db.add(detail_row)
+
+            except Exception as e:
+                print("\n❌ GPT call failed")
+                print(e)
+
+                failed_generation += 1
+                result_row["status"] = "failed"
+                result_row["message"] = f"Quiz generation failed: {str(e)}"
+
+                detail_row.status = "failed"
+                detail_row.message = f"Quiz generation failed: {str(e)}"
+
+                db.add(detail_row)
+
+            results.append(result_row)
+
+        # ------------------------------------
+        # Finalise Scheduler Run Header
+        # ------------------------------------
+        scheduler_run.total_classes = len(classes)
+        scheduler_run.generated_quizzes = generated_count
+        scheduler_run.skipped_missing_topic = skipped_missing_topic
+        scheduler_run.skipped_existing_quiz = skipped_existing_quiz
+        scheduler_run.failed_generations = failed_generation
+        scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
+
+        if failed_generation > 0 and generated_count == 0:
+            scheduler_run.status = "failed"
+        elif failed_generation > 0:
+            scheduler_run.status = "partial_success"
+        else:
+            scheduler_run.status = "success"
+
+        scheduler_run.message = "Scheduler run completed."
+
+        db.commit()
+
+        print("\n=================================")
+        print("ALL GENERATED QUIZZES SAVED")
+        print("=================================")
+
+        return {
+            "message": "Scheduler run completed.",
+            "status": "success",
+            "term_id": term.id,
+            "term_name": term.term_name,
+            "current_session": current_session,
+            "total_classes": len(classes),
+            "generated_quizzes": generated_count,
+            "skipped_missing_topic": skipped_missing_topic,
+            "skipped_existing_quiz": skipped_existing_quiz,
+            "failed_generations": failed_generation,
+            "results": results,
+        }
+    
+    except Exception as e:
+        print("\n❌ UNEXPECTED SCHEDULER ERROR")
+        print(e)
+
+        db.rollback()
+
+        if scheduler_run is not None:
+            scheduler_run.status = "failed"
+            scheduler_run.message = f"Unexpected error: {str(e)}"
+            scheduler_run.completed_at = datetime.now(SYDNEY_TZ).replace(tzinfo=None)
+            db.commit()
+
+        raise
 
 @app.post("/scheduler/run")
 def run_scheduler(
@@ -32789,12 +32849,17 @@ def build_question_blocks(q, db):
     # ==================================================
     # Include question_text for NON-inline types
     # ==================================================
-    if q.question_text and q.question_type not in {2, 5, 7}:
+    if q.question_text and q.question_type not in {2, 5, 7, 8}:
         blocks.append({
             "type": "text",
             "content": q.question_text.strip()
         })
+    # ==================================================
+    # TYPE 8 — MATCHING
+    # ==================================================
+    if q.question_type == 8:
 
+        return question_blocks
     # ==================================================
     # TYPE 2 — IMAGE MULTI SELECT
     # ==================================================
@@ -94165,6 +94230,98 @@ def snapshot_naplan_numeracy_responses_for_admin(db: Session, attempt):
         )
 
     print("✅ Snapshot complete")
+
+def extract_student_matching_pairs(student_answer):
+    """
+    Converts the student's drag-and-drop response into
+    a list of left/right pairs.
+
+    Input:
+    {
+        "pair-1-left": "akira",
+        "pair-1-right": "dane",
+        "pair-2-left": "sean",
+        "pair-2-right": "baden",
+        "pair-3-left": "ezra",
+        "pair-3-right": "mick"
+    }
+
+    Output:
+    [
+        {"left": "akira", "right": "dane"},
+        {"left": "sean", "right": "baden"},
+        {"left": "ezra", "right": "mick"}
+    ]
+    """
+
+    if not isinstance(student_answer, dict):
+        return []
+
+    pairs = []
+
+    pair_numbers = sorted({
+        key.split("-")[1]
+        for key in student_answer.keys()
+        if key.startswith("pair-")
+    })
+
+    for number in pair_numbers:
+
+        left = student_answer.get(f"pair-{number}-left")
+        right = student_answer.get(f"pair-{number}-right")
+
+        if left and right:
+            pairs.append({
+                "left": left,
+                "right": right
+            })
+
+    return pairs
+def matching_answers_equal(student_pairs, correct_pairs):
+    """
+    Compares two matching-answer lists.
+
+    Order of pairs does NOT matter.
+
+    Order inside each pair does NOT matter.
+
+    Example:
+
+    student:
+    [
+        {"left":"dane","right":"akira"},
+        {"left":"baden","right":"sean"}
+    ]
+
+    correct:
+    [
+        {"left":"akira","right":"dane"},
+        {"left":"sean","right":"baden"}
+    ]
+
+    Returns:
+        True
+    """
+
+    def normalize(pair):
+        return tuple(
+            sorted([
+                str(pair["left"]).strip(),
+                str(pair["right"]).strip()
+            ])
+        )
+
+    student_set = {
+        normalize(pair)
+        for pair in student_pairs
+    }
+
+    correct_set = {
+        normalize(pair)
+        for pair in correct_pairs
+    }
+
+    return student_set == correct_set
  
 @app.post("/api/student/finish-exam/naplan-numeracy")
 def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
@@ -94284,48 +94441,64 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         topic = q.get("topic")
         correct_answer = q.get("correct_answer")
         student_answer = answers.get(q_id)
+        question_type = q.get("question_type")
+        if question_type == 8:
 
-        # normalize numeric
-        if isinstance(student_answer, str) and student_answer.isdigit():
-            student_answer = int(student_answer)
+            student_pairs = extract_student_matching_pairs(student_answer)
 
-        normalized_correct = correct_answer
+            is_correct = matching_answers_equal(
+                student_pairs,
+                correct_answer
+            )
 
-        if student_answer in (None, "", [], {}):
-            selected_option = None
-            is_correct = False
+            selected_option = json.dumps(student_pairs)
+
+            normalized_correct = correct_answer
 
         else:
 
-            selected_option = (
-                json.dumps(student_answer)
-                if isinstance(student_answer, list)
-                else str(student_answer)
-            )
 
-            if isinstance(correct_answer, dict):
-                normalized_correct = correct_answer.get("value")
+            # normalize numeric
+            if isinstance(student_answer, str) and student_answer.isdigit():
+                student_answer = int(student_answer)
 
-            if isinstance(normalized_correct, str) and normalized_correct.isdigit():
-                normalized_correct = int(normalized_correct)
+            normalized_correct = correct_answer
 
-            options = q.get("options")
+            if student_answer in (None, "", [], {}):
+                selected_option = None
+                is_correct = False
 
-            if (
-                q.get("question_type") == 5
-                and options
-                and isinstance(normalized_correct, str)
-                and normalized_correct in options
-            ):
-                normalized_correct = options[normalized_correct]
-
-            if isinstance(normalized_correct, list):
-                if isinstance(student_answer, list):
-                    is_correct = sorted(map(str, normalized_correct)) == sorted(map(str, student_answer))
-                else:
-                    is_correct = False
             else:
-                is_correct = str(student_answer).strip() == str(normalized_correct).strip()
+
+                selected_option = (
+                    json.dumps(student_answer)
+                    if isinstance(student_answer, list)
+                    else str(student_answer)
+                )
+
+                if isinstance(correct_answer, dict):
+                    normalized_correct = correct_answer.get("value")
+
+                if isinstance(normalized_correct, str) and normalized_correct.isdigit():
+                    normalized_correct = int(normalized_correct)
+
+                options = q.get("options")
+
+                if (
+                    q.get("question_type") == 5
+                    and options
+                    and isinstance(normalized_correct, str)
+                    and normalized_correct in options
+                ):
+                    normalized_correct = options[normalized_correct]
+
+                if isinstance(normalized_correct, list):
+                    if isinstance(student_answer, list):
+                        is_correct = sorted(map(str, normalized_correct)) == sorted(map(str, student_answer))
+                    else:
+                        is_correct = False
+                else:
+                    is_correct = str(student_answer).strip() == str(normalized_correct).strip()
 
         if is_correct:
             correct_count += 1
@@ -94392,6 +94565,7 @@ def finish_naplan_numeracy_exam(payload: dict, db: Session = Depends(get_db)):
         "accuracy_percent": accuracy
     }
 
+"""
 @app.post("/api/student/finish-exam/naplan-numeracy")
 def finish_naplan_numeracy_exam(
     payload: dict,
@@ -94444,7 +94618,7 @@ def finish_naplan_numeracy_exam(
         db.query(StudentExamNaplanNumeracy)
         .filter(
             StudentExamNaplanNumeracy.student_id == student.id,
-            StudentExamNaplanNumeracy.exam_id == exam_id,   # ✅ CRITICAL
+            StudentExamNaplanNumeracy.exam_id == exam_id,
             StudentExamNaplanNumeracy.year == student_year,
             StudentExamNaplanNumeracy.completed_at.is_(None)
         )
@@ -94488,8 +94662,6 @@ def finish_naplan_numeracy_exam(
         )
 
     questions = exam.questions or []
-
-    
 
     # --------------------------------------------------
     # 6. Evaluate answers
@@ -94568,7 +94740,7 @@ def finish_naplan_numeracy_exam(
         )
 
     # --------------------------------------------------
-    # 7. COMPLETE ATTEMPT (🔥 YOUR MISSING PIECE)
+    # 7. COMPLETE ATTEMPT
     # --------------------------------------------------
     total_questions = len(questions)
 
@@ -94577,7 +94749,7 @@ def finish_naplan_numeracy_exam(
         if total_questions else 0
     )
 
-    attempt.completed_at = datetime.now(timezone.utc)  # ✅ CRITICAL FIX
+    attempt.completed_at = datetime.now(timezone.utc)
 
     db.commit()
 
@@ -94588,7 +94760,7 @@ def finish_naplan_numeracy_exam(
         "exam_attempt_id": attempt.id,
         "accuracy_percent": accuracy
     }
-
+"""
 
 @app.post("/api/student/finish-homework-exam/naplan-numeracy")
 def finish_naplan_numeracy_homework_exam(
@@ -99835,9 +100007,379 @@ def validate_cloze_correct_answer_against_options(correct_answer, options):
         raise ValueError(
             f"CLOZE correct_answer '{correct_answer}' not found in options {options}"
         )
-     
 
+def extract_naplan_metadata(question_block):
+    """
+    Extract common metadata from a deterministic question block.
+    """
 
+    metadata = {}
+
+    for block in question_block:
+
+        if block.get("type") != "text":
+            continue
+
+        line = block["content"].strip()
+
+        if line.startswith("CLASS:"):
+            metadata["class_name"] = (
+                line.replace("CLASS:", "")
+                .strip()
+                .strip('"')
+            )
+
+        elif line.startswith("Year:"):
+            metadata["year"] = int(
+                line.replace("Year:", "").strip()
+            )
+
+        elif line.startswith("SUBJECT:"):
+            metadata["subject"] = (
+                line.replace("SUBJECT:", "")
+                .strip()
+                .strip('"')
+            )
+
+        elif line.startswith("TOPIC:"):
+            metadata["topic"] = (
+                line.replace("TOPIC:", "")
+                .strip()
+                .strip('"')
+            )
+
+        elif line.startswith("DIFFICULTY:"):
+            metadata["difficulty"] = (
+                line.replace("DIFFICULTY:", "")
+                .strip()
+                .strip('"')
+            )
+
+    return metadata
+def extract_naplan_match_mode(question_block):
+    """
+    Extract the matching mode from a deterministic
+    NAPLAN Matching question.
+    """
+
+    for block in question_block:
+
+        if block.get("type") != "text":
+            continue
+
+        line = block["content"].strip()
+
+        if line == "MATCH_MODE:":
+            continue
+
+        if line in ("LEFT_RIGHT", "PAIRING"):
+            return line
+
+    raise ValueError("MATCH_MODE not found.")
+
+def extract_naplan_question_text(question_block):
+    """
+    Extract the QUESTION_TEXT section from a deterministic
+    NAPLAN question block.
+
+    Starts after:
+        QUESTION_TEXT:
+
+    Stops before:
+        MATCH_MODE:
+    """
+
+    question_lines = []
+    collecting = False
+
+    for block in question_block:
+
+        if block.get("type") != "text":
+            continue
+
+        line = block["content"].strip()
+
+        # Start collecting after QUESTION_TEXT:
+        if line == "QUESTION_TEXT:":
+            collecting = True
+            continue
+
+        # Stop when we reach MATCH_MODE:
+        if line == "MATCH_MODE:":
+            break
+
+        if collecting:
+            question_lines.append(line)
+
+    return "\n\n".join(question_lines)    
+def extract_naplan_matching_items(
+    question_block,
+    match_mode,
+):
+    if match_mode != "PAIRING":
+        raise NotImplementedError(
+            f"Unsupported MATCH_MODE: {match_mode}"
+        )
+
+    items = []
+    collecting = False
+    current_item = None
+
+    for block in question_block:
+
+        if block.get("type") != "text":
+            continue
+
+        line = block["content"].strip()
+
+        # Start reading items
+        if line == "ITEMS:":
+            collecting = True
+            continue
+
+        # Stop before answers
+        if line == "CORRECT_PAIRS:":
+            break
+
+        if not collecting:
+            continue
+
+        # New item
+        if line.startswith("id:"):
+            if current_item:
+                items.append(current_item)
+
+            current_item = {
+                "id": line.replace("id:", "").strip()
+            }
+
+        # Item text
+        elif line.startswith("text:"):
+            if current_item is None:
+                raise ValueError(
+                    "Found text before id in ITEMS section."
+                )
+
+            current_item["text"] = (
+                line.replace("text:", "").strip()
+            )
+
+    # Append last item
+    if current_item:
+        items.append(current_item)
+
+    return items
+
+def extract_naplan_correct_pairs(
+    question_block,
+    match_mode,
+):
+    """
+    Extract the correct pairs from a deterministic
+    NAPLAN Matching question.
+
+    Currently supports:
+        MATCH_MODE: PAIRING
+    """
+
+    if match_mode != "PAIRING":
+        raise NotImplementedError(
+            f"Unsupported MATCH_MODE: {match_mode}"
+        )
+
+    pairs = []
+    collecting = False
+
+    for block in question_block:
+
+        if block.get("type") != "text":
+            continue
+
+        line = block["content"].strip()
+
+        # Start reading after CORRECT_PAIRS:
+        if line == "CORRECT_PAIRS:":
+            collecting = True
+            continue
+
+        if not collecting:
+            continue
+
+        # Ignore blank lines
+        if not line:
+            continue
+
+        # Expected syntax:
+        # akira <-> dane
+        if "<->" not in line:
+            raise ValueError(
+                f"Invalid pair syntax: {line}"
+            )
+
+        left, right = line.split("<->", 1)
+
+        pairs.append(
+            {
+                "left": left.strip(),
+                "right": right.strip(),
+            }
+        )
+
+    return pairs
+
+def persist_matching_question(
+    q,
+    meta,
+    question_blocks,
+    db,
+    request_id,
+    summary,
+    batch_id,
+):
+    """
+    Persist Question Type 8 (Matching).
+
+    Stores:
+    - Question text
+    - Matching block
+    - Correct pairs
+    """
+
+    try:
+        resolve_images(question_blocks, db, request_id)
+
+        has_stem_images = any(
+            block.get("type") == "image"
+            for block in question_blocks
+        )
+
+        obj = QuestionNumeracyLC(
+            question_type=8,
+            class_name=q["class_name"],
+            year=q["year"],
+            subject=meta["subject"],
+            topic=q["topic"],
+            difficulty=q["difficulty"],
+
+            question_text=q["question_text"],
+
+            question_blocks=question_blocks,
+
+            options=None,
+
+            correct_answer=q["correct_answer"],
+
+            has_stem_images=has_stem_images,
+
+            batch_id=batch_id,
+        )
+
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+
+        if summary:
+            summary.saved += 1
+
+        print(
+            f"[{request_id}] ✅ MATCHING QUESTION SAVED "
+            f"(id={obj.id})"
+        )
+
+        return obj
+
+    except Exception as e:
+
+        db.rollback()
+
+        print(
+            f"[{request_id}] ❌ FAILED TO SAVE MATCHING QUESTION "
+            f"| error={e}"
+        )
+
+        raise
+
+def handle_matching_question(
+    question_block,
+    db,
+    request_id,
+    summary,
+    block_idx,
+    batch_id,
+):
+    meta = extract_naplan_metadata(question_block)
+
+    question_text = extract_naplan_question_text(question_block)
+
+    match_mode = extract_naplan_match_mode(question_block)
+
+    print("\nEXTRACTED METADATA")
+    print(meta)
+
+    print("\nEXTRACTED QUESTION TEXT")
+    print(question_text)
+
+    print("\nMATCH MODE")
+    print(match_mode)
+    matching_items = extract_naplan_matching_items(
+        question_block,
+        match_mode,
+    )
+
+    print("\nMATCHING ITEMS")
+    print(matching_items)
+    correct_pairs = extract_naplan_correct_pairs(
+        question_block,
+        match_mode,
+    )
+
+    print("\nCORRECT PAIRS")
+    print(correct_pairs)
+    question_data = {
+        "match_mode": match_mode,
+        "items": matching_items,
+    }
+    print("\nQUESTION DATA")
+    print(question_data)
+    q = {
+        "class_name": meta["class_name"],
+        "year": meta["year"],
+        "topic": meta["topic"],
+        "difficulty": meta["difficulty"],
+        "question_text": question_text,
+        "question_data": question_data,
+        "correct_answer": correct_pairs,
+    }
+    print("\nQUESTION OBJECT")
+    print(q)
+    
+    matching_block = {
+        "type": "matching",
+        "match_mode": match_mode,
+        "items": matching_items,
+    }
+
+    print("\nMATCHING BLOCK")
+    print(matching_block)
+    question_blocks = [
+        {
+            "type": "text",
+            "content": question_text,
+        },
+        matching_block,
+    ]
+
+    print("\nQUESTION BLOCKS")
+    print(question_blocks)
+    persist_matching_question(
+        q=q,
+        meta=meta,
+        question_blocks=[matching_block],
+        db=db,
+        request_id=request_id,
+        summary=summary,
+        batch_id=batch_id,
+    )
 async def process_exam_block(
     block_idx,
     question_block,
@@ -99915,6 +100457,18 @@ async def process_exam_block(
     print("\nSTEM BLOCKS:")
     for b in stem_blocks:
         print(b)
+
+
+    if question_type == 8:
+        handle_matching_question(
+            question_block=question_block,
+            db=db,
+            request_id=request_id,
+            summary=summary,
+            block_idx=block_idx,
+            batch_id=batch_id,
+        )
+        return    
     # --------------------------------------------------
     # Extract option image blocks (TYPE 2)
     # --------------------------------------------------
