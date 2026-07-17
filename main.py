@@ -31142,7 +31142,7 @@ def generate_naplan_language_conventions_homework_latest(
 
                 quiz_id=None,
 
-                class_name=class_name,
+                class_name="Naplan",
 
                 subject="Language Conventions",
 
@@ -31276,6 +31276,7 @@ def generate_naplan_language_conventions_homework_latest(
                 "latest LC homework exam"
             )
         )   
+
 class GenerateNaplanLCHomeworkRequest(BaseModel):
     year: int
     center_code: str
@@ -32845,6 +32846,23 @@ def build_question_blocks(q, db):
 
             if record:
                 block["src"] = record.gcs_url
+        # ----------------------------------------------
+        # Ordering question images
+        # ----------------------------------------------
+        elif block.get("type") == "ordering":
+
+            for item in block.get("items", []):
+
+                record = (
+                    db.query(UploadedImage)
+                    .filter(
+                        UploadedImage.original_name == item["image"]
+                    )
+                    .first()
+                )
+
+                if record:
+                    item["image"] = record.gcs_url
 
     # ==================================================
     # Include question_text for NON-inline types
@@ -32858,6 +32876,19 @@ def build_question_blocks(q, db):
     # TYPE 8 — MATCHING
     # ==================================================
     if q.question_type == 8:
+
+        return question_blocks
+    
+    # ==================================================
+    # TYPE 9 — ORDERING
+    # ==================================================
+    if q.question_type == 9:
+
+        return question_blocks
+    
+    # TYPE 10 — CALENDAR
+    # ==================================================
+    if q.question_type == 10:
 
         return question_blocks
     # ==================================================
@@ -93241,6 +93272,7 @@ def finish_naplan_language_conventions_exam(
     for q in questions:
 
         q_id = str(q.get("id"))
+        question_type = q.get("question_type")
         correct_answer = q.get("correct_answer")
         options = q.get("options")
 
@@ -93250,70 +93282,83 @@ def finish_naplan_language_conventions_exam(
         topic = q.get("topic")
     
         student_answer = answers.get(q_id)
-    
-        # define early so debug log always works
-        normalized_correct = correct_answer
-    
-        # 1️⃣ Normalize unanswered
-        if student_answer in (None, "", [], {}):
-            selected_option = None
-            is_correct = False
-    
-        else:
-            selected_option = (
-                json.dumps(student_answer)
-                if isinstance(student_answer, list)
-                else str(student_answer)
+
+        if question_type == 8:
+
+            student_pairs = extract_student_matching_pairs(student_answer)
+
+            is_correct = matching_answers_equal(
+                student_pairs,
+                correct_answer
             )
-    
-            # 2️⃣ Normalize correct_answer
-            if isinstance(normalized_correct, str) and "value" in normalized_correct:
-                try:
-                    normalized_correct = json.loads(
-                        normalized_correct.replace("'", '"')
-                    )["value"]
-                except:
-                    pass
-    
-            if isinstance(normalized_correct, dict) and "value" in normalized_correct:
-                normalized_correct = normalized_correct["value"]
-    
-            # ⭐ Normalize both answers using evaluation helper
-            normalized_student = normalize_naplan_evaluation_answer_value(student_answer)
-            normalized_correct = normalize_naplan_evaluation_answer_value(normalized_correct)
-            # Convert "BD" → ["B","D"] for multi-select questions
-            if isinstance(normalized_correct, str):
-                try:
-                    parsed = json.loads(normalized_correct.replace("'", '"'))
-                    if isinstance(parsed, list):
-                        normalized_correct = parsed
-                except:
-                    # fallback for cases like "BD"
-                    if normalized_correct.isalpha() and normalized_correct.isupper():
-                        normalized_correct = list(normalized_correct)
-            # Normalize case for multi-select answers
-            if isinstance(normalized_correct, list):
-                normalized_correct = [str(x).upper() for x in normalized_correct]
-            
-            if isinstance(normalized_student, list):
-                normalized_student = [str(x).upper() for x in normalized_student]
-    
-            # 3️⃣ Compare answers
-            if isinstance(normalized_correct, list):
-                if isinstance(normalized_student, list):
-                    is_correct = sorted(normalized_correct) == sorted(normalized_student)
-                else:
-                    is_correct = False
+
+            selected_option = json.dumps(student_pairs)
+
+            normalized_correct = correct_answer
+        else:    
+            # define early so debug log always works
+            normalized_correct = correct_answer
+        
+            # 1️⃣ Normalize unanswered
+            if student_answer in (None, "", [], {}):
+                selected_option = None
+                is_correct = False
+        
             else:
-                is_correct = normalized_student == normalized_correct
-        print(
-            "🔍 EVAL DEBUG |",
-            "q_id =", q_id,
-            "| student_answer =", student_answer,
-            "| correct_answer_raw =", correct_answer,
-            "| normalized_correct =", normalized_correct,
-            "| is_correct =", is_correct
-        )
+                selected_option = (
+                    json.dumps(student_answer)
+                    if isinstance(student_answer, list)
+                    else str(student_answer)
+                )
+        
+                # 2️⃣ Normalize correct_answer
+                if isinstance(normalized_correct, str) and "value" in normalized_correct:
+                    try:
+                        normalized_correct = json.loads(
+                            normalized_correct.replace("'", '"')
+                        )["value"]
+                    except:
+                        pass
+        
+                if isinstance(normalized_correct, dict) and "value" in normalized_correct:
+                    normalized_correct = normalized_correct["value"]
+        
+                # ⭐ Normalize both answers using evaluation helper
+                normalized_student = normalize_naplan_evaluation_answer_value(student_answer)
+                normalized_correct = normalize_naplan_evaluation_answer_value(normalized_correct)
+                # Convert "BD" → ["B","D"] for multi-select questions
+                if isinstance(normalized_correct, str):
+                    try:
+                        parsed = json.loads(normalized_correct.replace("'", '"'))
+                        if isinstance(parsed, list):
+                            normalized_correct = parsed
+                    except:
+                        # fallback for cases like "BD"
+                        if normalized_correct.isalpha() and normalized_correct.isupper():
+                            normalized_correct = list(normalized_correct)
+                # Normalize case for multi-select answers
+                if isinstance(normalized_correct, list):
+                    normalized_correct = [str(x).upper() for x in normalized_correct]
+                
+                if isinstance(normalized_student, list):
+                    normalized_student = [str(x).upper() for x in normalized_student]
+        
+                # 3️⃣ Compare answers
+                if isinstance(normalized_correct, list):
+                    if isinstance(normalized_student, list):
+                        is_correct = sorted(normalized_correct) == sorted(normalized_student)
+                    else:
+                        is_correct = False
+                else:
+                    is_correct = normalized_student == normalized_correct
+            print(
+                "🔍 EVAL DEBUG |",
+                "q_id =", q_id,
+                "| student_answer =", student_answer,
+                "| correct_answer_raw =", correct_answer,
+                "| normalized_correct =", normalized_correct,
+                "| is_correct =", is_correct
+            )
 
         # 3️⃣ Count
         if is_correct:
@@ -93331,7 +93376,7 @@ def finish_naplan_language_conventions_exam(
                 q_id=int(q_id),
                 topic=topic,
                 selected_option=selected_option,
-                correct_option=str(correct_answer),
+                correct_option=str(normalized_correct),
                 is_correct=is_correct
             )
         )
@@ -94233,27 +94278,46 @@ def snapshot_naplan_numeracy_responses_for_admin(db: Session, attempt):
 
 def extract_student_matching_pairs(student_answer):
     """
-    Converts the student's drag-and-drop response into
-    a list of left/right pairs.
+    Supports both matching formats.
 
-    Input:
+    PAIRING input:
     {
         "pair-1-left": "akira",
         "pair-1-right": "dane",
-        "pair-2-left": "sean",
-        "pair-2-right": "baden",
-        "pair-3-left": "ezra",
-        "pair-3-right": "mick"
+        ...
     }
 
-    Output:
+    FIXED_LEFT input:
     [
-        {"left": "akira", "right": "dane"},
-        {"left": "sean", "right": "baden"},
-        {"left": "ezra", "right": "mick"}
+        {"left":"mass","right":"kilograms"},
+        {"left":"length","right":"metres"}
     ]
     """
 
+    # -----------------------------
+    # FIXED_LEFT
+    # -----------------------------
+    if isinstance(student_answer, list):
+
+        pairs = []
+
+        for pair in student_answer:
+
+            if (
+                isinstance(pair, dict)
+                and pair.get("left")
+                and pair.get("right")
+            ):
+                pairs.append({
+                    "left": pair["left"],
+                    "right": pair["right"]
+                })
+
+        return pairs
+
+    # -----------------------------
+    # PAIRING
+    # -----------------------------
     if not isinstance(student_answer, dict):
         return []
 
@@ -94277,6 +94341,7 @@ def extract_student_matching_pairs(student_answer):
             })
 
     return pairs
+
 def matching_answers_equal(student_pairs, correct_pairs):
     """
     Compares two matching-answer lists.
@@ -100056,6 +100121,7 @@ def extract_naplan_metadata(question_block):
             )
 
     return metadata
+
 def extract_naplan_match_mode(question_block):
     """
     Extract the matching mode from a deterministic
@@ -100072,25 +100138,110 @@ def extract_naplan_match_mode(question_block):
         if line == "MATCH_MODE:":
             continue
 
-        if line in ("LEFT_RIGHT", "PAIRING"):
+        if line in (
+            "PAIRING",
+            "LEFT_RIGHT",
+            "FIXED_LEFT",
+        ):
             return line
 
     raise ValueError("MATCH_MODE not found.")
 
+def extract_naplan_ordering_items(question_block):
+    """
+    Extracts ordering items from a Question Type 9 block.
+
+    Expected document structure:
+
+    ITEMS:
+
+    id: fan_1
+    <image>
+
+    id: fan_2
+    <image>
+
+    ...
+
+    Returns:
+
+    [
+        {
+            "id": "fan_1",
+            "image": "Fan_A.png"
+        },
+        ...
+    ]
+    """
+
+    items = []
+
+    collecting = False
+    current_item = None
+
+    for block in question_block:
+        print("DEBUG:", block)
+
+        # -------------------------------
+        # TEXT BLOCKS
+        # -------------------------------
+        if block.get("type") == "text":
+
+            line = block["content"].strip()
+
+            if line == "ITEMS:":
+                collecting = True
+                print("✅ Found ITEMS")
+                continue
+
+            if not collecting:
+                continue
+
+            if line == "CORRECT_ORDER:":
+                break
+
+            if line.lower().startswith("id:"):
+
+                # Save previous item
+                if current_item:
+                    items.append(current_item)
+
+                current_item = {
+                    "id": line.split(":", 1)[1].strip(),
+                    "image": None,
+                }
+                print("Creating item:", current_item)
+
+        # -------------------------------
+        # IMAGE BLOCKS
+        # -------------------------------
+        elif (
+            collecting
+            and block.get("type") == "image"
+            and current_item is not None
+        ):
+            current_item["image"] = block["image_ref"]
+            print("Attaching image:", block["image_ref"])
+
+    # Save last item
+    if current_item:
+        items.append(current_item)
+
+    return items
 def extract_naplan_question_text(question_block):
     """
     Extract the QUESTION_TEXT section from a deterministic
     NAPLAN question block.
-
-    Starts after:
-        QUESTION_TEXT:
-
-    Stops before:
-        MATCH_MODE:
     """
 
     question_lines = []
     collecting = False
+
+    stop_headers = {
+        "MATCH_MODE:",
+        "ORDER_DIRECTION:",
+        "CALENDAR:",
+    }
 
     for block in question_block:
 
@@ -100099,24 +100250,25 @@ def extract_naplan_question_text(question_block):
 
         line = block["content"].strip()
 
-        # Start collecting after QUESTION_TEXT:
+        # Start collecting
         if line == "QUESTION_TEXT:":
             collecting = True
             continue
 
-        # Stop when we reach MATCH_MODE:
-        if line == "MATCH_MODE:":
+        # Stop when another section begins
+        if line in stop_headers:
             break
 
         if collecting:
             question_lines.append(line)
 
-    return "\n\n".join(question_lines)    
+    return "\n\n".join(question_lines)
+
 def extract_naplan_matching_items(
     question_block,
     match_mode,
 ):
-    if match_mode != "PAIRING":
+    if match_mode not in ("PAIRING", "FIXED_LEFT"):
         raise NotImplementedError(
             f"Unsupported MATCH_MODE: {match_mode}"
         )
@@ -100168,7 +100320,16 @@ def extract_naplan_matching_items(
     if current_item:
         items.append(current_item)
 
-    return items
+    if match_mode == "PAIRING":
+        return items
+
+    # FIXED_LEFT
+    half = len(items) // 2
+
+    left_items = items[:half]
+    right_items = items[half:]
+
+    return left_items, right_items
 
 def extract_naplan_correct_pairs(
     question_block,
@@ -100182,7 +100343,7 @@ def extract_naplan_correct_pairs(
         MATCH_MODE: PAIRING
     """
 
-    if match_mode != "PAIRING":
+    if match_mode not in ("PAIRING", "FIXED_LEFT"):
         raise NotImplementedError(
             f"Unsupported MATCH_MODE: {match_mode}"
         )
@@ -100226,6 +100387,78 @@ def extract_naplan_correct_pairs(
         )
 
     return pairs
+
+def persist_ordering_question(
+    q,
+    meta,
+    question_blocks,
+    db,
+    request_id,
+    summary,
+    batch_id,
+):
+    """
+    Persist Question Type 9 (Ordering).
+
+    Stores:
+    - Question text
+    - Ordering block
+    - Correct order
+    """
+
+    try:
+        resolve_images(question_blocks, db, request_id)
+
+        has_stem_images = any(
+            block.get("type") == "image"
+            for block in question_blocks
+        )
+
+        obj = QuestionNumeracyLC(
+            question_type=9,
+            class_name=q["class_name"],
+            year=q["year"],
+            subject=meta["subject"],
+            topic=q["topic"],
+            difficulty=q["difficulty"],
+
+            question_text=q["question_text"],
+
+            question_blocks=question_blocks,
+
+            options=None,
+
+            correct_answer=q["correct_answer"],
+
+            has_stem_images=has_stem_images,
+
+            batch_id=batch_id,
+        )
+
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+
+        if summary:
+            summary.saved += 1
+
+        print(
+            f"[{request_id}] ✅ ORDERING QUESTION SAVED "
+            f"(id={obj.id})"
+        )
+
+        return obj
+
+    except Exception as e:
+
+        db.rollback()
+
+        print(
+            f"[{request_id}] ❌ FAILED TO SAVE ORDERING QUESTION "
+            f"| error={e}"
+        )
+
+        raise
 
 def persist_matching_question(
     q,
@@ -100299,6 +100532,409 @@ def persist_matching_question(
 
         raise
 
+
+def extract_naplan_calendar(question_block):
+    """
+    Extract calendar configuration for Question Type 10.
+
+    Expected syntax:
+
+    CALENDAR:
+
+    MONTH: February
+    YEAR: 2019
+    START_DAY: Friday
+    DAYS_IN_MONTH: 28
+    FIRST_DAY_OF_WEEK: Sunday
+
+    SELECTION_MODE:
+    SINGLE
+    """
+
+    print("\n📅 Extracting calendar configuration...")
+
+    calendar = {
+        "type": "calendar",
+        "month": None,
+        "year": None,
+        "start_day": None,
+        "days_in_month": None,
+        "first_day_of_week": "Sunday",   # Default
+        "selection_mode": "SINGLE"        # Default
+    }
+
+    in_calendar = False
+
+    i = 0
+    while i < len(question_block):
+
+        block = question_block[i]
+
+        if block.get("type") != "text":
+            i += 1
+            continue
+
+        line = block["content"].strip()
+
+        # --------------------------------------------------------
+        # Enter CALENDAR section
+        # --------------------------------------------------------
+        if line.upper() == "CALENDAR:":
+            print("   ➜ Found CALENDAR section.")
+            in_calendar = True
+            i += 1
+            continue
+
+        if not in_calendar:
+            i += 1
+            continue
+
+        # --------------------------------------------------------
+        # End of calendar section
+        # --------------------------------------------------------
+        if (
+            line.startswith("CORRECT_ANSWER:")
+            or line.startswith("===")
+        ):
+            break
+
+        # --------------------------------------------------------
+        # MONTH
+        # --------------------------------------------------------
+        if line.startswith("MONTH:"):
+            calendar["month"] = line.split(":", 1)[1].strip()
+            print(f"   ✓ Month: {calendar['month']}")
+
+        # --------------------------------------------------------
+        # YEAR
+        # --------------------------------------------------------
+        elif line.startswith("YEAR:"):
+            calendar["year"] = int(line.split(":", 1)[1].strip())
+            print(f"   ✓ Year: {calendar['year']}")
+
+        # --------------------------------------------------------
+        # START_DAY
+        # --------------------------------------------------------
+        elif line.startswith("START_DAY:"):
+            calendar["start_day"] = line.split(":", 1)[1].strip()
+            print(f"   ✓ Start Day: {calendar['start_day']}")
+
+        # --------------------------------------------------------
+        # DAYS_IN_MONTH
+        # --------------------------------------------------------
+        elif line.startswith("DAYS_IN_MONTH:"):
+            calendar["days_in_month"] = int(
+                line.split(":", 1)[1].strip()
+            )
+            print(f"   ✓ Days In Month: {calendar['days_in_month']}")
+
+        # --------------------------------------------------------
+        # FIRST_DAY_OF_WEEK
+        # --------------------------------------------------------
+        elif line.startswith("FIRST_DAY_OF_WEEK:"):
+            calendar["first_day_of_week"] = (
+                line.split(":", 1)[1].strip()
+            )
+            print(
+                f"   ✓ First Day Of Week: "
+                f"{calendar['first_day_of_week']}"
+            )
+
+        # --------------------------------------------------------
+        # SELECTION_MODE
+        # --------------------------------------------------------
+        elif line.upper() == "SELECTION_MODE:":
+
+            if i + 1 < len(question_block):
+
+                next_block = question_block[i + 1]
+
+                if next_block.get("type") != "text":
+                    raise ValueError(
+                        "SELECTION_MODE value must be a text block."
+                    )
+
+                calendar["selection_mode"] = (
+                    next_block["content"].strip().upper()
+                )
+
+                print(
+                    f"   ✓ Selection Mode: "
+                    f"{calendar['selection_mode']}"
+                )
+
+                i += 1
+
+        i += 1
+
+    # ------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------
+    required = [
+        "month",
+        "year",
+        "start_day",
+        "days_in_month"
+    ]
+
+    missing = [
+        field for field in required
+        if calendar[field] is None
+    ]
+
+    if missing:
+        raise ValueError(
+            f"Calendar configuration missing required fields: {missing}"
+        )
+
+    print("\n✅ Calendar configuration extracted successfully.")
+    print(calendar)
+
+    return calendar
+
+def extract_naplan_correct_answer(question_block):
+    """
+    Extract the correct answer for a Calendar (Question Type 10).
+
+    Expected syntax:
+
+    CORRECT_ANSWER:
+    4
+    """
+
+    print("\n✔️ Extracting correct answer...")
+
+    for i, block in enumerate(question_block):
+
+        if block.get("type") != "text":
+            continue
+
+        line = block["content"].strip()
+
+        if line.upper() == "CORRECT_ANSWER:":
+
+            if i + 1 >= len(question_block):
+                raise ValueError(
+                    "CORRECT_ANSWER: found but no value was provided."
+                )
+
+            next_block = question_block[i + 1]
+
+            if next_block.get("type") != "text":
+                raise ValueError(
+                    "CORRECT_ANSWER value must be a text block."
+                )
+
+            answer = next_block["content"].strip()
+
+            if not answer:
+                raise ValueError(
+                    "CORRECT_ANSWER cannot be empty."
+                )
+
+            print(f"   ✓ Correct Answer: {answer}")
+
+            print("✅ Correct answer extracted successfully.")
+
+            return answer
+
+    raise ValueError(
+        "CORRECT_ANSWER section not found."
+    )
+
+def persist_calendar_question(
+    q,
+    meta,
+    question_blocks,
+    db,
+    request_id,
+    summary,
+    batch_id,
+):
+    """
+    Persist Question Type 10 (Calendar).
+
+    Stores:
+    - Question text
+    - Calendar block
+    - Correct answer
+    """
+
+    try:
+        resolve_images(question_blocks, db, request_id)
+
+        has_stem_images = any(
+            block.get("type") == "image"
+            for block in question_blocks
+        )
+
+        obj = QuestionNumeracyLC(
+            question_type=10,
+
+            class_name=q["class_name"],
+            year=q["year"],
+
+            subject=meta["subject"],
+            topic=q["topic"],
+            difficulty=q["difficulty"],
+
+            question_text=q["question_text"],
+
+            question_blocks=question_blocks,
+
+            options=None,
+
+            correct_answer=q["correct_answer"],
+
+            has_stem_images=has_stem_images,
+
+            batch_id=batch_id,
+        )
+
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+
+        if summary:
+            summary.saved += 1
+
+        print(
+            f"[{request_id}] ✅ CALENDAR QUESTION SAVED "
+            f"(id={obj.id})"
+        )
+
+        return obj
+
+    except Exception as e:
+
+        db.rollback()
+
+        print(
+            f"[{request_id}] ❌ FAILED TO SAVE CALENDAR QUESTION "
+            f"| error={e}"
+        )
+
+        raise
+def handle_calendar_question(
+    question_block,
+    db,
+    request_id,
+    summary,
+    block_idx,
+    batch_id,
+):
+    """
+    Process Question Type 10 (Calendar).
+    """
+
+    print("\n" + "=" * 80)
+    print("📅 PROCESSING CALENDAR QUESTION (TYPE 10)")
+    print("=" * 80)
+
+    # ------------------------------------------------------------
+    # Convert question block into text lines
+    # ------------------------------------------------------------
+    
+
+    # ------------------------------------------------------------
+    # Extract metadata
+    # ------------------------------------------------------------
+    print("\n📌 Extracting metadata...")
+
+    meta = extract_naplan_metadata(question_block)
+
+    print("✅ Metadata extracted:")
+    print(meta)
+
+    # ------------------------------------------------------------
+    # Extract question text
+    # ------------------------------------------------------------
+    print("\n📝 Extracting question text...")
+
+    question_text = extract_naplan_question_text(question_block)
+
+    print("✅ Question text extracted:")
+    print(question_text)
+
+    # ------------------------------------------------------------
+    # Extract calendar configuration
+    # ------------------------------------------------------------
+    print("\n📅 Extracting calendar configuration...")
+
+    calendar = extract_naplan_calendar(question_block)
+
+    print("✅ Calendar extracted:")
+    print(calendar)
+
+    # ------------------------------------------------------------
+    # Extract correct answer
+    # ------------------------------------------------------------
+    print("\n✔️ Extracting correct answer...")
+
+    correct_answer = extract_naplan_correct_answer(question_block)
+
+    print(f"✅ Correct Answer: {correct_answer}")
+
+    # ------------------------------------------------------------
+    # Build question dictionary
+    # ------------------------------------------------------------
+    print("\n🧱 Building question object...")
+
+    q = {
+        "class_name": meta["class_name"],
+        "year": meta["year"],
+        "topic": meta["topic"],
+        "difficulty": meta["difficulty"],
+        "question_text": question_text,
+        "correct_answer": correct_answer,
+    }
+
+    print("✅ Question object:")
+    print(q)
+
+    # ------------------------------------------------------------
+    # Build question blocks
+    # ------------------------------------------------------------
+    print("\n📦 Building question_blocks...")
+
+    question_blocks = [
+        {
+            "type": "calendar",
+            "month": calendar["month"],
+            "year": calendar["year"],
+            "start_day": calendar["start_day"],
+            "days_in_month": calendar["days_in_month"],
+            "first_day_of_week": calendar["first_day_of_week"],
+            "selection_mode": calendar["selection_mode"],
+        }
+    ]
+
+    print("✅ Question blocks:")
+    print(question_blocks)
+
+    # ------------------------------------------------------------
+    # Persist
+    # ------------------------------------------------------------
+    print("\n💾 Persisting calendar question...")
+
+    result = persist_calendar_question(
+        q=q,
+        meta=meta,
+        question_blocks=question_blocks,
+        db=db,
+        request_id=request_id,
+        summary=summary,
+        batch_id=batch_id,
+    )
+
+    print("\n✅ Calendar question persisted successfully.")
+
+    print("=" * 80)
+    print("✅ FINISHED PROCESSING CALENDAR QUESTION")
+    print("=" * 80 + "\n")
+
+    return result
+
 def handle_matching_question(
     question_block,
     db,
@@ -100321,13 +100957,28 @@ def handle_matching_question(
 
     print("\nMATCH MODE")
     print(match_mode)
-    matching_items = extract_naplan_matching_items(
-        question_block,
-        match_mode,
-    )
+    if match_mode == "FIXED_LEFT":
 
-    print("\nMATCHING ITEMS")
-    print(matching_items)
+        left_items, right_items = extract_naplan_matching_items(
+            question_block,
+            match_mode,
+        )
+
+        print("\nLEFT ITEMS")
+        print(left_items)
+
+        print("\nRIGHT ITEMS")
+        print(right_items)
+
+    else:
+
+        matching_items = extract_naplan_matching_items(
+            question_block,
+            match_mode,
+        )
+
+        print("\nMATCHING ITEMS")
+        print(matching_items)
     correct_pairs = extract_naplan_correct_pairs(
         question_block,
         match_mode,
@@ -100335,10 +100986,20 @@ def handle_matching_question(
 
     print("\nCORRECT PAIRS")
     print(correct_pairs)
-    question_data = {
-        "match_mode": match_mode,
-        "items": matching_items,
-    }
+    if match_mode == "FIXED_LEFT":
+
+        question_data = {
+            "match_mode": match_mode,
+            "left_items": left_items,
+            "right_items": right_items,
+        }
+
+    else:
+
+        question_data = {
+            "match_mode": match_mode,
+            "items": matching_items,
+        }
     print("\nQUESTION DATA")
     print(question_data)
     q = {
@@ -100353,11 +101014,22 @@ def handle_matching_question(
     print("\nQUESTION OBJECT")
     print(q)
     
-    matching_block = {
-        "type": "matching",
-        "match_mode": match_mode,
-        "items": matching_items,
-    }
+    if match_mode == "FIXED_LEFT":
+
+        matching_block = {
+            "type": "matching",
+            "match_mode": match_mode,
+            "left_items": left_items,
+            "right_items": right_items,
+        }
+
+    else:
+
+        matching_block = {
+            "type": "matching",
+            "match_mode": match_mode,
+            "items": matching_items,
+        }
 
     print("\nMATCHING BLOCK")
     print(matching_block)
@@ -100380,6 +101052,158 @@ def handle_matching_question(
         summary=summary,
         batch_id=batch_id,
     )
+def extract_naplan_order_direction(question_block):
+    """
+    Extracts the ORDER_DIRECTION value from a Question Type 9 block.
+
+    Example:
+
+    ORDER_DIRECTION:
+    SMALLEST_TO_LARGEST
+
+    Returns:
+        "SMALLEST_TO_LARGEST"
+    """
+
+    for i, block in enumerate(question_block):
+
+        if block.get("type") != "text":
+            continue
+
+        content = block.get("content", "").strip()
+
+        if content.upper() == "ORDER_DIRECTION:":
+
+            # Return the next non-empty text block
+            for next_block in question_block[i + 1:]:
+
+                if next_block.get("type") != "text":
+                    continue
+
+                value = next_block.get("content", "").strip()
+
+                if value:
+                    return value
+
+            break
+
+    raise ValueError("ORDER_DIRECTION section not found.")
+def extract_naplan_correct_order(question_block):
+    """
+    Extracts the CORRECT_ORDER section from a Question Type 9 block.
+
+    Example:
+
+    CORRECT_ORDER:
+
+    fan_3
+    fan_1
+    fan_2
+    fan_4
+
+    Returns:
+
+    [
+        "fan_3",
+        "fan_1",
+        "fan_2",
+        "fan_4"
+    ]
+    """
+
+    correct_order = []
+    collecting = False
+
+    for block in question_block:
+
+        if block.get("type") != "text":
+            continue
+
+        line = block["content"].strip()
+
+        # Start collecting
+        if line == "CORRECT_ORDER:":
+            collecting = True
+            continue
+
+        if not collecting:
+            continue
+
+        # Ignore empty lines
+        if not line:
+            continue
+
+        # Stop if another exam begins
+        if line.startswith("=== EXAM"):
+            break
+
+        correct_order.append(line)
+
+    return correct_order
+
+def handle_ordering_question(
+    question_block,
+    db,
+    request_id,
+    summary,
+    block_idx,
+    batch_id,
+):
+    print(
+        f"[{request_id}] 🔢 Processing Ordering Question | block={block_idx}"
+    )
+
+    # --------------------------------------------------
+    # Extract deterministic data
+    # --------------------------------------------------
+    metadata = extract_naplan_metadata(question_block)
+
+    question_text = extract_naplan_question_text(question_block)
+
+    order_direction = extract_naplan_order_direction(question_block)
+
+    items = extract_naplan_ordering_items(question_block)
+
+    correct_order = extract_naplan_correct_order(question_block)
+
+    # --------------------------------------------------
+    # Build ordering block
+    # --------------------------------------------------
+    question_blocks = [
+        {
+            "type": "ordering",
+            "order_direction": order_direction,
+            "items": items,
+        }
+    ]
+
+    # --------------------------------------------------
+    # Build question payload
+    # --------------------------------------------------
+    q = {
+        "class_name": metadata["class_name"],
+        "year": metadata["year"],
+        "subject": metadata["subject"],
+        "topic": metadata["topic"],
+        "difficulty": metadata["difficulty"],
+        "question_text": question_text,
+        "correct_answer": correct_order,
+    }
+
+    # --------------------------------------------------
+    # Persist
+    # --------------------------------------------------
+    persist_ordering_question(
+        q=q,
+        meta=metadata,
+        question_blocks=question_blocks,
+        db=db,
+        request_id=request_id,
+        summary=summary,
+        batch_id=batch_id,
+    )
+
+
 async def process_exam_block(
     block_idx,
     question_block,
@@ -100469,6 +101293,27 @@ async def process_exam_block(
             batch_id=batch_id,
         )
         return    
+    if question_type == 9:
+        handle_ordering_question(
+            question_block=question_block,
+            db=db,
+            request_id=request_id,
+            summary=summary,
+            block_idx=block_idx,
+            batch_id=batch_id,
+        )
+        return
+
+    elif question_type == 10:
+        handle_calendar_question(
+            question_block=question_block,
+            db=db,
+            request_id=request_id,
+            summary=summary,
+            block_idx=block_idx,
+            batch_id=batch_id,
+        )
+        return
     # --------------------------------------------------
     # Extract option image blocks (TYPE 2)
     # --------------------------------------------------
