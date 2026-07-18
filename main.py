@@ -45832,40 +45832,92 @@ def generate_exam_mr_latest(
             questions
     }
 
+from fastapi import UploadFile, File, Form, Depends, HTTPException
+from sqlalchemy import func, cast, Integer
+from sqlalchemy.exc import IntegrityError
+from io import BytesIO
+import pandas as pd
+
+
 @app.post("/api/admin/bulk-users-exam-module")
 async def bulk_users_exam_module(
     file: UploadFile = File(...),
+    center_code: str = Form(...),
     db: Session = Depends(get_db),
 ):
     print("📥 Bulk user upload request received")
     print(f"📄 Uploaded filename: {file.filename}")
+    print(f"🏫 Center Code: {center_code}")
 
     if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+        raise HTTPException(
+            status_code=400,
+            detail="Only .csv files are supported",
+        )
+
+    # ----------------------------------------
+    # Lookup Centre
+    # ----------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(Center.center_code == center_code)
+        .first()
+    )
+
+    if not center:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Center '{center_code}' not found.",
+        )
+
+    # ----------------------------------------
+    # Read CSV
+    # ----------------------------------------
 
     try:
         contents = await file.read()
         df = pd.read_csv(BytesIO(contents))
     except Exception:
-        raise HTTPException(status_code=400, detail="Failed to read CSV file")
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to read CSV file",
+        )
 
     required_columns = {
         "student_id",
         "password",
         "name",
-        "parent_email",
+        "gender",
         "class_name",
+        "student_year",
         "class_day",
+        "parent_email",
     }
 
     if not required_columns.issubset(df.columns):
         missing = required_columns - set(df.columns)
+
         raise HTTPException(
             status_code=400,
-            detail=f"Missing required columns: {', '.join(missing)}",
+            detail=f"Missing required columns: {', '.join(sorted(missing))}",
         )
 
-    # 🔑 Get max numeric ID (ignore non-numeric / legacy UUIDs)
+    def clean(value):
+        if pd.isna(value):
+            return None
+
+        value = str(value).strip()
+
+        if value == "":
+            return None
+
+        return value
+
+    # ----------------------------------------
+    # Generate Next ID
+    # ----------------------------------------
+
     last_id_int = (
         db.query(func.max(cast(Student.id, Integer)))
         .filter(Student.id.op("~")("^[0-9]+$"))
@@ -45874,32 +45926,41 @@ async def bulk_users_exam_module(
 
     next_id = last_id_int + 1
 
-    print(f"🔢 Last ID in DB (numeric): {last_id_int}")
-    print(f"🆕 Starting next_id: {next_id}")
+    print(f"🔢 Last numeric ID: {last_id_int}")
+    print(f"🆕 Starting next ID: {next_id}")
 
     success = 0
     failed = 0
     errors = []
 
+    # ----------------------------------------
+    # Process CSV
+    # ----------------------------------------
+
     for index, row in df.iterrows():
+
         print(
-            f"➡️ Row {index + 2} | Assigning id={next_id}, "
-            f"student_id={row['student_id']}"
+            f"➡️ Row {index + 2} | "
+            f"id={next_id} | "
+            f"student_id={clean(row.get('student_id'))}"
         )
 
         try:
+
             student = Student(
-                id=str(next_id),  # STRING id, sequential
-                student_id=str(row["student_id"]).strip(),
-                password=str(row["password"]).strip(),
-                name=str(row["name"]).strip(),
-                parent_email=str(row["parent_email"]).strip(),
-                class_name=str(row["class_name"]).strip(),
-                class_day=(
-                    str(row["class_day"]).strip()
-                    if not pd.isna(row["class_day"])
-                    else None
-                ),
+                id=str(next_id),
+
+                student_id=clean(row.get("student_id")),
+                password=clean(row.get("password")),
+                name=clean(row.get("name")),
+                gender=clean(row.get("gender")),
+                parent_email=clean(row.get("parent_email")),
+                class_name=clean(row.get("class_name")),
+                class_day=clean(row.get("class_day")),
+                student_year=clean(row.get("student_year")),
+
+                center_code=center.center_code,
+                center_name=center.center_name,
             )
 
             db.add(student)
@@ -45908,45 +45969,64 @@ async def bulk_users_exam_module(
 
             success += 1
 
-        except IntegrityError:
+        except IntegrityError as e:
+
             db.rollback()
+
+            error_message = str(e.orig)
+
+            if "ix_students_parent_email" in error_message:
+                friendly_error = (
+                    f"Parent email '{clean(row.get('parent_email'))}' already exists."
+                )
+            elif "students_student_id_key" in error_message:
+                friendly_error = (
+                    f"Student ID '{clean(row.get('student_id'))}' already exists."
+                )
+            else:
+                friendly_error = error_message
+
             failed += 1
+
             errors.append(
                 {
                     "row": index + 2,
-                    "student_id": row["student_id"],
-                    "error": "Integrity error (likely duplicate id or student_id)",
+                    "student_id": clean(row.get("student_id")),
+                    "error": friendly_error,
                 }
             )
 
         except Exception as e:
+
             db.rollback()
+
             failed += 1
+
             errors.append(
                 {
                     "row": index + 2,
-                    "student_id": row["student_id"],
+                    "student_id": clean(row.get("student_id")),
                     "error": str(e),
                 }
             )
 
         finally:
-            next_id += 1   # ✅ ALWAYS increment
+            next_id += 1
 
-    print("📊 Upload summary")
-    print(f"   ✅ Success: {success}")
-    print(f"   ❌ Failed: {failed}")
+    print("\n========== BULK UPLOAD SUMMARY ==========")
+    print(f"✅ Success : {success}")
+    print(f"❌ Failed  : {failed}")
 
-    print("❌ BULK UPLOAD ERRORS:")
-    for err in errors:
-        print(err)
+    if errors:
+        print("\nErrors:")
+        for err in errors:
+            print(err)
 
     return {
         "success": success,
         "failed": failed,
         "errors": errors,
     }
-
 @app.get("/api/topics-exam-setup", response_model=List[str])
 def get_distinct_topics_exam_setup(
     class_name: str = Query(...),
