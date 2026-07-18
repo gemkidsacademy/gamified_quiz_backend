@@ -47504,6 +47504,12 @@ def delete_selective_student_data(db: Session, student_id: str):
         .delete(synchronize_session=False)
 
     print("✅ Selective data deleted")
+
+def delete_foundational_student_data(db: Session, student_id: str):
+    db.query(Student).filter(
+        Student.student_id == student_id
+    ).delete(synchronize_session=False)
+
 @app.delete("/delete_student_exam_module/{id}")
 def delete_student_exam_module(
     id: str,
@@ -47529,6 +47535,8 @@ def delete_student_exam_module(
 
         elif class_name == "NAPLAN":
             delete_naplan_student_data(db, id)
+        elif class_name == "Foundational":
+            delete_foundational_student_data(db, id)
 
         else:
             raise HTTPException(
