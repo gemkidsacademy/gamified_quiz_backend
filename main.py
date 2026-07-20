@@ -6,6 +6,7 @@ from passlib.context import CryptContext
 import uvicorn       
 import os
 
+
 # Google APIs
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -264,6 +265,11 @@ def get_db():
 
 #running the scheduler for gamified quiz
 def scheduler_job():
+    print("\n" + "=" * 70)
+    print("SCHEDULER TRIGGERED")
+    print("Time:", datetime.now())
+    print("PID :", os.getpid())
+    print("=" * 70)
 
     print("\n===================================")
     print("AUTOMATIC SCHEDULER TICK")
@@ -419,7 +425,11 @@ scheduler.add_job(
 )
 
 scheduler.start()
-
+print("=" * 50)
+print("Scheduler started")
+print("PID:", os.getpid())
+print("Jobs:", scheduler.get_jobs())
+print("=" * 50)
 
 
 # ---------------------------
@@ -7372,7 +7382,7 @@ def delete_academic_term(
     db: Session = Depends(get_db)
 ):
     # -----------------------------
-    # Find Term
+    # Find Academic Term
     # -----------------------------
     term = db.query(AcademicTerm).filter(
         AcademicTerm.id == term_id,
@@ -7395,15 +7405,21 @@ def delete_academic_term(
         )
 
     # -----------------------------
-    # Delete Term
+    # Delete Related Scheduler Runs
+    # -----------------------------
+    db.query(SchedulerRun).filter(
+        SchedulerRun.term_id == term.id
+    ).delete(synchronize_session=False)
+
+    # -----------------------------
+    # Delete Academic Term
     # -----------------------------
     db.delete(term)
     db.commit()
 
     return {
         "message": "Academic term deleted successfully."
-    }
-# --------------------------------------------------
+    }# --------------------------------------------------
 # Get available upload dates
 # --------------------------------------------------
 @app.put("/academic-term-gamified/{term_id}")
@@ -7609,23 +7625,28 @@ def load_dashboard_summary(
     # Last Scheduler Run Log
     # ------------------------------------
     last_run = (
-        db.query(SchedulerRunLog)
+        db.query(SchedulerRun)
         .filter(
-            SchedulerRunLog.center_code == request.center_code
+            SchedulerRun.center_code == request.center_code
         )
         .order_by(
-            SchedulerRunLog.run_started_at.desc()
+            SchedulerRun.started_at.desc()
         )
         .first()
     )
 
     if last_run:
         last_scheduler_run = (
-            last_run.run_started_at.strftime("%d %b %Y %I:%M %p")
-            if last_run.run_started_at
-            else "N/A"
+            last_run.started_at.strftime("%d %b %Y %I:%M %p")
+            if last_run and last_run.started_at
+            else "Never"
         )
-        last_run_result = last_run.status.title()
+
+        last_run_result = (
+            last_run.status.replace("_", " ").title()
+            if last_run
+            else "Not Run"
+        )
     else:
         last_scheduler_run = "Never"
         last_run_result = "Not Run"
