@@ -29326,9 +29326,16 @@ def build_selective_report_html(report):
         </div>
         """
 
-    schools_html = "".join(
-        f"<li>{s}</li>" for s in report["school_recommendation"]
+    schools = (
+        report.get("recommended_schools")
+        or report.get("school_recommendation")
+        or []
     )
+
+    if schools:
+        schools_html = "".join(f"<li>{s}</li>" for s in schools)
+    else:
+        schools_html = "<li>No recommended schools available.</li>"
 
     warning = ""
     if report.get("override_flag"):
@@ -46181,6 +46188,7 @@ def generate_school_recommendations_and_override(components, overall_percent):
         "override_flag": override_flag,
         "override_message": override_message
     }
+
 def sync_selective_profile_report_record(
     db,
     student,
@@ -46392,6 +46400,166 @@ def compute_subject_benchmark_bands(
             writing_percent
         ),
     }
+def generate_oc_school_recommendations_and_override(
+    components,
+    overall_percent
+):
+    """
+    Generate:
+    - OC readiness band
+    - Recommended Opportunity Class schools
+    - Subject-specific override warnings
+    """
+
+    # --------------------------------------------------
+    # Extract subject percentages
+    # --------------------------------------------------
+    subject_percents = {
+        subject: comp.get("percent", 0)
+        for subject, comp in components.items()
+    }
+
+    # --------------------------------------------------
+    # OC Readiness Band
+    # --------------------------------------------------
+    if overall_percent >= 80:
+        band = "Fully OC Ready"
+
+    elif overall_percent >= 70:
+        band = "Strong OC Potential"
+
+    elif overall_percent >= 60:
+        band = "Borderline OC"
+
+    else:
+        band = "Not Yet OC Ready"
+
+    # --------------------------------------------------
+    # OC School Recommendations
+    # --------------------------------------------------
+    school_map = {
+
+        "Fully OC Ready": [
+
+            "Artarmon Public School",
+            "Beecroft Public School",
+            "Matthew Pearce Public School",
+            "North Rocks Public School",
+            "Ermington Public School",
+            "Summer Hill Public School",
+            "Ashfield Public School",
+            "Balmain Public School",
+            "Ryde Public School",
+            "Waitara Public School",
+            "Lindfield East Public School",
+            "Chatswood Public School",
+            "Hornsby North Public School",
+            "Cherrybrook Public School",
+            "Murray Farm Public School",
+            "Carlingford West Public School",
+            "Woollahra Public School",
+            "Ironbark Ridge Public School",
+            "Aurora College (Virtual)"
+        ],
+
+        "Strong OC Potential": [
+
+            "Balgowlah Heights Public School",
+            "Blacktown South Public School",
+            "Oyster Bay Public School",
+            "Sutherland Public School",
+            "Georges Hall Public School",
+            "Dural Public School",
+            "Quakers Hill Public School",
+            "Holsworthy Public School",
+            "Glenbrook Public School",
+            "Kent Road Public School",
+            "Wilkins Public School",
+            "Haberfield Public School",
+            "Newington Public School",
+            "Gordon West Public School",
+            "Hurstville South Public School",
+            "Earlwood Public School",
+            "Peakhurst South Public School",
+            "Merrylands East Public School",
+            "Rainbow Street Public School",
+            "St Ives North Public School",
+            "Doonside Public School",
+            "Guildford West Public School"
+        ],
+
+        "Borderline OC": [
+
+            "Alexandria Park Community School",
+            "Alstonville Public School",
+            "Armidale City Public School",
+            "Bathurst West Public School",
+            "Biraban Public School",
+            "Cessnock West Public School",
+            "Dubbo West Public School",
+            "Goulburn West Public School",
+            "Goulburn South Public School",
+            "Hurst Public School",
+            "Lithgow Public School",
+            "Orange Public School",
+            "Tamworth Public School",
+            "Wollongong Public School",
+            "Wollongong West Public School",
+            "Wagga Wagga Public School",
+            "Queanbeyan South Public School",
+            "Gosford Public School",
+            "Kanahooka Public School",
+            "Rutherford Public School",
+            "Maryland Public School",
+            "Wollongbar Public School"
+        ],
+
+        "Not Yet OC Ready": []
+    }
+
+    recommended_schools = school_map[band]
+
+    # --------------------------------------------------
+    # Override Rules
+    # --------------------------------------------------
+    override_flag = False
+    override_message = None
+
+    # Writing below 60%
+    if subject_percents.get("writing", 100) < 60:
+        override_flag = True
+        override_message = (
+            "Although the overall performance is encouraging, improving Writing "
+            "will strengthen the student's chances for highly competitive "
+            "Opportunity Class schools."
+        )
+
+    # Any subject below 55%
+    for subject, score in subject_percents.items():
+
+        if score < 55:
+
+            override_flag = True
+
+            override_message = (
+                f"Although the overall performance is encouraging, improving "
+                f"{subject.replace('_', ' ').title()} will strengthen the student's "
+                f"competitiveness for highly sought-after Opportunity Class schools."
+            )
+
+            break
+
+    return {
+
+        "band": band,
+
+        "recommended_schools": recommended_schools,
+
+        "override_flag": override_flag,
+
+        "override_message": override_message
+
+    }
 
 @app.post("/api/admin/students/{student_id}/overall-oc-report")
 def generate_overall_oc_report(
@@ -46499,14 +46667,14 @@ def generate_overall_oc_report(
     # --------------------------------------------------
     print("🧠 Generating readiness recommendations...")
 
-    result = generate_school_recommendations_and_override(
-        components,
-        overall_percent
+    result = generate_oc_school_recommendations_and_override(
+        components=components,
+        overall_percent=overall_percent
     )
 
     readiness_band = result["band"]
 
-    school_recommendation = result["school_recommendation"]
+    recommended_schools = result["recommended_schools"]
 
     override_flag = result["override_flag"]
 
@@ -46525,7 +46693,7 @@ def generate_overall_oc_report(
         exam_date=exam_date,
         overall_percent=overall_percent,
         readiness_band=readiness_band,
-        school_recommendation=school_recommendation,
+        school_recommendation=recommended_schools,
         override_flag=override_flag,
         override_message=override_message,
         components=components
@@ -46616,7 +46784,7 @@ def generate_overall_oc_report(
         "overall_percent": overall_report.overall_percent,
         "readiness_band": overall_report.readiness_band,
 
-        "school_recommendation": overall_report.school_recommendation,
+        "recommended_schools": overall_report.school_recommendation,
         "override_flag": overall_report.override_flag,
         "override_message": overall_report.override_message,
 
@@ -46632,6 +46800,150 @@ def generate_overall_oc_report(
 
             "writing": writing_report
         }
+
+    }
+
+def generate_selective_school_recommendations_and_override(
+    components,
+    overall_percent
+):
+    """
+    Generate:
+    - Selective readiness band
+    - Recommended selective schools
+    - Subject-specific override warnings
+    """
+
+    # --------------------------------------------------
+    # Extract subject percentages
+    # --------------------------------------------------
+    subject_percents = {
+        subject: comp.get("percent", 0)
+        for subject, comp in components.items()
+    }
+
+    # --------------------------------------------------
+    # Selective Readiness Band
+    # --------------------------------------------------
+    if overall_percent >= 80:
+        band = "Fully Selective Ready"
+
+    elif overall_percent >= 70:
+        band = "Strong Selective Potential"
+
+    elif overall_percent >= 60:
+        band = "Borderline Selective"
+
+    else:
+        band = "Not Yet Selective Ready"
+
+    # --------------------------------------------------
+    # Selective School Recommendations
+    # --------------------------------------------------
+    school_map = {
+
+        "Fully Selective Ready": [
+
+            "James Ruse Agricultural High School",
+            "North Sydney Boys High School",
+            "North Sydney Girls High School",
+            "Baulkham Hills High School",
+            "Sydney Boys High School",
+            "Sydney Girls High School",
+            "Penrith High School",
+            "Caringbah High School",
+            "Normanhurst Boys High School",
+            "St George Girls High School",
+            "Sydney Technical High School",
+            "Merewether High School",
+            "Gosford High School",
+            "Smith's Hill High School",
+            "Hurlstone Agricultural High School",
+            "Hornsby Girls High School (Years 8–12 selective entry)",
+            "Aurora College (Virtual)",
+            "Farrer Memorial Agricultural High School",
+            "Yanco Agricultural High School"
+        ],
+
+        "Strong Selective Potential": [
+
+            "Sefton High School",
+            "Ryde Secondary College",
+            "Rose Bay Secondary College",
+            "Northern Beaches Secondary College – Manly Campus",
+            "Blacktown Boys High School",
+            "Blacktown Girls High School",
+            "Parramatta High School",
+            "Bonnyrigg High School",
+            "Moorebank High School",
+            "Prairiewood High School",
+            "Tempe High School",
+            "Sydney Secondary College – Balmain Campus",
+            "Sydney Secondary College – Leichhardt Campus",
+            "Macquarie Fields High School",
+            "Richmond Agricultural College"
+        ],
+
+        "Borderline Selective": [
+
+            "Alexandria Park Community School",
+            "Armidale Secondary College",
+            "Auburn Girls High School",
+            "Karabar High School",
+            "Kooringal High School",
+            "Peel High School",
+            "Leppington High School",
+            "Gorokan High School",
+            "Hunter Sports High School",
+            "Chatswood High School (Selective Stream)",
+            "Granville Boys High School",
+            "Dulwich High School",
+            "Elizabeth Macarthur High School"
+        ],
+
+        "Not Yet Selective Ready": []
+    }
+
+    recommended_schools = school_map[band]
+
+    # --------------------------------------------------
+    # Override Rules
+    # --------------------------------------------------
+    override_flag = False
+    override_message = None
+
+    # Writing is particularly important
+    if subject_percents.get("writing", 100) < 60:
+        override_flag = True
+        override_message = (
+            "Although the overall performance is encouraging, improving Writing "
+            "will strengthen the student's competitiveness for the most selective schools."
+        )
+
+    # Any subject below 55%
+    for subject, score in subject_percents.items():
+
+        if score < 55:
+
+            override_flag = True
+
+            override_message = (
+                f"Although the overall performance is encouraging, improving "
+                f"{subject.replace('_', ' ').title()} will strengthen the student's "
+                f"competitiveness for highly competitive selective schools."
+            )
+
+            break
+
+    return {
+
+        "band": band,
+
+        "recommended_schools": recommended_schools,
+
+        "override_flag": override_flag,
+
+        "override_message": override_message
 
     }
 
@@ -46773,13 +47085,14 @@ def generate_overall_selective_report(
     # --------------------------------------------------
     # 7️⃣ Band + Recommendations + Overrides (NEW)
     # --------------------------------------------------
-    result = generate_school_recommendations_and_override(
-        components,
-        overall_percent
+    result = generate_selective_school_recommendations_and_override(
+        components=components,
+        overall_percent=overall_percent
     )
     
     band = result["band"]
-    school_recommendations = result["school_recommendation"]
+    recommended_schools = result["recommended_schools"]
+    print("Recommended Schools:", recommended_schools)
     override_flag = result["override_flag"]
     override_message = result["override_message"]
 
@@ -46791,7 +47104,7 @@ def generate_overall_selective_report(
         exam_date=exam_date,
         overall_percent=overall_percent,
         readiness_band=band,
-        school_recommendation=school_recommendations,
+        school_recommendation=recommended_schools,
         override_flag=override_flag,
         override_message=override_message,
         components=components
@@ -46908,7 +47221,7 @@ def generate_overall_selective_report(
         "overall_percent": overall_report.overall_percent,
         "readiness_band": overall_report.readiness_band,
     
-        "school_recommendation": overall_report.school_recommendation,
+        "recommended_schools": overall_report.school_recommendation,
         "override_flag": overall_report.override_flag,
         "override_message": overall_report.override_message,
     
