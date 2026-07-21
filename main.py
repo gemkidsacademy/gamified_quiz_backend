@@ -93022,6 +93022,7 @@ def finish_naplan_language_conventions_homework_exam(
     for q in questions:
 
         q_id = str(q.get("id"))
+        question_type = q.get("question_type")
 
         correct_answer = q.get(
             "correct_answer"
@@ -93045,145 +93046,151 @@ def finish_naplan_language_conventions_homework_exam(
 
         student_answer = answers.get(q_id)
 
-        normalized_correct = (
-            correct_answer
-        )
+        if question_type == 8:
 
-        if student_answer in (
-            None,
-            "",
-            [],
-            {}
-        ):
-            selected_option = None
-            is_correct = False
+            student_pairs = extract_student_matching_pairs(
+                student_answer
+            )
+
+            is_correct = matching_answers_equal(
+                student_pairs,
+                correct_answer
+            )
+
+            selected_option = json.dumps(student_pairs)
+
+            normalized_correct = correct_answer
+
+        elif question_type == 9:
+
+            selected_option = json.dumps(student_answer)
+
+            normalized_correct = correct_answer
+
+            is_correct = (
+                isinstance(student_answer, list)
+                and isinstance(correct_answer, list)
+                and student_answer == correct_answer
+            )
+
+        elif question_type == 10:
+
+            selected_option = str(student_answer)
+
+            normalized_correct = correct_answer
+
+            is_correct = (
+                str(student_answer).strip()
+                ==
+                str(correct_answer).strip()
+            )
 
         else:
-            selected_option = (
-                json.dumps(student_answer)
-                if isinstance(
-                    student_answer,
-                    list
-                )
-                else str(student_answer)
-            )
 
-            if (
-                isinstance(
-                    normalized_correct,
-                    str
-                )
-                and "value"
-                in normalized_correct
+            normalized_correct = correct_answer
+
+            if student_answer in (
+                None,
+                "",
+                [],
+                {}
             ):
-                try:
-                    normalized_correct = (
-                        json.loads(
-                            normalized_correct.replace(
-                                "'",
-                                '"'
-                            )
-                        )["value"]
-                    )
-                except:
-                    pass
+                selected_option = None
+                is_correct = False
 
-            if (
-                isinstance(
-                    normalized_correct,
-                    dict
-                )
-                and "value"
-                in normalized_correct
-            ):
-                normalized_correct = (
-                    normalized_correct[
-                        "value"
-                    ]
-                )
-
-            normalized_student = (
-                normalize_naplan_evaluation_answer_value(
-                    student_answer
-                )
-            )
-
-            normalized_correct = (
-                normalize_naplan_evaluation_answer_value(
-                    normalized_correct
-                )
-            )
-
-            if isinstance(
-                normalized_correct,
-                str
-            ):
-                try:
-                    parsed = json.loads(
-                        normalized_correct.replace(
-                            "'",
-                            '"'
-                        )
-                    )
-
-                    if isinstance(
-                        parsed,
-                        list
-                    ):
-                        normalized_correct = parsed
-
-                except:
-                    if (
-                        normalized_correct.isalpha()
-                        and normalized_correct.isupper()
-                    ):
-                        normalized_correct = list(
-                            normalized_correct
-                        )
-
-            if isinstance(
-                normalized_correct,
-                list
-            ):
-                normalized_correct = [
-                    str(x).upper()
-                    for x in normalized_correct
-                ]
-
-            if isinstance(
-                normalized_student,
-                list
-            ):
-                normalized_student = [
-                    str(x).upper()
-                    for x in normalized_student
-                ]
-
-            if isinstance(
-                normalized_correct,
-                list
-            ):
-                if isinstance(
-                    normalized_student,
-                    list
-                ):
-                    is_correct = (
-                        sorted(
-                            normalized_correct
-                        )
-                        ==
-                        sorted(
-                            normalized_student
-                        )
-                    )
-                else:
-                    is_correct = False
             else:
-                is_correct = (
-                    normalized_student
-                    ==
-                    normalized_correct
+
+                selected_option = (
+                    json.dumps(student_answer)
+                    if isinstance(student_answer, list)
+                    else str(student_answer)
                 )
+
+                if (
+                    isinstance(normalized_correct, str)
+                    and "value" in normalized_correct
+                ):
+                    try:
+                        normalized_correct = (
+                            json.loads(
+                                normalized_correct.replace("'", '"')
+                            )["value"]
+                        )
+                    except:
+                        pass
+
+                if (
+                    isinstance(normalized_correct, dict)
+                    and "value" in normalized_correct
+                ):
+                    normalized_correct = normalized_correct["value"]
+
+                normalized_student = (
+                    normalize_naplan_evaluation_answer_value(
+                        student_answer
+                    )
+                )
+
+                normalized_correct = (
+                    normalize_naplan_evaluation_answer_value(
+                        normalized_correct
+                    )
+                )
+
+                if isinstance(normalized_correct, str):
+
+                    try:
+
+                        parsed = json.loads(
+                            normalized_correct.replace("'", '"')
+                        )
+
+                        if isinstance(parsed, list):
+                            normalized_correct = parsed
+
+                    except:
+
+                        if (
+                            normalized_correct.isalpha()
+                            and normalized_correct.isupper()
+                        ):
+                            normalized_correct = list(
+                                normalized_correct
+                            )
+
+                if isinstance(normalized_correct, list):
+                    normalized_correct = [
+                        str(x).upper()
+                        for x in normalized_correct
+                    ]
+
+                if isinstance(normalized_student, list):
+                    normalized_student = [
+                        str(x).upper()
+                        for x in normalized_student
+                    ]
+
+                if isinstance(normalized_correct, list):
+
+                    if isinstance(normalized_student, list):
+
+                        is_correct = (
+                            sorted(normalized_correct)
+                            ==
+                            sorted(normalized_student)
+                        )
+
+                    else:
+
+                        is_correct = False
+
+                else:
+
+                    is_correct = (
+                        normalized_student
+                        ==
+                        normalized_correct
+                    )
 
         if is_correct:
             correct_count += 1
@@ -93394,7 +93401,9 @@ def finish_naplan_language_conventions_exam(
 
         if question_type == 8:
 
-            student_pairs = extract_student_matching_pairs(student_answer)
+            student_pairs = extract_student_matching_pairs(
+                student_answer
+            )
 
             is_correct = matching_answers_equal(
                 student_pairs,
@@ -93404,6 +93413,30 @@ def finish_naplan_language_conventions_exam(
             selected_option = json.dumps(student_pairs)
 
             normalized_correct = correct_answer
+
+        elif question_type == 9:
+
+            selected_option = json.dumps(student_answer)
+
+            normalized_correct = correct_answer
+
+            is_correct = (
+                isinstance(student_answer, list)
+                and isinstance(correct_answer, list)
+                and student_answer == correct_answer
+            )
+
+        elif question_type == 10:
+
+            selected_option = str(student_answer)
+
+            normalized_correct = correct_answer
+
+            is_correct = (
+                str(student_answer).strip()
+                == str(correct_answer).strip()
+            )
+
         else:    
             # define early so debug log always works
             normalized_correct = correct_answer
@@ -95046,65 +95079,90 @@ def finish_naplan_numeracy_homework_exam(
         topic = q.get("topic")
         correct_answer = q.get("correct_answer")
         student_answer = answers.get(q_id)
+        question_type = q.get("question_type")
 
-        if (
-            isinstance(student_answer, str)
-            and student_answer.isdigit()
-        ):
-            student_answer = int(student_answer)
+        if question_type == 8:
 
-        normalized_correct = correct_answer
-
-        if student_answer in (None, "", [], {}):
-            selected_option = None
-            is_correct = False
-
-        else:
-            selected_option = (
-                json.dumps(student_answer)
-                if isinstance(student_answer, list)
-                else str(student_answer)
+            student_pairs = extract_student_matching_pairs(
+                student_answer
             )
 
-            if isinstance(correct_answer, dict):
-                normalized_correct = (
-                    correct_answer.get("value")
-                )
+            is_correct = matching_answers_equal(
+                student_pairs,
+                correct_answer
+            )
+
+            selected_option = json.dumps(student_pairs)
+
+            normalized_correct = correct_answer
+
+        else:
 
             if (
-                isinstance(normalized_correct, str)
-                and normalized_correct.isdigit()
+                isinstance(student_answer, str)
+                and student_answer.isdigit()
             ):
-                normalized_correct = int(
-                    normalized_correct
-                )
+                student_answer = int(student_answer)
 
-            options = q.get("options")
+            normalized_correct = correct_answer
 
-            if (
-                q.get("question_type") == 5
-                and options
-                and isinstance(normalized_correct, str)
-                and normalized_correct in options
-            ):
-                normalized_correct = options[
-                    normalized_correct
-                ]
+            if student_answer in (None, "", [], {}):
+                selected_option = None
+                is_correct = False
 
-            if isinstance(normalized_correct, list):
-                if isinstance(student_answer, list):
-                    is_correct = sorted(
-                        map(str, normalized_correct)
-                    ) == sorted(
-                        map(str, student_answer)
-                    )
-                else:
-                    is_correct = False
             else:
-                is_correct = (
-                    str(student_answer).strip()
-                    == str(normalized_correct).strip()
+
+                selected_option = (
+                    json.dumps(student_answer)
+                    if isinstance(student_answer, list)
+                    else str(student_answer)
                 )
+
+                if isinstance(correct_answer, dict):
+                    normalized_correct = (
+                        correct_answer.get("value")
+                    )
+
+                if (
+                    isinstance(normalized_correct, str)
+                    and normalized_correct.isdigit()
+                ):
+                    normalized_correct = int(
+                        normalized_correct
+                    )
+
+                options = q.get("options")
+
+                if (
+                    question_type == 5
+                    and options
+                    and isinstance(normalized_correct, str)
+                    and normalized_correct in options
+                ):
+                    normalized_correct = options[
+                        normalized_correct
+                    ]
+
+                if isinstance(normalized_correct, list):
+
+                    if isinstance(student_answer, list):
+
+                        is_correct = sorted(
+                            map(str, normalized_correct)
+                        ) == sorted(
+                            map(str, student_answer)
+                        )
+
+                    else:
+
+                        is_correct = False
+
+                else:
+
+                    is_correct = (
+                        str(student_answer).strip()
+                        == str(normalized_correct).strip()
+                    )
 
         if is_correct:
             correct_count += 1
@@ -95801,25 +95859,51 @@ def get_naplan_language_conventions_homework_review(
 
     student_answers = {}
     response_map = {}
+    question_type_map = {
+        str(q["id"]): q.get("question_type")
+        for q in normalized_questions
+    }
+
+    import ast
 
     for r in responses:
 
         qid = str(r.q_id)
 
-        try:
-            value = json.loads(
-                r.selected_option
-            )
-        except Exception:
-            value = r.selected_option
+        question_type = question_type_map.get(qid)
 
-        student_answers[qid] = value
+        # --------------------------------------------------
+        # Student answer
+        # Keep existing behaviour
+        # --------------------------------------------------
+        try:
+            student_answers[qid] = json.loads(r.selected_option)
+        except Exception:
+            student_answers[qid] = r.selected_option
+
+        # --------------------------------------------------
+        # Correct answer
+        # Parse JSON only for new interactive question types
+        # --------------------------------------------------
+        value = r.correct_option
+
+        if question_type in [8, 9, 10]:
+
+            if isinstance(value, str):
+
+                try:
+                    value = json.loads(value)
+
+                except Exception:
+
+                    try:
+                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
 
         response_map[qid] = {
-            "correct_answer":
-                r.correct_option,
-            "is_correct":
-                r.is_correct
+            "correct_answer": value,
+            "is_correct": r.is_correct
         }
 
     # --------------------------------------------------
@@ -96013,24 +96097,52 @@ def get_naplan_language_conventions_review(
     student_answers = {}
     response_map = {}
 
+    # Build lookup so we know each question's type
+    question_type_map = {
+        str(q["id"]): q.get("question_type")
+        for q in normalized_questions
+    }
+
+    import ast
+
     for r in responses:
 
         qid = str(r.q_id)
 
-        try:
-            value = json.loads(
-                r.selected_option
-            )
-        except Exception:
-            value = r.selected_option
+        question_type = question_type_map.get(qid)
 
-        student_answers[qid] = value
+        # --------------------------------------------------
+        # Student answer
+        # Keep existing behaviour
+        # --------------------------------------------------
+        try:
+            student_answers[qid] = json.loads(r.selected_option)
+        except Exception:
+            student_answers[qid] = r.selected_option
+
+        # --------------------------------------------------
+        # Correct answer
+        # Parse JSON only for new interactive question types
+        # --------------------------------------------------
+        value = r.correct_option
+
+        if question_type in [8, 9, 10]:
+
+            if isinstance(value, str):
+
+                try:
+                    value = json.loads(value)
+
+                except Exception:
+
+                    try:
+                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
 
         response_map[qid] = {
-            "correct_answer":
-                r.correct_option,
-            "is_correct":
-                r.is_correct
+            "correct_answer": value,
+            "is_correct": r.is_correct
         }
 
     # --------------------------------------------------
@@ -96170,19 +96282,55 @@ def get_naplan_numeracy_review(
 
     response_map = {}
     
+    # Build lookup so we know each question's type
+    question_type_map = {
+        str(q["id"]): q.get("question_type")
+        for q in normalized_questions
+    }
+
     for r in responses:
+
         qid = str(r.q_id)
-    
-        # student answer
+
+        question_type = question_type_map.get(qid)
+
+        # --------------------------------------------------
+        # Student answer
+        # Keep existing behaviour for ALL question types
+        # --------------------------------------------------
         try:
-            value = json.loads(r.selected_option)
+            student_answers[qid] = json.loads(r.selected_option)
         except Exception:
-            value = r.selected_option
-    
-        student_answers[qid] = value
-    
-        # correct answer
-        response_map[qid] = r.correct_option
+            student_answers[qid] = r.selected_option
+
+        # --------------------------------------------------
+        # Correct answer
+        # Only parse JSON for new interactive question types
+        # --------------------------------------------------
+        import ast
+
+        if question_type in [8, 9, 10]:
+
+            value = r.correct_option
+
+            if isinstance(value, str):
+
+                # Try valid JSON first
+                try:
+                    value = json.loads(value)
+
+                except Exception:
+
+                    # Fallback for Python-style strings
+                    try:
+                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
+
+            response_map[qid] = value
+
+        else:
+            response_map[qid] = r.correct_option
     
     
     # Inject correct_answer into questions
@@ -96314,6 +96462,8 @@ def get_naplan_numeracy_homework_review(
     # --------------------------------------------------
     # 5. Fetch student responses
     # --------------------------------------------------
+    
+    
     responses = (
         db.query(
             StudentExamResponseNaplanNumeracyHomework
@@ -96328,25 +96478,70 @@ def get_naplan_numeracy_homework_review(
     student_answers = {}
     response_map = {}
 
+    # Build lookup so we know each question's type
+    question_type_map = {
+        str(q["id"]): q.get("question_type")
+        for q in normalized_questions
+    }
+
     for r in responses:
+
         qid = str(r.q_id)
 
-        try:
-            value = json.loads(r.selected_option)
-        except Exception:
+        question_type = question_type_map.get(qid)
+
+        # --------------------------------------------------
+        # Student answer
+        # --------------------------------------------------
+        if question_type in [8, 9, 10]:
+
             value = r.selected_option
 
-        student_answers[qid] = value
-        response_map[qid] = r.correct_option
+            if isinstance(value, str):
 
-    # --------------------------------------------------
-    # 6. Inject correct answers
-    # --------------------------------------------------
-    for q in normalized_questions:
-        qid = str(q.get("id"))
+                try:
+                    value = json.loads(value)
 
-        if qid in response_map:
-            q["correct_answer"] = response_map[qid]
+                except Exception:
+
+                    try:
+                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
+
+            student_answers[qid] = value
+
+        else:
+
+            try:
+                student_answers[qid] = json.loads(r.selected_option)
+            except Exception:
+                student_answers[qid] = r.selected_option
+
+        # --------------------------------------------------
+        # Correct answer
+        # --------------------------------------------------
+        if question_type in [8, 9, 10]:
+
+            value = r.correct_option
+
+            if isinstance(value, str):
+
+                try:
+                    value = json.loads(value)
+
+                except Exception:
+
+                    try:
+                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
+
+            response_map[qid] = value
+
+        else:
+
+            response_map[qid] = r.correct_option
 
     # --------------------------------------------------
     # 7. Return payload
@@ -96355,6 +96550,7 @@ def get_naplan_numeracy_homework_review(
         "questions": normalized_questions,
         "student_answers": student_answers
     } 
+
 def snapshot_thinking_skills_responses_for_admin(db, attempt):
     responses = (
         db.query(StudentExamResponseThinkingSkills)
