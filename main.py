@@ -6,7 +6,8 @@ from passlib.context import CryptContext
 import uvicorn       
 import os
 
-
+from zoneinfo import ZoneInfo
+SYDNEY_TZ = ZoneInfo("Australia/Sydney")
 # Google APIs
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -1711,6 +1712,7 @@ class AddCenterRequest(BaseModel):
     address: Optional[str] = None
     phone_number: Optional[str] = None
     email: Optional[str] = None
+    time_zone: str = "Australia/Sydney"
     status: Optional[str] = "ACTIVE"
 
 class GenerateNaplanReadingHomeworkLatestRequest(BaseModel):
@@ -1845,15 +1847,25 @@ class Center(Base):
 
     email = Column(String, nullable=True)
 
+    time_zone = Column(
+        String(100),
+        nullable=False,
+        default="Australia/Sydney"
+    )
+
     status = Column(String, default="ACTIVE")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
 
     updated_at = Column(
         DateTime,
         default=datetime.utcnow,
         onupdate=datetime.utcnow
     )
+
 
 class StudentHomeworkReportOCReading(Base):
     __tablename__ = "student_homework_report_oc_reading"
@@ -8345,8 +8357,7 @@ def get_current_gamified_quiz(
     # ------------------------------------
 
     return generated_quiz.quiz_json
-from zoneinfo import ZoneInfo
-SYDNEY_TZ = ZoneInfo("Australia/Sydney")
+
 
 def generate_weekly_quizzes(
     center_code: str,
@@ -10202,6 +10213,8 @@ def get_all_centers(
 
             "email": center.email,
 
+            "time_zone": center.time_zone,
+
             "status": center.status
 
         })
@@ -10237,6 +10250,7 @@ def update_center(
     existing_center.address = payload.address
     existing_center.phone_number = payload.phone_number
     existing_center.email = payload.email
+    existing_center.time_zone = payload.time_zone
     existing_center.status = payload.status
 
     db.commit()
@@ -10250,9 +10264,11 @@ def update_center(
         "center": {
             "id": existing_center.id,
             "center_code": existing_center.center_code,
-            "center_name": existing_center.center_name
+            "center_name": existing_center.center_name,
+            "time_zone": existing_center.time_zone
         }
     }
+
 @app.post("/centers/add-center")
 def add_center(
     payload: AddCenterRequest,
@@ -10288,6 +10304,8 @@ def add_center(
 
         email=payload.email,
 
+        time_zone=payload.time_zone,
+
         status=payload.status
     )
 
@@ -10307,6 +10325,7 @@ def add_center(
             "center_name": new_center.center_name
         }
     }
+
 @app.get("/naplan/language-conventions/available-batches")
 def get_available_language_convention_batches(
     year: int,
@@ -10490,36 +10509,27 @@ def get_next_center_code(
     db: Session = Depends(get_db)
 ):
 
-    # Get latest center ID
-    latest_center = (
-        db.query(Center)
-        .order_by(Center.id.desc())
-        .first()
-    )
+    centers = db.query(Center).all()
 
-    # First center
-    if not latest_center:
+    max_number = 100
 
-        next_number = 101
+    for center in centers:
 
-    else:
+        if center.center_code.startswith("CENTER-"):
 
-        try:
+            try:
 
-            # Example: CENTER-101
-            current_code = latest_center.center_code
+                number = int(
+                    center.center_code.split("-")[1]
+                )
 
-            current_number = int(
-                current_code.split("-")[1]
-            )
+                if number > max_number:
+                    max_number = number
 
-            next_number = current_number + 1
+            except Exception:
+                continue
 
-        except Exception:
-
-            next_number = latest_center.id + 101
-
-    next_center_code = f"CENTER-{next_number}"
+    next_center_code = f"CENTER-{max_number + 1}"
 
     return {
         "center_code": next_center_code
@@ -24444,7 +24454,19 @@ def get_attempts(student_id: str, db: Session = Depends(get_db)):
 
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
+    center = (
+        db.query(Center)
+        .filter(
+            Center.center_code == student.center_code
+        )
+        .first()
+    )
 
+    if not center:
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
     attempts = (
         db.query(StudentExamThinkingSkills)
         .filter(
@@ -24458,7 +24480,13 @@ def get_attempts(student_id: str, db: Session = Depends(get_db)):
     return [
         {
             "exam_attempt_id": a.id,
-            "completed_at": a.completed_at
+            "completed_at": (
+                a.completed_at.astimezone(
+                    ZoneInfo(center.time_zone)
+                ).isoformat()
+                if a.completed_at
+                else None
+            )
         }
         for a in attempts
     ]
