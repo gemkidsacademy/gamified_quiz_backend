@@ -5900,6 +5900,7 @@ app.add_middleware(
 
         # Local frontend development
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -6752,7 +6753,116 @@ class LeaderboardYearRequest(BaseModel):
 class LeaderboardSessionsRequest(BaseModel):
     center_code: str
     term_id: int
+import re
 
+
+def normalize_line(line: str) -> str:
+    """
+    Clean a single line so parser markers are stable.
+    """
+
+    line = line.replace("\u00A0", " ")
+    line = re.sub(r"[ \t]+$", "", line)
+    line = line.replace("\r", "")
+
+    stripped = line.strip()
+
+    if "EXAM START" in stripped:
+        return "=== EXAM START ==="
+
+    if "EXAM END" in stripped:
+        return "=== EXAM END ==="
+
+    return line
+
+
+def clean_exam_text(text: str):
+
+    lines = text.splitlines()
+
+    cleaned_lines = []
+    blank_count = 0
+
+    for line in lines:
+
+        line = normalize_line(line)
+
+        if line.strip() == "":
+            blank_count += 1
+            if blank_count > 1:
+                continue
+        else:
+            blank_count = 0
+
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
+
+def extract_docx_text(file_bytes):
+    """
+    Reads a Word (.docx) file and returns all text.
+    """
+
+    document = Document(BytesIO(file_bytes))
+
+    lines = []
+
+    for paragraph in document.paragraphs:
+        lines.append(paragraph.text)
+
+    return "\n".join(lines)
+
+
+@app.post("/exam/clean-word-document")
+async def clean_word_document(
+    file: UploadFile = File(...)
+):
+
+    # -----------------------------
+    # Validate file
+    # -----------------------------
+    if not file.filename.lower().endswith(".docx"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .docx files are supported."
+        )
+
+    try:
+
+        # -----------------------------
+        # Read uploaded file
+        # -----------------------------
+        file_bytes = await file.read()
+
+        # -----------------------------
+        # Extract Word text
+        # -----------------------------
+        raw_text = extract_docx_text(file_bytes)
+
+        # -----------------------------
+        # Run your cleaner
+        # -----------------------------
+        cleaned_text = clean_exam_text(raw_text)
+
+        # -----------------------------
+        # Return result
+        # -----------------------------
+        return JSONResponse(
+            {
+                "success": True,
+                "filename": file.filename,
+                "cleaned_text": cleaned_text
+            }
+        )
+
+    except Exception as e:
+
+        print(e)
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 @app.get("/api/admin/oc-students")
 def get_oc_students(
     center_code: str,
@@ -29458,6 +29568,7 @@ def build_selective_report_html(report):
     </body>
     </html>
     """ 
+
 @app.post("/delete-all-naplan-numeracy-questions")
 def delete_duplicate_numeracy_questions(db: Session = Depends(get_db)):
 
