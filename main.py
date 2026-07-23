@@ -480,7 +480,7 @@ class ClassCreate(BaseModel):
 
 class ClassUpdate(BaseModel):
     class_name: str
-    
+    student_year: str
 
 
 class ClassResponse(BaseModel):
@@ -6882,7 +6882,7 @@ def get_classes(center_code: str, db: Session = Depends(get_db)):
     classes = (
         db.query(Class)
         .filter(Class.center_code == center_code)
-        .order_by(Class.id)
+        .order_by(Class.class_name)
         .all()
     )
 
@@ -29361,25 +29361,15 @@ async def upload_session_topics(
     # ---------------------------------------
     contents = await file.read()
 
-    # Try UTF-8 first, then fall back to Windows Excel encoding
-    try:
-        csv_text = contents.decode("utf-8")
-        encoding_used = "utf-8"
-    except UnicodeDecodeError:
-        try:
-            csv_text = contents.decode("cp1252")
-            encoding_used = "cp1252"
-        except UnicodeDecodeError:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Unable to read the CSV file. "
-                    "Please save it as 'CSV UTF-8 (Comma delimited)' in Excel "
-                    "or use a valid UTF-8/Windows encoded CSV."
-                )
-            )
+    # Decode without failing on bad bytes
+    csv_text = contents.decode("utf-8", errors="replace")
 
-    print(f"[SESSION TOPICS] CSV encoding detected: {encoding_used}")
+    # Repair common artifacts
+    csv_text = (
+        csv_text
+        .replace("Ð", "-")
+        .replace("\ufffd", "-")   # Unicode replacement character
+    )
 
     csv_file = io.StringIO(csv_text)
     reader = csv.DictReader(csv_file)
@@ -29426,7 +29416,6 @@ async def upload_session_topics(
         "message": f"Topics uploaded successfully for {term_name}.",
         "inserted_topics": inserted_count,
     }
-
 @app.post("/api/admin/send-oc-report-email")
 def send_oc_report_email(
     student_id: Optional[str] = Form(None),
