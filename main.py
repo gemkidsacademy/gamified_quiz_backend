@@ -459,6 +459,39 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # ---------------------------
+class Class(Base):
+    __tablename__ = "classes"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(String, nullable=False, index=True)
+
+    class_name = Column(String, nullable=False)
+
+    
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ClassCreate(BaseModel):
+    center_code: str
+    class_name: str
+    
+
+
+class ClassUpdate(BaseModel):
+    class_name: str
+    
+
+
+class ClassResponse(BaseModel):
+    id: int
+    center_code: str
+    class_name: str
+    student_year: str
+
+    class Config:
+        from_attributes = True
+
 
 class AdminOverallOCReport(Base):
     __tablename__ = "admin_overall_oc_reports"
@@ -6825,6 +6858,84 @@ def extract_docx_text(file_bytes):
     return "\n".join(lines)
 
 
+
+@app.post("/classes")
+def create_class(data: ClassCreate, db: Session = Depends(get_db)):
+
+    new_class = Class(
+        center_code=data.center_code,
+        class_name=data.class_name,
+    )
+
+    db.add(new_class)
+    db.commit()
+    db.refresh(new_class)
+
+    return {
+        "success": True,
+        "message": "Class created successfully",
+        "class": new_class,
+    }
+@app.get("/classes/{center_code}")
+def get_classes(center_code: str, db: Session = Depends(get_db)):
+
+    classes = (
+        db.query(Class)
+        .filter(Class.center_code == center_code)
+        .order_by(Class.id)
+        .all()
+    )
+
+    return classes
+@app.put("/classes/{class_id}")
+def update_class(
+    class_id: int,
+    data: ClassUpdate,
+    db: Session = Depends(get_db),
+):
+
+    cls = db.query(Class).filter(Class.id == class_id).first()
+
+    if not cls:
+        return {
+            "success": False,
+            "message": "Class not found",
+        }
+
+    cls.class_name = data.class_name
+
+    db.commit()
+    db.refresh(cls)
+
+    return {
+        "success": True,
+        "message": "Class updated successfully",
+        "class": cls,
+    }
+@app.delete("/classes/{class_id}")
+def delete_class(
+    class_id: int,
+    db: Session = Depends(get_db),
+):
+
+    cls = db.query(Class).filter(Class.id == class_id).first()
+
+    if not cls:
+        return {
+            "success": False,
+            "message": "Class not found",
+        }
+
+    db.delete(cls)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Class deleted successfully",
+    }
+
+
+  
 @app.post("/exam/clean-word-document")
 async def clean_word_document(
     file: UploadFile = File(...)
@@ -29250,10 +29361,27 @@ async def upload_session_topics(
     # ---------------------------------------
     contents = await file.read()
 
-    csv_file = io.StringIO(
-        contents.decode("utf-8")
-    )
+    # Try UTF-8 first, then fall back to Windows Excel encoding
+    try:
+        csv_text = contents.decode("utf-8")
+        encoding_used = "utf-8"
+    except UnicodeDecodeError:
+        try:
+            csv_text = contents.decode("cp1252")
+            encoding_used = "cp1252"
+        except UnicodeDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Unable to read the CSV file. "
+                    "Please save it as 'CSV UTF-8 (Comma delimited)' in Excel "
+                    "or use a valid UTF-8/Windows encoded CSV."
+                )
+            )
 
+    print(f"[SESSION TOPICS] CSV encoding detected: {encoding_used}")
+
+    csv_file = io.StringIO(csv_text)
     reader = csv.DictReader(csv_file)
 
     # ---------------------------------------
@@ -29298,6 +29426,7 @@ async def upload_session_topics(
         "message": f"Topics uploaded successfully for {term_name}.",
         "inserted_topics": inserted_count,
     }
+
 @app.post("/api/admin/send-oc-report-email")
 def send_oc_report_email(
     student_id: Optional[str] = Form(None),
