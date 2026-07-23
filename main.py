@@ -946,8 +946,8 @@ class CurrentQuizRequest(BaseModel):
     student_id: str
 
 class RunSchedulerRequest(BaseModel):
-
     center_code: str
+    run_date: Optional[date] = None
 
 class SchedulerConfigurationLoadRequest(BaseModel):
 
@@ -8470,9 +8470,12 @@ def get_current_gamified_quiz(
     return generated_quiz.quiz_json
 
 
+from datetime import date
+
 def generate_weekly_quizzes(
     center_code: str,
     db: Session,
+    run_date: date | None = None,
 ):
     print("\n==============================")
     print("SCHEDULER STARTED")
@@ -8480,8 +8483,14 @@ def generate_weekly_quizzes(
     scheduler_run = None
 
     try:
-        today_date = datetime.today().date()
-        today_class_day = datetime.today().strftime("%A")
+        if run_date:
+            today_date = run_date
+        else:
+            today_date = datetime.today().date()
+
+        today_class_day = today_date.strftime("%A")
+
+        
 
         # ------------------------------------
         # Create Scheduler Run Header
@@ -8585,7 +8594,7 @@ def generate_weekly_quizzes(
         # ------------------------------------
         # Load Configured Classes for ACTIVE TERM + TODAY ONLY
         # ------------------------------------
-        today_class_day = datetime.today().strftime("%A")
+
 
         print(f"Scheduler Class Day Filter : {today_class_day}")
 
@@ -9012,6 +9021,7 @@ def run_scheduler(
     return generate_weekly_quizzes(
         center_code=request.center_code,
         db=db,
+        run_date=request.run_date,
     )
 
 
