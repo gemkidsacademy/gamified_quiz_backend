@@ -289,9 +289,9 @@ def scheduler_job():
 
         print(f"Active Centers Found: {len(centers)}")
 
-        today = datetime.today().strftime("%A").lower()
+        
 
-        print(f"Today is: {today}")
+        
 
         for center in centers:
             # ------------------------------------
@@ -337,6 +337,19 @@ def scheduler_job():
                 db.commit()
 
                 continue
+            # ------------------------------------
+            # Current local time for this center
+            # ------------------------------------
+
+            local_now = datetime.now(
+                ZoneInfo(configuration.timezone)
+            )
+            today = local_now.strftime("%A").lower()
+
+            print(f"Local Time : {local_now}")
+            print(f"Timezone   : {configuration.timezone}")
+            print(f"Today      : {today}")
+
 
             # ------------------------------------
             # Check if scheduler is enabled
@@ -354,6 +367,28 @@ def scheduler_job():
 
                 continue
 
+
+            current_hour = local_now.hour
+            current_minute = local_now.minute
+
+            configured_hour = configuration.run_time.hour
+            configured_minute = configuration.run_time.minute
+
+            print(
+                f"Configured Run Time : "
+                f"{configured_hour:02}:{configured_minute:02}"
+            )
+
+            if (
+                current_hour != configured_hour
+                or
+                current_minute != configured_minute
+            ):
+
+                print("Not this center's scheduled time.")
+                print("Skipping center.")
+
+                continue
             # ------------------------------------
             # Check if today is enabled
             # ------------------------------------
@@ -387,6 +422,7 @@ def scheduler_job():
                 generate_weekly_quizzes(
                     center_code=center.center_code,
                     db=db,
+                    run_date=local_now.date(),
                 )
 
                 run_log.status = "SUCCESS"
@@ -418,9 +454,8 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(
     scheduler_job,
     trigger="cron",
-    hour=18,
-    minute=0,
-    timezone="Australia/Sydney",
+    minute="*",
+    timezone="UTC",
     id="gamified_scheduler",
     replace_existing=True,
 )
