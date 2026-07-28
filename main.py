@@ -423,6 +423,7 @@ def scheduler_job():
                     center_code=center.center_code,
                     db=db,
                     run_date=local_now.date(),
+                    scheduler_trigger="automatic",
                 )
 
                 run_log.status = "SUCCESS"
@@ -494,6 +495,30 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # ---------------------------
+
+class ClassYearExamModuleCreate(BaseModel):
+    center_code: str
+    class_name: str
+    year_name: str
+
+
+
+
+class ClassYearExamModuleResponse(ClassYearExamModuleCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ClassYearExamModule(Base):
+    __tablename__ = "class_years_exam_module"
+
+    id = Column(Integer, primary_key=True, index=True)
+    center_code = Column(String, nullable=False, index=True)
+    class_name = Column(String, nullable=False)
+    year_name = Column(String, nullable=False)
+
 class Class(Base):
     __tablename__ = "classes"
 
@@ -1255,6 +1280,18 @@ class SessionTopic(Base):
 
 class GeneratedGamifiedQuiz(Base):
     __tablename__ = "generated_gamified_quizzes"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            "term_id",
+            "category",
+            "class_year",
+            "class_day",
+            "session",
+            name="uq_generated_gamified_quiz",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
 
@@ -3748,6 +3785,12 @@ class StudentExamNaplanNumeracy(Base):
         back_populates="attempt",
         cascade="all, delete-orphan"
     )
+
+
+class ClassYearCreate(BaseModel):
+    center_code: str
+    class_name: str
+    year_name: str
 
 class StudentExamNaplanNumeracyHomework(Base):
     __tablename__ = "student_exam_naplan_numeracy_homework"
@@ -6892,7 +6935,134 @@ def extract_docx_text(file_bytes):
 
     return "\n".join(lines)
 
+@app.delete("/delete-class-years-exam-module/{id}")
+def delete_class_year_exam_module(
+    id: int,
+    db: Session = Depends(get_db)
+):
+    class_year = (
+        db.query(ClassYearExamModule)
+        .filter(ClassYearExamModule.id == id)
+        .first()
+    )
 
+    if not class_year:
+        raise HTTPException(
+            status_code=404,
+            detail="Class year not found."
+        )
+
+    db.delete(class_year)
+    db.commit()
+
+    return {
+        "message": "Class year deleted successfully."
+    }
+
+@app.put("/update-class-years-exam-module/{id}")
+def update_class_year_exam_module(
+    id: int,
+    request: ClassYearCreate,
+    db: Session = Depends(get_db)
+):
+    class_year = (
+        db.query(ClassYearExamModule)
+        .filter(ClassYearExamModule.id == id)
+        .first()
+    )
+
+    if not class_year:
+        raise HTTPException(
+            status_code=404,
+            detail="Class year not found."
+        )
+
+    # Prevent duplicates
+    existing = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.center_code == request.center_code,
+            ClassYearExamModule.class_name == request.class_name,
+            ClassYearExamModule.year_name == request.year_name,
+            ClassYearExamModule.id != id
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="This class year already exists."
+        )
+
+    class_year.class_name = request.class_name
+    class_year.year_name = request.year_name
+
+    db.commit()
+    db.refresh(class_year)
+
+    return {
+        "message": "Class year updated successfully."
+    }
+    
+@app.get("/class-years-exam-module")
+def get_class_years_exam_module(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    class_years = (
+        db.query(ClassYearExamModule)
+        .filter(ClassYearExamModule.center_code == center_code)
+        .order_by(
+            ClassYearExamModule.class_name,
+            ClassYearExamModule.year_name
+        )
+        .all()
+    )
+
+    return class_years
+
+@app.post("/add-class-years-exam-module")
+def add_class_year_exam_module(
+    request: ClassYearCreate,
+    db: Session = Depends(get_db)
+):
+    # ------------------------------------
+    # Check if the class year already exists
+    # ------------------------------------
+    existing = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.center_code == request.center_code,
+            ClassYearExamModule.class_name == request.class_name,
+            ClassYearExamModule.year_name == request.year_name,
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="This class year already exists."
+        )
+
+    # ------------------------------------
+    # Create class year
+    # ------------------------------------
+    class_year = ClassYearExamModule(
+        center_code=request.center_code,
+        class_name=request.class_name,
+        year_name=request.year_name,
+    )
+
+    db.add(class_year)
+    db.commit()
+    db.refresh(class_year)
+
+    return {
+        "message": "Class year added successfully.",
+        "id": class_year.id
+    }
 
 @app.post("/classes")
 def create_class(data: ClassCreate, db: Session = Depends(get_db)):
@@ -7643,19 +7813,24 @@ def set_current_academic_term(
         }
     }
 
+
 @app.delete("/academic-term-gamified/{term_id}")
 def delete_academic_term(
     term_id: int,
     center_code: str,
     db: Session = Depends(get_db)
 ):
-    # -----------------------------
+    # ---------------------------------
     # Find Academic Term
-    # -----------------------------
-    term = db.query(AcademicTerm).filter(
-        AcademicTerm.id == term_id,
-        AcademicTerm.center_code == center_code
-    ).first()
+    # ---------------------------------
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.id == term_id,
+            AcademicTerm.center_code == center_code
+        )
+        .first()
+    )
 
     if not term:
         raise HTTPException(
@@ -7663,31 +7838,39 @@ def delete_academic_term(
             detail="Academic term not found."
         )
 
-    # -----------------------------
+    # ---------------------------------
     # Prevent deletion of active term
-    # -----------------------------
+    # ---------------------------------
     if term.is_active:
         raise HTTPException(
             status_code=400,
-            detail="The current active academic term cannot be deleted. Please set another term as current first."
+            detail="The current active academic term cannot be deleted. Please activate another term first."
         )
 
-    # -----------------------------
-    # Delete Related Scheduler Runs
-    # -----------------------------
+    # ---------------------------------
+    # Delete Scheduler Run History
+    # ---------------------------------
     db.query(SchedulerRun).filter(
         SchedulerRun.term_id == term.id
     ).delete(synchronize_session=False)
 
-    # -----------------------------
+    # ---------------------------------
+    # Delete Class Configurations
+    # ---------------------------------
+    db.query(ClassConfiguration).filter(
+        ClassConfiguration.term_id == term.id
+    ).delete(synchronize_session=False)
+
+    # ---------------------------------
     # Delete Academic Term
-    # -----------------------------
+    # ---------------------------------
     db.delete(term)
+
     db.commit()
 
     return {
         "message": "Academic term deleted successfully."
-    }# --------------------------------------------------
+    }
 # Get available upload dates
 # --------------------------------------------------
 @app.put("/academic-term-gamified/{term_id}")
@@ -8511,6 +8694,7 @@ def generate_weekly_quizzes(
     center_code: str,
     db: Session,
     run_date: date | None = None,
+    scheduler_trigger: str = "automatic",
 ):
     print("\n==============================")
     print("SCHEDULER STARTED")
@@ -8539,7 +8723,7 @@ def generate_weekly_quizzes(
 
         scheduler_run = SchedulerRun(
             center_code=center_code,
-            scheduler_trigger="automatic",
+            scheduler_trigger=scheduler_trigger,
             run_date=today_date,
             weekday=today_class_day,
             status="running",
@@ -8949,16 +9133,49 @@ def generate_weekly_quizzes(
                     quiz_json=parsed_json
                 )
 
-                db.add(generated_quiz)
-                db.flush()
+                try:
+                    with db.begin_nested():
 
-                generated_count += 1
-                result_row["status"] = "generated"
-                result_row["message"] = "Quiz generated successfully."
+                        db.add(generated_quiz)
+                        db.flush()
 
-                detail_row.status = "generated"
-                detail_row.message = "Quiz generated successfully."
-                detail_row.generated_quiz_id = generated_quiz.id
+                    generated_count += 1
+
+                    result_row["status"] = "generated"
+                    result_row["message"] = "Quiz generated successfully."
+
+                    detail_row.status = "generated"
+                    detail_row.message = "Quiz generated successfully."
+                    detail_row.generated_quiz_id = generated_quiz.id
+
+                except IntegrityError:
+
+                    print("\nDuplicate quiz detected.")
+                    print("Another scheduler already generated this quiz.")
+
+                    existing_quiz = (
+                        db.query(GeneratedGamifiedQuiz)
+                        .filter(
+                            GeneratedGamifiedQuiz.center_code == center_code,
+                            GeneratedGamifiedQuiz.term_id == term.id,
+                            GeneratedGamifiedQuiz.category == category,
+                            GeneratedGamifiedQuiz.class_year == class_year,
+                            GeneratedGamifiedQuiz.class_day == class_day,
+                            GeneratedGamifiedQuiz.session == current_session,
+                        )
+                        .first()
+                    )
+
+                    skipped_existing_quiz += 1
+
+                    result_row["status"] = "skipped"
+                    result_row["message"] = "Quiz already exists."
+
+                    detail_row.status = "skipped"
+                    detail_row.message = "Quiz already exists."
+
+                    if existing_quiz:
+                        detail_row.generated_quiz_id = existing_quiz.id
 
                 db.add(detail_row)
 
@@ -9057,8 +9274,8 @@ def run_scheduler(
         center_code=request.center_code,
         db=db,
         run_date=request.run_date,
+        scheduler_trigger="manual",
     )
-
 
 
 @app.post("/scheduler/configuration")
@@ -44547,6 +44764,20 @@ def get_all_classes(db: Session):
     # results comes as list of tuples → [('Class A',), ('Class B',)]
     return [row[0] for row in results if row[0]]
 
+
+
+@app.get("/class-names/classes")
+def list_classes(db: Session = Depends(get_db)):
+    """
+    Returns all distinct class names.
+    """
+
+    classes = get_all_classes(db)
+
+    return {
+        "classes": classes
+    }
+
 @app.get("/api/classes")
 def fetch_classes(db: Session = Depends(get_db)):
     classes = get_all_classes(db)
@@ -46824,32 +47055,10 @@ def generate_oc_school_recommendations_and_override(
     # --------------------------------------------------
     # Override Rules
     # --------------------------------------------------
+    # Client requested no further improvement messages.
+
     override_flag = False
     override_message = None
-
-    # Writing below 60%
-    if subject_percents.get("writing", 100) < 60:
-        override_flag = True
-        override_message = (
-            "Although the overall performance is encouraging, improving Writing "
-            "will strengthen the student's chances for highly competitive "
-            "Opportunity Class schools."
-        )
-
-    # Any subject below 55%
-    for subject, score in subject_percents.items():
-
-        if score < 55:
-
-            override_flag = True
-
-            override_message = (
-                f"Although the overall performance is encouraging, improving "
-                f"{subject.replace('_', ' ').title()} will strengthen the student's "
-                f"competitiveness for highly sought-after Opportunity Class schools."
-            )
-
-            break
 
     return {
 
@@ -47162,7 +47371,7 @@ def generate_selective_school_recommendations_and_override(
             "Smith's Hill High School",
             "Hurlstone Agricultural High School",
             "Hornsby Girls High School (Years 8–12 selective entry)",
-            "Aurora College (Virtual)",
+            "Aurora College (virtual selective)",
             "Farrer Memorial Agricultural High School",
             "Yanco Agricultural High School"
         ],
@@ -47211,31 +47420,10 @@ def generate_selective_school_recommendations_and_override(
     # --------------------------------------------------
     # Override Rules
     # --------------------------------------------------
+    # Client requested no further improvement messages.
+
     override_flag = False
     override_message = None
-
-    # Writing is particularly important
-    if subject_percents.get("writing", 100) < 60:
-        override_flag = True
-        override_message = (
-            "Although the overall performance is encouraging, improving Writing "
-            "will strengthen the student's competitiveness for the most selective schools."
-        )
-
-    # Any subject below 55%
-    for subject, score in subject_percents.items():
-
-        if score < 55:
-
-            override_flag = True
-
-            override_message = (
-                f"Although the overall performance is encouraging, improving "
-                f"{subject.replace('_', ' ').title()} will strengthen the student's "
-                f"competitiveness for highly competitive selective schools."
-            )
-
-            break
 
     return {
 
