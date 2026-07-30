@@ -9120,6 +9120,99 @@ def generate_weekly_quizzes(
 
                 parsed_json = json.loads(quiz_text)
 
+                print("\n======================================")
+                print("STARTING AI QUALITY REVIEW")
+                print("======================================")
+
+                qa_prompt = f"""
+                You are an expert educational assessment reviewer.
+
+                Your job is to review the generated quiz and ensure it is suitable for students.
+
+                Review EVERY question carefully.
+
+                Verify ALL of the following:
+
+                1. There are exactly FIVE questions.
+
+                2. Every question has exactly FOUR options.
+
+                3. There is EXACTLY ONE objectively correct answer.
+
+                4. Check whether ANY other option could also be considered correct.
+
+                5. Verify ALL mathematical calculations.
+
+                6. Verify fractions.
+
+                7. Verify percentages.
+
+                8. Verify scientific facts.
+
+                9. Verify grammar.
+
+                10. Verify spelling.
+
+                11. Verify punctuation.
+
+                12. Verify that the answer EXACTLY matches one option.
+
+                13. Verify there are no duplicate options.
+
+                14. Verify distractors are incorrect.
+
+                15. Verify the topic is correct.
+
+                16. Verify the activity type is reflected.
+
+                If ANY issue exists:
+
+                Rewrite ONLY the problematic question.
+
+                Leave all correct questions unchanged.
+
+                Return ONLY valid JSON.
+
+                Return EXACTLY the same JSON schema.
+
+                Quiz:
+
+                {json.dumps(parsed_json, indent=2)}
+                """
+
+                qa_response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": qa_prompt
+                        }
+                    ],
+                    temperature=0
+                )
+
+                reviewed_quiz = qa_response.choices[0].message.content.strip()
+
+                print("\n========== QA REVIEW ==========")
+                print(reviewed_quiz)
+                print("================================")
+
+                # ------------------------------------
+                # Remove markdown code fences if present
+                # ------------------------------------
+                if reviewed_quiz.startswith("```"):
+
+                    reviewed_quiz = reviewed_quiz.split("```", 1)[1]
+
+                    if reviewed_quiz.startswith("json"):
+                        reviewed_quiz = reviewed_quiz[4:]
+
+                    reviewed_quiz = reviewed_quiz.rsplit("```", 1)[0]
+
+                    reviewed_quiz = reviewed_quiz.strip()
+
+                corrected_json = json.loads(reviewed_quiz)
+
                 generated_quiz = GeneratedGamifiedQuiz(
                     center_code=center_code,
                     term_id=term.id,
@@ -9130,7 +9223,7 @@ def generate_weekly_quizzes(
                     session=current_session,
                     topic=topic_name,
                     activity_type=activity_type,
-                    quiz_json=parsed_json
+                    quiz_json=corrected_json
                 )
 
                 try:
@@ -9179,9 +9272,9 @@ def generate_weekly_quizzes(
 
                 db.add(detail_row)
 
-                print("\n✅ JSON parsed successfully.")
-                print(f"Quiz Title : {parsed_json['quiz_title']}")
-                print(f"Questions  : {len(parsed_json['questions'])}")
+                print("\n✅ Quiz generated and AI quality review completed.")
+                print(f"Quiz Title : {corrected_json['quiz_title']}")
+                print(f"Questions  : {len(corrected_json['questions'])}")
 
             except json.JSONDecodeError as e:
                 print("\n❌ JSON parsing failed")
