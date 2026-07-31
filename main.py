@@ -10339,53 +10339,67 @@ def update_center_admin(
     db: Session = Depends(get_db)
 ):
 
+    # Find the admin to update
     existing_admin = (
         db.query(AdminUser)
-        .filter(
-            AdminUser.id == admin_id
-        )
+        .filter(AdminUser.id == admin_id)
         .first()
     )
 
     if not existing_admin:
-
         raise HTTPException(
             status_code=404,
             detail="Center admin not found"
         )
 
+    print("\n========== UPDATE CENTER ADMIN ==========")
+    print("Admin ID:", admin_id)
+    print("Current Username:", existing_admin.username)
+    print("New Username:", payload.username)
+    print("=========================================\n")
+
+    # Check if another admin already has this username
+    duplicate_username = (
+        db.query(AdminUser)
+        .filter(
+            AdminUser.username == payload.username,
+            AdminUser.id != admin_id
+        )
+        .first()
+    )
+
+    if duplicate_username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists."
+        )
+
     # Update fields
     existing_admin.center_code = payload.center_code
-
     existing_admin.full_name = payload.admin_name
-
-    existing_admin.username = payload.email
-
+    existing_admin.username = payload.username
     existing_admin.email = payload.email
-
     existing_admin.phone_number = payload.phone_number
-
     existing_admin.password = payload.password
 
     db.commit()
-
     db.refresh(existing_admin)
 
+    print("Username After Update:", existing_admin.username)
+
     return {
-
         "message": "Center admin updated successfully",
-
         "admin": {
-
             "id": existing_admin.id,
-
+            "username": existing_admin.username,
             "full_name": existing_admin.full_name,
-
             "email": existing_admin.email,
-
-            "center_code": existing_admin.center_code
+            "phone_number": existing_admin.phone_number,
+            "center_code": existing_admin.center_code,
+            "role": existing_admin.role,
         }
     }
+
 @app.get("/api/classes/years")
 def get_class_years(
     category: str,
@@ -10465,6 +10479,8 @@ def get_all_center_admins(
         formatted_admins.append({
 
             "id": admin.id,
+
+            "username": admin.username,
 
             "full_name": admin.full_name,
 
@@ -10623,6 +10639,34 @@ def add_center_admin(
         }
     }
 
+@app.get("/centers/get-center/{center_code}")
+def get_center(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+
+    center = (
+        db.query(Center)
+        .filter(Center.center_code == center_code)
+        .first()
+    )
+
+    if not center:
+        raise HTTPException(
+            status_code=404,
+            detail="Center not found"
+        )
+
+    return {
+        "id": center.id,
+        "center_code": center.center_code,
+        "center_name": center.center_name,
+        "address": center.address,
+        "phone_number": center.phone_number,
+        "email": center.email,
+        "time_zone": center.time_zone,
+        "status": center.status
+    }
 # =========================
 # Update Center API
 # =========================
