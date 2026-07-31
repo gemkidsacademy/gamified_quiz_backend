@@ -7466,6 +7466,7 @@ def update_center_teacher(
         "success": True,
         "message": "Teacher updated successfully."
     }
+
 @app.get("/get-all-center-teachers")
 def get_all_center_teachers(
     db: Session = Depends(get_db),
@@ -7565,6 +7566,7 @@ def add_center_teacher(
         "message": "Center teacher created successfully.",
         "teacher_id": teacher.id,
     }
+
 @app.post("/student/gamified-welcome-quote", response_model=GamifiedWelcomeQuoteResponse)
 def get_gamified_welcome_quote(
     request: GamifiedWelcomeQuoteRequest,
