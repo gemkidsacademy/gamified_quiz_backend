@@ -5,6 +5,7 @@ from apscheduler.triggers.cron import CronTrigger
 from passlib.context import CryptContext     
 import uvicorn       
 import os
+from twilio.rest import Client
 
 from zoneinfo import ZoneInfo
 SYDNEY_TZ = ZoneInfo("Australia/Sydney")
@@ -257,6 +258,19 @@ gcs_bucket = gcs_client.bucket(BUCKET_NAME)
 
 print(f"✅ Initialized GCS client for bucket: {gcs_bucket}")
 
+
+#-------------------------------- for Twilio
+                          
+account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
+
+
+client_twilio = Client(account_sid, auth_token)
+# Temporary in-memory OTP storage
+otp_store = {}
+user_vectorstores_initialized = {} 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -455,7 +469,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(
     scheduler_job,
     trigger="cron",
-    minute="*",
+    minute="59",
     timezone="UTC",
     id="gamified_scheduler",
     replace_existing=True,
@@ -495,6 +509,203 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # ---------------------------
+class GuestGamifiedWelcomeQuoteRequest(BaseModel):
+    contact: str
+
+class GuestUser(Base):
+    __tablename__ = "guest_users"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    full_name = Column(
+        String,
+        nullable=False
+    )
+
+    contact_method = Column(
+        String,
+        nullable=False
+    )  # email | whatsapp
+
+    contact = Column(
+        String,
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    category = Column(
+        String,
+        nullable=False
+    )
+
+    class_year = Column(
+        String,
+        nullable=False
+    )
+
+    registered_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    last_login = Column(
+        DateTime,
+        nullable=True
+    )
+
+    is_active = Column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
+
+class GuestGamifiedQuizAttempt(Base):
+
+    __tablename__ = "guest_gamified_quiz_attempts"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    # ------------------------------------
+    # Guest Identity
+    # ------------------------------------
+
+    contact = Column(
+        String,
+        index=True,
+        nullable=False,
+    )
+
+    # ------------------------------------
+    # Quiz
+    # ------------------------------------
+
+    generated_quiz_id = Column(
+        Integer,
+        ForeignKey("generated_gamified_quizzes.id"),
+        nullable=False,
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+    )
+
+    category = Column(
+        String,
+        nullable=False,
+    )
+
+    class_year = Column(
+        String,
+        nullable=False,
+    )
+
+    class_day = Column(
+        String,
+        nullable=False,
+    )
+
+    term_id = Column(
+        Integer,
+        ForeignKey("academic_terms.id"),
+        nullable=False,
+    )
+
+    session = Column(
+        Integer,
+        nullable=False,
+    )
+
+    # ------------------------------------
+    # Progress
+    # ------------------------------------
+
+    current_score = Column(
+        Integer,
+        default=0,
+    )
+
+    total_questions = Column(
+        Integer,
+        default=0,
+    )
+
+    answers_json = Column(
+        MutableDict.as_mutable(JSON),
+        default=dict,
+        nullable=False,
+    )
+
+    is_completed = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    # ------------------------------------
+    # Timing
+    # ------------------------------------
+
+    started_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    completed_at = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    time_taken_seconds = Column(
+        Integer,
+        nullable=True,
+    )
+
+class GuestSubmitQuizAnswerRequest(BaseModel):
+
+    contact: str
+
+    question_index: int
+
+    selected_option: str
+
+class CurrentGuestQuizRequest(BaseModel):
+
+    contact: str
+
+    category: str
+
+    class_year: str
+
+class GuestOTPVerify(BaseModel):
+
+    contact: str
+
+    otp: str
+
+class GuestOTPRequest(BaseModel):
+
+    full_name: str
+
+    contact_method: str      # "email" or "whatsapp"
+
+    contact: str             # email address or phone number
+
+    category: str
+
+    class_year: str
+
+
 
 class ClassYearExamModuleCreate(BaseModel):
     center_code: str
@@ -6935,6 +7146,781 @@ def extract_docx_text(file_bytes):
 
     return "\n".join(lines)
 
+
+from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo
+def send_otp_sms(phone_number: str, otp: int):
+    message = client_twilio.messages.create(
+        body=f"Your OTP code is {otp}",
+        from_=twilio_number,
+        to=phone_number
+    )
+    print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
+
+@app.post("/guest/send-whatsapp-otp")
+def guest_send_whatsapp_otp(
+    request: GuestOTPRequest,
+    db: Session = Depends(get_db)
+):
+
+    contact = request.contact.strip()
+
+    print(f"[DEBUG] Guest WhatsApp OTP request: {contact}")
+
+    # ------------------------------------
+    # Validate Request
+    # ------------------------------------
+
+    if not contact:
+        raise HTTPException(
+            status_code=400,
+            detail="WhatsApp number is required"
+        )
+
+    if not request.full_name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Full name is required"
+        )
+
+    if not request.category.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Category is required"
+        )
+
+    if not request.class_year.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Class year is required"
+        )
+
+    # ------------------------------------
+    # Generate OTP
+    # ------------------------------------
+
+    otp = generate_otp()
+
+    print(f"[DEBUG] Generated OTP {otp} for {contact}")
+
+    # ------------------------------------
+    # Store OTP
+    # ------------------------------------
+
+    otp_store[contact] = {
+
+        "otp": otp,
+
+        "expiry": time.time() + 300,
+
+        "contact_method": "whatsapp",
+
+        "contact": contact,
+
+        "full_name": request.full_name,
+
+        "category": request.category,
+
+        "class_year": request.class_year,
+
+    }
+
+    print(f"[DEBUG] Stored OTP for {contact}")
+
+    # ------------------------------------
+    # Send WhatsApp OTP
+    # ------------------------------------
+
+    try:
+
+        print(f"[DEBUG] Sending WhatsApp OTP to {contact}")
+
+        send_whatsapp_otp(contact, otp)
+
+        print(f"[INFO] WhatsApp OTP sent successfully to {contact}")
+
+    except Exception as e:
+
+        print(f"[ERROR] Failed sending WhatsApp OTP: {e}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error sending WhatsApp OTP: {e}"
+        )
+
+    return {
+
+        "message": "OTP sent successfully"
+
+    }
+
+@app.get("/guest/login-options")
+def guest_login_options(
+    db: Session = Depends(get_db)
+):
+
+    CENTER_CODE = "MP001"
+
+    # ------------------------------------
+    # Active Academic Term
+    # ------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == CENTER_CODE,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ------------------------------------
+    # Current Sydney Date
+    # ------------------------------------
+
+    sydney_now = datetime.now(
+        ZoneInfo("Australia/Sydney")
+    )
+
+    today = sydney_now.date()
+
+    if today < term.start_date or today > term.end_date:
+
+        return []
+
+    days_since_start = (
+        today - term.start_date
+    ).days
+
+    current_session = (
+        days_since_start // 7
+    ) + 1
+
+    class_day = sydney_now.strftime("%A")
+
+    # ------------------------------------
+    # Load Today's Available Quizzes
+    # ------------------------------------
+
+    quizzes = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code == CENTER_CODE,
+            GeneratedGamifiedQuiz.term_id == term.id,
+            GeneratedGamifiedQuiz.class_day == class_day,
+            GeneratedGamifiedQuiz.session == current_session,
+        )
+        .order_by(
+            GeneratedGamifiedQuiz.category,
+            GeneratedGamifiedQuiz.class_year,
+        )
+        .all()
+    )
+
+    # ------------------------------------
+    # Remove Duplicates
+    # ------------------------------------
+
+    seen = set()
+
+    results = []
+
+    for quiz in quizzes:
+
+        key = (
+            quiz.category,
+            quiz.class_year,
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+
+        results.append({
+
+            "category": quiz.category,
+
+            "class_year": quiz.class_year,
+
+        })
+
+    return results
+@app.post("/guest/submit-quiz-answer")
+def guest_submit_quiz_answer(
+    request: GuestSubmitQuizAnswerRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("GUEST SUBMIT QUIZ ANSWER")
+    print("==============================")
+
+
+    CENTER_CODE = "MP001"
+    
+    contact = request.contact.strip()
+
+    if "@" in contact:
+        contact = contact.lower()
+    print(f"Contact         : {contact}")
+    print(f"Question Index  : {request.question_index}")
+    print(f"Selected Option : {request.selected_option}")
+
+    
+
+
+
+    # --------------------------------------------------
+    # Load Guest
+    # --------------------------------------------------
+
+    guest = (
+        db.query(GuestUser)
+        .filter(
+            GuestUser.contact == contact
+        )
+        .first()
+    )
+
+    if not guest:
+        raise HTTPException(
+            status_code=404,
+            detail="Guest not found."
+        )
+
+    print("\nGuest Loaded")
+    print("--------------------------------")
+    print(f"Name       : {guest.full_name}")
+    print(f"Category   : {guest.category}")
+    print(f"Class Year : {guest.class_year}")
+
+    # --------------------------------------------------
+    # Load Active Term
+    # --------------------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == CENTER_CODE,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term."
+        )
+
+    sydney_now = datetime.now(
+        ZoneInfo("Australia/Sydney")
+    )
+
+    today = sydney_now.date()
+
+    current_session = (
+        (today - term.start_date).days // 7
+    ) + 1
+
+    class_day = sydney_now.strftime("%A")
+
+    print(f"\nCurrent Session : {current_session}")
+    print(f"Class Day       : {class_day}")
+
+    # --------------------------------------------------
+    # Load Generated Quiz
+    # --------------------------------------------------
+
+    generated_quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code == CENTER_CODE,
+            GeneratedGamifiedQuiz.term_id == term.id,
+            GeneratedGamifiedQuiz.category == guest.category,
+            GeneratedGamifiedQuiz.class_year == guest.class_year,
+            GeneratedGamifiedQuiz.class_day == class_day,
+            GeneratedGamifiedQuiz.session == current_session,
+        )
+        .first()
+    )
+
+    if not generated_quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="Generated quiz not found."
+        )
+
+    print("\nGenerated Quiz Loaded")
+
+    questions = generated_quiz.quiz_json.get(
+        "questions",
+        []
+    )
+
+    if request.question_index >= len(questions):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid question index."
+        )
+
+    question = questions[request.question_index]
+
+    print("--------------------------------")
+    print(f"Prompt         : {question['prompt']}")
+    print(f"Correct Answer : {question['answer']}")
+
+    # --------------------------------------------------
+    # Validate Answer
+    # --------------------------------------------------
+
+    is_correct = (
+        request.selected_option.strip()
+        ==
+        question["answer"].strip()
+    )
+
+    print(f"Guest Answer : {request.selected_option}")
+    print(f"Correct      : {is_correct}")
+
+    # --------------------------------------------------
+    # Load Existing Attempt
+    # --------------------------------------------------
+
+    attempt = (
+        db.query(GuestGamifiedQuizAttempt)
+        .filter(
+            GuestGamifiedQuizAttempt.contact == guest.contact,
+            GuestGamifiedQuizAttempt.generated_quiz_id == generated_quiz.id,
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="Quiz attempt not found. Please fetch the quiz first."
+        )
+
+    if attempt.is_completed:
+        raise HTTPException(
+            status_code=400,
+            detail="This quiz has already been completed."
+        )
+
+    print("\nExisting Attempt Found")
+    print("--------------------------------")
+    print(f"Attempt ID : {attempt.id}")
+    print(f"Score      : {attempt.current_score}")
+
+    # --------------------------------------------------
+    # Save Answer
+    # --------------------------------------------------
+
+    answers = dict(attempt.answers_json or {})
+    print("\nLOADED ANSWERS")
+    print("---------------------")
+    print(attempt.answers_json)
+    print(type(attempt.answers_json))
+    print("\nUPDATED ANSWERS")
+    print("---------------------")
+    print(attempt.answers_json)
+
+    answers[str(request.question_index)] = request.selected_option
+
+    attempt.answers_json = answers
+
+    print("\nANSWERS DICTIONARY")
+    print("---------------------------")
+    print(answers)
+    print(type(answers))
+
+    # --------------------------------------------------
+    # Recalculate Score
+    # --------------------------------------------------
+
+    score = 0
+
+    for index, question in enumerate(questions):
+
+        selected_answer = answers.get(str(index))
+
+        if selected_answer == question["answer"]:
+            score += 1
+
+    attempt.current_score = score
+
+    # --------------------------------------------------
+    # Completion
+    # --------------------------------------------------
+
+    answered_questions = len(answers)
+    print("\nCompletion Check")
+    print("---------------------------")
+    print(f"Answered Questions : {answered_questions}")
+    print(f"Total Questions    : {attempt.total_questions}")
+
+    if answered_questions >= attempt.total_questions:
+
+        attempt.is_completed = True
+
+        attempt.completed_at = datetime.utcnow()
+
+        if attempt.started_at:
+
+            attempt.time_taken_seconds = int(
+
+                (
+                    attempt.completed_at -
+                    attempt.started_at
+                ).total_seconds()
+
+            )
+        print("\nQUIZ COMPLETED")
+        print("---------------------------")
+        print(f"Completed : {attempt.is_completed}")
+        print(f"Score     : {attempt.current_score}")
+    db.commit()
+
+    db.refresh(attempt)
+    print("\nAFTER COMMIT")
+    print("---------------------")
+    print(attempt.answers_json)
+    print("\nANSWERS DICTIONARY")
+    print("---------------------------")
+    print(answers)
+    print(type(answers))
+
+    # --------------------------------------------------
+    # Review
+    # --------------------------------------------------
+
+    review = None
+
+    if attempt.is_completed:
+
+        review = []
+
+        for index, q in enumerate(questions):
+
+            selected_option = answers.get(
+                str(index),
+                ""
+            )
+
+            correct_answer = q.get(
+                "answer",
+                ""
+            )
+
+            review.append({
+
+                "question_number": index + 1,
+
+                "prompt": q.get("prompt", ""),
+
+                "selected_option": selected_option,
+
+                "correct_answer": correct_answer,
+
+                "is_correct":
+                    selected_option.strip()
+                    ==
+                    correct_answer.strip()
+
+            })
+    print("\nReturning Response")
+    print("---------------------------")
+    print({
+        "completed": attempt.is_completed,
+        "current_score": attempt.current_score,
+        "answered_questions": answered_questions,
+        "total_questions": attempt.total_questions,
+    })
+
+    return {
+
+        "correct": is_correct,
+
+        "current_score": attempt.current_score,
+
+        "answered_questions": answered_questions,
+
+        "total_questions": attempt.total_questions,
+
+        "completed": attempt.is_completed,
+
+        "message": (
+            "Correct!"
+            if is_correct
+            else "Incorrect."
+        ),
+
+        "review": review,
+
+    }
+
+
+@app.post("/guest/current-gamified-quiz")
+def get_current_guest_quiz(
+    request: CurrentGuestQuizRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("FETCH CURRENT GUEST QUIZ")
+    print("==============================")
+
+    print(f"Guest Contact : {request.contact}")
+    print(f"Category    : {request.category}")
+    print(f"Class Year  : {request.class_year}")
+    contact = request.contact.strip()
+
+    if "@" in contact:
+        contact = contact.lower()
+
+    # --------------------------------------------------
+    # Guest Centre
+    # --------------------------------------------------
+
+    CENTER_CODE = "MP001"
+
+    # --------------------------------------------------
+    # Load Active Academic Term
+    # --------------------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == CENTER_CODE,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not term:
+
+        raise HTTPException(
+            status_code=400,
+            detail="No active academic term found."
+        )
+
+    print("\nActive Academic Term")
+    print("--------------------------------")
+    print(f"Term ID    : {term.id}")
+    print(f"Term Name  : {term.term_name}")
+
+    # --------------------------------------------------
+    # Determine Current Session
+    # --------------------------------------------------
+
+    sydney_now = datetime.now(
+        ZoneInfo("Australia/Sydney")
+    )
+
+    today = sydney_now.date()
+
+    if today < term.start_date or today > term.end_date:
+
+        raise HTTPException(
+            status_code=400,
+            detail="There is no active quiz today."
+        )
+
+    days_since_start = (today - term.start_date).days
+
+    current_session = (days_since_start // 7) + 1
+
+    if current_session < 1 or current_session > term.number_of_weeks:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Current session is outside the academic term."
+        )
+
+    class_day = sydney_now.strftime("%A")
+
+    print("\nCurrent Session")
+    print("--------------------------------")
+    print(f"Today      : {today}")
+    print(f"Class Day  : {class_day}")
+    print(f"Session    : {current_session}")
+
+    # --------------------------------------------------
+    # Find Generated Quiz
+    # --------------------------------------------------
+
+    generated_quiz = (
+
+        db.query(GeneratedGamifiedQuiz)
+
+        .filter(
+
+            GeneratedGamifiedQuiz.center_code == CENTER_CODE,
+
+            GeneratedGamifiedQuiz.term_id == term.id,
+
+            GeneratedGamifiedQuiz.category == request.category,
+
+            GeneratedGamifiedQuiz.class_year == request.class_year,
+
+            GeneratedGamifiedQuiz.class_day == class_day,
+
+            GeneratedGamifiedQuiz.session == current_session,
+
+        )
+
+        .first()
+
+    )
+
+    if not generated_quiz:
+
+        raise HTTPException(
+
+            status_code=404,
+
+            detail="No quiz has been generated for this class."
+
+        )
+
+    print("\nGenerated Quiz Found")
+    print("--------------------------------")
+    print(f"Quiz ID     : {generated_quiz.id}")
+    print(f"Topic       : {generated_quiz.topic}")
+    print(f"Activity    : {generated_quiz.activity_type}")
+
+    # --------------------------------------------------
+    # Existing Attempt
+    # --------------------------------------------------
+
+    attempt = (
+
+        db.query(GuestGamifiedQuizAttempt)
+
+        .filter(
+
+            GuestGamifiedQuizAttempt.contact == contact,
+
+            GuestGamifiedQuizAttempt.generated_quiz_id == generated_quiz.id,
+
+        )
+
+        .first()
+
+    )
+
+    # --------------------------------------------------
+    # Already Completed
+    # --------------------------------------------------
+
+    if attempt and attempt.is_completed:
+
+        print("\nGuest has already completed quiz.")
+
+        questions = generated_quiz.quiz_json.get("questions", [])
+
+        answers = attempt.answers_json or {}
+
+        review = []
+
+        for index, q in enumerate(questions):
+
+            selected = answers.get(str(index), "")
+
+            correct = q.get("answer", "")
+
+            review.append({
+
+                "question_number": index + 1,
+
+                "prompt": q.get("prompt", ""),
+
+                "selected_option": selected,
+
+                "correct_answer": correct,
+
+                "is_correct": selected.strip() == correct.strip()
+
+            })
+
+        return {
+
+            "already_attempted": True,
+
+            "completed": True,
+
+            "current_score": attempt.current_score,
+
+            "total_questions": attempt.total_questions,
+
+            "message": "You have already attempted this quiz.",
+
+            "review": review
+
+        }
+
+    # --------------------------------------------------
+    # First Attempt
+    # --------------------------------------------------
+
+    if not attempt:
+
+        print("\nCreating Guest Attempt...")
+
+        questions = generated_quiz.quiz_json.get("questions", [])
+
+        attempt = GuestGamifiedQuizAttempt(
+
+            contact=contact,
+
+            generated_quiz_id=generated_quiz.id,
+
+            center_code=CENTER_CODE,
+
+            category=request.category,
+
+            class_year=request.class_year,
+
+            class_day=class_day,
+
+            term_id=term.id,
+
+            session=current_session,
+
+            current_score=0,
+
+            total_questions=len(questions),
+
+            answers_json={},
+
+            is_completed=False,
+
+            started_at=datetime.utcnow()
+
+        )
+
+        db.add(attempt)
+
+        db.commit()
+
+        db.refresh(attempt)
+
+        print(f"Guest Attempt ID : {attempt.id}")
+
+    # --------------------------------------------------
+    # Return Quiz
+    # --------------------------------------------------
+
+    return generated_quiz.quiz_json
+
 @app.delete("/delete-class-years-exam-module/{id}")
 def delete_class_year_exam_module(
     id: int,
@@ -7567,6 +8553,118 @@ def add_center_teacher(
         "teacher_id": teacher.id,
     }
 
+
+@app.post(
+    "/guest/gamified-welcome-quote",
+    response_model=GamifiedWelcomeQuoteResponse,
+)
+def get_guest_gamified_welcome_quote(
+    request: GuestGamifiedWelcomeQuoteRequest,
+):
+
+    print("\n==============================")
+    print("GUEST GAMIFIED WELCOME QUOTE")
+    print("==============================")
+    print(f"Guest Contact : {request.contact}")
+
+    fallback_quotes = [
+
+        {
+            "quote": "Success is the sum of small efforts, repeated day in and day out.",
+            "author": "Robert Collier",
+        },
+
+        {
+            "quote": "Learning never exhausts the mind.",
+            "author": "Leonardo da Vinci",
+        },
+
+        {
+            "quote": "The beautiful thing about learning is that no one can take it away from you.",
+            "author": "B.B. King",
+        },
+
+        {
+            "quote": "Education is the passport to the future, for tomorrow belongs to those who prepare for it today.",
+            "author": "Malcolm X",
+        },
+
+        {
+            "quote": "The expert in anything was once a beginner.",
+            "author": "Helen Hayes",
+        },
+
+    ]
+
+    try:
+
+        prompt = """
+You are generating a welcome quote for a guest who is trying a free AI-powered practice quiz.
+
+Return exactly ONE short educational or inspirational quote suitable for students.
+
+The quote must have a real author.
+
+Do not invent authors.
+
+Do not include any explanation.
+
+Return ONLY valid JSON in this exact format:
+
+{
+  "quote": "string",
+  "author": "string"
+}
+"""
+
+        response = client.chat.completions.create(
+
+            model="gpt-4o-mini",
+
+            messages=[
+
+                {
+                    "role": "system",
+                    "content": "You generate short motivational educational quotes for students in strict JSON format."
+                },
+
+                {
+                    "role": "user",
+                    "content": prompt
+                },
+
+            ],
+
+            temperature=0.8,
+
+        )
+
+        raw_content = response.choices[0].message.content.strip()
+
+        print("Raw GPT quote response:", raw_content)
+
+        parsed = json.loads(raw_content)
+
+        quote = (parsed.get("quote") or "").strip()
+
+        author = (parsed.get("author") or "").strip()
+
+        if not quote or not author:
+            raise ValueError("Quote or author missing in GPT response")
+
+        return {
+
+            "quote": quote,
+
+            "author": author,
+
+        }
+
+    except Exception as e:
+
+        print("Error generating guest welcome quote:", str(e))
+
+        return random.choice(fallback_quotes)
 @app.post("/student/gamified-welcome-quote", response_model=GamifiedWelcomeQuoteResponse)
 def get_gamified_welcome_quote(
     request: GamifiedWelcomeQuoteRequest,
@@ -105977,6 +107075,7 @@ def send_otp_endpoint(
     return {
         "message": "OTP sent successfully"
     }
+
 @app.post("/retrieve-term-start-date", response_model=TermStartDateResponse)
 def retrieve_term_start_date(db: Session = Depends(get_db)):
     try:
@@ -106089,6 +107188,139 @@ def get_term_dates(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/guest/verify-otp")
+def guest_verify_otp(
+    request: GuestOTPVerify,
+    db: Session = Depends(get_db)
+):
+    contact = request.contact.strip()
+
+    if "@" in contact:
+        contact = contact.lower()
+
+    otp = str(request.otp).strip()
+
+    if not contact:
+        raise HTTPException(
+            status_code=400,
+            detail="Contact is required"
+        )
+
+    # --------------------------------------------------
+    # Check OTP Exists
+    # --------------------------------------------------
+    record = otp_store.get(contact)
+
+    if not record:
+        raise HTTPException(
+            status_code=400,
+            detail="OTP not sent"
+        )
+
+    # --------------------------------------------------
+    # Check Expiry
+    # --------------------------------------------------
+    if time.time() > record["expiry"]:
+
+        otp_store.pop(contact, None)
+
+        raise HTTPException(
+            status_code=400,
+            detail="OTP expired"
+        )
+
+    # --------------------------------------------------
+    # Validate OTP
+    # --------------------------------------------------
+    if otp != str(record["otp"]):
+
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid OTP"
+        )
+    # --------------------------------------------------
+    # Save Guest User
+    # --------------------------------------------------
+
+    guest_user = (
+        db.query(GuestUser)
+        .filter(
+            GuestUser.contact == contact
+        )
+        .first()
+    )
+
+    if not guest_user:
+
+        guest_user = GuestUser(
+
+            full_name=record["full_name"],
+
+            contact_method=record["contact_method"],
+
+            contact=record["contact"],
+
+            category=record["category"],
+
+            class_year=record["class_year"],
+
+            registered_at=datetime.utcnow(),
+
+            last_login=datetime.utcnow(),
+
+            is_active=True,
+
+        )
+
+        db.add(guest_user)
+
+    else:
+
+        guest_user.full_name = record["full_name"]
+
+        guest_user.contact_method = record["contact_method"]
+
+        guest_user.category = record["category"]
+
+        guest_user.class_year = record["class_year"]
+
+        guest_user.last_login = datetime.utcnow()
+
+    db.commit()
+    db.refresh(guest_user)
+
+    # --------------------------------------------------
+    # Build Guest Response
+    # --------------------------------------------------
+    guest = {
+
+        "full_name": record["full_name"],
+
+        "contact_method": record["contact_method"],
+
+        "contact": record["contact"],
+
+        "category": record["category"],
+
+        "class_year": record["class_year"],
+
+    }
+
+    # --------------------------------------------------
+    # Remove OTP After Successful Verification
+    # --------------------------------------------------
+    otp_store.pop(contact, None)
+
+    return {
+
+        "message": "OTP verified",
+
+        "user_type": "guest",
+
+        "guest": guest
+
+    }
 
         
 @app.post("/verify-otp")
@@ -106897,6 +108129,106 @@ def submit_quiz_answer(
             "Correct!"
             if is_correct
             else "Incorrect.",
+
+    }
+
+@app.post("/guest/send-otp")
+def guest_send_otp(
+    request: GuestOTPRequest,
+    db: Session = Depends(get_db)
+):
+
+    contact = request.contact.strip()
+
+    if request.contact_method == "email":
+        contact = contact.lower()
+
+    print(f"[DEBUG] Guest OTP request: {contact}")
+
+    if not contact:
+        raise HTTPException(
+            status_code=400,
+            detail="Contact is required"
+        )
+
+    if not request.full_name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Full name is required"
+        )
+
+    if not request.category.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Category is required"
+        )
+
+    if not request.class_year.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Class year is required"
+        )
+
+    # --------------------------------------------------
+    # Generate OTP
+    # --------------------------------------------------
+
+    otp = generate_otp()
+    print(f"[DEBUG] Generated OTP for {contact}: {otp}")
+
+    # --------------------------------------------------
+    # Save OTP + Guest Details
+    # --------------------------------------------------
+
+    otp_store[contact] = {
+
+        "otp": otp,
+
+        "expiry": time.time() + 300,
+
+        "contact_method": request.contact_method,
+
+        "contact": contact,
+
+        "full_name": request.full_name,
+
+        "category": request.category,
+
+        "class_year": request.class_year,
+
+    }
+
+    # --------------------------------------------------
+    # Send Email
+    # --------------------------------------------------
+
+    try:
+
+        if request.contact_method == "email":
+
+            send_otp_email(contact, otp)
+
+        else:
+
+            send_otp_sms(contact, otp)
+
+    except Exception as e:
+
+            print("\n==========================")
+            print("TWILIO ERROR")
+            print("==========================")
+            print(f"Contact : {contact}")
+            print(f"Method  : {request.contact_method}")
+            print(f"Error   : {e}")
+
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to send verification code: {e}"
+            )
+
+    return {
+
+        "message": "OTP sent successfully"
 
     }
             
