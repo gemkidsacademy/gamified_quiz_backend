@@ -7991,15 +7991,26 @@ def update_class_year_exam_module(
         "message": "Class year updated successfully."
     }
     
+from typing import Optional
+
 @app.get("/class-years-exam-module")
 def get_class_years_exam_module(
     center_code: str,
+    class_name: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    class_years = (
+    query = (
         db.query(ClassYearExamModule)
         .filter(ClassYearExamModule.center_code == center_code)
-        .order_by(
+    )
+
+    if class_name:
+        query = query.filter(
+            ClassYearExamModule.class_name == class_name
+        )
+
+    class_years = (
+        query.order_by(
             ClassYearExamModule.class_name,
             ClassYearExamModule.year_name
         )
@@ -8007,7 +8018,66 @@ def get_class_years_exam_module(
     )
 
     return class_years
+@app.put("/update-class-years-exam-module/{class_year_id}")
+def update_class_year_exam_module(
+    class_year_id: int,
+    request: ClassYearCreate,
+    db: Session = Depends(get_db)
+):
+    # ------------------------------------
+    # Find the existing record
+    # ------------------------------------
+    class_year = (
+        db.query(ClassYearExamModule)
+        .filter(ClassYearExamModule.id == class_year_id)
+        .first()
+    )
 
+    if not class_year:
+        raise HTTPException(
+            status_code=404,
+            detail="Class year not found."
+        )
+
+    # ------------------------------------
+    # Prevent duplicate class/year combinations
+    # ------------------------------------
+    duplicate = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.id != class_year_id,
+            ClassYearExamModule.center_code == request.center_code,
+            ClassYearExamModule.class_name == request.class_name,
+            ClassYearExamModule.year_name == request.year_name,
+        )
+        .first()
+    )
+
+    if duplicate:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"'{request.year_name}' is already configured "
+                f"for the '{request.class_name}' class."
+            )
+        )
+
+    # ------------------------------------
+    # Update the record
+    # ------------------------------------
+    class_year.class_name = request.class_name
+    class_year.year_name = request.year_name
+
+    db.commit()
+    db.refresh(class_year)
+
+    return {
+        "message": (
+            f"'{request.year_name}' has been updated successfully "
+            f"for the '{request.class_name}' class."
+        ),
+        "id": class_year.id,
+    }
 @app.post("/add-class-years-exam-module")
 def add_class_year_exam_module(
     request: ClassYearCreate,
@@ -8029,7 +8099,10 @@ def add_class_year_exam_module(
     if existing:
         raise HTTPException(
             status_code=400,
-            detail="This class year already exists."
+            detail=(
+                f"'{request.year_name}' has already been configured "
+                f"for the '{request.class_name}' class."
+            )
         )
 
     # ------------------------------------
@@ -8046,10 +8119,12 @@ def add_class_year_exam_module(
     db.refresh(class_year)
 
     return {
-        "message": "Class year added successfully.",
+        "message": (
+            f"'{request.year_name}' has been added to the "
+            f"'{request.class_name}' class successfully."
+        ),
         "id": class_year.id
     }
-
 @app.post("/classes")
 def create_class(data: ClassCreate, db: Session = Depends(get_db)):
 
@@ -45989,8 +46064,6 @@ def get_student_writing_cumulative(
         "topic": topic,
         "attempts": attempts
     }
- 
- 
 def get_all_classes(db: Session):
     results = (
         db.query(distinct(Student.class_name))
@@ -46000,16 +46073,32 @@ def get_all_classes(db: Session):
 
     # results comes as list of tuples → [('Class A',), ('Class B',)]
     return [row[0] for row in results if row[0]]
+ 
+def get_all_classes_2(
+    center_code: str,
+    db: Session
+):
+    results = (
+        db.query(Class)
+        .filter(Class.center_code == center_code)
+        .order_by(Class.class_name)
+        .all()
+    )
+
+    return [row.class_name for row in results]
 
 
 
 @app.get("/class-names/classes")
-def list_classes(db: Session = Depends(get_db)):
+def list_classes(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
     """
-    Returns all distinct class names.
+    Returns all class names for the specified center.
     """
 
-    classes = get_all_classes(db)
+    classes = get_all_classes_2(center_code, db)
 
     return {
         "classes": classes
