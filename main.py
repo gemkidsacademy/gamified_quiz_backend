@@ -469,7 +469,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(
     scheduler_job,
     trigger="cron",
-    minute="1",
+    minute="*",
     timezone="UTC",
     id="gamified_scheduler",
     replace_existing=True,
