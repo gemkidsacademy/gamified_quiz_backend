@@ -508,7 +508,31 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 
 # ---------------------------
 # Models
-# ---------------------------
+# --------------------------
+class GenerateGamifiedQuizRequest(BaseModel):
+
+    category: str
+
+    class_year: str
+
+    class_day: str
+
+    session: int
+
+    topic: str
+
+    activity_type: str
+
+class SessionDropdownResponse(BaseModel):
+    sessions: list[int]
+
+class GamifiedClassYearRequest(BaseModel):
+    category: str
+
+class GamifiedClassDayRequest(BaseModel):
+    category: str
+    class_year: str
+
 class GuestGamifiedWelcomeQuoteRequest(BaseModel):
     contact: str
 
@@ -7156,6 +7180,450 @@ def send_otp_sms(phone_number: str, otp: int):
         to=phone_number
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+@app.post("/admin/gamified/generate-quiz")
+def generate_gamified_quiz(
+    request: GenerateGamifiedQuizRequest,
+    db: Session = Depends(get_db),
+):
+
+    print("\n==============================")
+    print("GENERATE GAMIFIED QUIZ")
+    print("==============================")
+
+    CENTER_CODE = "MP001"
+
+    print(f"Category      : {request.category}")
+    print(f"Class Year    : {request.class_year}")
+    print(f"Class Day     : {request.class_day}")
+    print(f"Session       : {request.session}")
+    print(f"Topic         : {request.topic}")
+    print(f"Activity Type : {request.activity_type}")
+
+    # --------------------------------------------------
+    # Load Active Term
+    # --------------------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == CENTER_CODE,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not term:
+
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term."
+        )
+
+    print("\nActive Term")
+    print("---------------------------")
+    print(f"Term ID   : {term.id}")
+    print(f"Term Name : {term.term_name}")
+
+    # --------------------------------------------------
+    # Load Centre
+    # --------------------------------------------------
+
+    row = db.execute(
+        select(FranchiseLocation)
+    ).scalar_one_or_none()
+
+    if row:
+        country = row.country
+        state = row.state
+    else:
+        country = "Australia"
+        state = ""
+
+    # --------------------------------------------------
+    # GPT Prompt
+    # --------------------------------------------------
+
+    system_prompt = f"""
+You are an expert quiz-generating AI and a creative educator.
+
+Create a gamified quiz for {country} {state}
+{request.class_year} students.
+
+Topic:
+{request.topic}
+
+Activity Type:
+{request.activity_type}
+
+Return ONLY valid JSON.
+
+Structure:
+
+{{
+  "quiz_title":"...",
+  "instructions":"...",
+  "questions":[
+    {{
+      "category":"{request.topic}",
+      "prompt":"...",
+      "options":[
+        "...",
+        "...",
+        "...",
+        "..."
+      ],
+      "answer":"..."
+    }}
+  ]
+}}
+
+Rules:
+
+- Exactly 5 questions.
+- Each question has exactly 4 options.
+- Answer must exactly match one option.
+- Questions must be engaging.
+- Questions must suit the activity type.
+- Questions must suit {request.class_year}.
+"""
+
+    # --------------------------------------------------
+    # Generate Quiz
+    # --------------------------------------------------
+
+    try:
+
+        response = client.chat.completions.create(
+
+            model="gpt-4o-mini",
+
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                }
+            ],
+
+            temperature=0.5,
+
+        )
+
+        raw = response.choices[0].message.content.strip()
+
+        print("\nRaw GPT Response")
+        print("---------------------------")
+        print(raw)
+
+        quiz_json = json.loads(raw)
+
+    except Exception as e:
+
+        print(e)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Quiz generation failed."
+        )
+
+    # --------------------------------------------------
+    # Existing Quiz?
+    # --------------------------------------------------
+
+    existing = (
+
+        db.query(GeneratedGamifiedQuiz)
+
+        .filter(
+
+            GeneratedGamifiedQuiz.center_code == CENTER_CODE,
+
+            GeneratedGamifiedQuiz.term_id == term.id,
+
+            GeneratedGamifiedQuiz.category == request.category,
+
+            GeneratedGamifiedQuiz.class_year == request.class_year,
+
+            GeneratedGamifiedQuiz.class_day == request.class_day,
+
+            GeneratedGamifiedQuiz.session == request.session,
+
+        )
+
+        .first()
+
+    )
+
+    # --------------------------------------------------
+    # Update Existing
+    # --------------------------------------------------
+
+    if existing:
+
+        print("\nUpdating Existing Quiz")
+        print("---------------------------")
+        print(f"Quiz ID : {existing.id}")
+
+        existing.activity_type = request.activity_type
+        existing.topic = request.topic
+        existing.quiz_json = quiz_json
+        existing.generated_at = datetime.utcnow()
+
+    # --------------------------------------------------
+    # Create New
+    # --------------------------------------------------
+
+    else:
+
+        print("\nCreating New Quiz")
+
+        new_quiz = GeneratedGamifiedQuiz(
+
+            center_code=CENTER_CODE,
+
+            term_id=term.id,
+
+            term_name=term.term_name,
+
+            category=request.category,
+
+            class_year=request.class_year,
+
+            class_day=request.class_day,
+
+            session=request.session,
+
+            activity_type=request.activity_type,
+
+            topic=request.topic,
+
+            quiz_json=quiz_json,
+
+            generated_at=datetime.utcnow(),
+
+        )
+
+        db.add(new_quiz)
+
+    db.commit()
+
+    print("\nQuiz Saved Successfully")
+    print("---------------------------")
+
+    return {
+
+        "success": True,
+
+        "message": "Quiz generated successfully."
+
+    }
+
+@app.post("/admin/gamified/class-days")
+def get_gamified_class_days(
+    request: GamifiedClassDayRequest,
+    db: Session = Depends(get_db),
+):
+
+    CENTER_CODE = "MP001"
+
+    # ---------------------------------------
+    # Active Academic Term
+    # ---------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == CENTER_CODE,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ---------------------------------------
+    # Class Days
+    # ---------------------------------------
+
+    class_days = (
+        db.query(ClassConfiguration.class_day)
+        .filter(
+            ClassConfiguration.center_code == CENTER_CODE,
+            ClassConfiguration.term_id == term.id,
+            ClassConfiguration.category == request.category,
+            ClassConfiguration.class_year == request.class_year,
+        )
+        .distinct()
+        .order_by(ClassConfiguration.class_day)
+        .all()
+    )
+
+    return {
+
+        "class_days": [
+
+            row.class_day
+
+            for row in class_days
+
+        ]
+
+    }
+
+
+
+@app.get(
+    "/admin/gamified/sessions",
+    response_model=SessionDropdownResponse
+)
+def get_gamified_sessions(
+    db: Session = Depends(get_db),
+):
+
+    CENTER_CODE = "MP001"
+
+    # ---------------------------------------
+    # Active Academic Term
+    # ---------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == CENTER_CODE,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ---------------------------------------
+    # Build Sessions
+    # ---------------------------------------
+
+    sessions = list(
+        range(
+            1,
+            term.number_of_weeks + 1
+        )
+    )
+
+    return {
+
+        "sessions": sessions
+
+    }
+
+@app.post("/admin/gamified/class-years")
+def get_gamified_class_years(
+    request: GamifiedClassYearRequest,
+    db: Session = Depends(get_db),
+):
+
+    CENTER_CODE = "MP001"
+
+    # ---------------------------------------
+    # Active Academic Term
+    # ---------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == CENTER_CODE,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ---------------------------------------
+    # Class Years
+    # ---------------------------------------
+
+    class_years = (
+        db.query(ClassConfiguration.class_year)
+        .filter(
+            ClassConfiguration.center_code == CENTER_CODE,
+            ClassConfiguration.term_id == term.id,
+            ClassConfiguration.category == request.category,
+        )
+        .distinct()
+        .order_by(ClassConfiguration.class_year)
+        .all()
+    )
+
+    return {
+
+        "class_years": [
+
+            row.class_year
+
+            for row in class_years
+
+        ]
+
+    }
+@app.get("/admin/gamified/categories")
+def get_gamified_categories(
+    db: Session = Depends(get_db),
+):
+    CENTER_CODE = "MP001"
+
+    # ---------------------------------------
+    # Active Academic Term
+    # ---------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == CENTER_CODE,
+            AcademicTerm.is_active == True,
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ---------------------------------------
+    # Categories
+    # ---------------------------------------
+
+    categories = (
+        db.query(ClassConfiguration.category)
+        .filter(
+            ClassConfiguration.center_code == CENTER_CODE,
+            ClassConfiguration.term_id == term.id,
+        )
+        .distinct()
+        .order_by(ClassConfiguration.category)
+        .all()
+    )
+
+    return {
+        "categories": [
+            row.category
+            for row in categories
+        ]
+    }
 
 @app.post("/guest/send-whatsapp-otp")
 def guest_send_whatsapp_otp(
@@ -9734,7 +10202,15 @@ def get_current_gamified_quiz(
     # ------------------------------------
     # Find Generated Quiz
     # ------------------------------------
-
+    print("\nSearching For Generated Quiz")
+    print("--------------------------------")
+    print(f"Center Code : {student.center_code}")
+    print(f"Term ID     : {term.id}")
+    print(f"Category    : {student.class_name}")
+    print(f"Class Year  : {student.student_year}")
+    print(f"Class Day   : {student.class_day}")
+    print(f"Session     : {current_session}")
+    print("--------------------------------")
     generated_quiz = (
         db.query(GeneratedGamifiedQuiz)
         .filter(
@@ -9749,7 +10225,17 @@ def get_current_gamified_quiz(
     )
 
     if not generated_quiz:
+
         print("\nGenerated Quiz: NOT FOUND")
+        print("--------------------------------")
+        print("Search values were:")
+        print(f"Center Code : {student.center_code}")
+        print(f"Term ID     : {term.id}")
+        print(f"Category    : {student.class_name}")
+        print(f"Class Year  : {student.student_year}")
+        print(f"Class Day   : {student.class_day}")
+        print(f"Session     : {current_session}")
+        print("--------------------------------")
 
         raise HTTPException(
             status_code=404,
