@@ -517,7 +517,7 @@ class GenerateGamifiedQuizRequest(BaseModel):
 
     class_day: str
 
-    session: int
+    
 
     topic: str
 
@@ -7198,7 +7198,7 @@ def generate_gamified_quiz(
     print(f"Category      : {request.category}")
     print(f"Class Year    : {request.class_year}")
     print(f"Class Day     : {request.class_day}")
-    print(f"Session       : {request.session}")
+    
     print(f"Topic         : {request.topic}")
     print(f"Activity Type : {request.activity_type}")
 
@@ -7226,6 +7226,33 @@ def generate_gamified_quiz(
     print("---------------------------")
     print(f"Term ID   : {term.id}")
     print(f"Term Name : {term.term_name}")
+    # --------------------------------------------------
+    # Calculate Current Session
+    # --------------------------------------------------
+
+    today = date.today()
+
+    days_since_start = (today - term.start_date).days
+
+    if today < term.start_date or today > term.end_date:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Today's date is outside the active academic term."
+        )
+
+    current_session = (days_since_start // 7) + 1
+    if current_session < 1 or current_session > term.number_of_weeks:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Current session is outside the active academic term."
+        )
+
+    print("\nCurrent Session")
+    print("---------------------------")
+    print(f"Today          : {today}")
+    print(f"Current Session: {current_session}")
 
     # --------------------------------------------------
     # Load Centre
@@ -7258,8 +7285,12 @@ Topic:
 Activity Type:
 {request.activity_type}
 
-Return ONLY valid JSON.
+Return ONLY a single valid JSON object.
 
+Do NOT wrap the JSON in markdown.
+Do NOT include ```json.
+Do NOT include explanations.
+Do NOT include text before or after the JSON.
 Structure:
 
 {{
@@ -7318,6 +7349,73 @@ Rules:
         print(raw)
 
         quiz_json = json.loads(raw)
+        print("\n======================================")
+        print("STARTING AI QUALITY REVIEW")
+        print("======================================")
+        qa_prompt = f"""
+        You are an expert educational assessment reviewer.
+
+        Your job is to review the generated quiz.
+
+        Check ALL of the following:
+
+        1. Exactly FIVE questions.
+        2. Every question has FOUR options.
+        3. Exactly ONE objectively correct answer.
+        4. Verify that no other option could also be correct.
+        5. Verify mathematics.
+        6. Verify science facts.
+        7. Verify grammar.
+        8. Verify spelling.
+        9. Verify punctuation.
+        10. Verify that the answer exactly matches one option.
+        11. Verify there are no duplicate options.
+        12. Verify distractors are incorrect.
+        13. Verify the topic is correct.
+        14. Verify the activity type is reflected.
+
+        If any question has a problem,
+        rewrite ONLY that question.
+
+        Return ONLY valid JSON.
+        Return exactly the same JSON schema.
+
+        Quiz:
+
+        {json.dumps(quiz_json, indent=2)}
+        """
+        qa_response = client.chat.completions.create(
+
+            model="gpt-4o-mini",
+
+            messages=[
+                {
+                    "role": "system",
+                    "content": qa_prompt,
+                }
+            ],
+
+            temperature=0,
+        )
+        reviewed_quiz = qa_response.choices[0].message.content.strip()
+
+        print("\n========== QA REVIEW ==========")
+        print(reviewed_quiz)
+        print("================================")
+        if reviewed_quiz.startswith("```"):
+
+            reviewed_quiz = reviewed_quiz.split("```", 1)[1]
+
+            if reviewed_quiz.startswith("json"):
+                reviewed_quiz = reviewed_quiz[4:]
+
+            reviewed_quiz = reviewed_quiz.rsplit("```", 1)[0].strip()
+
+        try:
+            corrected_json = json.loads(reviewed_quiz)
+        except json.JSONDecodeError:
+            print("QA returned invalid JSON.")
+            corrected_json = quiz_json
 
     except Exception as e:
 
@@ -7348,7 +7446,7 @@ Rules:
 
             GeneratedGamifiedQuiz.class_day == request.class_day,
 
-            GeneratedGamifiedQuiz.session == request.session,
+            GeneratedGamifiedQuiz.session == current_session,
 
         )
 
@@ -7368,7 +7466,7 @@ Rules:
 
         existing.activity_type = request.activity_type
         existing.topic = request.topic
-        existing.quiz_json = quiz_json
+        existing.quiz_json = corrected_json
         existing.generated_at = datetime.utcnow()
 
     # --------------------------------------------------
@@ -7393,13 +7491,13 @@ Rules:
 
             class_day=request.class_day,
 
-            session=request.session,
+            session=current_session,
 
             activity_type=request.activity_type,
 
             topic=request.topic,
 
-            quiz_json=quiz_json,
+            quiz_json=corrected_json,
 
             generated_at=datetime.utcnow(),
 
@@ -9922,33 +10020,46 @@ def load_leaderboard(
             StudentGamifiedQuizAttempt.session == request.session
         )
 
-    leaderboard = (
-        query.order_by(
-            StudentGamifiedQuizAttempt.current_score.desc(),
-            StudentGamifiedQuizAttempt.time_taken_seconds.asc(),
-            StudentGamifiedQuizAttempt.started_at.asc(),
-        )
-        .all()
-    )
+    leaderboard = query.all()
 
     print(f"Rows Found : {len(leaderboard)}")
 
-    response = []
+    students = {}
 
     for row in leaderboard:
-        response.append({
-            "id": row.id,
-            "student_id": row.student_id,
-            "category": row.category,
-            "class_year": row.class_year,
-            "class_day": row.class_day,
-            "current_score": row.current_score,
-            "total_questions": row.total_questions,
-            "is_completed": row.is_completed,
-            "time_taken_seconds": row.time_taken_seconds,
-            "started_at": row.started_at,
-        })
 
+        if row.student_id not in students:
+            students[row.student_id] = {
+                "id": row.id,
+                "student_id": row.student_id,
+                "category": row.category,
+                "class_year": row.class_year,
+                "class_day": row.class_day,
+                "current_score": 0,
+                "total_questions": 0,
+                "time_taken_seconds": 0,
+                "is_completed": True,
+                "started_at": row.started_at,
+            }
+
+        students[row.student_id]["current_score"] += row.current_score
+        students[row.student_id]["total_questions"] += row.total_questions
+        students[row.student_id]["time_taken_seconds"] += row.time_taken_seconds
+
+        # Keep the earliest attempt for tie-breaking
+        if row.started_at < students[row.student_id]["started_at"]:
+            students[row.student_id]["started_at"] = row.started_at
+
+    response = sorted(
+        students.values(),
+        key=lambda x: (
+            -x["current_score"],          # Highest cumulative score
+            x["time_taken_seconds"],      # Lowest total time wins ties
+            x["started_at"],              # Earliest completion wins remaining ties
+        )
+    )
+
+    return response
     return response
 
 class LeaderboardClassFiltersRequest(BaseModel):
