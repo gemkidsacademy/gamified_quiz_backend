@@ -4218,6 +4218,7 @@ class AdminExamResponseThinkingSkills(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
 class AdminExamResponseNaplanNumeracy(Base):
     __tablename__ = "admin_exam_response_naplan_numeracy"
 
@@ -41956,6 +41957,307 @@ def normalize_topic_reporting(value: str) -> str:
 
     return topic_aliases.get(normalized, normalized)
 
+
+
+@app.get("/api/reports/student/cumulative/options")
+def get_cumulative_report_options(
+    student_id: str = Query(..., description="Student ID"),
+    db: Session = Depends(get_db),
+):
+    print("\n==============================================")
+    print("📋 [CUMULATIVE OPTIONS] REQUEST RECEIVED")
+    print("   student_id:", student_id)
+    print("==============================================")
+
+    # ==========================================================
+    # 1. FIND STUDENT
+    # ==========================================================
+
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found:", student_id)
+
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found",
+        )
+
+    print(
+        "✅ Student found:",
+        student.id,
+        student.student_id,
+        student.name,
+    )
+
+    # ==========================================================
+    # 2. GET ALL EXAM ATTEMPTS FOR THIS STUDENT
+    # ==========================================================
+
+    attempts = (
+        db.query(AdminExamReport)
+        .filter(
+            AdminExamReport.student_id == student_id
+        )
+        .order_by(
+            AdminExamReport.created_at.desc()
+        )
+        .all()
+    )
+
+    print(
+        "📊 Admin exam reports found:",
+        len(attempts)
+    )
+
+    if not attempts:
+        return {
+            "student_id": student_id,
+            "exams": [],
+        }
+
+    # ==========================================================
+    # 3. RESPONSE MODEL MAP
+    #
+    # Writing is intentionally excluded because
+    # StudentExamWriting does not contain question-level
+    # topic/is_correct response records like the other
+    # cumulative-report subjects.
+    # ==========================================================
+
+    response_models = {
+        "thinking_skills": AdminExamResponseThinkingSkills,
+        "mathematical_reasoning": AdminExamResponseMathematicalReasoning,
+        "reading": AdminExamResponseReading,
+    }
+
+    exam_labels = {
+        "thinking_skills": "Thinking Skills",
+        "mathematical_reasoning": "Mathematical Reasoning",
+        "reading": "Reading",
+    }
+
+    # ==========================================================
+    # 4. BUILD EXAM → TOPIC → ATTEMPT DATE STRUCTURE
+    # ==========================================================
+
+    exam_data = {}
+
+    for attempt in attempts:
+
+        exam_key = (
+            attempt.exam_type or ""
+        ).lower().strip()
+
+        print("\n----------------------------------------------")
+        print("🔎 Processing attempt")
+        print("   exam:", exam_key)
+        print("   exam_attempt_id:", attempt.exam_attempt_id)
+        print("   created_at:", attempt.created_at)
+        print("----------------------------------------------")
+
+        # ------------------------------------------------------
+        # Skip exams that don't have question-level cumulative
+        # response models.
+        # ------------------------------------------------------
+
+        ResponseModel = response_models.get(exam_key)
+
+        if not ResponseModel:
+            print(
+                "⚠️ Skipping unsupported cumulative exam:",
+                exam_key
+            )
+            continue
+
+        # ------------------------------------------------------
+        # Get responses for this particular attempt
+        # ------------------------------------------------------
+
+        responses = (
+            db.query(ResponseModel)
+            .filter(
+                ResponseModel.exam_attempt_id
+                == attempt.exam_attempt_id
+            )
+            .all()
+        )
+
+        print(
+            "   Responses found:",
+            len(responses)
+        )
+
+        if not responses:
+            print(
+                "   ⚠️ No responses for attempt:",
+                attempt.exam_attempt_id
+            )
+            continue
+
+        # ------------------------------------------------------
+        # Find topics that actually have responses
+        # ------------------------------------------------------
+
+        for response in responses:
+
+            raw_topic = getattr(
+                response,
+                "topic",
+                None
+            )
+
+            if not raw_topic:
+                continue
+
+            normalized_topic = normalize_topic_reporting(
+                raw_topic
+            )
+
+            if not normalized_topic:
+                continue
+
+            # --------------------------------------------------
+            # Create exam container
+            # --------------------------------------------------
+
+            if exam_key not in exam_data:
+
+                exam_data[exam_key] = {
+                    "key": exam_key,
+                    "label": exam_labels.get(
+                        exam_key,
+                        exam_key.replace("_", " ").title()
+                    ),
+                    "topics": {}
+                }
+
+            # --------------------------------------------------
+            # Create topic container
+            # --------------------------------------------------
+
+            if normalized_topic not in exam_data[exam_key]["topics"]:
+
+                exam_data[exam_key]["topics"][
+                    normalized_topic
+                ] = {
+                    "key": normalized_topic,
+
+                    # Preserve the actual DB topic as the
+                    # human-readable label.
+                    "label": str(raw_topic).strip(),
+
+                    "attempt_dates": set()
+                }
+
+            # --------------------------------------------------
+            # Add the attempt date
+            # --------------------------------------------------
+
+            if attempt.created_at:
+
+                attempt_date = (
+                    attempt.created_at.date()
+                )
+
+                exam_data[exam_key]["topics"][
+                    normalized_topic
+                ]["attempt_dates"].add(
+                    attempt_date.isoformat()
+                )
+
+    # ==========================================================
+    # 5. CONVERT DICTIONARIES / SETS TO JSON-SAFE LISTS
+    # ==========================================================
+
+    exams = []
+
+    for exam_key, exam_info in exam_data.items():
+
+        topics = []
+
+        for topic_key, topic_info in exam_info["topics"].items():
+
+            attempt_dates = sorted(
+                topic_info["attempt_dates"],
+                reverse=True
+            )
+
+            # --------------------------------------------------
+            # Only include topics that actually have dates
+            # --------------------------------------------------
+
+            if not attempt_dates:
+                continue
+
+            topics.append({
+                "key": topic_info["key"],
+                "label": topic_info["label"],
+                "attempt_dates": attempt_dates,
+            })
+
+        # ------------------------------------------------------
+        # Only include exams that actually have usable topics
+        # ------------------------------------------------------
+
+        if topics:
+
+            topics.sort(
+                key=lambda item: item["label"].lower()
+            )
+
+            exams.append({
+                "key": exam_info["key"],
+                "label": exam_info["label"],
+                "topics": topics,
+            })
+
+    # ==========================================================
+    # 6. SORT EXAMS
+    # ==========================================================
+
+    exams.sort(
+        key=lambda item: item["label"].lower()
+    )
+
+    # ==========================================================
+    # 7. DEBUG OUTPUT
+    # ==========================================================
+
+    print("\n==============================================")
+    print("📋 CUMULATIVE OPTIONS RESULT")
+    print("   student_id:", student_id)
+    print("   exams:", len(exams))
+
+    for exam in exams:
+
+        print(
+            f"   📘 {exam['label']} "
+            f"({len(exam['topics'])} topics)"
+        )
+
+        for topic in exam["topics"]:
+
+            print(
+                f"      • {topic['label']} "
+                f"→ {len(topic['attempt_dates'])} dates"
+            )
+
+    print("==============================================\n")
+
+    # ==========================================================
+    # 8. RETURN
+    # ==========================================================
+
+    return {
+        "student_id": student_id,
+        "student_name": student.name,
+        "exams": exams,
+    }
 @app.get("/api/reports/student/cumulative")
 def get_student_cumulative_report(
     student_id: str,
@@ -42470,6 +42772,7 @@ def get_student_cumulative_report_overall(
             status_code=500,
             detail="Internal error while generating cumulative report",
         )
+
 def compute_student_scores_from_responses(raw_rows):
     attempts = {}
 
@@ -48322,7 +48625,272 @@ from sqlalchemy import func, cast, Integer
 from sqlalchemy.exc import IntegrityError
 from io import BytesIO
 import pandas as pd
+@app.post("/api/admin/bulk-users-exam-module")
+async def bulk_users_exam_module(
+    file: UploadFile = File(...),
+    center_code: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    print("📥 Bulk user upload request received")
+    print(f"📄 Uploaded filename: {file.filename}")
+    print(f"🏫 Center Code: {center_code}")
 
+    if not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .csv files are supported",
+        )
+
+    # ----------------------------------------
+    # Lookup Centre
+    # ----------------------------------------
+
+    center = (
+        db.query(Center)
+        .filter(Center.center_code == center_code)
+        .first()
+    )
+
+    if not center:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Center '{center_code}' not found.",
+        )
+
+    # ----------------------------------------
+    # Read CSV
+    # ----------------------------------------
+
+    try:
+        contents = await file.read()
+        df = pd.read_csv(BytesIO(contents))
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to read CSV file",
+        )
+
+    required_columns = {
+        "student_id",
+        "password",
+        "name",
+        "gender",
+        "class_name",
+        "student_year",
+        "class_day",
+        "parent_email",
+    }
+
+    if not required_columns.issubset(df.columns):
+        missing = required_columns - set(df.columns)
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required columns: {', '.join(sorted(missing))}",
+        )
+
+    def clean(value):
+        if pd.isna(value):
+            return None
+
+        value = str(value).strip()
+
+        if value == "":
+            return None
+
+        return value
+
+    # ----------------------------------------
+    # Generate Next ID
+    # ----------------------------------------
+
+    last_id_int = (
+        db.query(func.max(cast(Student.id, Integer)))
+        .filter(Student.id.op("~")("^[0-9]+$"))
+        .scalar()
+    ) or 0
+
+    next_id = last_id_int + 1
+
+    print(f"🔢 Last numeric ID: {last_id_int}")
+    print(f"🆕 Starting next ID: {next_id}")
+
+    success = 0
+    failed = 0
+    errors = []
+
+    # ----------------------------------------
+    # Process CSV
+    # ----------------------------------------
+
+    for index, row in df.iterrows():
+
+        student_id_value = clean(row.get("student_id"))
+        parent_email_value = clean(row.get("parent_email"))
+
+        print(
+            f"➡️ Row {index + 2} | "
+            f"id={next_id} | "
+            f"student_id={student_id_value}"
+        )
+
+        try:
+
+            student = Student(
+                id=str(next_id),
+
+                student_id=student_id_value,
+                password=clean(row.get("password")),
+                name=clean(row.get("name")),
+                gender=clean(row.get("gender")),
+                parent_email=parent_email_value,
+                class_name=clean(row.get("class_name")),
+                class_day=clean(row.get("class_day")),
+                student_year=clean(row.get("student_year")),
+
+                center_code=center.center_code,
+                center_name=center.center_name,
+            )
+
+            db.add(student)
+            db.commit()
+            db.refresh(student)
+
+            # ----------------------------------------
+            # Student successfully created
+            # ----------------------------------------
+
+            success += 1
+
+            print(
+                f"✅ Student created successfully: "
+                f"{student.student_id}"
+            )
+
+            # ----------------------------------------
+            # Send Credentials Email
+            # ----------------------------------------
+
+            if parent_email_value and student_id_value:
+
+                try:
+                    print(
+                        f"📧 Sending credentials email to "
+                        f"{parent_email_value}"
+                    )
+
+                    send_student_credentials_email(
+                        to_email=parent_email_value,
+                        student_id=student_id_value,
+                    )
+
+                    print(
+                        f"✅ Credentials email sent to "
+                        f"{parent_email_value}"
+                    )
+
+                except Exception as email_error:
+
+                    print(
+                        f"⚠️ Student created but email failed "
+                        f"for {parent_email_value}: {email_error}"
+                    )
+
+                    errors.append(
+                        {
+                            "row": index + 2,
+                            "student_id": student_id_value,
+                            "error": (
+                                f"Student created successfully, "
+                                f"but credentials email failed: "
+                                f"{str(email_error)}"
+                            ),
+                        }
+                    )
+
+            else:
+
+                print(
+                    f"⚠️ Student created but email not sent "
+                    f"because parent email or student ID is missing."
+                )
+
+                errors.append(
+                    {
+                        "row": index + 2,
+                        "student_id": student_id_value,
+                        "error": (
+                            "Student created successfully, "
+                            "but credentials email was not sent "
+                            "because parent_email or student_id is missing."
+                        ),
+                    }
+                )
+
+        except IntegrityError as e:
+
+            db.rollback()
+
+            error_message = str(e.orig)
+
+            if "ix_students_parent_email" in error_message:
+                friendly_error = (
+                    f"Parent email '{parent_email_value}' already exists."
+                )
+
+            elif "students_student_id_key" in error_message:
+                friendly_error = (
+                    f"Student ID '{student_id_value}' already exists."
+                )
+
+            else:
+                friendly_error = error_message
+
+            failed += 1
+
+            errors.append(
+                {
+                    "row": index + 2,
+                    "student_id": student_id_value,
+                    "error": friendly_error,
+                }
+            )
+
+        except Exception as e:
+
+            db.rollback()
+
+            failed += 1
+
+            errors.append(
+                {
+                    "row": index + 2,
+                    "student_id": student_id_value,
+                    "error": str(e),
+                }
+            )
+
+        finally:
+            next_id += 1
+
+    # ----------------------------------------
+    # Bulk Upload Summary
+    # ----------------------------------------
+
+    print("\n========== BULK UPLOAD SUMMARY ==========")
+    print(f"✅ Success : {success}")
+    print(f"❌ Failed  : {failed}")
+
+    if errors:
+        print("\nErrors:")
+        for err in errors:
+            print(err)
+
+    return {
+        "success": success,
+        "failed": failed,
+        "errors": errors,
+    }
 
 @app.post("/api/admin/bulk-users-exam-module")
 async def bulk_users_exam_module(
@@ -48512,6 +49080,7 @@ async def bulk_users_exam_module(
         "failed": failed,
         "errors": errors,
     }
+
 @app.get("/api/topics-exam-setup", response_model=List[str])
 def get_distinct_topics_exam_setup(
     class_name: str = Query(...),
@@ -62420,6 +62989,7 @@ def send_student_credentials_email(
             f"to {to_email}: {e}"
         )
         raise    
+
 @app.post("/add_student_exam_module")
 def add_student_exam_module(
     payload: AddStudentExamModuleRequest,
@@ -89445,7 +90015,20 @@ def start_exam_oc_mathematical_reasoning(
                 or []
             )
 
-            fixed["blocks"] = raw_blocks
+            # Remove metadata blocks that should not be displayed
+            cleaned_blocks = []
+
+            for block in raw_blocks:
+                if (
+                    block.get("type") == "text"
+                    and isinstance(block.get("content"), str)
+                    and block["content"].strip().upper().startswith("CLASS_YEAR:")
+                ):
+                    continue
+
+                cleaned_blocks.append(block)
+
+            fixed["blocks"] = cleaned_blocks
 
             resolve_images(
                 fixed["blocks"],
