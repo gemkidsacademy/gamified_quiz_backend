@@ -49625,7 +49625,6 @@ def generate_overall_oc_report(
 
     required_subjects = {
         "reading",
-        "writing",
         "thinking_skills",
         "mathematical_reasoning"
     }
@@ -49645,7 +49644,12 @@ def generate_overall_oc_report(
     # --------------------------------------------------
     components = {}
 
-    for subject, report in reports_by_subject.items():
+    for subject in [
+        "reading",
+        "thinking_skills",
+        "mathematical_reasoning"
+    ]:
+        report = reports_by_subject[subject]
 
         components[subject] = {
             "percent": report.overall_score
@@ -49769,14 +49773,7 @@ def generate_overall_oc_report(
 
     print("✅ Reading diagnostics ready")
 
-    print("🧠 Building Writing diagnostics...")
-
-    writing_report = build_oc_writing_topic_report_by_attempt(
-        attempt_id=reports_by_subject["writing"].exam_attempt_id,
-        db=db
-    )
-
-    print("✅ Writing diagnostics ready")
+ 
 
     return {
 
@@ -49800,9 +49797,7 @@ def generate_overall_oc_report(
 
             "thinking_skills": thinking_report,
 
-            "mathematical_reasoning": maths_report,
-
-            "writing": writing_report
+            "mathematical_reasoning": maths_report
         }
 
     }
@@ -63687,8 +63682,14 @@ def submit_oc_reading_homework(payload: dict, db: Session = Depends(get_db)):
                 "accuracy": accuracy
             })
 
-        accuracy = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
-        score_percent = round((correct / total_questions) * 100, 2) if total_questions > 0 else 0.0
+        accuracy = (
+            round((correct / attempted) * 100, 2)
+            if attempted > 0 else 0.0
+        )
+        score_percent = (
+            round((correct / total_questions) * 100, 2)
+            if total_questions > 0 else 0.0
+        )
         result = "Pass" if score_percent >= 50 else "Fail"
 
         MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
@@ -63896,7 +63897,7 @@ def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
         topics_report = []
         for topic, stats in topic_stats.items():
             accuracy = (
-                round((stats["attempted"] / stats["total"]) * 100, 2)
+                round((stats["correct"] / stats["total"]) * 100, 2)
                 if stats["total"] > 0 else 0.0
             )
 
@@ -63917,14 +63918,14 @@ def submit_oc_reading_exam(payload: dict, db: Session = Depends(get_db)):
             })
 
         accuracy = round(
-            (attempted / total_questions) * 100,
-            2
-        ) if total_questions > 0 else 0.0
-
-        score_percent = round(
             (correct / attempted) * 100,
             2
         ) if attempted > 0 else 0.0
+
+        score_percent = round(
+            (correct / total_questions) * 100,
+            2
+        ) if total_questions > 0 else 0.0
         result = "Pass" if score_percent >= 50 else "Fail"
 
         MIN_ATTEMPTS = max(5, int(total_questions * 0.2))
@@ -64119,13 +64120,13 @@ def submit_homework_reading(payload: dict, db: Session = Depends(get_db)):
         topics_report = []
         for topic, stats in topic_stats.items():
             accuracy = (
-                round((stats["attempted"] / stats["total"]) * 100, 2)
-                if stats["total"] > 0 else 0.0
+                round((stats["correct"] / stats["attempted"]) * 100, 2)
+                if stats["attempted"] > 0 else 0.0
             )
 
             topic_score = (
-                round((stats["correct"] / stats["attempted"]) * 100, 2)
-                if stats["attempted"] > 0 else 0.0
+                round((stats["correct"] / stats["total"]) * 100, 2)
+                if stats["total"] > 0 else 0.0
             )
 
             topics_report.append({
@@ -64364,12 +64365,13 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
         topics_report = []
         for topic, stats in topic_stats.items():
             accuracy = (
-                round((stats["attempted"] / stats["total"]) * 100, 2)
-                if stats["total"] > 0 else 0.0
-            )
-            topic_score = (
                 round((stats["correct"] / stats["attempted"]) * 100, 2)
                 if stats["attempted"] > 0 else 0.0
+            )
+
+            topic_score = (
+                round((stats["correct"] / stats["total"]) * 100, 2)
+                if stats["total"] > 0 else 0.0
             )
 
             topics_report.append({
@@ -64383,9 +64385,18 @@ def submit_reading_exam(payload: dict, db: Session = Depends(get_db)):
             })
 
 
-        accuracy = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
-        coverage = round((attempted / total_questions) * 100, 2) if total_questions > 0 else 0.0
-        score_percent = round((correct / attempted) * 100, 2) if attempted > 0 else 0.0
+        accuracy = (
+            round((correct / attempted) * 100, 2)
+            if attempted > 0 else 0.0
+        )
+        coverage = (
+            round((attempted / total_questions) * 100, 2)
+            if total_questions > 0 else 0.0
+        )
+        score_percent = (
+            round((correct / total_questions) * 100, 2)
+            if total_questions > 0 else 0.0
+        )
         result = "Pass" if score_percent >= 50 else "Fail"
 
 
