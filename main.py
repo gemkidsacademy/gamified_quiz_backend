@@ -469,8 +469,8 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(
     scheduler_job,
     trigger="cron",
-    #minute="*",
-    minute="59",
+    minute="*",
+    #minute="59",
     timezone="UTC",
     id="gamified_scheduler",
     replace_existing=True,
@@ -4258,6 +4258,7 @@ class AdminExamResponseNaplanNumeracy(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
 class AdminExamResponseNaplanLanguageConventions(Base):
     __tablename__ = "admin_exam_response_naplan_language_conventions"
 
@@ -6476,16 +6477,53 @@ def get_attempt_column(exam: str, model):
 
     raise HTTPException(status_code=400, detail="Invalid exam type")
 def get_response_model(exam: str):
+
+    # =========================
+    # SELECTIVE
+    # =========================
     if exam == "thinking_skills":
         return AdminExamResponseThinkingSkills
-    if exam == "reading":
-        return AdminExamResponseReading
+
     if exam == "mathematical_reasoning":
         return AdminExamResponseMathematicalReasoning
+
+    if exam == "reading":
+        return AdminExamResponseReading
+
     if exam == "writing":
         return StudentExamWriting
 
-    raise HTTPException(status_code=400, detail="Invalid exam type")
+
+    # =========================
+    # OC
+    # =========================
+    if exam == "oc_thinking_skills":
+        return AdminExamResponseOCThinkingSkills
+
+    if exam == "oc_mathematical_reasoning":
+        return AdminExamResponseOCMathematicalReasoning
+
+    if exam == "oc_reading":
+        return AdminExamResponseOCReading
+
+
+    # =========================
+    # NAPLAN
+    # =========================
+    if exam == "naplan_numeracy":
+        return AdminExamResponseNaplanNumeracy
+
+    if exam == "naplan_language_conventions":
+        return AdminExamResponseNaplanLanguageConventions
+
+    if exam == "naplan_reading":
+        return AdminExamResponseNaplanReading
+
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Invalid exam type: {exam}"
+    )
  
 def chunk_into_pages(paragraphs, per_page=18):
     pages = []
@@ -26566,11 +26604,32 @@ def get_naplan_exam_dates(
         func.max(timestamp_col).label("timestamp")
     )
 
-    if internal_student_id:
-        print("🔍 Filtering by internal_student_id")
-        query = query.filter(Model.student_id == internal_student_id)
+    # --------------------------------------------------
+    # Student filtering
+    # --------------------------------------------------
+
+    if student_id:
+        if exam == "naplan_reading":
+            # Reading stores student_id as INTEGER
+            print("🔍 Filtering NAPLAN Reading by internal integer student_id")
+
+            query = query.filter(
+                Model.student_id == internal_student_id
+            )
+
+        elif exam in (
+            "naplan_numeracy",
+            "naplan_language_conventions",
+        ):
+            # Numeracy and Language Conventions store student_id as STRING
+            print("🔍 Filtering NAPLAN by external student_id string")
+
+            query = query.filter(
+                Model.student_id == str(internal_student_id)
+            )
+
     else:
-        print("⚠️ Skipping student filter (no internal ID)")
+        print("⚠️ Skipping student filter (no student_id)")
 
     rows = (
         query
@@ -26632,9 +26691,11 @@ def get_student_class(
 
 
 @app.get("/api/exams/available")
-def get_available_exams(student_id: str, db: Session = Depends(get_db)):
-
-    # 1️⃣ Get student
+def get_available_exams(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    # 1. Get student
     student = (
         db.query(Student)
         .filter(Student.student_id == student_id)
@@ -26642,38 +26703,86 @@ def get_available_exams(student_id: str, db: Session = Depends(get_db)):
     )
 
     if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
 
-    class_name = student.class_name.lower()
+    # Normalize class name
+    class_name = (student.class_name or "").strip().lower()
 
-    # 2️⃣ Map exams based on class
+    print("================================")
+    print("Student ID:", student.student_id)
+    print("Class Name from DB:", repr(student.class_name))
+    print("Normalized Class Name:", repr(class_name))
+    print("Student Year:", student.student_year)
+    print("Center Code:", student.center_code)
+    print("================================")
+
+    # 2. Map exams based on class
     if class_name == "selective":
+
         exams = [
-            {"key": "thinking_skills", "label": "Thinking Skills"},
-            {"key": "mathematical_reasoning", "label": "Mathematical Reasoning"},
-            {"key": "reading", "label": "Reading"},
-            {"key": "writing", "label": "Writing"},
+            {
+                "key": "thinking_skills",
+                "label": "Thinking Skills"
+            },
+            {
+                "key": "mathematical_reasoning",
+                "label": "Mathematical Reasoning"
+            },
+            {
+                "key": "reading",
+                "label": "Reading"
+            },
+            {
+                "key": "writing",
+                "label": "Writing"
+            }
         ]
 
     elif class_name == "oc":
+
         exams = [
-            {"key": "oc_thinking_skills", "label": "Thinking Skills"},
-            {"key": "oc_mathematical_reasoning", "label": "Mathematical Reasoning"},
-            {"key": "oc_reading", "label": "Reading"},
+            {
+                "key": "oc_thinking_skills",
+                "label": "Thinking Skills"
+            },
+            {
+                "key": "oc_mathematical_reasoning",
+                "label": "Mathematical Reasoning"
+            },
+            {
+                "key": "oc_reading",
+                "label": "Reading"
+            }
         ]
 
     elif class_name == "naplan":
+
         exams = [
-            {"key": "naplan_numeracy", "label": "Numeracy"},
-            {"key": "naplan_language_conventions", "label": "Language Conventions"},
-            {"key": "naplan_reading", "label": "Reading"},
+            {
+                "key": "naplan_numeracy",
+                "label": "Numeracy"
+            },
+            {
+                "key": "naplan_language_conventions",
+                "label": "Language Conventions"
+            },
+            {
+                "key": "naplan_reading",
+                "label": "Reading"
+            }
         ]
 
     else:
         exams = []
 
-    # 3️⃣ Return response
-    return {"exams": exams}
+    print("Available exams:", exams)
+
+    return {
+        "exams": exams
+    }
 @app.get("/api/students/basic")
 def get_students_basic_info(db: Session = Depends(get_db)):
     students = db.query(Student).all()
@@ -41994,29 +42103,164 @@ def get_cumulative_report_options(
         student.name,
     )
 
+
     # ==========================================================
     # 2. GET ALL EXAM ATTEMPTS FOR THIS STUDENT
     # ==========================================================
 
-    attempts = (
-        db.query(AdminExamReport)
-        .filter(
-            AdminExamReport.student_id == student_id
+    class_name = (student.class_name or "").lower().strip()
+
+    if class_name == "oc":
+
+        print("🟣 Student is OC")
+        print("📊 Reading attempts from admin_exam_oc_reports")
+
+        attempts = (
+            db.query(AdminExamOCReport)
+            .filter(
+                AdminExamOCReport.student_id == student_id
+            )
+            .order_by(
+                AdminExamOCReport.created_at.desc()
+            )
+            .all()
         )
-        .order_by(
-            AdminExamReport.created_at.desc()
+
+    elif class_name == "naplan":
+
+        print("🟢 Student is NAPLAN")
+        print("📊 Building attempts from NAPLAN admin response tables")
+
+        attempts = []
+
+        # ------------------------------------------------------
+        # NAPLAN NUMERACY
+        # student_id is TEXT
+        # ------------------------------------------------------
+
+        numeracy_rows = (
+            db.query(AdminExamResponseNaplanNumeracy)
+            .filter(
+                AdminExamResponseNaplanNumeracy.student_id
+                == str(student.id)
+            )
+            .all()
         )
-        .all()
-    )
+
+        for row in numeracy_rows:
+
+            attempts.append({
+                "exam_type": "naplan_numeracy",
+                "exam_attempt_id": row.exam_attempt_id,
+                "created_at": (
+                    row.attempt_completed_at
+                    or row.created_at
+                ),
+            })
+
+        print(
+            "   Numeracy response rows:",
+            len(numeracy_rows)
+        )
+
+        # ------------------------------------------------------
+        # NAPLAN LANGUAGE CONVENTIONS
+        # student_id is VARCHAR
+        # ------------------------------------------------------
+
+        language_rows = (
+            db.query(AdminExamResponseNaplanLanguageConventions)
+            .filter(
+                AdminExamResponseNaplanLanguageConventions.student_id
+                == str(student.id)
+            )
+            .all()
+        )
+
+        for row in language_rows:
+
+            attempts.append({
+                "exam_type": "naplan_language_conventions",
+                "exam_attempt_id": row.exam_attempt_id,
+                "created_at": row.submitted_at,
+            })
+
+        print(
+            "   Language Conventions response rows:",
+            len(language_rows)
+        )
+
+        # ------------------------------------------------------
+        # NAPLAN READING
+        # student_id is INTEGER
+        # ------------------------------------------------------
+
+        reading_rows = (
+            db.query(AdminExamResponseNaplanReading)
+            .filter(
+                AdminExamResponseNaplanReading.student_id
+                == student.id
+            )
+            .all()
+        )
+
+        for row in reading_rows:
+
+            attempts.append({
+                "exam_type": "naplan_reading",
+                "exam_attempt_id": row.exam_attempt_id,
+                "created_at": row.submitted_at,
+            })
+
+        print(
+            "   Reading response rows:",
+            len(reading_rows)
+        )
+        unique_attempts = {}
+
+        for attempt in attempts:
+
+            key = (
+                attempt["exam_type"],
+                attempt["exam_attempt_id"]
+            )
+
+            if key not in unique_attempts:
+                unique_attempts[key] = attempt
+
+        attempts = list(unique_attempts.values())
+
+        print(
+            "📊 Unique NAPLAN attempt records:",
+            len(attempts)
+        )
+
+
+    else:
+
+        print("🔵 Student is Selective / standard")
+        print("📊 Reading attempts from admin_exam_reports")
+
+        attempts = (
+            db.query(AdminExamReport)
+            .filter(
+                AdminExamReport.student_id == student_id
+            )
+            .order_by(
+                AdminExamReport.created_at.desc()
+            )
+            .all()
+        )
 
     print(
-        "📊 Admin exam reports found:",
+        "📊 Total attempt records found:",
         len(attempts)
     )
 
     if not attempts:
         return {
             "student_id": student_id,
+            "student_name": student.name,
             "exams": [],
         }
 
@@ -42030,15 +42274,37 @@ def get_cumulative_report_options(
     # ==========================================================
 
     response_models = {
+        # Selective
         "thinking_skills": AdminExamResponseThinkingSkills,
         "mathematical_reasoning": AdminExamResponseMathematicalReasoning,
         "reading": AdminExamResponseReading,
+
+        # OC
+        "oc_thinking_skills": AdminExamResponseOCThinkingSkills,
+        "oc_mathematical_reasoning": AdminExamResponseOCMathematicalReasoning,
+        "oc_reading": AdminExamResponseOCReading,
+
+        # NAPLAN
+        "naplan_numeracy": AdminExamResponseNaplanNumeracy,
+        "naplan_language_conventions": AdminExamResponseNaplanLanguageConventions,
+        "naplan_reading": AdminExamResponseNaplanReading,
     }
 
     exam_labels = {
+        # Selective
         "thinking_skills": "Thinking Skills",
         "mathematical_reasoning": "Mathematical Reasoning",
         "reading": "Reading",
+
+        # OC
+        "oc_thinking_skills": "Thinking Skills",
+        "oc_mathematical_reasoning": "Mathematical Reasoning",
+        "oc_reading": "Reading",
+
+        # NAPLAN
+        "naplan_numeracy": "Numeracy",
+        "naplan_language_conventions": "Language Conventions",
+        "naplan_reading": "Reading",
     }
 
     # ==========================================================
@@ -42049,43 +42315,103 @@ def get_cumulative_report_options(
 
     for attempt in attempts:
 
-        exam_key = (
-            attempt.exam_type or ""
-        ).lower().strip()
+        # NAPLAN attempts are dictionaries.
+        # Selective / OC attempts are SQLAlchemy objects.
+
+        if isinstance(attempt, dict):
+
+            exam_key = (
+                attempt.get("exam_type") or ""
+            ).lower().strip()
+
+            exam_attempt_id = attempt.get(
+                "exam_attempt_id"
+            )
+
+            created_at = attempt.get(
+                "created_at"
+            )
+
+        else:
+
+            exam_key = (
+                attempt.exam_type or ""
+            ).lower().strip()
+
+            exam_attempt_id = (
+                attempt.exam_attempt_id
+            )
+
+            created_at = (
+                attempt.created_at
+            )
 
         print("\n----------------------------------------------")
         print("🔎 Processing attempt")
         print("   exam:", exam_key)
-        print("   exam_attempt_id:", attempt.exam_attempt_id)
-        print("   created_at:", attempt.created_at)
+        print("   exam_attempt_id:", exam_attempt_id)
+        print("   created_at:", created_at)
         print("----------------------------------------------")
 
         # ------------------------------------------------------
         # Skip exams that don't have question-level cumulative
         # response models.
         # ------------------------------------------------------
+        if class_name == "oc":
 
-        ResponseModel = response_models.get(exam_key)
+            oc_response_models = {
+                "thinking_skills": AdminExamResponseOCThinkingSkills,
+                "mathematical_reasoning": AdminExamResponseOCMathematicalReasoning,
+                "reading": AdminExamResponseOCReading,
+            }
 
-        if not ResponseModel:
-            print(
-                "⚠️ Skipping unsupported cumulative exam:",
-                exam_key
-            )
-            continue
+            ResponseModel = oc_response_models.get(exam_key)
+        else:
+            ResponseModel = response_models.get(exam_key)
+
+            if not ResponseModel:
+                print(
+                    "⚠️ Skipping unsupported cumulative exam:",
+                    exam_key
+                )
+                continue
 
         # ------------------------------------------------------
         # Get responses for this particular attempt
         # ------------------------------------------------------
+        print("🧪 SQLAlchemy DB CHECK")
+        print("   ResponseModel:", ResponseModel.__tablename__)
+        print("   Attempt ID:", exam_attempt_id)
 
+        db_count = (
+            db.query(ResponseModel)
+            .filter(
+                ResponseModel.exam_attempt_id == exam_attempt_id
+            )
+            .count()
+        )
+
+        print("   SQLAlchemy COUNT:", db_count)
         responses = (
             db.query(ResponseModel)
             .filter(
                 ResponseModel.exam_attempt_id
-                == attempt.exam_attempt_id
+                == exam_attempt_id
             )
             .all()
         )
+        print(
+            "🧪 RESPONSE MODEL TABLE:",
+            ResponseModel.__tablename__
+        )
+
+        for r in responses:
+            print(
+                "   RESPONSE:",
+                "attempt=", r.exam_attempt_id,
+                "q_id=", getattr(r, "q_id", None),
+                "topic=", repr(getattr(r, "topic", None))
+            )
 
         print(
             "   Responses found:",
@@ -42095,7 +42421,7 @@ def get_cumulative_report_options(
         if not responses:
             print(
                 "   ⚠️ No responses for attempt:",
-                attempt.exam_attempt_id
+                exam_attempt_id
             )
             continue
 
@@ -42158,11 +42484,9 @@ def get_cumulative_report_options(
             # Add the attempt date
             # --------------------------------------------------
 
-            if attempt.created_at:
+            if created_at:
 
-                attempt_date = (
-                    attempt.created_at.date()
-                )
+                attempt_date = created_at.date()
 
                 exam_data[exam_key]["topics"][
                     normalized_topic
@@ -42258,6 +42582,7 @@ def get_cumulative_report_options(
         "student_name": student.name,
         "exams": exams,
     }
+
 @app.get("/api/reports/student/cumulative")
 def get_student_cumulative_report(
     student_id: str,
@@ -42312,48 +42637,201 @@ def get_student_cumulative_report(
         # --------------------------------------------------
         # 2️⃣ Resolve exam attempts
         # --------------------------------------------------
-        print("\n[2] Resolving exam attempts (AdminExamReport)...")
+        print("\n[2] Resolving exam attempts...")
 
-        attempts = (
-            db.query(AdminExamReport)
-            .filter(
-                AdminExamReport.student_id == student_id,
-                AdminExamReport.exam_type == exam,
-                func.date(AdminExamReport.created_at).in_(attempt_dates),
+        # ==================================================
+        # NAPLAN
+        # ==================================================
+        naplan_response_models = {
+            "naplan_numeracy": AdminExamResponseNaplanNumeracy,
+            "naplan_language_conventions": AdminExamResponseNaplanLanguageConventions,
+            "naplan_reading": AdminExamResponseNaplanReading,
+        }
+
+        if exam in naplan_response_models:
+
+            ResponseModel = naplan_response_models[exam]
+
+            print("🟢 NAPLAN exam detected")
+            print("   response table:", ResponseModel.__tablename__)
+
+            # --------------------------------------------------
+            # NAPLAN attempt timestamp differs by table
+            # --------------------------------------------------
+            if exam == "naplan_numeracy":
+                timestamp_column = ResponseModel.attempt_completed_at
+
+            else:
+                timestamp_column = ResponseModel.submitted_at
+
+            # --------------------------------------------------
+            # Student ID types differ between NAPLAN tables
+            #
+            # Numeracy / Language Conventions:
+            # student_id = text
+            #
+            # Reading:
+            # student_id = integer
+            # --------------------------------------------------
+            student_db_id = str(student.id)
+
+            query = (
+                db.query(
+                    ResponseModel.exam_attempt_id,
+                    func.min(timestamp_column).label("created_at"),
+                )
             )
-            .order_by(AdminExamReport.created_at)
-            .all()
-        )
 
-        print("   attempts_found:", len(attempts))
+            if exam == "naplan_reading":
+                query = query.filter(
+                    ResponseModel.student_id == student.id
+                )
+            else:
+                query = query.filter(
+                    ResponseModel.student_id == student_db_id
+                )
 
-        for a in attempts:
-            print(
-                "   → exam_attempt_id:", a.exam_attempt_id,
-                "| date:", a.created_at.date(),
-                "| created_at:", a.created_at,
+            query = (
+                query
+                .group_by(ResponseModel.exam_attempt_id)
+                .having(
+                    func.date(func.min(timestamp_column)).in_(attempt_dates)
+                )
+                .order_by(func.min(timestamp_column))
             )
 
-        if not attempts:
-            print("❌ [ABORT @2] No exam attempts matched filters")
-            raise HTTPException(
-                status_code=404,
-                detail="No exam attempts found for given filters",
-            )
+            attempts = query.all()
+
+            print("   NAPLAN attempts_found:", len(attempts))
+
+            for a in attempts:
+                print(
+                    "   → exam_attempt_id:", a.exam_attempt_id,
+                    "| created_at:", a.created_at,
+                )
+
+
+
+        # ==================================================
+        # EXISTING SELECTIVE / OC LOGIC
+        # ==================================================
+        else:
+
+            # ==================================================
+            # OC
+            # ==================================================
+            if (student.class_name or "").lower().strip() == "oc":
+
+                print("\n🟣 OC student detected")
+                print("   Resolving exam attempts from AdminExamOCReport...")
+
+                # OC reports use the same subject names as Selective
+                # e.g. reading, mathematical_reasoning, thinking_skills
+
+                attempts = (
+                    db.query(AdminExamOCReport)
+                    .filter(
+                        AdminExamOCReport.student_id == student_id,
+                        AdminExamOCReport.exam_type == exam,
+                        func.date(AdminExamOCReport.created_at).in_(attempt_dates),
+                    )
+                    .order_by(AdminExamOCReport.created_at)
+                    .all()
+                )
+
+                print("   OC attempts_found:", len(attempts))
+
+                for a in attempts:
+                    print(
+                        "   → exam_attempt_id:", a.exam_attempt_id,
+                        "| exam_type:", a.exam_type,
+                        "| date:", a.created_at.date(),
+                        "| created_at:", a.created_at,
+                    )
+
+            # ==================================================
+            # SELECTIVE / STANDARD
+            # ==================================================
+            else:
+
+                print("\n🔵 Selective / standard student")
+                print("   Resolving exam attempts from AdminExamReport...")
+
+                attempts = (
+                    db.query(AdminExamReport)
+                    .filter(
+                        AdminExamReport.student_id == student_id,
+                        AdminExamReport.exam_type == exam,
+                        func.date(AdminExamReport.created_at).in_(attempt_dates),
+                    )
+                    .order_by(AdminExamReport.created_at)
+                    .all()
+                )
+
+                print("   attempts_found:", len(attempts))
+
+                for a in attempts:
+                    print(
+                        "   → exam_attempt_id:", a.exam_attempt_id,
+                        "| exam_type:", a.exam_type,
+                        "| date:", a.created_at.date(),
+                        "| created_at:", a.created_at,
+                    )
+
+            if not attempts:
+                print("❌ [ABORT @2] No exam attempts matched filters")
+                raise HTTPException(
+                    status_code=404,
+                    detail="No exam attempts found for given filters",
+                )
 
         # --------------------------------------------------
         # 3️⃣ Resolve response model
         # --------------------------------------------------
         print("\n[3] Resolving response model...")
         
-        ResponseModel = get_response_model(exam)
-        
+        # --------------------------------------------------
+        # 3️⃣ Resolve response model
+        # --------------------------------------------------
+        print("\n[3] Resolving response model...")
+
+        # OC uses separate response tables
+        if (student.class_name or "").lower().strip() == "oc":
+
+            if exam == "thinking_skills":
+                ResponseModel = AdminExamResponseOCThinkingSkills
+
+            elif exam == "mathematical_reasoning":
+                ResponseModel = AdminExamResponseOCMathematicalReasoning
+
+            elif exam == "reading":
+                ResponseModel = AdminExamResponseOCReading
+
+            else:
+                ResponseModel = get_response_model(exam)
+
+        else:
+            ResponseModel = get_response_model(exam)
+
+
         if not ResponseModel:
             print("❌ [ABORT @3] Unsupported exam type:", exam)
             raise HTTPException(
                 status_code=400,
                 detail="Unsupported exam type",
             )
+
+        print(
+            "🧪 QUERYING TABLE:",
+            ResponseModel.__tablename__,
+            "| MODEL:",
+            ResponseModel.__name__,
+        )
+
+        print(
+            "🔎 ATTEMPT COLUMN:",
+            ResponseModel.exam_attempt_id.key
+        )
         
         # 🔑 Resolve attempt column dynamically
         if exam == "reading":
@@ -42395,15 +42873,48 @@ def get_student_cumulative_report(
         # --------------------------------------------------
         # 5️⃣ Process each attempt (time series)
         # --------------------------------------------------
+
         print("\n[5] Processing attempts (time series)...")
 
         for idx, attempt in enumerate(attempts, start=1):
+
             print(f"\n   ▶ Attempt {idx}")
             print("     exam_attempt_id:", attempt.exam_attempt_id)
             print("     created_at:", attempt.created_at)
-        
-            student_filter = ResponseModel.student_id == str(student.id)
-        
+
+            # --------------------------------------------------
+            # Resolve student filter
+            # --------------------------------------------------
+
+            if exam == "reading" and (student.class_name or "").lower().strip() == "oc":
+                # OC Reading stores external student_id, e.g. "oc_test2"
+                student_filter = ResponseModel.student_id == student_id
+            else:
+                # Preserve existing behavior for all other exams
+                student_filter = ResponseModel.student_id == str(student.id)
+
+            # --------------------------------------------------
+            # Debug SQLAlchemy query
+            # --------------------------------------------------
+
+            print("🧪 SQLAlchemy DB CHECK")
+            print("   ResponseModel:", ResponseModel.__tablename__)
+            print("   Attempt ID:", attempt.exam_attempt_id)
+
+            db_count = (
+                db.query(ResponseModel)
+                .filter(
+                    ResponseModel.exam_attempt_id == attempt.exam_attempt_id
+                )
+                .count()
+            )
+
+            print("   SQLAlchemy COUNT:", db_count)
+
+            # --------------------------------------------------
+            # Fetch responses
+            # --------------------------------------------------
+
             raw_responses = (
                 db.query(ResponseModel)
                 .filter(
@@ -42412,29 +42923,60 @@ def get_student_cumulative_report(
                 )
                 .all()
             )
-        
+
             print("DB topics:", {r.topic for r in raw_responses})
-            print("Normalized DB topics:", {normalize_topic_reporting(r.topic) for r in raw_responses})
-            print("Requested topic:", normalized_request_topic)
-            print("raw_responses_found:", len(raw_responses))
+
+            print(
+                "Normalized DB topics:",
+                {
+                    normalize_topic_reporting(r.topic)
+                    for r in raw_responses
+                }
+            )
+
+            print(
+                "Requested topic:",
+                normalized_request_topic
+            )
+
+            print(
+                "raw_responses_found:",
+                len(raw_responses)
+            )
 
             if not raw_responses:
-                print("     ⚠️ No responses found for this attempt")
+                print(
+                    "     ⚠️ No responses found for this attempt"
+                )
                 continue
 
-            # --- Inspect DB topics ---
+            # --------------------------------------------------
+            # Normalize DB topics
+            # --------------------------------------------------
+
             normalized_db_topics = {
                 normalize_topic_reporting(r.topic)
                 for r in raw_responses
                 if r.topic
             }
 
-            print("     🧠 normalized_db_topics:", normalized_db_topics)
-            print("     🧠 requested_topic:", normalized_request_topic)
+            print(
+                "     🧠 normalized_db_topics:",
+                normalized_db_topics
+            )
 
-            # --- Topic filtering (DIRECT equality) ---
+            print(
+                "     🧠 requested_topic:",
+                normalized_request_topic
+            )
+
+            # --------------------------------------------------
+            # Topic filtering
+            # --------------------------------------------------
+
             responses = [
-                r for r in raw_responses
+                r
+                for r in raw_responses
                 if r.topic
                 and normalize_topic_reporting(r.topic)
                 == normalized_request_topic
@@ -42442,25 +42984,58 @@ def get_student_cumulative_report(
 
             print(
                 "     🔍 topic_filtering:",
-                f"{len(responses)} / {len(raw_responses)} matched",
+                f"{len(responses)} / {len(raw_responses)} matched"
             )
 
+            # --------------------------------------------------
+            # Calculate score
+            # --------------------------------------------------
+
             attempted = len(responses)
-            correct = sum(1 for r in responses if r.is_correct)
 
-            print("     responses_found:", attempted)
-            print("     correct:", correct)
+            correct = sum(
+                1
+                for r in responses
+                if r.is_correct
+            )
 
-            # Skip empty attempts safely
+            print(
+                "     responses_found:",
+                attempted
+            )
+
+            print(
+                "     correct:",
+                correct
+            )
+
+            # --------------------------------------------------
+            # Skip empty attempts
+            # --------------------------------------------------
+
             if attempted == 0:
-                print("     ⚠️ Skipping attempt — no matching topic questions")
+                print(
+                    "     ⚠️ Skipping attempt — "
+                    "no matching topic questions"
+                )
                 continue
 
-            accuracy = round((correct / attempted) * 100, 2)
+            accuracy = round(
+                (correct / attempted) * 100,
+                2
+            )
+
             score = accuracy
 
-            print("     accuracy:", accuracy)
-            print("     score:", score)
+            print(
+                "     accuracy:",
+                accuracy
+            )
+
+            print(
+                "     score:",
+                score
+            )
 
             results.append({
                 "date": attempt.created_at.date().isoformat(),
@@ -42556,7 +43131,7 @@ def get_student_cumulative_report_overall(
     print("📥 [CUMULATIVE OVERALL] REQUEST RECEIVED")
     print("   student_id:", student_id)
     print("   exam:", exam)
-    print("   attempt_dates:", attempt_dates)
+    print("   attempt_Dates:", attempt_dates)
     print("==============================")
 
     try:
@@ -42589,25 +43164,145 @@ def get_student_cumulative_report_overall(
 
         print("✅ Student:", student.name)
 
+
+        # --------------------------------------------------
+        # 2️⃣ Resolve exam attempts
+        # --------------------------------------------------
         # --------------------------------------------------
         # 2️⃣ Resolve exam attempts
         # --------------------------------------------------
         print("\n[2] Fetching exam attempts...")
 
-        attempts = (
-            db.query(AdminExamReport)
-            .filter(
-                AdminExamReport.student_id == student_id,
-                AdminExamReport.exam_type == exam,
-                func.date(AdminExamReport.created_at).in_(attempt_dates),
-            )
-            .order_by(AdminExamReport.created_at)
-            .all()
+        # Determine whether this is an OC student
+        is_oc_student = (
+            student.class_name
+            and student.class_name.strip().lower() == "oc"
         )
+
+        # Determine whether this is a NAPLAN exam
+        is_naplan_exam = exam.startswith("naplan_")
+
+        # ==================================================
+        # OC
+        # ==================================================
+        if is_oc_student:
+
+            print("🟣 OC student detected")
+            print("   Using AdminExamOCReport")
+
+            attempts = (
+                db.query(AdminExamOCReport)
+                .filter(
+                    AdminExamOCReport.student_id == student_id,
+                    AdminExamOCReport.exam_type == exam,
+                    func.date(
+                        AdminExamOCReport.created_at
+                    ).in_(attempt_dates),
+                )
+                .order_by(AdminExamOCReport.created_at)
+                .all()
+            )
+
+        # ==================================================
+        # NAPLAN
+        # ==================================================
+        elif is_naplan_exam:
+
+            print("🟢 NAPLAN exam detected")
+            print("   Resolving attempts from NAPLAN response table")
+
+            if exam == "naplan_reading":
+
+                AttemptModel = AdminExamResponseNaplanReading
+                timestamp_col = AttemptModel.submitted_at
+
+                # Reading stores internal student ID as INTEGER
+                student_filter = AttemptModel.student_id == student.id
+
+            elif exam == "naplan_numeracy":
+
+                AttemptModel = AdminExamResponseNaplanNumeracy
+                timestamp_col = AttemptModel.created_at
+
+                # Numeracy stores internal ID as STRING
+                student_filter = AttemptModel.student_id == str(student.id)
+
+            elif exam == "naplan_language_conventions":
+
+                AttemptModel = AdminExamResponseNaplanLanguageConventions
+                timestamp_col = AttemptModel.submitted_at
+
+                # Language Conventions stores internal ID as STRING
+                student_filter = AttemptModel.student_id == str(student.id)
+
+            else:
+
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported NAPLAN exam type: {exam}",
+                )
+
+            print("   Response table:", AttemptModel.__tablename__)
+            print("   Student internal ID:", student.id)
+
+            # Get one row per exam attempt
+            attempt_rows = (
+                db.query(
+                    AttemptModel.exam_attempt_id,
+                    func.max(timestamp_col).label("attempt_timestamp"),
+                )
+                .filter(
+                    student_filter,
+                    func.date(timestamp_col).in_(attempt_dates),
+                )
+                .group_by(
+                    AttemptModel.exam_attempt_id
+                )
+                .order_by(
+                    func.max(timestamp_col)
+                )
+                .all()
+            )
+
+            # Convert the grouped response rows into simple
+            # attempt objects used by the rest of the endpoint.
+            attempts = []
+
+            for row in attempt_rows:
+
+                attempts.append(
+                    {
+                        "exam_attempt_id": row.exam_attempt_id,
+                        "created_at": row.attempt_timestamp,
+                    }
+                )
+
+        else:
+
+            # ==================================================
+            # SELECTIVE / STANDARD
+            # ==================================================
+
+            print("🔵 Standard student detected")
+            print("   Using AdminExamReport")
+
+            attempts = (
+                db.query(AdminExamReport)
+                .filter(
+                    AdminExamReport.student_id == student_id,
+                    AdminExamReport.exam_type == exam,
+                    func.date(
+                        AdminExamReport.created_at
+                    ).in_(attempt_dates),
+                )
+                .order_by(AdminExamReport.created_at)
+                .all()
+            )
 
         print("attempts_found:", len(attempts))
 
         if not attempts:
+
             raise HTTPException(
                 status_code=404,
                 detail="No exam attempts found for given filters",
@@ -42618,13 +43313,37 @@ def get_student_cumulative_report_overall(
         # --------------------------------------------------
         print("\n[3] Resolving response model...")
 
-        ResponseModel = get_response_model(exam)
+        # OC students need OC response tables
+        if is_oc_student:
 
-        if not ResponseModel:
-            raise HTTPException(
-                status_code=400,
-                detail="Unsupported exam type",
-            )
+            print("🟣 OC RESPONSE MODEL")
+
+            if exam == "thinking_skills":
+                ResponseModel = AdminExamResponseOCThinkingSkills
+
+            elif exam == "mathematical_reasoning":
+                ResponseModel = AdminExamResponseOCMathematicalReasoning
+
+            elif exam == "reading":
+                ResponseModel = AdminExamResponseOCReading
+
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported OC exam type: {exam}",
+                )
+
+        else:
+
+            print("🔵 STANDARD RESPONSE MODEL")
+
+            ResponseModel = get_response_model(exam)
+
+            if not ResponseModel:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unsupported exam type",
+                )
 
         print(
             "🧪 TABLE:",
@@ -42632,80 +43351,155 @@ def get_student_cumulative_report_overall(
             "| MODEL:",
             ResponseModel.__name__,
         )
-        # 🔎 Resolve attempt column
-        if exam == "reading":
-            attempt_column = ResponseModel.exam_attempt_id
-        else:
-            attempt_column = ResponseModel.exam_attempt_id
-        
-        print("🔎 ATTEMPT COLUMN:", attempt_column.key)
 
-        results = []
+        attempt_column = ResponseModel.exam_attempt_id
+
+        print(
+            "🔎 ATTEMPT COLUMN:",
+            attempt_column.key
+        )
 
         # --------------------------------------------------
         # 4️⃣ Process each attempt
         # --------------------------------------------------
         print("\n[4] Processing attempts...")
+        results = []
 
         for idx, attempt in enumerate(attempts, start=1):
 
-           
-           print(f"\n▶ Attempt {idx}")
-           print("exam_attempt_id:", attempt.exam_attempt_id)
-           
-           # --------------------------------------------------
-           # Writing exams use admin_exam_reports as source
-           # --------------------------------------------------
-           if exam == "writing":
-           
-               if attempt.overall_score is None:
-                   print("⚠️ Writing score missing in admin report")
-                   continue
-           
-               correct = attempt.overall_score
-               attempted = 25
-               accuracy = round((correct / attempted) * 100, 2)
-               score = accuracy
-           
-               print("writing_score:", correct)
-           
-           # --------------------------------------------------
-           # All other exams use response rows
-           # --------------------------------------------------
-           else:
-           
-               responses = (
-                   db.query(ResponseModel)
-                   .filter(
-                       ResponseModel.student_id == student.id,
-                       ResponseModel.exam_attempt_id == attempt.exam_attempt_id,
-                   )
-                   .all()
-               )
-           
-               print("responses_found:", len(responses))
-           
-               if not responses:
-                   print("⚠️ No responses found")
-                   continue
-           
-               attempted = len(responses)
-               correct = sum(1 for r in responses if r.is_correct)
-           
-               accuracy = round((correct / attempted) * 100, 2)
-               score = accuracy
-           
-           print("attempted:", attempted)
-           print("correct:", correct)
-           print("accuracy:", accuracy)
-           
-           results.append({
-               "date": attempt.created_at.date().isoformat(),
-               "questions_attempted": attempted,
-               "correct_answers": correct,
-               "accuracy": accuracy,
-               "score": score,
-           })
+            print(f"\n▶ Attempt {idx}")
+
+            # --------------------------------------------------
+            # Resolve attempt information
+            # --------------------------------------------------
+            if is_naplan_exam:
+                exam_attempt_id = attempt["exam_attempt_id"]
+                attempt_created_at = attempt["created_at"]
+            else:
+                exam_attempt_id = attempt.exam_attempt_id
+                attempt_created_at = attempt.created_at
+
+            print("exam_attempt_id:", exam_attempt_id)
+
+            # --------------------------------------------------
+            # Writing exams use admin_exam_reports as source
+            # --------------------------------------------------
+            if exam == "writing":
+
+                if attempt.overall_score is None:
+                    print("⚠️ Writing score missing in admin report")
+                    continue
+
+                correct = attempt.overall_score
+                attempted = 25
+                accuracy = round((correct / attempted) * 100, 2)
+                score = accuracy
+
+                print("writing_score:", correct)
+
+            # --------------------------------------------------
+            # All other exams use response rows
+            # --------------------------------------------------
+            else:
+
+                print("🧪 SQLAlchemy DB CHECK")
+                print("   ResponseModel:", ResponseModel.__tablename__)
+                print("   Attempt ID:", exam_attempt_id)
+
+                db_count = (
+                    db.query(ResponseModel)
+                    .filter(
+                        ResponseModel.exam_attempt_id == exam_attempt_id
+                    )
+                    .count()
+                )
+
+                print("   SQLAlchemy COUNT:", db_count)
+
+                # --------------------------------------------------
+                # Resolve student_id format
+                # --------------------------------------------------
+
+                # OC Reading uses external student_id
+                if is_oc_student and exam == "reading":
+
+                    student_filter = (
+                        ResponseModel.student_id == student_id
+                    )
+
+                # NAPLAN
+                elif is_naplan_exam:
+
+                    if exam == "naplan_reading":
+
+                        # NAPLAN Reading stores INTEGER student_id
+                        student_filter = (
+                            ResponseModel.student_id == student.id
+                        )
+
+                    else:
+
+                        # NAPLAN Numeracy and Language Conventions
+                        # store student_id as STRING
+                        student_filter = (
+                            ResponseModel.student_id == str(student.id)
+                        )
+
+                # Existing Selective behavior
+                else:
+
+                    student_filter = (
+                        ResponseModel.student_id == student.id
+                    )
+
+                # --------------------------------------------------
+                # Fetch responses
+                # --------------------------------------------------
+
+                responses = (
+                    db.query(ResponseModel)
+                    .filter(
+                        student_filter,
+                        ResponseModel.exam_attempt_id == exam_attempt_id,
+                    )
+                    .all()
+                )
+
+                print("responses_found:", len(responses))
+
+                if not responses:
+                    print("⚠️ No responses found")
+                    continue
+
+                attempted = len(responses)
+
+                correct = sum(
+                    1
+                    for r in responses
+                    if r.is_correct
+                )
+
+                accuracy = round(
+                    (correct / attempted) * 100,
+                    2
+                )
+
+                score = accuracy
+
+            # --------------------------------------------------
+            # Attempt result
+            # --------------------------------------------------
+            print("attempted:", attempted)
+            print("correct:", correct)
+            print("accuracy:", accuracy)
+
+            results.append({
+                "date": attempt_created_at.date().isoformat(),
+                "questions_attempted": attempted,
+                "correct_answers": correct,
+                "accuracy": accuracy,
+                "score": score,
+            })
 
         # --------------------------------------------------
         # 5️⃣ Validate results
