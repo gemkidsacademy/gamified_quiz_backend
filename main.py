@@ -35578,7 +35578,11 @@ def build_question_blocks(q, db):
 
             content = block.get("content", "").strip()
 
-            if content == "Choose the word to correctly complete this sentence.":
+            # Accept valid CLOZE instruction variations
+            if content in {
+                "Choose the word to correctly complete this sentence.",
+                "Choose the word or phrase to correctly complete this sentence.",
+            }:
                 instruction = content
 
             if "{{dropdown}}" in content:
@@ -41950,11 +41954,10 @@ def get_class_exam_dates(
 
         dates = (
             db.query(
-                exam_table.id,
-                exam_table.created_at
+                func.date(attempt_table.completed_at).label("created_at")
             )
             .join(
-                attempt_table,
+                exam_table,
                 attempt_table.exam_id == exam_table.id
             )
             .join(
@@ -41969,7 +41972,7 @@ def get_class_exam_dates(
             )
             .distinct()
             .order_by(
-                exam_table.created_at.desc()
+                func.date(attempt_table.completed_at).desc()
             )
             .all()
         )
@@ -73161,7 +73164,15 @@ def normalize_naplan_language_conventions_questions_live(
         # 3️⃣ Build display blocks
         # --------------------------------------------------
         for block in blocks:
+            print(
+                f"[NORMALIZE DEBUG] "
+                f"QID={q.get('id')} "
+                f"TYPE={q.get('question_type')} "
+                f"BLOCK_TYPE={block.get('type')} "
+                f"BLOCK={repr(block)}"
+            )
             block_type = block.get("type")
+            
 
             # -----------------------------
             # TEXT BLOCKS
@@ -73277,6 +73288,7 @@ def normalize_naplan_language_conventions_questions_live(
         normalized.append(payload)
 
     return normalized 
+
 def normalize_type6_language_conventions_question(question: dict):
     """
     Normalize Type 6 questions for Language Conventions at exam runtime.
@@ -87324,6 +87336,7 @@ def extract_cloze_from_exam_block(
     except Exception:
         print("❌ [CLOZE] EXTRACTOR FAILED")
         raise
+
 def parse_cloze_from_document(block_elements: list[dict]) -> dict:
     """
     Deterministic CLOZE (type 5) parser.
@@ -106418,6 +106431,20 @@ def persist_question(
         # 5. Build student-visible question text
         # --------------------------------------------------
         filtered_blocks = filter_display_blocks(display_blocks)
+        print("\n" + "=" * 80)
+        print("🔍 CLOZE DEBUG - FILTERED BLOCKS")
+        print("=" * 80)
+
+        for i, b in enumerate(filtered_blocks):
+            print(f"BLOCK {i}")
+            print(f"TYPE    : {b.get('type')}")
+            print(f"CONTENT : {repr(b.get('content'))}")
+            print("-" * 40)
+
+        print("q.cloze_text =", repr(q.get("cloze_text")))
+        print("q.options    =", repr(q.get("options")))
+
+        print("=" * 80 + "\n")
 
         question_text = "\n\n".join(
             b["content"]
