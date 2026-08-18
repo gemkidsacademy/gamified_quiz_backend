@@ -4768,6 +4768,7 @@ class UpdateStudentRequest(BaseModel):
     center_code: Optional[str] = None
     gender: str
     password: Optional[str] = None  # plain text (as per your system)
+    is_active: Optional[bool] = None
  
 class StudentExamReportReading(Base):
     __tablename__ = "student_exam_report_reading"
@@ -5587,6 +5588,12 @@ class Student(Base):
     center_name = Column(
         String,
         nullable=False
+    )
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true"
     )
 
 class StudentHomeworkReportReading(Base):
@@ -12242,6 +12249,41 @@ def get_class_years(
             status_code=500,
             detail="Failed to load class years"
         )
+
+@app.get("/students/active/by-center/{center_code}")
+def get_active_students_by_center(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code,
+            Student.is_active == True
+        )
+        .all()
+    )
+
+    formatted_students = []
+
+    for student in students:
+        formatted_students.append({
+            "id": student.id,
+            "student_id": student.student_id,
+            "name": student.name,
+            "class_name": student.class_name,
+            "student_year": student.student_year,
+            "class_day": student.class_day,
+            "parent_email": student.parent_email,
+            "gender": student.gender,
+            "center_code": student.center_code,
+            "is_active": student.is_active
+        })
+
+    return {
+        "students": formatted_students
+    }
+
 @app.get("/students/by-center/{center_code}")
 def get_students_by_center(
     center_code: str,
@@ -12261,16 +12303,18 @@ def get_students_by_center(
             "student_id": student.student_id,
             "name": student.name,
             "class_name": student.class_name,
-            "student_year": student.student_year,  # Added
+            "student_year": student.student_year,
             "class_day": student.class_day,
             "parent_email": student.parent_email,
             "gender": student.gender,
-            "center_code": student.center_code
+            "center_code": student.center_code,
+            "is_active": student.is_active
         })
 
     return {
         "students": formatted_students
     }
+
 @app.get("/center-admin/get-all-center-admins")
 def get_all_center_admins(
     db: Session = Depends(get_db)
@@ -57388,6 +57432,9 @@ def edit_student_exam_module(
     if payload.gender is not None:
         student.gender = payload.gender
 
+    if payload.is_active is not None:
+        student.is_active = payload.is_active
+
     if payload.center_code is not None:
         student.center_code = payload.center_code
 
@@ -57408,6 +57455,7 @@ def edit_student_exam_module(
             "class_day": student.class_day,
             "parent_email": student.parent_email,
             "gender": student.gender,
+            "is_active": student.is_active,
             "center_code": student.center_code
         }
     }
