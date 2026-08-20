@@ -5887,6 +5887,9 @@ class Student(Base):
         server_default="true"
     )
 
+class ParentEmailRequest(BaseModel):
+    email: EmailStr
+
 class StudentHomeworkReportReading(Base):
     __tablename__ = "student_homework_report_reading"
 
@@ -6549,6 +6552,7 @@ app = FastAPI(title="Gem Kids Gamified Quiz API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://unified-parent-url.vercel.app",
         "https://homework.gemkidsacademy.com.au",
         "https://homework-support.vercel.app",
         "https://gamified-quiz-delta.vercel.app",
@@ -7520,13 +7524,45 @@ def send_otp_sms(phone_number: str, otp: int):
         to=phone_number
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
-from sqlalchemy.orm import Session
-from fastapi import Depends
 
 
-from datetime import datetime
+@app.post("/parent/dashboard-access")
+def check_parent_dashboard_access(
+    request: ParentEmailRequest,
+    db: Session = Depends(get_db)
+):
+    email = request.email.strip().lower()
 
-from datetime import datetime, time
+    students = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == email,
+            Student.is_active == True
+        )
+        .all()
+    )
+
+    if not students:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student account found for this email."
+        )
+
+    return {
+        "access": True,
+        "email": email,
+        "students": [
+            {
+                "student_id": student.student_id,
+                "name": student.name,
+                "class_name": student.class_name,
+                "student_year": student.student_year,
+                "center_code": student.center_code,
+                "center_name": student.center_name
+            }
+            for student in students
+        ]
+    }
 
 @app.get("/homework/configuration/default-slot-timings/by-center/{center_code}")
 def get_default_slot_timings(
