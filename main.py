@@ -510,6 +510,105 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # --------------------------
+
+class DefaultSlotTimingRequest(BaseModel):
+    start_time: str
+    end_time: str
+    slot_order: int
+
+
+class DefaultSlotTimingsUpdateRequest(BaseModel):
+    default_slot_timings: List[DefaultSlotTimingRequest]
+
+
+class HomeworkSupportDefaultSlotTiming(Base):
+    __tablename__ = "homework_support_default_slot_timings"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    start_time = Column(
+        Time,
+        nullable=False
+    )
+
+    end_time = Column(
+        Time,
+        nullable=False
+    )
+
+    slot_order = Column(
+        Integer,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            "slot_order",
+            name="uq_homework_default_slot_order"
+        ),
+    )
+
+
+class HomeworkAutomationUpdate(BaseModel):
+    enabled: bool
+    invitation_day: str
+    invitation_time: str
+
+class HomeworkSelectedWeekRequest(BaseModel):
+    week_number: int
+
+
+class HomeworkTimeSlotRequest(BaseModel):
+    week_number: int
+    start_time: str
+    end_time: str
+    capacity: int
+
+
+class HomeworkBookingCutoffRequest(BaseModel):
+    day: str
+    time: str
+
+
+class HomeworkConfigurationRequest(BaseModel):
+    term_id: int
+    selected_weeks: List[HomeworkSelectedWeekRequest]
+    time_slots: List[HomeworkTimeSlotRequest]
+    booking_cutoff: Optional[HomeworkBookingCutoffRequest] = None
+
+class HomeworkAutomationSchedule(BaseModel):
+    week: str
+    session: str
+    invitation: str
+    status: str
+
+
+class HomeworkAutomationResponse(BaseModel):
+    enabled: bool
+    invitation_day: str
+    invitation_time: str
+    term: str
+    schedules: List[HomeworkAutomationSchedule]
+
+
 class GenerateGamifiedQuizRequest(BaseModel):
 
     category: str
@@ -1773,6 +1872,198 @@ class AcademicTerm(Base):
         onupdate=datetime.utcnow
     )
 
+class HomeworkSupportTimeSlot(Base):
+    __tablename__ = "homework_support_time_slots"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    homework_support_week_id = Column(
+        Integer,
+        ForeignKey("homework_support_weeks.id"),
+        nullable=False,
+        index=True
+    )
+
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    capacity = Column(Integer, nullable=False)
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+class HomeworkSupportBookingCutoff(Base):
+    __tablename__ = "homework_support_booking_cutoffs"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    academic_term_id = Column(
+        Integer,
+        ForeignKey("academic_terms.id"),
+        nullable=False,
+        index=True
+    )
+
+    cutoff_day = Column(
+        String,
+        nullable=False
+    )
+
+    cutoff_time = Column(
+        Time,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            "academic_term_id",
+            name="uq_homework_booking_cutoff"
+        ),
+    )
+
+class HomeworkSupportWeek(Base):
+    __tablename__ = "homework_support_weeks"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    academic_term_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    week_number = Column(
+        Integer,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            "academic_term_id",
+            "week_number",
+            name="uq_homework_support_week"
+        ),
+    )
+
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Boolean,
+    DateTime,
+    UniqueConstraint,
+)
+from datetime import datetime
+
+
+class HomeworkAutomationConfiguration(Base):
+    __tablename__ = "homework_automation_configurations"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    enabled = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false"
+    )
+
+    invitation_day = Column(
+        String,
+        nullable=False,
+        default="Monday"
+    )
+
+    invitation_time = Column(
+        String,
+        nullable=False,
+        default="09:00 AM"
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            name="uq_homework_automation_center"
+        ),
+    )
 class StudentLoginRequest(BaseModel):
     student_id: str
     password: str
@@ -7229,6 +7520,1128 @@ def send_otp_sms(phone_number: str, otp: int):
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
 from sqlalchemy.orm import Session
 from fastapi import Depends
+
+
+from datetime import datetime
+
+from datetime import datetime, time
+
+@app.get("/homework/configuration/default-slot-timings/by-center/{center_code}")
+def get_default_slot_timings(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    timings = (
+        db.query(HomeworkSupportDefaultSlotTiming)
+        .filter(
+            HomeworkSupportDefaultSlotTiming.center_code == center_code
+        )
+        .order_by(
+            HomeworkSupportDefaultSlotTiming.slot_order.asc()
+        )
+        .all()
+    )
+
+    return {
+        "default_slot_timings": [
+            {
+                "id": timing.id,
+                "start_time": timing.start_time.strftime("%H:%M"),
+                "end_time": timing.end_time.strftime("%H:%M"),
+                "slot_order": timing.slot_order
+            }
+            for timing in timings
+        ]
+    }
+@app.put("/homework/configuration/default-slot-timings/by-center/{center_code}")
+def update_default_slot_timings(
+    center_code: str,
+    payload: DefaultSlotTimingsUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # Delete the existing default configuration
+    # for this center
+    # --------------------------------------------------
+
+    (
+        db.query(HomeworkSupportDefaultSlotTiming)
+        .filter(
+            HomeworkSupportDefaultSlotTiming.center_code == center_code
+        )
+        .delete(synchronize_session=False)
+    )
+
+    # --------------------------------------------------
+    # Insert the submitted default timings
+    # --------------------------------------------------
+
+    saved_timings = []
+
+    for timing in payload.default_slot_timings:
+
+        try:
+            start_time = datetime.strptime(
+                timing.start_time,
+                "%H:%M"
+            ).time()
+
+            end_time = datetime.strptime(
+                timing.end_time,
+                "%H:%M"
+            ).time()
+
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid time format. "
+                    "Use HH:MM, for example 09:00."
+                )
+            )
+
+        if end_time <= start_time:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "End time must be later than start time."
+                )
+            )
+
+        new_timing = HomeworkSupportDefaultSlotTiming(
+            center_code=center_code,
+            start_time=start_time,
+            end_time=end_time,
+            slot_order=timing.slot_order
+        )
+
+        db.add(new_timing)
+        saved_timings.append(new_timing)
+
+    db.commit()
+
+    # Refresh IDs generated by database
+    for timing in saved_timings:
+        db.refresh(timing)
+
+    # --------------------------------------------------
+    # Return saved configuration
+    # --------------------------------------------------
+
+    return {
+        "default_slot_timings": [
+            {
+                "id": timing.id,
+                "start_time": timing.start_time.strftime("%H:%M"),
+                "end_time": timing.end_time.strftime("%H:%M"),
+                "slot_order": timing.slot_order
+            }
+            for timing in saved_timings
+        ]
+    }
+
+@app.put("/homework/configuration/by-center/{center_code}")
+def update_homework_configuration(
+    center_code: str,
+    payload: HomeworkConfigurationRequest,
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 80)
+    print("HOMEWORK CONFIGURATION UPDATE START")
+    print("=" * 80)
+
+    print("CENTER CODE:", center_code)
+    print("TERM ID:", payload.term_id)
+
+    print("SELECTED WEEKS:")
+    for week in payload.selected_weeks:
+        print("  week_number =", week.week_number)
+
+    print("TIME SLOTS RECEIVED:")
+    print("  count =", len(payload.time_slots))
+
+    for index, slot in enumerate(payload.time_slots, start=1):
+        print(
+            f"  Slot {index}: "
+            f"week={slot.week_number}, "
+            f"start={slot.start_time}, "
+            f"end={slot.end_time}, "
+            f"capacity={slot.capacity}"
+        )
+
+    print("BOOKING CUTOFF:", payload.booking_cutoff)
+
+    # =========================================================
+    # 1. Verify academic term belongs to this center
+    # =========================================================
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.id == payload.term_id,
+            AcademicTerm.center_code == center_code
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="Academic term not found for this center"
+        )
+
+    # =========================================================
+    # 2. Validate selected weeks
+    # =========================================================
+
+    selected_week_numbers = [
+        week.week_number
+        for week in payload.selected_weeks
+    ]
+
+    # Prevent duplicate week selections
+    if len(selected_week_numbers) != len(
+        set(selected_week_numbers)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Duplicate Homework Support week selected"
+        )
+
+    # Valid weeks based on AcademicTerm
+    valid_week_numbers = set(
+        range(1, term.number_of_weeks + 1)
+    )
+
+    invalid_weeks = (
+        set(selected_week_numbers)
+        - valid_week_numbers
+    )
+
+    if invalid_weeks:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid week numbers: "
+                f"{sorted(invalid_weeks)}"
+            )
+        )
+
+    selected_week_set = set(selected_week_numbers)
+
+    # =========================================================
+    # 3. Validate time slots
+    # =========================================================
+
+    for slot in payload.time_slots:
+
+        # Slot must belong to a selected week
+        if slot.week_number not in selected_week_set:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Time slot belongs to Week "
+                    f"{slot.week_number}, but that week "
+                    f"is not selected."
+                )
+            )
+
+        # Capacity
+        if slot.capacity < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Time slot capacity must be at least 1"
+            )
+
+        # Parse times
+        try:
+            start_time = datetime.strptime(
+                slot.start_time,
+                "%H:%M"
+            ).time()
+
+            end_time = datetime.strptime(
+                slot.end_time,
+                "%H:%M"
+            ).time()
+
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Time must use HH:MM format, "
+                    "for example 09:00"
+                )
+            )
+
+        # Start must be before end
+        if start_time >= end_time:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Time slot start time must be "
+                    "before end time"
+                )
+            )
+
+    # =========================================================
+    # 4. Validate booking cutoff
+    # =========================================================
+
+    if payload.booking_cutoff:
+
+        valid_days = {
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday"
+        }
+
+        if payload.booking_cutoff.day not in valid_days:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid booking cutoff day"
+            )
+
+        try:
+            datetime.strptime(
+                payload.booking_cutoff.time,
+                "%H:%M"
+            ).time()
+
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Booking cutoff time must use HH:MM format"
+                )
+            )
+
+    # =========================================================
+    # 5. Start database update
+    # =========================================================
+
+    try:
+
+        # -----------------------------------------------------
+        # Existing Homework Support weeks
+        # -----------------------------------------------------
+
+        existing_weeks = (
+            db.query(HomeworkSupportWeek)
+            .filter(
+                HomeworkSupportWeek.center_code == center_code,
+                HomeworkSupportWeek.academic_term_id == payload.term_id
+            )
+            .all()
+        )
+
+        existing_week_ids = [
+            week.id
+            for week in existing_weeks
+        ]
+
+        # -----------------------------------------------------
+        # Delete existing time slots first
+        # -----------------------------------------------------
+
+        if existing_week_ids:
+
+            db.query(HomeworkSupportTimeSlot).filter(
+                HomeworkSupportTimeSlot.center_code == center_code,
+                HomeworkSupportTimeSlot.homework_support_week_id.in_(
+                    existing_week_ids
+                )
+            ).delete(
+                synchronize_session=False
+            )
+
+        # -----------------------------------------------------
+        # Delete existing selected Homework Support weeks
+        # -----------------------------------------------------
+
+        db.query(HomeworkSupportWeek).filter(
+            HomeworkSupportWeek.center_code == center_code,
+            HomeworkSupportWeek.academic_term_id == payload.term_id
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.flush()
+
+        # =====================================================
+        # 6. Create selected Homework Support weeks
+        # =====================================================
+
+        created_weeks = {}
+
+        for selected_week in payload.selected_weeks:
+
+            homework_week = HomeworkSupportWeek(
+                center_code=center_code,
+                academic_term_id=payload.term_id,
+                week_number=selected_week.week_number
+            )
+
+            db.add(homework_week)
+            db.flush()
+
+            created_weeks[
+                selected_week.week_number
+            ] = homework_week
+
+        # =====================================================
+        # 7. Create time slots
+        # =====================================================
+
+        for slot in payload.time_slots:
+
+            homework_week = created_weeks.get(
+                slot.week_number
+            )
+
+            if not homework_week:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Homework Support Week "
+                        f"{slot.week_number} does not exist."
+                    )
+                )
+
+            start_time = datetime.strptime(
+                slot.start_time,
+                "%H:%M"
+            ).time()
+
+            end_time = datetime.strptime(
+                slot.end_time,
+                "%H:%M"
+            ).time()
+
+            new_slot = HomeworkSupportTimeSlot(
+                center_code=center_code,
+                homework_support_week_id=homework_week.id,
+                start_time=start_time,
+                end_time=end_time,
+                capacity=slot.capacity
+            )
+
+            db.add(new_slot)
+
+        # =====================================================
+        # 8. Get existing booking cutoff
+        # =====================================================
+
+        existing_cutoff = (
+            db.query(HomeworkSupportBookingCutoff)
+            .filter(
+                HomeworkSupportBookingCutoff.center_code
+                == center_code,
+                HomeworkSupportBookingCutoff.academic_term_id
+                == payload.term_id
+            )
+            .first()
+        )
+
+        # =====================================================
+        # 9. Save/update booking cutoff
+        # =====================================================
+
+        if payload.booking_cutoff:
+
+            cutoff_time = datetime.strptime(
+                payload.booking_cutoff.time,
+                "%H:%M"
+            ).time()
+
+            if existing_cutoff:
+
+                existing_cutoff.cutoff_day = (
+                    payload.booking_cutoff.day
+                )
+
+                existing_cutoff.cutoff_time = (
+                    cutoff_time
+                )
+
+            else:
+
+                new_cutoff = HomeworkSupportBookingCutoff(
+                    center_code=center_code,
+                    academic_term_id=payload.term_id,
+                    cutoff_day=payload.booking_cutoff.day,
+                    cutoff_time=cutoff_time
+                )
+
+                db.add(new_cutoff)
+
+        # =====================================================
+        # 10. If cutoff is omitted, remove existing cutoff
+        # =====================================================
+
+        else:
+
+            if existing_cutoff:
+                db.delete(existing_cutoff)
+
+        # =====================================================
+        # 11. Commit
+        # =====================================================
+
+        db.commit()
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as e:
+
+        db.rollback()
+
+        print(
+            "ERROR SAVING HOMEWORK CONFIGURATION:",
+            str(e)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save Homework Support configuration"
+        )
+
+    # =========================================================
+    # 12. Return saved configuration
+    # =========================================================
+
+    return {
+        "message": "Homework Support configuration saved successfully",
+
+        "center_code": center_code,
+
+        "term_id": payload.term_id,
+
+        "selected_weeks": [
+            {
+                "week_number": week.week_number
+            }
+            for week in payload.selected_weeks
+        ],
+
+        "time_slots": [
+            {
+                "week_number": slot.week_number,
+                "start_time": slot.start_time,
+                "end_time": slot.end_time,
+                "capacity": slot.capacity
+            }
+            for slot in payload.time_slots
+        ],
+
+        "booking_cutoff": (
+            {
+                "day": payload.booking_cutoff.day,
+                "time": payload.booking_cutoff.time
+            }
+            if payload.booking_cutoff
+            else None
+        )
+    }
+
+
+@app.get("/homework/configuration/by-center/{center_code}")
+def get_homework_configuration(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    # ==========================================
+    # 1. Get academic terms for this center
+    # ==========================================
+
+    academic_terms = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == center_code
+        )
+        .order_by(
+            AcademicTerm.start_date.desc()
+        )
+        .all()
+    )
+
+    # ==========================================
+    # 2. Find active term
+    # ==========================================
+
+    selected_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == center_code,
+            AcademicTerm.is_active == True
+        )
+        .order_by(
+            AcademicTerm.start_date.desc()
+        )
+        .first()
+    )
+
+    # ==========================================
+    # 3. No active term
+    # ==========================================
+
+    if not selected_term:
+        return {
+            "center_code": center_code,
+            "academic_terms": [
+                {
+                    "id": term.id,
+                    "term_name": term.term_name,
+                    "start_date": term.start_date.isoformat(),
+                    "end_date": term.end_date.isoformat(),
+                    "number_of_weeks": term.number_of_weeks,
+                    "is_active": term.is_active
+                }
+                for term in academic_terms
+            ],
+            "selected_term": None,
+            "available_weeks": [],
+            "selected_sessions": [],
+            "time_slots": [],
+            "booking_cutoff": None
+        }
+
+    # ==========================================
+    # 4. Calculate available weeks
+    # ==========================================
+
+    available_weeks = []
+
+    current_week_start = selected_term.start_date
+
+    for week_number in range(
+        1,
+        selected_term.number_of_weeks + 1
+    ):
+
+        week_start = current_week_start
+
+        week_end = week_start + timedelta(days=6)
+
+        if week_end > selected_term.end_date:
+            week_end = selected_term.end_date
+
+        # Saturday = weekday 5
+        days_until_saturday = (
+            5 - week_start.weekday()
+        ) % 7
+
+        session_date = (
+            week_start +
+            timedelta(days=days_until_saturday)
+        )
+
+        if session_date > selected_term.end_date:
+            session_date = None
+
+        available_weeks.append({
+            "week_number": week_number,
+            "week_label": f"Week {week_number}",
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+            "session_day": "Saturday",
+            "session_date": (
+                session_date.isoformat()
+                if session_date
+                else None
+            )
+        })
+
+        current_week_start = (
+            current_week_start +
+            timedelta(days=7)
+        )
+
+        if current_week_start > selected_term.end_date:
+            break
+
+    # ==========================================
+    # 5. Get selected Homework Support weeks
+    # ==========================================
+
+    selected_weeks = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == center_code,
+            HomeworkSupportWeek.academic_term_id == selected_term.id
+        )
+        .order_by(
+            HomeworkSupportWeek.week_number
+        )
+        .all()
+    )
+
+    selected_week_numbers = {
+        week.week_number
+        for week in selected_weeks
+    }
+
+    # ==========================================
+    # 6. Build selected sessions
+    # ==========================================
+
+    selected_sessions = []
+
+    for week in available_weeks:
+
+        if week["week_number"] in selected_week_numbers:
+
+            selected_sessions.append({
+                "week_number": week["week_number"],
+                "week_label": week["week_label"],
+                "session_day": week["session_day"],
+                "session_date": week["session_date"]
+            })
+
+    # ==========================================
+    # 7. Get time slots
+    # ==========================================
+    
+    # IMPORTANT:
+    # This assumes your time-slot table has
+    # homework_support_week_id.
+
+    time_slots = []
+
+    for selected_week in selected_weeks:
+
+        week_slots = (
+            db.query(HomeworkSupportTimeSlot)
+            .filter(
+                HomeworkSupportTimeSlot.homework_support_week_id
+                == selected_week.id
+            )
+            .order_by(
+                HomeworkSupportTimeSlot.start_time
+            )
+            .all()
+        )
+
+        for slot in week_slots:
+
+            time_slots.append({
+                "id": slot.id,
+                "week_number": selected_week.week_number,
+                "start_time": slot.start_time.strftime("%H:%M"),
+                "end_time": slot.end_time.strftime("%H:%M"),
+                "capacity": slot.capacity
+            })
+
+    # ==========================================
+    # 8. Get booking cutoff
+    # ==========================================
+
+    booking_cutoff = (
+        db.query(HomeworkSupportBookingCutoff)
+        .filter(
+            HomeworkSupportBookingCutoff.center_code
+            == center_code,
+            HomeworkSupportBookingCutoff.academic_term_id
+            == selected_term.id
+        )
+        .first()
+    )
+
+    cutoff_response = None
+
+    if booking_cutoff:
+
+        cutoff_response = {
+            "day": booking_cutoff.cutoff_day,
+            "time": booking_cutoff.cutoff_time.strftime("%H:%M")
+        }
+
+    # ==========================================
+    # 9. Return complete configuration
+    # ==========================================
+
+    return {
+        "center_code": center_code,
+
+        "academic_terms": [
+            {
+                "id": term.id,
+                "term_name": term.term_name,
+                "start_date": term.start_date.isoformat(),
+                "end_date": term.end_date.isoformat(),
+                "number_of_weeks": term.number_of_weeks,
+                "is_active": term.is_active
+            }
+            for term in academic_terms
+        ],
+
+        "selected_term": {
+            "id": selected_term.id,
+            "term_name": selected_term.term_name
+        },
+
+        "available_weeks": available_weeks,
+
+        "selected_sessions": selected_sessions,
+
+        "time_slots": time_slots,
+
+        "booking_cutoff": cutoff_response
+    }
+
+@app.get("/homework/configuration/weeks/{center_code}")
+def get_homework_configuration_weeks(
+    center_code: str,
+    term_id: int,
+    db: Session = Depends(get_db)
+):
+
+    # ==========================================
+    # 1. Find term
+    # ==========================================
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.id == term_id,
+            AcademicTerm.center_code == center_code
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="Academic term not found"
+        )
+
+    # ==========================================
+    # 2. Calculate weeks
+    # ==========================================
+
+    weeks = []
+
+    current_week_start = term.start_date
+
+    for week_number in range(
+        1,
+        term.number_of_weeks + 1
+    ):
+
+        week_start = current_week_start
+
+        week_end = week_start + timedelta(days=6)
+
+        if week_end > term.end_date:
+            week_end = term.end_date
+
+        # Saturday = Python weekday 5
+        days_until_saturday = (
+            5 - week_start.weekday()
+        ) % 7
+
+        session_date = (
+            week_start +
+            timedelta(days=days_until_saturday)
+        )
+
+        if session_date > term.end_date:
+            session_date = None
+
+        weeks.append({
+            "week_number": week_number,
+            "week_label": f"Week {week_number}",
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+            "session_day": "Saturday",
+            "session_date": (
+                session_date.isoformat()
+                if session_date
+                else None
+            )
+        })
+
+        current_week_start = (
+            current_week_start +
+            timedelta(days=7)
+        )
+
+        if current_week_start > term.end_date:
+            break
+
+    # ==========================================
+    # 3. Return weeks
+    # ==========================================
+
+    return {
+        "center_code": center_code,
+        "term_id": term.id,
+        "weeks": weeks
+    }
+@app.get("/homework/configuration/weeks/{center_code}")
+def get_homework_configuration_weeks(
+    center_code: str,
+    term_id: int,
+    db: Session = Depends(get_db)
+):
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.id == term_id,
+            AcademicTerm.center_code == center_code
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="Academic term not found"
+        )
+
+    weeks = []
+
+    current_start = term.start_date
+
+    for week_number in range(1, term.number_of_weeks + 1):
+
+        week_start = current_start
+        week_end = week_start + timedelta(days=6)
+
+        # Don't allow calculated week to go beyond term
+        if week_end > term.end_date:
+            week_end = term.end_date
+
+        # Saturday = weekday 5
+        days_until_saturday = (
+            5 - week_start.weekday()
+        ) % 7
+
+        session_date = (
+            week_start +
+            timedelta(days=days_until_saturday)
+        )
+
+        # Only use Saturday if it falls inside the term
+        if session_date > term.end_date:
+            session_date = None
+
+        weeks.append({
+            "week_number": week_number,
+            "week_label": f"Week {week_number}",
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+            "session_day": "Saturday",
+            "session_date": (
+                session_date.isoformat()
+                if session_date
+                else None
+            )
+        })
+
+        current_start = current_start + timedelta(days=7)
+
+        if current_start > term.end_date:
+            break
+
+    return {
+        "center_code": center_code,
+        "term_id": term.id,
+        "weeks": weeks
+    }
+
+
+@app.get("/homework/automation/by-center/{center_code}")
+def get_homework_automation(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+
+    # ==========================================
+    # 1. Find automation configuration
+    # ==========================================
+
+    automation = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    # If configuration does not exist yet,
+    # return sensible defaults.
+    if not automation:
+        enabled = False
+        invitation_day = "Monday"
+        invitation_time = "9:00 AM"
+    else:
+        enabled = automation.enabled
+        invitation_day = automation.invitation_day
+        invitation_time = automation.invitation_time
+
+    # ==========================================
+    # 2. Find active academic term
+    # ==========================================
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == center_code,
+            AcademicTerm.is_active == True
+        )
+        .order_by(AcademicTerm.start_date.desc())
+        .first()
+    )
+
+    # ==========================================
+    # 3. If no active term exists
+    # ==========================================
+
+    if not active_term:
+        return {
+            "automation": {
+                "enabled": enabled,
+                "invitation_day": invitation_day,
+                "invitation_time": invitation_time,
+                "term": "",
+                "schedules": []
+            }
+        }
+
+    # ==========================================
+    # 4. Find selected Homework Support weeks
+    # ==========================================
+
+    selected_weeks = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == center_code,
+            HomeworkSupportWeek.academic_term_id == active_term.id
+        )
+        .order_by(
+            HomeworkSupportWeek.week_number
+        )
+        .all()
+    )
+
+    # ==========================================
+    # 5. Build schedule response
+    # ==========================================
+
+    schedules = []
+
+    # At this stage we don't yet have enough
+    # configuration to calculate session dates.
+    #
+    # So for now, return the selected weeks
+    # only when the required session information
+    # exists.
+    #
+    # Until Configuration is populated:
+    # schedules = []
+
+    for week in selected_weeks:
+
+        schedules.append({
+            "week": f"Week {week.week_number}",
+            "session": "",
+            "invitation": "",
+            "status": "Scheduled"
+        })
+
+    # ==========================================
+    # 6. Return response expected by React
+    # ==========================================
+
+    return {
+        "automation": {
+            "enabled": enabled,
+            "invitation_day": invitation_day,
+            "invitation_time": invitation_time,
+            "term": active_term.term_name,
+            "schedules": schedules
+        }
+    }
+
+@app.put("/homework/automation/by-center/{center_code}")
+def update_homework_automation(
+    center_code: str,
+    payload: HomeworkAutomationUpdate,
+    db: Session = Depends(get_db)
+):
+
+    automation = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    # ==========================================
+    # Create configuration if it doesn't exist
+    # ==========================================
+
+    if not automation:
+
+        automation = HomeworkAutomationConfiguration(
+            center_code=center_code,
+            enabled=payload.enabled,
+            invitation_day=payload.invitation_day,
+            invitation_time=payload.invitation_time
+        )
+
+        db.add(automation)
+
+    # ==========================================
+    # Update existing configuration
+    # ==========================================
+
+    else:
+
+        automation.enabled = payload.enabled
+        automation.invitation_day = payload.invitation_day
+        automation.invitation_time = payload.invitation_time
+
+    db.commit()
+    db.refresh(automation)
+
+    # ==========================================
+    # Find active term
+    # ==========================================
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == center_code,
+            AcademicTerm.is_active == True
+        )
+        .order_by(AcademicTerm.start_date.desc())
+        .first()
+    )
+
+    term_name = active_term.term_name if active_term else ""
+
+    # ==========================================
+    # Return same structure expected by frontend
+    # ==========================================
+
+    return {
+        "automation": {
+            "enabled": automation.enabled,
+            "invitation_day": automation.invitation_day,
+            "invitation_time": automation.invitation_time,
+            "term": term_name,
+            "schedules": []
+        }
+    }
 
 @app.post("/admin/gamified/generate-quiz")
 def generate_gamified_quiz(
