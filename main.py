@@ -277,6 +277,232 @@ def get_db():
         yield db
     finally:
         db.close()
+def homework_support_scheduler_job(
+    center_code: str,
+    local_now: datetime,
+    db: Session
+):
+    print("\n--------------------------------")
+    print("HOMEWORK SUPPORT SCHEDULER")
+    print(f"Center Code : {center_code}")
+    print(f"Local Time  : {local_now}")
+    print("--------------------------------")
+
+    automation = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    if not automation:
+        print(
+            "Homework Support automation configuration not found."
+        )
+        return
+
+    print(f"Automation Enabled : {automation.enabled}")
+    print(f"Invitation Day     : {automation.invitation_day}")
+    print(f"Invitation Time    : {automation.invitation_time}")
+
+    if not automation.enabled:
+        print(
+            "Homework Support automation is disabled."
+        )
+        return
+
+    configured_day = automation.invitation_day.strip().lower()
+
+    current_day = local_now.strftime("%A").lower()
+
+    if current_day != configured_day:
+        print(
+            f"Not scheduled today. "
+            f"Configured day: {configured_day}, "
+            f"current day: {current_day}"
+        )
+        return
+
+    try:
+        configured_time = datetime.strptime(
+            automation.invitation_time.strip(),
+            "%I:%M %p"
+        ).time()
+    except ValueError:
+        print(
+            "Invalid Homework Support invitation_time:",
+            automation.invitation_time
+        )
+        return
+
+    if (
+        local_now.hour != configured_time.hour
+        or local_now.minute != configured_time.minute
+    ):
+        print(
+            f"Not scheduled at this time. "
+            f"Configured: {configured_time.strftime('%H:%M')}, "
+            f"Current: {local_now.strftime('%H:%M')}"
+        )
+        return
+
+    print("HOMEWORK SUPPORT STATUS: READY TO PROCESS")
+    # ------------------------------------
+    # Load active academic term
+    # ------------------------------------
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not active_term:
+        print(
+            "Homework Support: No active academic term found."
+        )
+        return
+
+    print("\n--- ACTIVE ACADEMIC TERM ---")
+    print(f"Term ID       : {active_term.id}")
+    print(f"Term Name     : {active_term.term_name}")
+    print(f"Start Date    : {active_term.start_date}")
+    print(f"End Date      : {active_term.end_date}")
+    print(f"Number Weeks  : {active_term.number_of_weeks}")
+
+    # ------------------------------------
+    # Calculate current term week
+    # ------------------------------------
+
+    term_start = active_term.start_date
+    term_end = active_term.end_date
+    current_date = local_now.date()
+
+    if current_date < term_start or current_date > term_end:
+        print(
+            "Homework Support: Current date is outside the active term."
+        )
+        return
+
+    current_week_number = (
+        (current_date - term_start).days // 7
+    ) + 1
+
+    print("\n--- CURRENT TERM WEEK ---")
+    print(f"Current Date      : {current_date}")
+    print(f"Term Start Date   : {term_start}")
+    print(f"Term End Date     : {term_end}")
+    print(f"Current Week      : {current_week_number}")
+
+    # ------------------------------------
+    # Load current Homework Support week
+    # ------------------------------------
+
+    current_homework_week = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == center_code,
+            HomeworkSupportWeek.academic_term_id == active_term.id,
+            HomeworkSupportWeek.week_number == current_week_number
+        )
+        .first()
+    )
+
+    if not current_homework_week:
+        print(
+            f"Homework Support Week {current_week_number} "
+            f"is not configured for this centre."
+        )
+        return
+
+    print("\n--- CURRENT HOMEWORK SUPPORT WEEK ---")
+    print(
+        f"Week {current_homework_week.week_number} "
+        f"(ID: {current_homework_week.id})"
+    )
+
+    # ------------------------------------
+    # Load time slots for current week
+    # ------------------------------------
+
+    slots = (
+        db.query(HomeworkSupportTimeSlot)
+        .filter(
+            HomeworkSupportTimeSlot.center_code == center_code,
+            HomeworkSupportTimeSlot.homework_support_week_id
+            == current_homework_week.id
+        )
+        .order_by(
+            HomeworkSupportTimeSlot.start_time
+        )
+        .all()
+    )
+
+    print("\n--- CURRENT WEEK TIME SLOTS ---")
+
+    print(
+        f"Week {current_homework_week.week_number}: "
+        f"{len(slots)} time slot(s)"
+    )
+
+    for slot in slots:
+        print(
+            f"  {slot.start_time} - "
+            f"{slot.end_time} | "
+            f"Capacity: {slot.capacity}"
+        )    
+    # ------------------------------------
+    # Load test student for email testing
+    # ------------------------------------
+
+    # ------------------------------------
+    # Load test students for email testing
+    # ------------------------------------
+
+    test_emails = [
+        "proactive1.san@gmail.com",
+        "rubyshaaz2013@gmail.com",
+        "sajjad.coding5037@gmail.com",
+    ]
+
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code,
+            Student.is_active == True,
+            Student.parent_email.in_(test_emails)
+        )
+        .all()
+    )
+
+    print("\n--- TEST HOMEWORK SUPPORT STUDENTS ---")
+    print(f"Test recipient emails: {test_emails}")
+    print(f"Matching students: {len(students)}")
+
+    for student in students:
+        print(
+            f"Student ID: {student.student_id} | "
+            f"Name: {student.name} | "
+            f"Parent Email: {student.parent_email}"
+        )
+
+        try:
+            send_homework_support_invitation_email(
+                student.parent_email
+            )
+
+        except Exception as e:
+            print(
+                f"[ERROR] Could not send Homework Support "
+                f"email to {student.parent_email}: {e}"
+            )
+
+
+
 
 #running the scheduler for gamified quiz
 def scheduler_job():
@@ -363,6 +589,16 @@ def scheduler_job():
             print(f"Local Time : {local_now}")
             print(f"Timezone   : {configuration.timezone}")
             print(f"Today      : {today}")
+
+            # ------------------------------------
+            # Homework Support scheduler
+            # ------------------------------------
+
+            homework_support_scheduler_job(
+                center_code=center.center_code,
+                local_now=local_now,
+                db=db
+            )
 
 
             # ------------------------------------
@@ -476,6 +712,8 @@ scheduler.add_job(
     replace_existing=True,
 )
 
+
+
 scheduler.start()
 print("=" * 50)
 print("Scheduler started")
@@ -510,7 +748,17 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # --------------------------
+class HomeworkTestEmailRequest(BaseModel):
+    center_code: str
+    student_ids: List[str]
 
+class HomeworkSupportParentDashboardRequest(BaseModel):
+    parent_email: EmailStr
+
+
+class HomeworkSupportTimeSlotsRequest(BaseModel):
+    parent_email: EmailStr
+    
 class DefaultSlotTimingRequest(BaseModel):
     start_time: str
     end_time: str
@@ -581,7 +829,8 @@ class HomeworkTimeSlotRequest(BaseModel):
     start_time: str
     end_time: str
     capacity: int
-
+    uses_default_timing: bool = False
+    default_slot_index: Optional[int] = None
 
 class HomeworkBookingCutoffRequest(BaseModel):
     day: str
@@ -1904,6 +2153,16 @@ class HomeworkSupportTimeSlot(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow
     )
+    uses_default_timing = Column(
+        Boolean,
+        nullable=False,
+        default=False
+    )
+
+    default_slot_index = Column(
+        Integer,
+        nullable=True
+    )
 
 class HomeworkSupportBookingCutoff(Base):
     __tablename__ = "homework_support_booking_cutoffs"
@@ -2064,6 +2323,7 @@ class HomeworkAutomationConfiguration(Base):
             name="uq_homework_automation_center"
         ),
     )
+
 class StudentLoginRequest(BaseModel):
     student_id: str
     password: str
@@ -2822,7 +3082,77 @@ class GeneratedHomeworkWriting(Base):
     # Timestamp
     # ----------------------------------
     created_at = Column(DateTime(timezone=True), server_default=func.now())
- 
+
+
+class HomeworkSupportResponseRequest(BaseModel):
+    parent_email: EmailStr
+    response: str
+    selected_time_slot_id: int | None = None
+
+class HomeworkSupportStudentResponse(Base):
+    __tablename__ = "homework_support_student_responses"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    student_id = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    homework_support_week_id = Column(
+        Integer,
+        ForeignKey("homework_support_weeks.id"),
+        nullable=False,
+        index=True
+    )
+
+    response = Column(
+        String,
+        nullable=False
+    )
+    # "ATTENDING" or "NOT_ATTENDING"
+
+    selected_time_slot_id = Column(
+        Integer,
+        ForeignKey("homework_support_time_slots.id"),
+        nullable=True,
+        index=True
+    )
+
+    parent_email = Column(
+        String,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "student_id",
+            "homework_support_week_id",
+            name="uq_homework_support_student_week_response"
+        ),
+    )
+
 class ReadingHomeworkExamRequest(BaseModel):
     class_name: str
     class_year: str
@@ -4842,7 +5172,10 @@ class StudentExamResponseNaplanNumeracy(Base):
     )
     
     exam = relationship("ExamNaplanNumeracy")
-    
+
+class HomeworkSupportParentInvitationRequest(BaseModel):
+    parent_email: EmailStr
+
 class StudentExamResponseNaplanNumeracyHomework(Base):
     __tablename__ = "student_exam_response_naplan_numeracy_homework"
 
@@ -6568,6 +6901,8 @@ app.add_middleware(
         "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
+        "http://localhost:5174",
+
         "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
@@ -7524,7 +7859,1040 @@ def send_otp_sms(phone_number: str, otp: int):
         to=phone_number
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
+@app.post("/homework-support/parent/response")
+def submit_homework_support_response(
+    payload: HomeworkSupportResponseRequest,
+    db: Session = Depends(get_db)
+):
+    parent_email = payload.parent_email.strip().lower()
 
+    # ------------------------------------
+    # Find active student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == parent_email,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student was found for this email address."
+        )
+
+    # ------------------------------------
+    # Load active academic term
+    # ------------------------------------
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not active_term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ------------------------------------
+    # Calculate current term week
+    # ------------------------------------
+
+    current_date = datetime.utcnow().date()
+
+    if (
+        current_date < active_term.start_date
+        or current_date > active_term.end_date
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="There is no active Homework Support week."
+        )
+
+    current_week_number = (
+        (current_date - active_term.start_date).days // 7
+    ) + 1
+
+    # ------------------------------------
+    # Find current Homework Support week
+    # ------------------------------------
+
+    homework_week = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == student.center_code,
+            HomeworkSupportWeek.academic_term_id == active_term.id,
+            HomeworkSupportWeek.week_number == current_week_number
+        )
+        .first()
+    )
+
+    if not homework_week:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Homework Support Week "
+                f"{current_week_number} is not configured."
+            )
+        )
+
+    # ------------------------------------
+    # Validate response
+    # ------------------------------------
+
+    if payload.response not in [
+        "ATTENDING",
+        "NOT_ATTENDING"
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Homework Support response."
+        )
+
+    # ------------------------------------
+    # Validate selected time slot
+    # ------------------------------------
+
+    if payload.response == "ATTENDING":
+
+        if payload.selected_time_slot_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="A time slot is required when attending."
+            )
+
+        slot = (
+            db.query(HomeworkSupportTimeSlot)
+            .filter(
+                HomeworkSupportTimeSlot.id
+                == payload.selected_time_slot_id,
+
+                HomeworkSupportTimeSlot.center_code
+                == student.center_code,
+
+                HomeworkSupportTimeSlot.homework_support_week_id
+                == homework_week.id
+            )
+            .first()
+        )
+
+        if not slot:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid time slot."
+            )
+
+    else:
+        payload.selected_time_slot_id = None
+
+    # ------------------------------------
+    # Find existing response
+    # ------------------------------------
+
+    existing_response = (
+        db.query(HomeworkSupportStudentResponse)
+        .filter(
+            HomeworkSupportStudentResponse.student_id
+            == student.student_id,
+
+            HomeworkSupportStudentResponse.homework_support_week_id
+            == homework_week.id
+        )
+        .first()
+    )
+
+    if existing_response:
+
+        existing_response.response = payload.response
+        existing_response.selected_time_slot_id = (
+            payload.selected_time_slot_id
+        )
+        existing_response.parent_email = parent_email
+
+        db.commit()
+        db.refresh(existing_response)
+
+        return {
+            "message": "Homework Support response updated successfully.",
+            "response_id": existing_response.id
+        }
+
+    # ------------------------------------
+    # Create new response
+    # ------------------------------------
+
+    new_response = HomeworkSupportStudentResponse(
+        center_code=student.center_code,
+        student_id=student.student_id,
+        homework_support_week_id=homework_week.id,
+        response=payload.response,
+        selected_time_slot_id=payload.selected_time_slot_id,
+        parent_email=parent_email
+    )
+
+    db.add(new_response)
+    db.commit()
+    db.refresh(new_response)
+
+    return {
+        "message": "Homework Support response submitted successfully.",
+        "response_id": new_response.id
+    }
+
+
+@app.post("/homework-support/parent/time-slots")
+def get_homework_support_time_slots(
+    payload: HomeworkSupportTimeSlotsRequest,
+    db: Session = Depends(get_db)
+):
+    parent_email = payload.parent_email.strip().lower()
+
+    # ------------------------------------
+    # Find active student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == parent_email,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student was found for this email address."
+        )
+
+    # ------------------------------------
+    # Load active academic term
+    # ------------------------------------
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not active_term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ------------------------------------
+    # Calculate current term week
+    # ------------------------------------
+
+    # Get the centre's timezone
+    scheduler_configuration = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code
+            == student.center_code
+        )
+        .first()
+    )
+
+    if not scheduler_configuration:
+        raise HTTPException(
+            status_code=404,
+            detail="Scheduler configuration not found for this centre."
+        )
+
+    local_now = datetime.now(
+        ZoneInfo(scheduler_configuration.timezone)
+    )
+
+    current_date = local_now.date()
+
+    if (
+        current_date < active_term.start_date
+        or current_date > active_term.end_date
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Current date is outside the active academic term."
+        )
+
+    current_week_number = (
+        (current_date - active_term.start_date).days // 7
+    ) + 1
+
+    # ------------------------------------
+    # Calculate Saturday of current week
+    # ------------------------------------
+
+    current_week_start = (
+        active_term.start_date
+        + timedelta(
+            weeks=current_week_number - 1
+        )
+    )
+
+    session_date = current_week_start + timedelta(
+        days=5 - current_week_start.weekday()
+    )
+
+    session_date_display = (
+        f"{session_date.strftime('%A')}, "
+        f"{session_date.strftime('%B')} "
+        f"{session_date.day}, "
+        f"{session_date.year}"
+    )
+
+    # ------------------------------------
+    # Find current Homework Support week
+    # ------------------------------------
+
+    homework_week = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == student.center_code,
+            HomeworkSupportWeek.academic_term_id == active_term.id,
+            HomeworkSupportWeek.week_number == current_week_number
+        )
+        .first()
+    )
+
+    if not homework_week:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Homework Support Week "
+                f"{current_week_number} is not configured."
+            )
+        )
+
+    # ------------------------------------
+    # Load time slots
+    # ------------------------------------
+
+    slots = (
+        db.query(HomeworkSupportTimeSlot)
+        .filter(
+            HomeworkSupportTimeSlot.center_code == student.center_code,
+            HomeworkSupportTimeSlot.homework_support_week_id
+            == homework_week.id
+        )
+        .order_by(
+            HomeworkSupportTimeSlot.start_time
+        )
+        .all()
+    )
+
+    # ------------------------------------
+    # Build slot response
+    # ------------------------------------
+
+    time_slots = []
+
+    for slot in slots:
+
+        attending_count = (
+            db.query(HomeworkSupportStudentResponse)
+            .filter(
+                HomeworkSupportStudentResponse.homework_support_week_id
+                == homework_week.id,
+
+                HomeworkSupportStudentResponse.selected_time_slot_id
+                == slot.id,
+
+                HomeworkSupportStudentResponse.response
+                == "ATTENDING"
+            )
+            .count()
+        )
+
+        available_places = max(
+            slot.capacity - attending_count,
+            0
+        )
+
+        time_slots.append(
+            {
+                "id": slot.id,
+                "start_time": slot.start_time.strftime("%I:%M %p"),
+                "end_time": slot.end_time.strftime("%I:%M %p"),
+                "capacity": slot.capacity,
+                "booked": attending_count,
+                "available_places": available_places,
+            }
+        )
+
+    # ------------------------------------
+    # Return data to frontend
+    # ------------------------------------
+
+    return {
+        "student_name": student.name,
+        "week_number": homework_week.week_number,
+        "session_date": session_date_display,
+        "parent_email": parent_email,
+        "time_slots": time_slots,
+    }
+
+@app.get("/homework-support/admin/responses")
+def get_homework_support_admin_responses(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    # ------------------------------------
+    # Find active academic term
+    # ------------------------------------
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not active_term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ------------------------------------
+    # Get centre timezone
+    # ------------------------------------
+
+    scheduler_configuration = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    if not scheduler_configuration:
+        raise HTTPException(
+            status_code=404,
+            detail="Scheduler configuration not found for this centre."
+        )
+
+    local_now = datetime.now(
+        ZoneInfo(scheduler_configuration.timezone)
+    )
+
+    current_date = local_now.date()
+
+    # ------------------------------------
+    # Check term dates
+    # ------------------------------------
+
+    if (
+        current_date < active_term.start_date
+        or current_date > active_term.end_date
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Current date is outside the active academic term."
+        )
+
+    # ------------------------------------
+    # Calculate current term week
+    # ------------------------------------
+
+    current_week_number = (
+        (current_date - active_term.start_date).days // 7
+    ) + 1
+
+    # ------------------------------------
+    # Calculate Saturday of current week
+    # ------------------------------------
+
+    current_week_start = (
+        active_term.start_date
+        + timedelta(
+            weeks=current_week_number - 1
+        )
+    )
+
+    session_date = current_week_start + timedelta(
+        days=5 - current_week_start.weekday()
+    )
+
+    session_date_display = (
+        f"{session_date.strftime('%A')}, "
+        f"{session_date.strftime('%B')} "
+        f"{session_date.day}, "
+        f"{session_date.year}"
+    )
+
+    # ------------------------------------
+    # Find current Homework Support week
+    # ------------------------------------
+
+    homework_week = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == center_code,
+            HomeworkSupportWeek.academic_term_id == active_term.id,
+            HomeworkSupportWeek.week_number == current_week_number
+        )
+        .first()
+    )
+
+    if not homework_week:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Homework Support Week "
+                f"{current_week_number} is not configured."
+            )
+        )
+
+    # ------------------------------------
+    # Load active students
+    # ------------------------------------
+
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code,
+            Student.is_active == True
+        )
+        .order_by(Student.name)
+        .all()
+    )
+
+    # ------------------------------------
+    # Load time slots
+    # ------------------------------------
+
+    slots = (
+        db.query(HomeworkSupportTimeSlot)
+        .filter(
+            HomeworkSupportTimeSlot.center_code == center_code,
+            HomeworkSupportTimeSlot.homework_support_week_id
+            == homework_week.id
+        )
+        .order_by(
+            HomeworkSupportTimeSlot.start_time
+        )
+        .all()
+    )
+
+    # ------------------------------------
+    # Create slot lookup
+    # ------------------------------------
+
+    slot_lookup = {
+        slot.id: slot
+        for slot in slots
+    }
+
+    # ------------------------------------
+    # Build student responses
+    # ------------------------------------
+
+    student_responses = []
+
+    attending_count = 0
+    not_attending_count = 0
+    no_response_count = 0
+
+    for student in students:
+
+        response = (
+            db.query(HomeworkSupportStudentResponse)
+            .filter(
+                HomeworkSupportStudentResponse.student_id
+                == student.student_id,
+
+                HomeworkSupportStudentResponse.homework_support_week_id
+                == homework_week.id
+            )
+            .first()
+        )
+
+        if not response:
+
+            response_status = "NO_RESPONSE"
+            time_slot_display = None
+
+            no_response_count += 1
+
+        else:
+
+            response_status = response.response
+
+            if response.response == "ATTENDING":
+                attending_count += 1
+
+            elif response.response == "NOT_ATTENDING":
+                not_attending_count += 1
+
+            slot = slot_lookup.get(
+                response.selected_time_slot_id
+            )
+
+            if slot:
+                time_slot_display = (
+                    f"{slot.start_time.strftime('%I:%M %p')}"
+                    f" - "
+                    f"{slot.end_time.strftime('%I:%M %p')}"
+                )
+            else:
+                time_slot_display = None
+
+        student_responses.append(
+            {
+                "student_id": student.student_id,
+                "student_name": student.name,
+                "response": response_status,
+                "time_slot": time_slot_display,
+                "selected_time_slot_id": (
+                    response.selected_time_slot_id
+                    if response
+                    else None
+                ),
+            }
+        )
+
+    # ------------------------------------
+    # Build slot capacity information
+    # ------------------------------------
+
+    slot_data = []
+
+    for slot in slots:
+
+        booked_count = (
+            db.query(HomeworkSupportStudentResponse)
+            .filter(
+                HomeworkSupportStudentResponse.homework_support_week_id
+                == homework_week.id,
+
+                HomeworkSupportStudentResponse.selected_time_slot_id
+                == slot.id,
+
+                HomeworkSupportStudentResponse.response
+                == "ATTENDING"
+            )
+            .count()
+        )
+
+        available_places = max(
+            slot.capacity - booked_count,
+            0
+        )
+
+        slot_data.append(
+            {
+                "id": slot.id,
+                "start_time": slot.start_time.strftime(
+                    "%I:%M %p"
+                ),
+                "end_time": slot.end_time.strftime(
+                    "%I:%M %p"
+                ),
+                "capacity": slot.capacity,
+                "booked": booked_count,
+                "available_places": available_places,
+                "is_full": available_places == 0,
+            }
+        )
+
+    # ------------------------------------
+    # Return dashboard data
+    # ------------------------------------
+
+    return {
+        "center_code": center_code,
+
+        "week_number": homework_week.week_number,
+
+        "session_date": session_date_display,
+
+        "summary": {
+            "total_students": len(students),
+            "attending": attending_count,
+            "not_attending": not_attending_count,
+            "no_response": no_response_count,
+        },
+
+        "slots": slot_data,
+
+        "students": student_responses,
+    }
+
+
+
+@app.post("/homework-support/parent/dashboard")
+def get_homework_support_parent_dashboard(
+    payload: HomeworkSupportParentDashboardRequest,
+    db: Session = Depends(get_db)
+):
+    parent_email = payload.parent_email.strip().lower()
+
+    # ------------------------------------
+    # Find active student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == parent_email,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student was found for this email address."
+        )
+
+    # ------------------------------------
+    # Load active academic term
+    # ------------------------------------
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not active_term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ------------------------------------
+    # Get centre timezone
+    # ------------------------------------
+
+    scheduler_configuration = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code
+            == student.center_code
+        )
+        .first()
+    )
+
+    if not scheduler_configuration:
+        raise HTTPException(
+            status_code=404,
+            detail="Scheduler configuration not found for this centre."
+        )
+
+    local_now = datetime.now(
+        ZoneInfo(scheduler_configuration.timezone)
+    )
+
+    current_date = local_now.date()
+
+    # ------------------------------------
+    # Check current date is inside term
+    # ------------------------------------
+
+    if (
+        current_date < active_term.start_date
+        or current_date > active_term.end_date
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="There is no active Homework Support week."
+        )
+
+    # ------------------------------------
+    # Calculate current term week
+    # ------------------------------------
+
+    current_week_number = (
+        (current_date - active_term.start_date).days // 7
+    ) + 1
+
+    # ------------------------------------
+    # Find current Homework Support week
+    # ------------------------------------
+
+    homework_week = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code
+            == student.center_code,
+
+            HomeworkSupportWeek.academic_term_id
+            == active_term.id,
+
+            HomeworkSupportWeek.week_number
+            == current_week_number
+        )
+        .first()
+    )
+
+    if not homework_week:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Homework Support Week "
+                f"{current_week_number} is not configured."
+            )
+        )
+
+    # ------------------------------------
+    # Calculate Saturday of current week
+    # ------------------------------------
+
+    current_week_start = (
+        active_term.start_date
+        + timedelta(
+            weeks=current_week_number - 1
+        )
+    )
+
+    days_until_saturday = (
+        5 - current_week_start.weekday()
+    ) % 7
+
+    session_date = (
+        current_week_start
+        + timedelta(days=days_until_saturday)
+    )
+
+    if session_date > active_term.end_date:
+        session_date = None
+
+    session_date_display = None
+
+    if session_date:
+        session_date_display = (
+            f"{session_date.strftime('%A')}, "
+            f"{session_date.strftime('%B')} "
+            f"{session_date.day}, "
+            f"{session_date.year}"
+        )
+
+    # ------------------------------------
+    # Find existing parent response
+    # ------------------------------------
+
+    existing_response = (
+        db.query(HomeworkSupportStudentResponse)
+        .filter(
+            HomeworkSupportStudentResponse.center_code
+            == student.center_code,
+
+            HomeworkSupportStudentResponse.student_id
+            == student.student_id,
+
+            HomeworkSupportStudentResponse.homework_support_week_id
+            == homework_week.id,
+
+            HomeworkSupportStudentResponse.parent_email
+            == parent_email
+        )
+        .first()
+    )
+
+    response_value = None
+    selected_time_slot_id = None
+
+    if existing_response:
+
+        response_value = existing_response.response
+        selected_time_slot_id = (
+            existing_response.selected_time_slot_id
+        )
+
+    # ------------------------------------
+    # Return dashboard Homework Support data
+    # ------------------------------------
+
+    return {
+        "parent_email": parent_email,
+        "student_name": student.name,
+        "week_number": homework_week.week_number,
+        "title": (
+            f"Homework Support — "
+            f"Week {homework_week.week_number}"
+        ),
+        "session_date": session_date_display,
+        "response": response_value,
+        "selected_time_slot_id": selected_time_slot_id
+    }
+
+@app.post("/homework-support/parent/invitation")
+def get_homework_support_parent_invitation(
+    payload: HomeworkSupportParentInvitationRequest,
+    db: Session = Depends(get_db)
+):
+    parent_email = payload.parent_email.strip().lower()
+
+    # ------------------------------------
+    # Find active student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == parent_email,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student was found for this email address."
+        )
+
+    # ------------------------------------
+    # Load active academic term
+    # ------------------------------------
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not active_term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ------------------------------------
+    # Calculate current term week
+    # ------------------------------------
+
+    current_datetime = datetime.now(SYDNEY_TZ)
+    current_date = current_datetime.date()
+
+    if (
+        current_date < active_term.start_date
+        or current_date > active_term.end_date
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="There is no active Homework Support week."
+        )
+
+    current_week_number = (
+        (current_date - active_term.start_date).days // 7
+    ) + 1
+
+    # ------------------------------------
+    # Find current Homework Support week
+    # ------------------------------------
+
+    homework_week = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == student.center_code,
+            HomeworkSupportWeek.academic_term_id == active_term.id,
+            HomeworkSupportWeek.week_number == current_week_number
+        )
+        .first()
+    )
+
+    if not homework_week:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Homework Support Week "
+                f"{current_week_number} is not configured."
+            )
+        )
+    # ------------------------------------
+    # Check Homework Support booking cutoff
+    # ------------------------------------
+
+    booking_cutoff = (
+        db.query(HomeworkSupportBookingCutoff)
+        .filter(
+            HomeworkSupportBookingCutoff.center_code
+            == student.center_code,
+            HomeworkSupportBookingCutoff.academic_term_id
+            == active_term.id
+        )
+        .first()
+    )
+
+    if booking_cutoff:
+
+        cutoff_weekday_number = datetime.strptime(
+            booking_cutoff.cutoff_day.strip(),
+            "%A"
+        ).weekday()
+
+        current_weekday_number = current_datetime.weekday()
+
+        # If today is after the configured cutoff day,
+        # this week's booking window has already closed.
+        if current_weekday_number > cutoff_weekday_number:
+
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Homework Support bookings are now closed "
+                    "for this week."
+                )
+            )
+
+        # If today is the cutoff day, compare the time.
+        if current_weekday_number == cutoff_weekday_number:
+
+            cutoff_datetime = datetime.combine(
+                current_date,
+                booking_cutoff.cutoff_time
+            ).replace(tzinfo=SYDNEY_TZ)
+
+            if current_datetime >= cutoff_datetime:
+
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Homework Support bookings are now closed "
+                        "for this week."
+                    )
+                )
+
+    # ------------------------------------
+    # Return information for parent UI
+    # ------------------------------------
+
+    return {
+        "student_name": student.name,
+        "week_number": homework_week.week_number,
+        "title": (
+            f"Homework Support — "
+            f"Week {homework_week.week_number}"
+        ),
+        "session_date": None
+    }
 
 @app.post("/parent/dashboard-access")
 def check_parent_dashboard_access(
@@ -7591,6 +8959,7 @@ def get_default_slot_timings(
             for timing in timings
         ]
     }
+
 @app.put("/homework/configuration/default-slot-timings/by-center/{center_code}")
 def update_default_slot_timings(
     center_code: str,
@@ -7865,7 +9234,7 @@ def update_homework_configuration(
     try:
 
         # -----------------------------------------------------
-        # Existing Homework Support weeks
+        # Load existing Homework Support weeks
         # -----------------------------------------------------
 
         existing_weeks = (
@@ -7877,71 +9246,223 @@ def update_homework_configuration(
             .all()
         )
 
-        existing_week_ids = [
-            week.id
+        existing_weeks_by_number = {
+            week.week_number: week
             for week in existing_weeks
-        ]
+        }
+
+        selected_week_set = set(selected_week_numbers)
 
         # -----------------------------------------------------
-        # Delete existing time slots first
+        # Check for weeks being removed
         # -----------------------------------------------------
 
-        if existing_week_ids:
-
-            db.query(HomeworkSupportTimeSlot).filter(
-                HomeworkSupportTimeSlot.center_code == center_code,
-                HomeworkSupportTimeSlot.homework_support_week_id.in_(
-                    existing_week_ids
-                )
-            ).delete(
-                synchronize_session=False
-            )
-
-        # -----------------------------------------------------
-        # Delete existing selected Homework Support weeks
-        # -----------------------------------------------------
-
-        db.query(HomeworkSupportWeek).filter(
-            HomeworkSupportWeek.center_code == center_code,
-            HomeworkSupportWeek.academic_term_id == payload.term_id
-        ).delete(
-            synchronize_session=False
+        removed_week_numbers = (
+            set(existing_weeks_by_number.keys())
+            - selected_week_set
         )
 
-        db.flush()
+        for week_number in removed_week_numbers:
 
-        # =====================================================
-        # 6. Create selected Homework Support weeks
-        # =====================================================
+            existing_week = existing_weeks_by_number[week_number]
 
-        created_weeks = {}
-
-        for selected_week in payload.selected_weeks:
-
-            homework_week = HomeworkSupportWeek(
-                center_code=center_code,
-                academic_term_id=payload.term_id,
-                week_number=selected_week.week_number
+            booked_slot_count = (
+                db.query(HomeworkSupportStudentResponse)
+                .join(
+                    HomeworkSupportTimeSlot,
+                    HomeworkSupportStudentResponse.selected_time_slot_id
+                    == HomeworkSupportTimeSlot.id
+                )
+                .filter(
+                    HomeworkSupportTimeSlot.homework_support_week_id
+                    == existing_week.id
+                )
+                .count()
             )
 
-            db.add(homework_week)
-            db.flush()
+            if booked_slot_count > 0:
 
-            created_weeks[
-                selected_week.week_number
-            ] = homework_week
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Cannot remove Homework Support Week "
+                        f"{week_number} because it has "
+                        f"{booked_slot_count} parent booking(s). "
+                        f"Please resolve the existing bookings "
+                        f"before removing this week."
+                    )
+                )
 
-        # =====================================================
-        # 7. Create time slots
-        # =====================================================
+        # -----------------------------------------------------
+        # Load existing time slots
+        # -----------------------------------------------------
+
+        existing_slots = (
+            db.query(HomeworkSupportTimeSlot)
+            .filter(
+                HomeworkSupportTimeSlot.center_code == center_code,
+                HomeworkSupportTimeSlot.homework_support_week_id.in_(
+                    [week.id for week in existing_weeks]
+                )
+            )
+            .all()
+            if existing_weeks
+            else []
+        )
+
+        # -----------------------------------------------------
+        # Index existing slots
+        #
+        # Existing slots are identified by:
+        # week_number + start_time + end_time
+        # -----------------------------------------------------
+
+        existing_slots_by_key = {}
+
+        for existing_slot in existing_slots:
+
+            existing_week = next(
+                (
+                    week
+                    for week in existing_weeks
+                    if week.id == existing_slot.homework_support_week_id
+                ),
+                None
+            )
+
+            if not existing_week:
+                continue
+
+            key = (
+                existing_week.week_number,
+                existing_slot.start_time,
+                existing_slot.end_time
+            )
+
+            existing_slots_by_key[key] = existing_slot
+
+        # -----------------------------------------------------
+        # Build keys for submitted slots
+        # -----------------------------------------------------
+
+        submitted_slot_keys = set()
 
         for slot in payload.time_slots:
 
-            homework_week = created_weeks.get(
+            start_time = datetime.strptime(
+                slot.start_time,
+                "%H:%M"
+            ).time()
+
+            end_time = datetime.strptime(
+                slot.end_time,
+                "%H:%M"
+            ).time()
+
+            submitted_slot_keys.add(
+                (
+                    slot.week_number,
+                    start_time,
+                    end_time
+                )
+            )
+
+        # -----------------------------------------------------
+        # Check which existing time slots are being removed
+        # -----------------------------------------------------
+
+        for key, existing_slot in existing_slots_by_key.items():
+
+            if key in submitted_slot_keys:
+                continue
+
+            booking_count = (
+                db.query(HomeworkSupportStudentResponse)
+                .filter(
+                    HomeworkSupportStudentResponse.selected_time_slot_id
+                    == existing_slot.id
+                )
+                .count()
+            )
+
+            if booking_count > 0:
+
+                week_number, start_time, end_time = key
+
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Cannot remove Homework Support time slot "
+                        f"{start_time.strftime('%I:%M %p')} - "
+                        f"{end_time.strftime('%I:%M %p')} "
+                        f"from Week {week_number} because "
+                        f"{booking_count} parent booking(s) "
+                        f"already exist for this slot. "
+                        f"Please keep the slot or resolve the "
+                        f"existing booking before removing it."
+                    )
+                )
+
+        # -----------------------------------------------------
+        # Create missing Homework Support weeks
+        # -----------------------------------------------------
+
+        current_weeks_by_number = {}
+
+        for selected_week in payload.selected_weeks:
+
+            week_number = selected_week.week_number
+
+            existing_week = existing_weeks_by_number.get(
+                week_number
+            )
+
+            if existing_week:
+
+                current_weeks_by_number[
+                    week_number
+                ] = existing_week
+
+            else:
+
+                new_week = HomeworkSupportWeek(
+                    center_code=center_code,
+                    academic_term_id=payload.term_id,
+                    week_number=week_number
+                )
+
+                db.add(new_week)
+                db.flush()
+
+                current_weeks_by_number[
+                    week_number
+                ] = new_week
+
+        # -----------------------------------------------------
+        # Delete unbooked time slots that were removed
+        # -----------------------------------------------------
+
+        for key, existing_slot in existing_slots_by_key.items():
+
+            if key in submitted_slot_keys:
+                continue
+
+            db.delete(existing_slot)
+
+        db.flush()
+
+        # -----------------------------------------------------
+        # Update existing slots / create new slots
+        # -----------------------------------------------------
+
+        for slot in payload.time_slots:
+
+            homework_week = current_weeks_by_number.get(
                 slot.week_number
             )
 
             if not homework_week:
+
                 raise HTTPException(
                     status_code=400,
                     detail=(
@@ -7960,15 +9481,54 @@ def update_homework_configuration(
                 "%H:%M"
             ).time()
 
-            new_slot = HomeworkSupportTimeSlot(
-                center_code=center_code,
-                homework_support_week_id=homework_week.id,
-                start_time=start_time,
-                end_time=end_time,
-                capacity=slot.capacity
+            key = (
+                slot.week_number,
+                start_time,
+                end_time
             )
 
-            db.add(new_slot)
+            existing_slot = existing_slots_by_key.get(
+                key
+            )
+
+            if existing_slot:
+
+                # Keep the existing database ID.
+                # This is critical for existing parent bookings.
+
+                existing_slot.capacity = slot.capacity
+                existing_slot.uses_default_timing = slot.uses_default_timing
+                existing_slot.default_slot_index = slot.default_slot_index
+
+            else:
+
+                new_slot = HomeworkSupportTimeSlot(
+                    center_code=center_code,
+                    homework_support_week_id=homework_week.id,
+                    start_time=start_time,
+                    end_time=end_time,
+                    capacity=slot.capacity,
+                    uses_default_timing=slot.uses_default_timing,
+                    default_slot_index=slot.default_slot_index
+                )
+
+                db.add(new_slot)
+
+        # -----------------------------------------------------
+        # Remove Homework Support weeks that are no longer
+        # selected, but only after confirming they have no
+        # parent bookings.
+        # -----------------------------------------------------
+
+        for week_number in removed_week_numbers:
+
+            existing_week = existing_weeks_by_number[
+                week_number
+            ]
+
+            db.delete(existing_week)
+
+        db.flush()
 
         # =====================================================
         # 8. Get existing booking cutoff
@@ -8073,7 +9633,9 @@ def update_homework_configuration(
                 "week_number": slot.week_number,
                 "start_time": slot.start_time,
                 "end_time": slot.end_time,
-                "capacity": slot.capacity
+                "capacity": slot.capacity,
+                "uses_default_timing": slot.uses_default_timing,
+                "default_slot_index": slot.default_slot_index
             }
             for slot in payload.time_slots
         ],
@@ -8088,6 +9650,32 @@ def update_homework_configuration(
         )
     }
 
+@app.get("/homework/test-email/students/{center_code}")
+def get_test_email_students(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code,
+            Student.is_active == True,
+            Student.parent_email.isnot(None)
+        )
+        .order_by(Student.name.asc())
+        .all()
+    )
+
+    return {
+        "students": [
+            {
+                "id": student.id,
+                "name": student.name,
+                "parent_email": student.parent_email
+            }
+            for student in students
+        ]
+    }
 
 @app.get("/homework/configuration/by-center/{center_code}")
 def get_homework_configuration(
@@ -8268,12 +9856,24 @@ def get_homework_configuration(
 
         for slot in week_slots:
 
+            booking_count = (
+                db.query(HomeworkSupportStudentResponse)
+                .filter(
+                    HomeworkSupportStudentResponse.selected_time_slot_id
+                    == slot.id
+                )
+                .count()
+            )
+
             time_slots.append({
                 "id": slot.id,
                 "week_number": selected_week.week_number,
                 "start_time": slot.start_time.strftime("%H:%M"),
                 "end_time": slot.end_time.strftime("%H:%M"),
-                "capacity": slot.capacity
+                "capacity": slot.capacity,
+                "booking_count": booking_count,
+                "uses_default_timing": slot.uses_default_timing,
+                "default_slot_index": slot.default_slot_index
             })
 
     # ==========================================
@@ -33064,6 +34664,66 @@ def generate_pdf_from_html(html_content: str) -> str:
 from sendgrid.helpers.mail import Mail, Email, Attachment, FileContent, FileName, FileType, Disposition
 import base64
 
+def send_homework_support_invitation_email(
+    to_email: str
+):
+    homework_support_url = (
+        "https://homework.gemkidsacademy.com.au/"
+        "homework-support/"
+    )
+
+    message = Mail(
+        from_email="noreply@gemkidsacademy.com.au",
+        to_emails=to_email,
+        subject="Homework Support — Please Confirm Attendance",
+        html_content=f"""
+            <p>Dear Parent,</p>
+
+            <p>
+                We are inviting your child to Homework Support this week.
+            </p>
+
+            <p>
+                Please use the link below to confirm whether your child
+                will attend and, if attending, select an available time.
+            </p>
+
+            <p>
+                <a href="{homework_support_url}">
+                    Confirm Homework Support Attendance
+                </a>
+            </p>
+
+            <p>
+                Thank you,<br>
+                Gem Kids Academy
+            </p>
+        """,
+    )
+
+    message.reply_to = Email(
+        "do-not-reply@gemkidsacademy.com.au"
+    )
+
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+
+        response = sg.send(message)
+
+        print(
+            f"[INFO] Homework Support invitation sent to "
+            f"{to_email}, status code {response.status_code}"
+        )
+
+    except Exception as e:
+        print(
+            f"[ERROR] Failed to send Homework Support invitation "
+            f"to {to_email}: {e}"
+        )
+
+        raise
+
+
 def send_report_email_with_pdf(
     to_email: str,
     pdf_path: str,
@@ -33106,6 +34766,49 @@ from fastapi import UploadFile, File, Form, Depends, HTTPException
 import tempfile
 import shutil
 
+@app.post("/homework/test-email/send")
+def send_test_homework_support_email(
+    payload: HomeworkTestEmailRequest,
+    db: Session = Depends(get_db)
+):
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == payload.center_code,
+            Student.is_active == True,
+            Student.id.in_(payload.student_ids)
+        )
+        .all()
+    )
+
+    results = []
+
+    for student in students:
+        try:
+            send_homework_support_invitation_email(
+                student.parent_email
+            )
+
+            results.append({
+                "student_id": student.id,
+                "student_name": student.name,
+                "parent_email": student.parent_email,
+                "success": True
+            })
+
+        except Exception as e:
+            results.append({
+                "student_id": student.id,
+                "student_name": student.name,
+                "parent_email": student.parent_email,
+                "success": False,
+                "error": str(e)
+            })
+
+    return {
+        "message": f"{len(results)} email(s) processed.",
+        "results": results
+    }
 
 @app.post("/session-topics/upload")
 async def upload_session_topics(
