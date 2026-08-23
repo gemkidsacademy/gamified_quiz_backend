@@ -8050,6 +8050,76 @@ def submit_homework_support_response(
         "response_id": new_response.id
     }
 
+@app.get("/homework-support/admin/classes")
+def get_homework_support_admin_classes(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    # ------------------------------------
+    # Get active students for this centre
+    # ------------------------------------
+
+    classes = (
+        db.query(
+            Student.class_name,
+            func.count(Student.id).label("student_count")
+        )
+        .filter(
+            Student.center_code == center_code,
+            Student.is_active == True
+        )
+        .group_by(
+            Student.class_name
+        )
+        .order_by(
+            Student.class_name
+        )
+        .all()
+    )
+
+    return {
+        "center_code": center_code,
+        "classes": [
+            {
+                "class_name": class_name,
+                "student_count": student_count
+            }
+            for class_name, student_count in classes
+        ]
+    }
+@app.get("/homework-support/admin/students")
+def get_homework_support_admin_students(
+    center_code: str,
+    class_name: str,
+    db: Session = Depends(get_db)
+):
+    students = (
+        db.query(
+            Student.student_id,
+            Student.name,
+            Student.parent_email
+        )
+        .filter(
+            Student.center_code == center_code,
+            Student.class_name == class_name,
+            Student.is_active == True
+        )
+        .order_by(Student.parent_email)
+        .all()
+    )
+
+    return {
+        "center_code": center_code,
+        "class_name": class_name,
+        "students": [
+            {
+                "student_id": student_id,
+                "name": name,
+                "parent_email": parent_email
+            }
+            for student_id, name, parent_email in students
+        ]
+    }
 
 @app.post("/homework-support/parent/time-slots")
 def get_homework_support_time_slots(
@@ -8247,6 +8317,7 @@ def get_homework_support_time_slots(
         "parent_email": parent_email,
         "time_slots": time_slots,
     }
+
 @app.get("/homework-support/admin/weeks")
 def get_homework_support_admin_weeks(
     center_code: str,
@@ -8517,7 +8588,7 @@ def get_homework_support_admin_responses(
                 f"{selected_week_number} is not configured."
             )
         )
-
+    
     # ------------------------------------
     # Load active students
     # ------------------------------------
@@ -8955,6 +9026,15 @@ def get_homework_support_parent_invitation(
     payload: HomeworkSupportParentInvitationRequest,
     db: Session = Depends(get_db)
 ):
+    WEEKDAY_NUMBERS = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6,
+    }
     parent_email = payload.parent_email.strip().lower()
 
     # ------------------------------------
@@ -8999,7 +9079,26 @@ def get_homework_support_parent_invitation(
     # Calculate current term week
     # ------------------------------------
 
-    current_datetime = datetime.now(SYDNEY_TZ)
+    scheduler_configuration = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code
+            == student.center_code
+        )
+        .first()
+    )
+
+    if not scheduler_configuration:
+        raise HTTPException(
+            status_code=404,
+            detail="Scheduler configuration not found for this centre."
+        )
+
+    local_now = datetime.now(
+        ZoneInfo(scheduler_configuration.timezone)
+    )
+
+    current_datetime = local_now
     current_date = current_datetime.date()
 
     if (
@@ -9038,7 +9137,74 @@ def get_homework_support_parent_invitation(
             )
         )
     # ------------------------------------
-    # Check Homework Support booking cutoff
+    # Calculate current Homework Support
+    # week start
+    # ------------------------------------
+
+    current_week_start = (
+        active_term.start_date
+        + timedelta(
+            weeks=current_week_number - 1
+        )
+    )
+
+    # ------------------------------------
+    # Load Homework Support automation
+    # configuration
+    # ------------------------------------
+
+    automation_configuration = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code
+            == student.center_code
+        )
+        .first()
+    )
+
+    if not automation_configuration:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Homework Support automation "
+                "configuration not found."
+            )
+        )
+
+    # ------------------------------------
+    # Calculate invitation opening
+    # date/time for this week
+    # ------------------------------------
+
+    invitation_weekday_number = WEEKDAY_NUMBERS[
+        automation_configuration.invitation_day.strip().capitalize()
+    ]
+
+    invitation_time = datetime.strptime(
+        automation_configuration.invitation_time.strip(),
+        "%H:%M"
+    ).time()
+
+    invitation_day_offset = (
+        invitation_weekday_number
+        - current_week_start.weekday()
+    ) % 7
+
+    invitation_date = (
+        current_week_start
+        + timedelta(days=invitation_day_offset)
+    )
+
+    invitation_datetime = datetime.combine(
+        invitation_date,
+        invitation_time
+    ).replace(
+        tzinfo=current_datetime.tzinfo
+    )
+
+    # ------------------------------------
+    # Calculate booking cutoff
+    # date/time for this week
     # ------------------------------------
 
     booking_cutoff = (
@@ -9052,48 +9218,139 @@ def get_homework_support_parent_invitation(
         .first()
     )
 
-    if booking_cutoff:
-
-        cutoff_weekday_number = datetime.strptime(
-            booking_cutoff.cutoff_day.strip(),
-            "%A"
-        ).weekday()
-
-        current_weekday_number = current_datetime.weekday()
-
-        # If today is after the configured cutoff day,
-        # this week's booking window has already closed.
-        if current_weekday_number > cutoff_weekday_number:
-
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    "Homework Support bookings are now closed "
-                    "for this week."
-                )
+    if not booking_cutoff:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Homework Support booking cutoff "
+                "is not configured."
             )
+        )
 
-        # If today is the cutoff day, compare the time.
-        if current_weekday_number == cutoff_weekday_number:
+    cutoff_weekday_number = WEEKDAY_NUMBERS[
+        booking_cutoff.cutoff_day.strip().capitalize()
+    ]
 
-            cutoff_datetime = datetime.combine(
-                current_date,
-                booking_cutoff.cutoff_time
-            ).replace(tzinfo=SYDNEY_TZ)
+    cutoff_day_offset = (
+        cutoff_weekday_number
+        - current_week_start.weekday()
+    ) % 7
+    print("[HOMEWORK ACCESS] NEW DATE CALCULATION CODE RUNNING")
+    print(
+        f"[HOMEWORK ACCESS] current_week_start: "
+        f"{current_week_start}"
+    )
+    print(
+        f"[HOMEWORK ACCESS] current_week_start.weekday(): "
+        f"{current_week_start.weekday()}"
+    )
+    print(
+        f"[HOMEWORK ACCESS] cutoff_weekday_number: "
+        f"{cutoff_weekday_number}"
+    )
+    print(
+        f"[HOMEWORK ACCESS] cutoff_day_offset: "
+        f"{cutoff_day_offset}"
+    )
 
-            if current_datetime >= cutoff_datetime:
+    cutoff_date = (
+        current_week_start
+        + timedelta(days=cutoff_day_offset)
+    )
 
-                raise HTTPException(
-                    status_code=403,
-                    detail=(
-                        "Homework Support bookings are now closed "
-                        "for this week."
-                    )
-                )
+    cutoff_datetime = datetime.combine(
+        cutoff_date,
+        booking_cutoff.cutoff_time
+    ).replace(
+        tzinfo=current_datetime.tzinfo
+    )
 
     # ------------------------------------
-    # Return information for parent UI
+    # Debug logging
     # ------------------------------------
+
+    print(
+        "[HOMEWORK ACCESS] ========================================"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Current datetime: "
+        f"{current_datetime}"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Current week number: "
+        f"{current_week_number}"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Current week start: "
+        f"{current_week_start}"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Invitation day: "
+        f"{automation_configuration.invitation_day}"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Invitation time: "
+        f"{automation_configuration.invitation_time}"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Invitation datetime: "
+        f"{invitation_datetime}"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Cutoff day: "
+        f"{booking_cutoff.cutoff_day}"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Cutoff time: "
+        f"{booking_cutoff.cutoff_time}"
+    )
+
+    print(
+        f"[HOMEWORK ACCESS] Cutoff datetime: "
+        f"{cutoff_datetime}"
+    )
+
+    print(
+        "[HOMEWORK ACCESS] ========================================"
+    )
+
+    # ------------------------------------
+    # Check invitation opening time
+    # ------------------------------------
+
+    if current_datetime < invitation_datetime:
+
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Homework Support bookings are not open yet. "
+                "Please return after the invitation opening time."
+            )
+        )
+
+    # ------------------------------------
+    # Check booking cutoff
+    # ------------------------------------
+
+    if current_datetime >= cutoff_datetime:
+
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Homework Support bookings are now closed "
+                "for this week."
+            )
+        )
+
+    
 
     return {
         "student_name": student.name,
@@ -9193,7 +9450,7 @@ def update_default_slot_timings(
     # --------------------------------------------------
     # Insert the submitted default timings
     # --------------------------------------------------
-
+    
     saved_timings = []
 
     for timing in payload.default_slot_timings:
@@ -34982,22 +35239,109 @@ def send_test_homework_support_email(
     payload: HomeworkTestEmailRequest,
     db: Session = Depends(get_db)
 ):
+    print(
+        "[TEST EMAIL] ========================================"
+    )
+    print(
+        "[TEST EMAIL] Test email request received."
+    )
+    print(
+        f"[TEST EMAIL] Center code: {payload.center_code}"
+    )
+    print(
+        f"[TEST EMAIL] Student IDs received: {payload.student_ids}"
+    )
+    print(
+        f"[TEST EMAIL] Number of student IDs: "
+        f"{len(payload.student_ids)}"
+    )
+
+    # ------------------------------------
+    # Load selected active students
+    # ------------------------------------
+
     students = (
         db.query(Student)
         .filter(
             Student.center_code == payload.center_code,
             Student.is_active == True,
-            Student.id.in_(payload.student_ids)
+            Student.student_id.in_(payload.student_ids)
         )
         .all()
     )
 
-    results = []
+    print(
+        f"[TEST EMAIL] Students found in database: "
+        f"{len(students)}"
+    )
+
+    if not students:
+        print(
+            "[TEST EMAIL] WARNING: No matching students were found."
+        )
+
+    # ------------------------------------
+    # Show students that were found
+    # ------------------------------------
 
     for student in students:
+        print(
+            "[TEST EMAIL] Student found:"
+        )
+        print(
+            f"[TEST EMAIL]   DB id: {student.id}"
+        )
+        print(
+            f"[TEST EMAIL]   Student ID: {student.student_id}"
+        )
+        print(
+            f"[TEST EMAIL]   Name: {student.name}"
+        )
+        print(
+            f"[TEST EMAIL]   Parent email: {student.parent_email}"
+        )
+        print(
+            f"[TEST EMAIL]   Center: {student.center_code}"
+        )
+        print(
+            f"[TEST EMAIL]   Active: {student.is_active}"
+        )
+
+    results = []
+
+    # ------------------------------------
+    # Send emails
+    # ------------------------------------
+
+    for student in students:
+
+        print(
+            "[TEST EMAIL] ----------------------------------------"
+        )
+
+        print(
+            f"[TEST EMAIL] Preparing email for student: "
+            f"{student.name}"
+        )
+
+        print(
+            f"[TEST EMAIL] Parent email: "
+            f"{student.parent_email}"
+        )
+
         try:
+
+            print(
+                "[TEST EMAIL] Calling "
+                "send_homework_support_invitation_email()..."
+            )
+
             send_homework_support_invitation_email(
                 student.parent_email
+            )
+
+            print(
+                "[TEST EMAIL] Email helper completed successfully."
             )
 
             results.append({
@@ -35008,6 +35352,31 @@ def send_test_homework_support_email(
             })
 
         except Exception as e:
+
+            print(
+                "[TEST EMAIL] EMAIL SEND FAILED"
+            )
+
+            print(
+                f"[TEST EMAIL] Student: {student.name}"
+            )
+
+            print(
+                f"[TEST EMAIL] Parent email: "
+                f"{student.parent_email}"
+            )
+
+            print(
+                f"[TEST EMAIL] Error type: "
+                f"{type(e).__name__}"
+            )
+
+            print(
+                f"[TEST EMAIL] Error: {str(e)}"
+            )
+
+            traceback.print_exc()
+
             results.append({
                 "student_id": student.id,
                 "student_name": student.name,
@@ -35016,8 +35385,55 @@ def send_test_homework_support_email(
                 "error": str(e)
             })
 
+    # ------------------------------------
+    # Final summary
+    # ------------------------------------
+
+    successful_count = sum(
+        1
+        for result in results
+        if result["success"]
+    )
+
+    failed_count = sum(
+        1
+        for result in results
+        if not result["success"]
+    )
+
+    print(
+        "[TEST EMAIL] ========================================"
+    )
+
+    print(
+        f"[TEST EMAIL] Finished processing test emails."
+    )
+
+    print(
+        f"[TEST EMAIL] Total students found: "
+        f"{len(students)}"
+    )
+
+    print(
+        f"[TEST EMAIL] Successful emails: "
+        f"{successful_count}"
+    )
+
+    print(
+        f"[TEST EMAIL] Failed emails: "
+        f"{failed_count}"
+    )
+
+    print(
+        "[TEST EMAIL] ========================================"
+    )
+
     return {
-        "message": f"{len(results)} email(s) processed.",
+        "message": (
+            f"{len(results)} email(s) processed."
+        ),
+        "successful": successful_count,
+        "failed": failed_count,
         "results": results
     }
 
