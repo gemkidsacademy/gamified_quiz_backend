@@ -6885,6 +6885,7 @@ app = FastAPI(title="Gem Kids Gamified Quiz API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://gemai.gemkidsacademy.com.au"
         "https://unified-parent-url.vercel.app",
         "https://homework.gemkidsacademy.com.au",
         "https://homework-support.vercel.app",
