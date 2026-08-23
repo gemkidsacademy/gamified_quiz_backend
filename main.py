@@ -8247,9 +8247,8 @@ def get_homework_support_time_slots(
         "parent_email": parent_email,
         "time_slots": time_slots,
     }
-
-@app.get("/homework-support/admin/responses")
-def get_homework_support_admin_responses(
+@app.get("/homework-support/admin/weeks")
+def get_homework_support_admin_weeks(
     center_code: str,
     db: Session = Depends(get_db)
 ):
@@ -8318,18 +8317,175 @@ def get_homework_support_admin_responses(
     ) + 1
 
     # ------------------------------------
+    # Get configured weeks up to current week
+    # ------------------------------------
+
+    homework_weeks = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == center_code,
+            HomeworkSupportWeek.academic_term_id == active_term.id,
+            HomeworkSupportWeek.week_number <= current_week_number
+        )
+        .order_by(
+            HomeworkSupportWeek.week_number.desc()
+        )
+        .all()
+    )
+
+    # ------------------------------------
+    # Build week list
+    # ------------------------------------
+
+    weeks = []
+
+    for homework_week in homework_weeks:
+
+        week_start = (
+            active_term.start_date
+            + timedelta(
+                weeks=homework_week.week_number - 1
+            )
+        )
+
+        session_date = week_start + timedelta(
+            days=(5 - week_start.weekday()) % 7
+        )
+
+        session_date_display = (
+            f"{session_date.strftime('%A')}, "
+            f"{session_date.strftime('%B')} "
+            f"{session_date.day}, "
+            f"{session_date.year}"
+        )
+
+        weeks.append(
+            {
+                "week_number": homework_week.week_number,
+                "week_label": (
+                    f"Week {homework_week.week_number}"
+                ),
+                "session_date": session_date_display,
+                "is_current": (
+                    homework_week.week_number
+                    == current_week_number
+                ),
+            }
+        )
+
+    # ------------------------------------
+    # Return available weeks
+    # ------------------------------------
+
+    return {
+        "center_code": center_code,
+        "current_week_number": current_week_number,
+        "weeks": weeks,
+    }
+@app.get("/homework-support/admin/responses")
+def get_homework_support_admin_responses(
+    center_code: str,
+    week_number: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    # ------------------------------------
+    # Find active academic term
+    # ------------------------------------
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not active_term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term found."
+        )
+
+    # ------------------------------------
+    # Get centre timezone
+    # ------------------------------------
+
+    scheduler_configuration = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    if not scheduler_configuration:
+        raise HTTPException(
+            status_code=404,
+            detail="Scheduler configuration not found for this centre."
+        )
+
+    local_now = datetime.now(
+        ZoneInfo(scheduler_configuration.timezone)
+    )
+
+    current_date = local_now.date()
+
+    # ------------------------------------
+    # Check term dates
+    # ------------------------------------
+
+    if (
+        current_date < active_term.start_date
+        or current_date > active_term.end_date
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Current date is outside the active academic term."
+        )
+
+    # ------------------------------------
+    # Calculate current term week
+    # ------------------------------------
+
+    current_week_number = (
+        (current_date - active_term.start_date).days // 7
+    ) + 1
+    # ------------------------------------
+    # Determine requested dashboard week
+    # ------------------------------------
+
+    selected_week_number = (
+        week_number
+        if week_number is not None
+        else current_week_number
+    )
+
+    if selected_week_number < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid week number."
+        )
+
+    if selected_week_number > current_week_number:
+        raise HTTPException(
+            status_code=400,
+            detail="Future weeks cannot be viewed yet."
+        )
+
+    # ------------------------------------
     # Calculate Saturday of current week
     # ------------------------------------
 
-    current_week_start = (
+    selected_week_start = (
         active_term.start_date
         + timedelta(
-            weeks=current_week_number - 1
+            weeks=selected_week_number - 1
         )
     )
 
-    session_date = current_week_start + timedelta(
-        days=5 - current_week_start.weekday()
+    session_date = selected_week_start + timedelta(
+        days=(5 - selected_week_start.weekday()) % 7
     )
 
     session_date_display = (
@@ -8348,7 +8504,7 @@ def get_homework_support_admin_responses(
         .filter(
             HomeworkSupportWeek.center_code == center_code,
             HomeworkSupportWeek.academic_term_id == active_term.id,
-            HomeworkSupportWeek.week_number == current_week_number
+            HomeworkSupportWeek.week_number == selected_week_number
         )
         .first()
     )
@@ -8358,7 +8514,7 @@ def get_homework_support_admin_responses(
             status_code=404,
             detail=(
                 f"Homework Support Week "
-                f"{current_week_number} is not configured."
+                f"{selected_week_number} is not configured."
             )
         )
 
@@ -8401,6 +8557,23 @@ def get_homework_support_admin_responses(
         slot.id: slot
         for slot in slots
     }
+    # ------------------------------------
+    # Load all responses for selected week
+    # ------------------------------------
+
+    responses = (
+        db.query(HomeworkSupportStudentResponse)
+        .filter(
+            HomeworkSupportStudentResponse.homework_support_week_id
+            == homework_week.id
+        )
+        .all()
+    )
+
+    response_lookup = {
+        response.student_id: response
+        for response in responses
+    }
 
     # ------------------------------------
     # Build student responses
@@ -8414,16 +8587,8 @@ def get_homework_support_admin_responses(
 
     for student in students:
 
-        response = (
-            db.query(HomeworkSupportStudentResponse)
-            .filter(
-                HomeworkSupportStudentResponse.student_id
-                == student.student_id,
-
-                HomeworkSupportStudentResponse.homework_support_week_id
-                == homework_week.id
-            )
-            .first()
+        response = response_lookup.get(
+            student.student_id
         )
 
         if not response:
@@ -8513,6 +8678,51 @@ def get_homework_support_admin_responses(
                 "is_full": available_places == 0,
             }
         )
+        # ------------------------------------
+        # Get available previous/current weeks
+        # ------------------------------------
+
+    available_homework_weeks = (
+        db.query(HomeworkSupportWeek)
+        .filter(
+            HomeworkSupportWeek.center_code == center_code,
+            HomeworkSupportWeek.academic_term_id == active_term.id,
+            HomeworkSupportWeek.week_number <= current_week_number
+        )
+        .order_by(
+            HomeworkSupportWeek.week_number.desc()
+        )
+        .all()
+    )
+
+    available_weeks = []
+
+    for available_week in available_homework_weeks:
+
+        week_start = (
+            active_term.start_date
+            + timedelta(
+                weeks=available_week.week_number - 1
+            )
+        )
+
+        week_session_date = week_start + timedelta(
+            days=(5 - week_start.weekday()) % 7
+        )
+
+        available_weeks.append({
+            "week_number": available_week.week_number,
+            "week_label": f"Week {available_week.week_number}",
+            "session_date": (
+                f"{week_session_date.strftime('%A')}, "
+                f"{week_session_date.strftime('%B')} "
+                f"{week_session_date.day}, "
+                f"{week_session_date.year}"
+            ),
+            "is_current": (
+                available_week.week_number == current_week_number
+            )
+        })
 
     # ------------------------------------
     # Return dashboard data
