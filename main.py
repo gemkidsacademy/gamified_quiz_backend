@@ -9136,6 +9136,23 @@ def get_homework_support_parent_invitation(
                 f"{current_week_number} is not configured."
             )
         )
+
+    # ------------------------------------
+    # Check for existing response
+    # ------------------------------------
+
+    existing_response = (
+        db.query(HomeworkSupportStudentResponse)
+        .filter(
+            HomeworkSupportStudentResponse.student_id
+            == student.student_id,
+
+            HomeworkSupportStudentResponse.homework_support_week_id
+            == homework_week.id
+        )
+        .first()
+    )
+
     # ------------------------------------
     # Calculate current Homework Support
     # week start
@@ -9147,6 +9164,84 @@ def get_homework_support_parent_invitation(
             weeks=current_week_number - 1
         )
     )
+
+    if existing_response:
+
+        selected_slot_data = None
+
+        if (
+            existing_response.response
+            == "ATTENDING"
+            and existing_response.selected_time_slot_id
+        ):
+
+            selected_slot = (
+                db.query(HomeworkSupportTimeSlot)
+                .filter(
+                    HomeworkSupportTimeSlot.id
+                    == existing_response.selected_time_slot_id,
+
+                    HomeworkSupportTimeSlot.center_code
+                    == student.center_code,
+
+                    HomeworkSupportTimeSlot.homework_support_week_id
+                    == homework_week.id
+                )
+                .first()
+            )
+
+            if selected_slot:
+                selected_slot_data = {
+                    "id": selected_slot.id,
+                    "start_time": selected_slot.start_time.strftime(
+                        "%I:%M %p"
+                    ),
+                    "end_time": selected_slot.end_time.strftime(
+                        "%I:%M %p"
+                    ),
+                }
+
+        session_date = (
+            current_week_start
+            + timedelta(
+                days=(5 - current_week_start.weekday()) % 7
+            )
+        )
+
+        session_date_display = (
+            f"{session_date.strftime('%A')}, "
+            f"{session_date.strftime('%B')} "
+            f"{session_date.day}, "
+            f"{session_date.year}"
+        )
+
+        print(
+            "[HOMEWORK ACCESS] Existing response found."
+        )
+
+        print(
+            f"[HOMEWORK ACCESS] Response: "
+            f"{existing_response.response}"
+        )
+
+        print(
+            f"[HOMEWORK ACCESS] Selected slot ID: "
+            f"{existing_response.selected_time_slot_id}"
+        )
+
+        return {
+            "student_name": student.name,
+            "week_number": homework_week.week_number,
+            "title": (
+                f"Homework Support — "
+                f"Week {homework_week.week_number}"
+            ),
+            "session_date": session_date_display,
+            "parent_email": parent_email,
+            "existing_response": True,
+            "response": existing_response.response,
+            "selected_time_slot": selected_slot_data,
+        }
 
     # ------------------------------------
     # Load Homework Support automation
@@ -9359,7 +9454,135 @@ def get_homework_support_parent_invitation(
             f"Homework Support — "
             f"Week {homework_week.week_number}"
         ),
-        "session_date": None
+            "session_date": None,
+            "parent_email": parent_email,
+            "existing_response": False,
+            "response": None,
+            "selected_time_slot": None,
+    }
+@app.post("/welcome-quote", response_model=GamifiedWelcomeQuoteResponse)
+def get_welcome_quote():
+    print("\n==============================")
+    print("WELCOME QUOTE(hi there)")
+    print("==============================")
+
+    fallback_quotes = [
+        {
+            "quote": "Success is the sum of small efforts, repeated day in and day out.",
+            "author": "Robert Collier",
+        },
+        {
+            "quote": "Learning never exhausts the mind.",
+            "author": "Leonardo da Vinci",
+        },
+        {
+            "quote": "The beautiful thing about learning is that no one can take it away from you.",
+            "author": "B.B. King",
+        },
+        {
+            "quote": "Education is the passport to the future, for tomorrow belongs to those who prepare for it today.",
+            "author": "Malcolm X",
+        },
+        {
+            "quote": "The expert in anything was once a beginner.",
+            "author": "Helen Hayes",
+        },
+    ]
+
+    try:
+        prompt = """
+You are generating a welcome quote for a school student.
+
+Return exactly ONE short educational or inspirational quote suitable for students.
+
+Rules:
+- The quote must have a real author.
+- Do not invent authors.
+- Do not include any explanation.
+
+Return ONLY valid JSON in this exact format:
+
+{
+  "quote": "string",
+  "author": "string"
+}
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You generate short motivational educational quotes for students in strict JSON format."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                },
+            ],
+            temperature=0.8,
+        )
+
+        raw_content = response.choices[0].message.content.strip()
+
+        print("Raw GPT quote response:", raw_content)
+
+        parsed = json.loads(raw_content)
+
+        quote = (parsed.get("quote") or "").strip()
+        author = (parsed.get("author") or "").strip()
+
+        if not quote or not author:
+            raise ValueError("Quote or author missing in GPT response")
+
+        return GamifiedWelcomeQuoteResponse(
+            quote=quote,
+            author=author,
+        )
+
+    except Exception as e:
+        print("Error generating welcome quote:", str(e))
+
+        fallback = random.choice(fallback_quotes)
+
+        return GamifiedWelcomeQuoteResponse(
+            quote=fallback["quote"],
+            author=fallback["author"],
+        )
+
+@app.post("/chatbot/parent-context")
+def get_chatbot_parent_context(
+    payload: ParentEmailRequest,
+    db: Session = Depends(get_db)
+):
+    parent_email = payload.email.strip().lower()
+
+    # ------------------------------------
+    # Find active student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == parent_email,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student account found for this email."
+        )
+
+    # ------------------------------------
+    # Return chatbot student context
+    # ------------------------------------
+
+    return {
+        "student_name": student.name,
+        "class_name": student.class_name
     }
 
 @app.post("/parent/dashboard-access")
