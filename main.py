@@ -35145,27 +35145,63 @@ def send_homework_support_invitation_email(
         to_emails=to_email,
         subject="Homework Support — Please Confirm Attendance",
         html_content=f"""
-            <p>Dear Parent,</p>
+            <div style="
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 30px 20px;
+                font-family: Arial, Helvetica, sans-serif;
+                color: #333333;
+            ">
 
-            <p>
-                We are inviting your child to Homework Support this week.
-            </p>
+                <div style="
+                    text-align: center;
+                    margin-bottom: 25px;
+                ">
+                    <img
+                        src="https://gemkidsacademy.com.au/wp-content/uploads/2024/10/cropped-logo-4-1.png"
+                        alt="Gem Kids Academy"
+                        style="
+                            max-width: 180px;
+                            height: auto;
+                            display: inline-block;
+                        "
+                    >
+                </div>
 
-            <p>
-                Please use the link below to confirm whether your child
-                will attend and, if attending, select an available time.
-            </p>
+                <p>Dear Parent,</p>
 
-            <p>
-                <a href="{homework_support_url}">
-                    Confirm Homework Support Attendance
-                </a>
-            </p>
+                <p>
+                    We are inviting your child to Homework Support this week.
+                </p>
 
-            <p>
-                Thank you,<br>
-                Gem Kids Academy
-            </p>
+                <p>
+                    Please use the link below to confirm whether your child
+                    will attend and, if attending, select an available time.
+                </p>
+
+                <p style="text-align: center; margin: 30px 0;">
+                    <a
+                        href="{homework_support_url}"
+                        style="
+                            display: inline-block;
+                            padding: 12px 24px;
+                            background-color: #4285d4;
+                            color: #ffffff;
+                            text-decoration: none;
+                            border-radius: 5px;
+                            font-weight: bold;
+                        "
+                    >
+                        Confirm Homework Support Attendance
+                    </a>
+                </p>
+
+                <p>
+                    Thank you,<br>
+                    Gem Kids Academy
+                </p>
+
+            </div>
         """,
     )
 
