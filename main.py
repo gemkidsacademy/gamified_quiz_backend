@@ -748,6 +748,14 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # --------------------------
+class ParentGamifiedQuizRequest(BaseModel):
+    parent_email: str
+
+class ParentGamifiedQuizAnswerRequest(BaseModel):
+    parent_email: str
+    question_index: int
+    selected_option: str
+
 class HomeworkTestEmailRequest(BaseModel):
     center_code: str
     student_ids: List[str]
@@ -114626,6 +114634,580 @@ def submit_quiz_answer(
 
     }
 
+@app.post("/parent/gamified-welcome-quote", response_model=GamifiedWelcomeQuoteResponse)
+def get_parent_gamified_welcome_quote(
+    request: ParentGamifiedQuizRequest,
+    db: Session = Depends(get_db),
+):
+    parent_email = request.parent_email.strip().lower()
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == parent_email,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student account found for this email."
+        )
+
+    fallback_quotes = [
+        {
+            "quote": "Success is the sum of small efforts, repeated day in and day out.",
+            "author": "Robert Collier",
+        },
+        {
+            "quote": "Learning never exhausts the mind.",
+            "author": "Leonardo da Vinci",
+        },
+        {
+            "quote": "The beautiful thing about learning is that no one can take it away from you.",
+            "author": "B.B. King",
+        },
+        {
+            "quote": "Education is the passport to the future, for tomorrow belongs to those who prepare for it today.",
+            "author": "Malcolm X",
+        },
+        {
+            "quote": "The expert in anything was once a beginner.",
+            "author": "Helen Hayes",
+        },
+    ]
+
+    try:
+        prompt = """
+You are generating a welcome quote for a school student's weekly gamified quiz.
+
+Return exactly ONE short educational or inspirational quote suitable for students.
+The quote must have a real author/writer name.
+Do not invent authors.
+Do not include any explanation.
+
+Return ONLY valid JSON in this exact format:
+{
+  "quote": "string",
+  "author": "string"
+}
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You generate short motivational educational quotes for students in strict JSON format."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                },
+            ],
+            temperature=0.8,
+        )
+
+        raw_content = response.choices[0].message.content.strip()
+
+        parsed = json.loads(raw_content)
+
+        quote = (parsed.get("quote") or "").strip()
+        author = (parsed.get("author") or "").strip()
+
+        if not quote or not author:
+            raise ValueError("Quote or author missing in GPT response")
+
+        return {
+            "quote": quote,
+            "author": author,
+        }
+
+    except Exception as e:
+        print("Error generating gamified welcome quote:", str(e))
+
+        return random.choice(fallback_quotes)
+
+@app.post("/parent/current-gamified-quiz")
+def get_parent_current_gamified_quiz(
+    request: ParentGamifiedQuizRequest,
+    db: Session = Depends(get_db),
+):
+    parent_email = request.parent_email.strip().lower()
+
+    print("\n==============================")
+    print("PARENT CURRENT GAMIFIED QUIZ")
+    print("==============================")
+    print(f"Parent Email: {parent_email}")
+
+    # ------------------------------------
+    # Find active student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == parent_email,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student account found for this email."
+        )
+
+    print(f"Student ID: {student.student_id}")
+    print(f"Student Name: {student.name}")
+    print(f"Center Code: {student.center_code}")
+
+    # ------------------------------------
+    # Load active academic term
+    # ------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=400,
+            detail="No active academic term found."
+        )
+
+    # ------------------------------------
+    # Determine current session
+    # ------------------------------------
+
+    today = date.today()
+
+    if today < term.start_date or today > term.end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="There is no active quiz for the current date because today is outside the active academic term."
+        )
+
+    days_since_start = (
+        today - term.start_date
+    ).days
+
+    current_session = (
+        days_since_start // 7
+    ) + 1
+
+    if (
+        current_session < 1
+        or current_session > term.number_of_weeks
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Current session is outside the active academic term range."
+        )
+
+    # ------------------------------------
+    # Find generated quiz
+    # ------------------------------------
+
+    generated_quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code
+            == student.center_code,
+
+            GeneratedGamifiedQuiz.term_id
+            == term.id,
+
+            GeneratedGamifiedQuiz.category
+            == student.class_name,
+
+            GeneratedGamifiedQuiz.class_year
+            == student.student_year,
+
+            GeneratedGamifiedQuiz.class_day
+            == student.class_day,
+
+            GeneratedGamifiedQuiz.session
+            == current_session,
+        )
+        .first()
+    )
+
+    if not generated_quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No quiz has been generated for this class."
+        )
+
+    # ------------------------------------
+    # Check existing attempt
+    # ------------------------------------
+
+    attempt = (
+        db.query(StudentGamifiedQuizAttempt)
+        .filter(
+            StudentGamifiedQuizAttempt.student_id
+            == student.student_id,
+
+            StudentGamifiedQuizAttempt.generated_quiz_id
+            == generated_quiz.id,
+        )
+        .first()
+    )
+
+    # ------------------------------------
+    # Already completed
+    # ------------------------------------
+
+    if attempt and attempt.is_completed:
+
+        questions = generated_quiz.quiz_json.get(
+            "questions",
+            []
+        )
+
+        answers = attempt.answers_json or {}
+
+        review = []
+
+        for index, question in enumerate(questions):
+
+            selected_option = answers.get(
+                str(index),
+                ""
+            )
+
+            correct_answer = question.get(
+                "answer",
+                ""
+            )
+
+            review.append(
+                {
+                    "question_number": index + 1,
+                    "prompt": question.get(
+                        "prompt",
+                        ""
+                    ),
+                    "selected_option": selected_option,
+                    "correct_answer": correct_answer,
+                    "is_correct": (
+                        selected_option.strip()
+                        == correct_answer.strip()
+                    ),
+                }
+            )
+
+        return {
+            "already_attempted": True,
+            "completed": True,
+            "current_score": attempt.current_score,
+            "total_questions": attempt.total_questions,
+            "message": "You have already attempted this week's quiz.",
+            "review": review,
+        }
+
+    # ------------------------------------
+    # Create attempt
+    # ------------------------------------
+
+    if not attempt:
+
+        questions = generated_quiz.quiz_json.get(
+            "questions",
+            []
+        )
+
+        attempt = StudentGamifiedQuizAttempt(
+            student_id=student.student_id,
+            generated_quiz_id=generated_quiz.id,
+            center_code=student.center_code,
+            category=student.class_name,
+            class_year=student.student_year,
+            class_day=student.class_day,
+            term_id=term.id,
+            session=current_session,
+            current_score=0,
+            total_questions=len(questions),
+            answers_json={},
+            is_completed=False,
+            started_at=datetime.utcnow(),
+        )
+
+        db.add(attempt)
+        db.commit()
+        db.refresh(attempt)
+
+    # ------------------------------------
+    # Return quiz
+    # ------------------------------------
+
+    return generated_quiz.quiz_json
+@app.post("/parent/submit-quiz-answer")
+def parent_submit_quiz_answer(
+    request: ParentGamifiedQuizAnswerRequest,
+    db: Session = Depends(get_db),
+):
+    parent_email = request.parent_email.strip().lower()
+
+    # ------------------------------------
+    # Find active student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.parent_email == parent_email,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="No active student account found for this email."
+        )
+
+    # ------------------------------------
+    # Load active term
+    # ------------------------------------
+
+    term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == student.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not term:
+        raise HTTPException(
+            status_code=404,
+            detail="No active academic term."
+        )
+
+    today = date.today()
+
+    if today < term.start_date or today > term.end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="There is no active quiz for the current date."
+        )
+
+    current_session = (
+        (today - term.start_date).days // 7
+    ) + 1
+
+    # ------------------------------------
+    # Load generated quiz
+    # ------------------------------------
+
+    generated_quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code
+            == student.center_code,
+
+            GeneratedGamifiedQuiz.term_id
+            == term.id,
+
+            GeneratedGamifiedQuiz.category
+            == student.class_name,
+
+            GeneratedGamifiedQuiz.class_year
+            == student.student_year,
+
+            GeneratedGamifiedQuiz.class_day
+            == student.class_day,
+
+            GeneratedGamifiedQuiz.session
+            == current_session,
+        )
+        .first()
+    )
+
+    if not generated_quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="Generated quiz not found."
+        )
+
+    questions = generated_quiz.quiz_json.get(
+        "questions",
+        []
+    )
+
+    # ------------------------------------
+    # Validate question index
+    # ------------------------------------
+
+    if (
+        request.question_index < 0
+        or request.question_index >= len(questions)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid question index."
+        )
+
+    # ------------------------------------
+    # Find attempt
+    # ------------------------------------
+
+    attempt = (
+        db.query(StudentGamifiedQuizAttempt)
+        .filter(
+            StudentGamifiedQuizAttempt.student_id
+            == student.student_id,
+
+            StudentGamifiedQuizAttempt.generated_quiz_id
+            == generated_quiz.id,
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=400,
+            detail="Quiz attempt was not initialized."
+        )
+
+    if attempt.is_completed:
+        raise HTTPException(
+            status_code=400,
+            detail="This quiz has already been completed."
+        )
+
+    # ------------------------------------
+    # Validate answer
+    # ------------------------------------
+
+    question = questions[
+        request.question_index
+    ]
+
+    correct_answer = (
+        question.get("answer", "")
+    ).strip()
+
+    selected_option = (
+        request.selected_option or ""
+    ).strip()
+
+    is_correct = (
+        selected_option == correct_answer
+    )
+
+    # ------------------------------------
+    # Save answer
+    # ------------------------------------
+
+    answers = attempt.answers_json or {}
+
+    answers[str(request.question_index)] = (
+        selected_option
+    )
+
+    attempt.answers_json = answers
+
+    # ------------------------------------
+    # Update score
+    # ------------------------------------
+
+    if is_correct:
+        attempt.current_score = (
+            attempt.current_score + 1
+        )
+
+    # ------------------------------------
+    # Determine completion
+    # ------------------------------------
+
+    answered_count = len(answers)
+
+    completed = (
+        answered_count >= len(questions)
+    )
+
+    if completed:
+
+        attempt.is_completed = True
+        attempt.completed_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(attempt)
+
+    # ------------------------------------
+    # Return incomplete result
+    # ------------------------------------
+
+    if not completed:
+
+        return {
+            "completed": False,
+            "correct": is_correct,
+            "message": (
+                "Correct!"
+                if is_correct
+                else "Incorrect."
+            ),
+        }
+
+    # ------------------------------------
+    # Build review
+    # ------------------------------------
+
+    review = []
+
+    for index, question in enumerate(questions):
+
+        selected = answers.get(
+            str(index),
+            ""
+        )
+
+        correct = question.get(
+            "answer",
+            ""
+        )
+
+        review.append(
+            {
+                "question_number": index + 1,
+                "prompt": question.get(
+                    "prompt",
+                    ""
+                ),
+                "selected_option": selected,
+                "correct_answer": correct,
+                "is_correct": (
+                    selected.strip()
+                    == correct.strip()
+                ),
+            }
+        )
+
+    # ------------------------------------
+    # Return completed result
+    # ------------------------------------
+
+    return {
+        "completed": True,
+        "correct": is_correct,
+        "current_score": attempt.current_score,
+        "total_questions": attempt.total_questions,
+        "review": review,
+    }
 @app.post("/guest/send-otp")
 def guest_send_otp(
     request: GuestOTPRequest,
