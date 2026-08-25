@@ -748,6 +748,11 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # --------------------------
+
+class InterviewAdminLoginRequest(BaseModel):
+    username: str
+    password: str
+    
 class ParentGamifiedQuizRequest(BaseModel):
     parent_email: str
 
@@ -113902,7 +113907,43 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
             "parent_email": student.parent_email
         }
     }    
-    
+@app.post("/interview-booking/admin/login")
+def interview_booking_admin_login(
+    data: InterviewAdminLoginRequest,
+    db: Session = Depends(get_db)
+):
+    admin = (
+        db.query(AdminUser)
+        .filter(
+            AdminUser.username == data.username,
+            AdminUser.role == "CENTER_ADMIN"
+        )
+        .first()
+    )
+
+    if not admin:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid interview admin username or password"
+        )
+
+    if admin.password != data.password:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid interview admin username or password"
+        )
+
+    return {
+        "success": True,
+        "interview_admin": {
+            "id": admin.id,
+            "username": admin.username,
+            "full_name": admin.full_name,
+            "role": admin.role,
+            "center_code": admin.center_code,
+            "email": admin.email,
+        }
+    }  
 @app.post("/login")
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
     phone = request.phone_number.strip()
