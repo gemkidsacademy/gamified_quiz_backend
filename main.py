@@ -49,7 +49,7 @@ import copy
 import pandas as pd
 
 import random 
-import time
+from datetime import datetime, time
 from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
 import re 
@@ -748,7 +748,471 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # --------------------------
+class ParentTeacherInterviewTeacherAllocationRequest(BaseModel):
+    center_code: str
+    teacher_id: int
+    class_id: int
+    class_year_id: int
+class ParentTeacherInterviewTeacherAllocation(Base):
+    __tablename__ = "parent_teacher_interview_teacher_allocations"
 
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    teacher_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    class_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    class_year_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            "teacher_id",
+            "class_id",
+            "class_year_id",
+            name="uq_parent_teacher_allocation"
+        ),
+    )
+
+
+class ParentTeacherInterviewTeacherAvailabilityRequest(BaseModel):
+
+    center_code: str
+    event_id: int
+    teacher_id: int
+    is_available: bool
+    start_time: time | None = None
+    end_time: time | None = None
+    slot_duration: int | None = None
+    gap: int | None = None
+
+
+class ParentTeacherInterviewEventRequest(BaseModel):
+    center_code: str
+    name: str
+    event_date: date
+    location: str
+class ParentTeacherInterviewEvent(Base):
+    __tablename__ = "parent_teacher_interview_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    name = Column(
+        String,
+        nullable=False
+    )
+
+    event_date = Column(
+        Date,
+        nullable=False
+    )
+
+    location = Column(
+        String,
+        nullable=False
+    )
+
+    created_by_admin_id = Column(
+        Integer,
+        nullable=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            "name",
+            "event_date",
+            name="uq_parent_teacher_interview_event"
+        ),
+    )
+
+
+
+class ParentTeacherInterviewTeacherAvailability(Base):
+    __tablename__ = "parent_teacher_interview_teacher_availability"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    event_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    teacher_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+    is_available = Column(
+        Boolean,
+        nullable=False,
+        default=True
+    )
+
+    start_time = Column(
+        Time,
+        nullable=True
+    )
+
+    end_time = Column(
+        Time,
+        nullable=True
+    )
+
+    slot_duration_minutes = Column(
+        Integer,
+        nullable=True
+    )
+
+    gap_minutes = Column(
+        Integer,
+        nullable=True
+    )
+
+
+    
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id",
+            "teacher_id",
+            name="uq_parent_teacher_event_teacher"
+        ),
+    )
+
+class ParentTeacherInterviewSlot(Base):
+    __tablename__ = "parent_teacher_interview_slots"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    event_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    teacher_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+    is_available = Column(
+        Boolean,
+        nullable=False,
+        default=True
+    )
+
+    start_time = Column(
+        Time,
+        nullable=False
+    )
+
+    end_time = Column(
+        Time,
+        nullable=False
+    )
+
+    is_available = Column(
+        Boolean,
+        nullable=False,
+        default=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )  
+class ParentTeacherInterviewBooking(Base):
+    __tablename__ = "parent_teacher_interview_bookings"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    event_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    slot_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    teacher_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    student_id = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    parent_email = Column(
+        String,
+        nullable=False
+    )
+
+    booking_status = Column(
+        String,
+        nullable=False,
+        default="BOOKED"
+    )
+
+    booked_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id",
+            "slot_id",
+            name="uq_parent_teacher_booking_slot"
+        ),
+        UniqueConstraint(
+            "event_id",
+            "student_id",
+            name="uq_parent_teacher_booking_student"
+        ),
+    )
+
+class ParentTeacherInterviewInvitation(Base):
+    __tablename__ = "parent_teacher_interview_invitations"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    event_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    student_id = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    parent_email = Column(
+        String,
+        nullable=False
+    )
+
+    status = Column(
+        String,
+        nullable=False,
+        default="NOT_SENT"
+    )
+
+    sent_at = Column(
+        DateTime,
+        nullable=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id",
+            "student_id",
+            name="uq_parent_teacher_invitation_student"
+        ),
+    )
+class ParentTeacherInterviewReminder(Base):
+    __tablename__ = "parent_teacher_interview_reminders"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    event_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    reminder_type = Column(
+        String,
+        nullable=False
+    )
+
+    scheduled_at = Column(
+        DateTime,
+        nullable=False
+    )
+
+    sent_at = Column(
+        DateTime,
+        nullable=True
+    )
+
+    status = Column(
+        String,
+        nullable=False,
+        default="PENDING"
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )   
+class ParentTeacherInterviewEventHistory(Base):
+    __tablename__ = "parent_teacher_interview_event_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    event_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    action = Column(
+        String,
+        nullable=False
+    )
+
+    description = Column(
+        String,
+        nullable=True
+    )
+
+    performed_by_admin_id = Column(
+        Integer,
+        nullable=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )     
 class InterviewAdminLoginRequest(BaseModel):
     username: str
     password: str
@@ -7873,6 +8337,741 @@ def send_otp_sms(phone_number: str, otp: int):
         to=phone_number
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
+
+@app.post("/parent-teacher-interview/teacher-allocations")
+def create_parent_teacher_interview_teacher_allocation(
+    payload: ParentTeacherInterviewTeacherAllocationRequest,
+    db: Session = Depends(get_db)
+):
+    center_code = payload.center_code.strip()
+
+    # Validate teacher belongs to this center
+    teacher = (
+        db.query(CenterTeacher)
+        .filter(
+            CenterTeacher.id == payload.teacher_id,
+            CenterTeacher.center_code == center_code
+        )
+        .first()
+    )
+
+    if not teacher:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher not found."
+        )
+
+    # Validate class belongs to this center
+    class_record = (
+        db.query(Class)
+        .filter(
+            Class.id == payload.class_id,
+            Class.center_code == center_code
+        )
+        .first()
+    )
+
+    if not class_record:
+        raise HTTPException(
+            status_code=404,
+            detail="Class not found."
+        )
+
+    # Validate class year belongs to this center
+    class_year = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.id == payload.class_year_id,
+            ClassYearExamModule.center_code == center_code
+        )
+        .first()
+    )
+
+    if not class_year:
+        raise HTTPException(
+            status_code=404,
+            detail="Class year not found."
+        )
+
+    # Make sure the class year actually belongs to the selected class
+    if class_year.class_name != class_record.class_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Selected class year does not belong to the selected class."
+        )
+
+    # Prevent duplicate allocation
+    existing_allocation = (
+        db.query(
+            ParentTeacherInterviewTeacherAllocation
+        )
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.center_code
+            == center_code,
+            ParentTeacherInterviewTeacherAllocation.teacher_id
+            == payload.teacher_id,
+            ParentTeacherInterviewTeacherAllocation.class_id
+            == payload.class_id,
+            ParentTeacherInterviewTeacherAllocation.class_year_id
+            == payload.class_year_id
+        )
+        .first()
+    )
+
+    if existing_allocation:
+        raise HTTPException(
+            status_code=409,
+            detail="This teacher allocation already exists."
+        )
+
+    # Create allocation
+    new_allocation = (
+        ParentTeacherInterviewTeacherAllocation(
+            center_code=center_code,
+            teacher_id=payload.teacher_id,
+            class_id=payload.class_id,
+            class_year_id=payload.class_year_id
+        )
+    )
+
+    db.add(new_allocation)
+    db.commit()
+    db.refresh(new_allocation)
+
+    return {
+        "message": "Teacher allocation created successfully.",
+        "allocation_id": new_allocation.id
+    }
+@app.delete("/parent-teacher-interview/teacher-allocations/{allocation_id}")
+def delete_parent_teacher_interview_teacher_allocation(
+    allocation_id: int,
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    allocation = (
+        db.query(ParentTeacherInterviewTeacherAllocation)
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.id == allocation_id,
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code
+        )
+        .first()
+    )
+
+    if not allocation:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher allocation not found."
+        )
+
+    db.delete(allocation)
+    db.commit()
+
+    return {
+        "message": "Teacher allocation deleted successfully.",
+        "allocation_id": allocation_id
+    }
+@app.get("/parent-teacher-interview/teacher-allocations")
+def get_parent_teacher_interview_teacher_allocations(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    allocations = (
+        db.query(
+            ParentTeacherInterviewTeacherAllocation,
+            CenterTeacher.full_name.label("teacher_name"),
+            Class.class_name.label("class_name"),
+            ClassYearExamModule.year_name.label("class_year"),
+            func.count(
+                distinct(Student.parent_email)
+            ).label("parent_count")
+        )
+        .join(
+            CenterTeacher,
+            CenterTeacher.id ==
+            ParentTeacherInterviewTeacherAllocation.teacher_id
+        )
+        .join(
+            Class,
+            Class.id ==
+            ParentTeacherInterviewTeacherAllocation.class_id
+        )
+        .join(
+            ClassYearExamModule,
+            ClassYearExamModule.id ==
+            ParentTeacherInterviewTeacherAllocation.class_year_id
+        )
+        .outerjoin(
+            Student,
+            (Student.center_code == center_code)
+            & (Student.class_name == Class.class_name)
+            & (Student.student_year == ClassYearExamModule.year_name)
+            & (Student.is_active == True)
+        )
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+            CenterTeacher.center_code == center_code,
+            Class.center_code == center_code,
+            ClassYearExamModule.center_code == center_code
+        )
+        .group_by(
+            ParentTeacherInterviewTeacherAllocation.id,
+            ParentTeacherInterviewTeacherAllocation.teacher_id,
+            ParentTeacherInterviewTeacherAllocation.class_id,
+            ParentTeacherInterviewTeacherAllocation.class_year_id,
+            CenterTeacher.full_name,
+            Class.class_name,
+            ClassYearExamModule.year_name
+        )
+        .order_by(
+            ParentTeacherInterviewTeacherAllocation.id.asc()
+        )
+        .all()
+    )
+
+    return {
+        "allocations": [
+            {
+                "id": allocation.id,
+                "teacher_id": allocation.teacher_id,
+                "teacher_name": teacher_name,
+                "class_id": allocation.class_id,
+                "class_name": class_name,
+                "class_year_id": allocation.class_year_id,
+                "class_year": class_year,
+                "parent_count": parent_count,
+            }
+            for (
+                allocation,
+                teacher_name,
+                class_name,
+                class_year,
+                parent_count
+            ) in allocations
+        ]
+    }
+
+@app.put("/parent-teacher-interview/teacher-allocations/{allocation_id}")
+def update_parent_teacher_interview_teacher_allocation(
+    allocation_id: int,
+    payload: ParentTeacherInterviewTeacherAllocationRequest,
+    db: Session = Depends(get_db)
+):
+    center_code = payload.center_code.strip()
+
+    # Find existing allocation
+    allocation = (
+        db.query(ParentTeacherInterviewTeacherAllocation)
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.id == allocation_id,
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code
+        )
+        .first()
+    )
+
+    if not allocation:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher allocation not found."
+        )
+
+    # Validate teacher
+    teacher = (
+        db.query(CenterTeacher)
+        .filter(
+            CenterTeacher.id == payload.teacher_id,
+            CenterTeacher.center_code == center_code
+        )
+        .first()
+    )
+
+    if not teacher:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher not found."
+        )
+
+    # Validate class
+    class_record = (
+        db.query(Class)
+        .filter(
+            Class.id == payload.class_id,
+            Class.center_code == center_code
+        )
+        .first()
+    )
+
+    if not class_record:
+        raise HTTPException(
+            status_code=404,
+            detail="Class not found."
+        )
+
+    # Validate class year
+    class_year = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.id == payload.class_year_id,
+            ClassYearExamModule.center_code == center_code,
+            ClassYearExamModule.class_name == class_record.class_name
+        )
+        .first()
+    )
+
+    if not class_year:
+        raise HTTPException(
+            status_code=404,
+            detail="Class year not found for the selected class."
+        )
+
+    # Prevent duplicate allocation
+    existing_allocation = (
+        db.query(ParentTeacherInterviewTeacherAllocation)
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+            ParentTeacherInterviewTeacherAllocation.teacher_id == payload.teacher_id,
+            ParentTeacherInterviewTeacherAllocation.class_id == payload.class_id,
+            ParentTeacherInterviewTeacherAllocation.class_year_id == payload.class_year_id,
+            ParentTeacherInterviewTeacherAllocation.id != allocation_id
+        )
+        .first()
+    )
+
+    if existing_allocation:
+        raise HTTPException(
+            status_code=409,
+            detail="This teacher is already allocated to this class and class year."
+        )
+
+    # Update existing allocation
+    allocation.teacher_id = payload.teacher_id
+    allocation.class_id = payload.class_id
+    allocation.class_year_id = payload.class_year_id
+
+    db.commit()
+    db.refresh(allocation)
+
+    return {
+        "message": "Teacher allocation updated successfully.",
+        "allocation_id": allocation.id
+    }
+
+
+@app.get("/parent-teacher-interview/classes")
+def get_parent_teacher_interview_classes(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    classes = (
+        db.query(Class)
+        .filter(
+            Class.center_code == center_code
+        )
+        .order_by(Class.class_name.asc())
+        .all()
+    )
+
+    return {
+        "classes": [
+            {
+                "id": class_item.id,
+                "class_name": class_item.class_name,
+            }
+            for class_item in classes
+        ]
+    }
+
+@app.get("/parent-teacher-interview/class-years")
+def get_parent_teacher_interview_class_years(
+    center_code: str,
+    class_name: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+    class_name = class_name.strip()
+
+    class_years = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.center_code == center_code,
+            ClassYearExamModule.class_name == class_name
+        )
+        .order_by(
+            ClassYearExamModule.year_name.asc()
+        )
+        .all()
+    )
+
+    return {
+        "class_years": [
+            {
+                "id": item.id,
+                "year_name": item.year_name,
+            }
+            for item in class_years
+        ]
+    }
+
+@app.post("/parent-teacher-interview/teacher-availability")
+def save_parent_teacher_interview_teacher_availability(
+    payload: ParentTeacherInterviewTeacherAvailabilityRequest,
+    db: Session = Depends(get_db)
+):
+    center_code = payload.center_code.strip()
+
+    # ------------------------------------
+    # Validate event
+    # ------------------------------------
+
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == payload.event_id,
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    # ------------------------------------
+    # Validate teacher
+    # ------------------------------------
+
+    teacher = (
+        db.query(CenterTeacher)
+        .filter(
+            CenterTeacher.id == payload.teacher_id,
+            CenterTeacher.center_code == center_code
+        )
+        .first()
+    )
+
+    if not teacher:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher not found."
+        )
+
+    # ------------------------------------
+    # Validate availability data
+    # ------------------------------------
+
+    if payload.is_available:
+
+        if payload.start_time is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Start time is required when the teacher is available."
+            )
+
+        if payload.end_time is None:
+            raise HTTPException(
+                status_code=400,
+                detail="End time is required when the teacher is available."
+            )
+
+        if payload.slot_duration is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Slot duration is required when the teacher is available."
+            )
+
+        if payload.gap is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Gap is required when the teacher is available."
+            )
+
+        if payload.end_time <= payload.start_time:
+            raise HTTPException(
+                status_code=400,
+                detail="End time must be later than start time."
+            )
+
+        if payload.slot_duration <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Slot duration must be greater than zero."
+            )
+
+        if payload.gap < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Gap cannot be negative."
+            )
+
+    # ------------------------------------
+    # Find existing availability
+    # ------------------------------------
+
+    existing_availability = (
+        db.query(
+            ParentTeacherInterviewTeacherAvailability
+        )
+        .filter(
+            ParentTeacherInterviewTeacherAvailability.center_code
+            == center_code,
+
+            ParentTeacherInterviewTeacherAvailability.event_id
+            == payload.event_id,
+
+            ParentTeacherInterviewTeacherAvailability.teacher_id
+            == payload.teacher_id
+        )
+        .first()
+    )
+
+    # ------------------------------------
+    # Prepare values
+    # ------------------------------------
+
+    if payload.is_available:
+        start_time = payload.start_time
+        end_time = payload.end_time
+        slot_duration_minutes = payload.slot_duration
+        gap_minutes = payload.gap
+
+    else:
+        start_time = None
+        end_time = None
+        slot_duration_minutes = None
+        gap_minutes = None
+
+    # ------------------------------------
+    # Update existing availability
+    # ------------------------------------
+
+    if existing_availability:
+
+        existing_availability.is_available = payload.is_available
+        existing_availability.start_time = start_time
+        existing_availability.end_time = end_time
+        existing_availability.slot_duration_minutes = (
+            slot_duration_minutes
+        )
+        existing_availability.gap_minutes = gap_minutes
+
+        db.commit()
+        db.refresh(existing_availability)
+
+        return {
+            "message": (
+                "Teacher availability updated successfully."
+            ),
+            "availability_id": existing_availability.id
+        }
+
+    # ------------------------------------
+    # Create new availability
+    # ------------------------------------
+
+    new_availability = (
+        ParentTeacherInterviewTeacherAvailability(
+            center_code=center_code,
+            event_id=payload.event_id,
+            teacher_id=payload.teacher_id,
+            is_available=payload.is_available,
+            start_time=start_time,
+            end_time=end_time,
+            slot_duration_minutes=slot_duration_minutes,
+            gap_minutes=gap_minutes
+        )
+    )
+
+    db.add(new_availability)
+    db.commit()
+    db.refresh(new_availability)
+
+    return {
+        "message": "Teacher availability saved successfully.",
+        "availability_id": new_availability.id
+    }
+
+
+@app.get("/parent-teacher-interview/teacher-availability")
+def get_parent_teacher_interview_teacher_availability(
+    center_code: str,
+    event_id: int,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    availability = (
+        db.query(
+            ParentTeacherInterviewTeacherAvailability
+        )
+        .filter(
+            ParentTeacherInterviewTeacherAvailability.center_code
+            == center_code,
+
+            ParentTeacherInterviewTeacherAvailability.event_id
+            == event_id
+        )
+        .all()
+    )
+
+    return {
+        "availability": availability
+    }
+@app.get("/parent-teacher-interview/teachers")
+def get_parent_teacher_interview_teachers(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    teachers = (
+        db.query(CenterTeacher)
+        .filter(
+            CenterTeacher.center_code == center_code
+        )
+        .order_by(
+            CenterTeacher.full_name.asc()
+        )
+        .all()
+    )
+
+    return {
+        "teachers": [
+            {
+                "id": teacher.id,
+                "full_name": teacher.full_name,
+            }
+            for teacher in teachers
+        ]
+    }
+
+@app.get("/parent-teacher-interview/events")
+def get_parent_teacher_interview_events(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    events = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.center_code
+            == center_code
+        )
+        .order_by(
+            ParentTeacherInterviewEvent.event_date.desc()
+        )
+        .all()
+    )
+
+    return {
+        "events": events
+    }
+
+@app.post("/parent-teacher-interview/events")
+def create_parent_teacher_interview_event(
+    payload: ParentTeacherInterviewEventRequest,
+    db: Session = Depends(get_db)
+):
+    event = ParentTeacherInterviewEvent(
+        center_code=payload.center_code,
+        name=payload.name.strip(),
+        event_date=payload.event_date,
+        location=payload.location.strip()
+    )
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    return {
+        "message": "Parent Teacher Interview event created successfully.",
+        "event_id": event.id
+    }
+
+@app.put("/parent-teacher-interview/events/{event_id}")
+def update_parent_teacher_interview_event(
+    event_id: int,
+    payload: ParentTeacherInterviewEventRequest,
+    db: Session = Depends(get_db)
+):
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == event_id,
+            ParentTeacherInterviewEvent.center_code
+            == payload.center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    event.name = payload.name.strip()
+    event.event_date = payload.event_date
+    event.location = payload.location.strip()
+
+    db.commit()
+    db.refresh(event)
+
+    return {
+        "message": "Parent Teacher Interview event updated successfully."
+    }   
+
+@app.delete("/parent-teacher-interview/events/{event_id}")
+def delete_parent_teacher_interview_event(
+    event_id: int,
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == event_id,
+            ParentTeacherInterviewEvent.center_code
+            == center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    booking_exists = (
+        db.query(ParentTeacherInterviewBooking)
+        .filter(
+            ParentTeacherInterviewBooking.event_id == event_id,
+            ParentTeacherInterviewBooking.center_code == center_code
+        )
+        .first()
+    )
+
+    if booking_exists:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This event cannot be deleted because "
+                "one or more interview bookings already exist."
+            )
+        )
+
+    db.delete(event)
+    db.commit()
+
+    return {
+        "message": "Parent Teacher Interview event deleted successfully."
+    }
+
+         
 @app.post("/homework-support/parent/response")
 def submit_homework_support_response(
     payload: HomeworkSupportResponseRequest,
