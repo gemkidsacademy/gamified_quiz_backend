@@ -47,9 +47,9 @@ from docx.oxml.ns import qn
 import copy
 
 import pandas as pd
-
+import time
 import random 
-from datetime import datetime, time
+from datetime import datetime
 from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
 import re 
