@@ -49,7 +49,7 @@ import copy
 import pandas as pd
 import time
 import random 
-from datetime import datetime
+from datetime import datetime, time as datetime_time
 from sendgrid.helpers.mail import Mail
 from typing import List, Dict, Any, Optional
 import re 
@@ -814,8 +814,8 @@ class ParentTeacherInterviewTeacherAvailabilityRequest(BaseModel):
     event_id: int
     teacher_id: int
     is_available: bool
-    start_time: time | None = None
-    end_time: time | None = None
+    tart_time: datetime_time | None = None
+    end_time: datetime_time | None = None
     slot_duration: int | None = None
     gap: int | None = None
 
