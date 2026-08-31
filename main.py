@@ -277,6 +277,385 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def send_parent_teacher_interview_reminder_email(
+    to_email: str,
+    parent_name: str,
+    student_name: str,
+    teacher_name: str,
+    event_date,
+    start_time,
+    end_time: str,
+    location: str,
+    reminder_type: str,
+):
+    if reminder_type == "ONE_DAY_BEFORE":
+        reminder_text = (
+            "This is a reminder that your child's "
+            "Parent–Teacher Interview is tomorrow."
+        )
+
+    elif reminder_type == "THIRTY_MINUTES_BEFORE":
+        reminder_text = (
+            "This is a reminder that your child's "
+            "Parent–Teacher Interview will begin in 30 minutes."
+        )
+
+    else:
+        raise ValueError(
+            f"Unsupported reminder type: {reminder_type}"
+        )
+
+    message = Mail(
+        from_email="noreply@gemkidsacademy.com.au",
+        to_emails=to_email,
+        subject="Parent–Teacher Interview Reminder",
+        html_content=f"""
+            <div style="
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 30px 20px;
+                font-family: Arial, Helvetica, sans-serif;
+                color: #333333;
+            ">
+
+                <div style="
+                    text-align: center;
+                    margin-bottom: 25px;
+                ">
+                    <img
+                        src="https://gemkidsacademy.com.au/wp-content/uploads/2024/10/cropped-logo-4-1.png"
+                        alt="Gem Kids Academy"
+                        style="
+                            max-width: 180px;
+                            height: auto;
+                            display: inline-block;
+                        "
+                    >
+                </div>
+
+                <p>Hi {parent_name},</p>
+
+                <p>
+                    {reminder_text}
+                </p>
+
+                <div style="
+                    margin: 25px 0;
+                    padding: 20px;
+                    background-color: #f7f5ff;
+                    border: 1px solid #e2dcff;
+                    border-radius: 8px;
+                ">
+
+                    <p style="
+                        margin: 0 0 15px 0;
+                        font-weight: bold;
+                        font-size: 16px;
+                    ">
+                        Interview Details
+                    </p>
+
+                    <p style="margin: 8px 0;">
+                        <strong>Student:</strong>
+                        {student_name}
+                    </p>
+
+                    <p style="margin: 8px 0;">
+                        <strong>Teacher:</strong>
+                        {teacher_name}
+                    </p>
+
+                    <p style="margin: 8px 0;">
+                        <strong>Date:</strong>
+                        {event_date}
+                    </p>
+
+                    <p style="margin: 8px 0;">
+                        <strong>Time:</strong>
+                        {start_time} – {end_time}
+                    </p>
+
+                    <p style="margin: 8px 0;">
+                        <strong>Location:</strong>
+                        {location}
+                    </p>
+
+                </div>
+
+                <p>
+                    We look forward to seeing you.
+                </p>
+
+                <p>
+                    Thank you,<br>
+                    Gem Kids Academy
+                </p>
+
+            </div>
+        """,
+    )
+
+    message.reply_to = Email(
+        "do-not-reply@gemkidsacademy.com.au"
+    )
+
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+
+        response = sg.send(message)
+
+        print(
+            f"[INFO] Parent–Teacher Interview reminder "
+            f"sent to {to_email}, "
+            f"reminder type {reminder_type}, "
+            f"status code {response.status_code}"
+        )
+
+    except Exception as e:
+        print(
+            f"[ERROR] Failed to send Parent–Teacher Interview "
+            f"reminder to {to_email}: {e}"
+        )
+
+        raise
+
+def parent_teacher_interview_reminder_scheduler_job(
+    center_code,
+    local_now,
+    db
+):
+    print(
+        f"\n[PTI REMINDERS] Checking reminders for {center_code}"
+    )
+    print(
+        f"[PTI REMINDERS] Local time: {local_now}"
+    )
+
+    bookings = (
+        db.query(ParentTeacherInterviewBooking)
+        .filter(
+            ParentTeacherInterviewBooking.center_code == center_code,
+            ParentTeacherInterviewBooking.booking_status == "BOOKED"
+        )
+        .all()
+    )
+
+    print(
+        f"[PTI REMINDERS] Confirmed bookings found: {len(bookings)}"
+    )
+
+    for booking in bookings:
+
+        # --------------------------------------------------
+        # Load reminder settings for this event
+        # --------------------------------------------------
+
+        settings = (
+            db.query(ParentTeacherInterviewReminderSettings)
+            .filter(
+                ParentTeacherInterviewReminderSettings.center_code
+                == center_code,
+                ParentTeacherInterviewReminderSettings.event_id
+                == booking.event_id
+            )
+            .first()
+        )
+
+        if not settings:
+            print(
+                f"[PTI REMINDERS] No reminder settings "
+                f"for booking {booking.id}"
+            )
+            continue
+
+        # --------------------------------------------------
+        # Convert booking date/time into center-local datetime
+        # --------------------------------------------------
+
+        event = (
+            db.query(ParentTeacherInterviewEvent)
+            .filter(
+                ParentTeacherInterviewEvent.id == booking.event_id,
+                ParentTeacherInterviewEvent.center_code == center_code
+            )
+            .first()
+        )
+
+        slot = (
+            db.query(ParentTeacherInterviewSlot)
+            .filter(
+                ParentTeacherInterviewSlot.id == booking.slot_id,
+                ParentTeacherInterviewSlot.event_id == booking.event_id,
+                ParentTeacherInterviewSlot.center_code == center_code
+            )
+            .first()
+        )
+
+        if not event or not slot:
+            print(
+                f"[PTI REMINDERS] Event or slot not found "
+                f"for booking {booking.id}"
+            )
+            continue
+        student = (
+            db.query(Student)
+            .filter(
+                Student.student_id == booking.student_id,
+                Student.center_code == center_code
+            )
+            .first()
+        )
+
+        teacher = (
+            db.query(CenterTeacher)
+            .filter(
+                CenterTeacher.id == booking.teacher_id,
+                CenterTeacher.center_code == center_code
+            )
+            .first()
+        )
+
+        if not student or not teacher:
+            print(
+                f"[PTI REMINDERS] Student or teacher not found "
+                f"for booking {booking.id}"
+            )
+            continue
+
+        student_name = student.name
+        teacher_name = teacher.full_name
+
+        interview_datetime = datetime.combine(
+            event.event_date,
+            slot.start_time
+        ).replace(
+            tzinfo=local_now.tzinfo
+        )
+
+        # --------------------------------------------------
+        # Check 1-day reminder
+        # --------------------------------------------------
+
+        if settings.one_day_before_enabled:
+
+            reminder_datetime = (
+                interview_datetime - timedelta(days=1)
+            )
+
+            if local_now >= reminder_datetime:
+
+                already_sent = (
+                    db.query(
+                        ParentTeacherInterviewReminderLog
+                    )
+                    .filter(
+                        ParentTeacherInterviewReminderLog.booking_id
+                        == booking.id,
+                        ParentTeacherInterviewReminderLog.reminder_type
+                        == "ONE_DAY_BEFORE"
+                    )
+                    .first()
+                )
+
+                if not already_sent:
+
+                    print(
+                        f"[PTI REMINDERS] Sending "
+                        f"1-day reminder for booking {booking.id}"
+                    )
+
+                    send_parent_teacher_interview_reminder_email(
+                        to_email=booking.parent_email,
+                        parent_name="Parent",
+                        student_name=student.name,
+                        teacher_name=teacher.full_name,
+                        event_date=event.event_date,
+                        start_time=slot.start_time,
+                        end_time=slot.end_time,
+                        location=event.location,
+                        reminder_type="ONE_DAY_BEFORE",
+                    )
+
+                    reminder_log = (
+                        ParentTeacherInterviewReminderLog(
+                            center_code=center_code,
+                            booking_id=booking.id,
+                            reminder_type="ONE_DAY_BEFORE",
+                            sent_at=datetime.utcnow(),
+                        )
+                    )
+
+                    db.add(reminder_log)
+                    db.commit()
+
+                    print(
+                        f"[PTI REMINDERS] 1-day reminder "
+                        f"recorded for booking {booking.id}"
+                    )
+
+        # --------------------------------------------------
+        # Check 30-minute reminder
+        # --------------------------------------------------
+
+        if settings.thirty_minutes_before_enabled:
+
+            reminder_datetime = (
+                interview_datetime - timedelta(minutes=30)
+            )
+
+            if local_now >= reminder_datetime:
+
+                already_sent = (
+                    db.query(
+                        ParentTeacherInterviewReminderLog
+                    )
+                    .filter(
+                        ParentTeacherInterviewReminderLog.booking_id
+                        == booking.id,
+                        ParentTeacherInterviewReminderLog.reminder_type
+                        == "THIRTY_MINUTES_BEFORE"
+                    )
+                    .first()
+                )
+
+                if not already_sent:
+
+                    print(
+                        f"[PTI REMINDERS] Sending "
+                        f"30-minute reminder for booking {booking.id}"
+                    )
+
+                    send_parent_teacher_interview_reminder_email(
+                        to_email=booking.parent_email,
+                        parent_name="Parent",
+                        student_name=student.name,
+                        teacher_name=teacher.full_name,
+                        event_date=event.event_date,
+                        start_time=slot.start_time,
+                        end_time=slot.end_time,
+                        location=event.location,
+                        reminder_type="THIRTY_MINUTES_BEFORE",
+                    )
+
+                    reminder_log = (
+                        ParentTeacherInterviewReminderLog(
+                            center_code=center_code,
+                            booking_id=booking.id,
+                            reminder_type="THIRTY_MINUTES_BEFORE",
+                            sent_at=datetime.utcnow(),
+                        )
+                    )
+
+                    db.add(reminder_log)
+                    db.commit()
+
+                    print(
+                        f"[PTI REMINDERS] 30-minute reminder "
+                        f"recorded for booking {booking.id}"
+                    )
+
+
 def homework_support_scheduler_job(
     center_code: str,
     local_now: datetime,
@@ -599,6 +978,15 @@ def scheduler_job():
                 local_now=local_now,
                 db=db
             )
+            # ------------------------------------
+            # Parent–Teacher Interview reminders
+            # ------------------------------------
+
+            parent_teacher_interview_reminder_scheduler_job(
+                center_code=center.center_code,
+                local_now=local_now,
+                db=db
+            )
 
 
             # ------------------------------------
@@ -748,11 +1136,77 @@ DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 # ---------------------------
 # Models
 # --------------------------
+class ParentTeacherInterviewReminderLog(Base):
+    __tablename__ = "parent_teacher_interview_reminder_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    booking_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    reminder_type = Column(
+        String,
+        nullable=False
+    )
+
+    sent_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "booking_id",
+            "reminder_type",
+            name="uq_parent_teacher_interview_reminder"
+        ),
+    )
+
+class ParentTeacherInterviewSendInvitationsRequest(BaseModel):
+    center_code: str
+    event_id: int
+    student_ids: list[str]
+
+class ParentTeacherInterviewBookingRequest(BaseModel):
+    center_code: str
+    event_id: int
+    slot_id: int
+    teacher_id: int
+    student_id: str
+    parent_email: str
+
 class ParentTeacherInterviewTeacherAllocationRequest(BaseModel):
     center_code: str
     teacher_id: int
     class_id: int
     class_year_id: int
+
+
+class ParentTeacherInterviewReminderSettingsRequest(BaseModel):
+    center_code: str
+    event_id: int
+    one_day_before_enabled: bool
+    thirty_minutes_before_enabled: bool
+
+
+class ParentTeacherInterviewReminderSettingsResponse(BaseModel):
+    id: int
+    center_code: str
+    event_id: int
+    one_day_before_enabled: bool
+    thirty_minutes_before_enabled: bool
+
+
 class ParentTeacherInterviewTeacherAllocation(Base):
     __tablename__ = "parent_teacher_interview_teacher_allocations"
 
@@ -807,6 +1261,53 @@ class ParentTeacherInterviewTeacherAllocation(Base):
         ),
     )
 
+class ParentTeacherInterviewReminderSettings(Base):
+    __tablename__ = "parent_teacher_interview_reminder_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    event_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    one_day_before_enabled = Column(
+        Boolean,
+        nullable=False,
+        default=True
+    )
+
+    thirty_minutes_before_enabled = Column(
+        Boolean,
+        nullable=False,
+        default=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            "event_id",
+            name="uq_parent_teacher_interview_reminder_event_center"
+        ),
+    )
 
 class ParentTeacherInterviewTeacherAvailabilityRequest(BaseModel):
 
@@ -814,11 +1315,10 @@ class ParentTeacherInterviewTeacherAvailabilityRequest(BaseModel):
     event_id: int
     teacher_id: int
     is_available: bool
-    tart_time: datetime_time | None = None
+    start_time: datetime_time | None = None
     end_time: datetime_time | None = None
     slot_duration: int | None = None
     gap: int | None = None
-
 
 class ParentTeacherInterviewEventRequest(BaseModel):
     center_code: str
@@ -849,6 +1349,11 @@ class ParentTeacherInterviewEvent(Base):
     location = Column(
         String,
         nullable=False
+    )
+    status = Column(
+        String,
+        nullable=False,
+        default="UPCOMING"
     )
 
     created_by_admin_id = Column(
@@ -986,12 +1491,6 @@ class ParentTeacherInterviewSlot(Base):
         nullable=False
     )
 
-    is_available = Column(
-        Boolean,
-        nullable=False,
-        default=True
-    )
-
     created_at = Column(
         DateTime,
         default=datetime.utcnow
@@ -1002,6 +1501,7 @@ class ParentTeacherInterviewSlot(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow
     )  
+
 class ParentTeacherInterviewBooking(Base):
     __tablename__ = "parent_teacher_interview_bookings"
 
@@ -1129,6 +1629,7 @@ class ParentTeacherInterviewInvitation(Base):
             name="uq_parent_teacher_invitation_student"
         ),
     )
+
 class ParentTeacherInterviewReminder(Base):
     __tablename__ = "parent_teacher_interview_reminders"
 
@@ -8338,6 +8839,850 @@ def send_otp_sms(phone_number: str, otp: int):
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
 
+
+@app.get("/parent-teacher-interview/completed-events/{event_id}/summary")
+def get_completed_parent_teacher_interview_event_summary(
+    event_id: int,
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # Verify that the event exists for this center
+    # and that its calendar date has passed.
+    # --------------------------------------------------
+
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == event_id,
+            ParentTeacherInterviewEvent.center_code == center_code,
+            ParentTeacherInterviewEvent.event_date < date.today()
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Completed Parent–Teacher Interview event not found"
+        )
+
+    # --------------------------------------------------
+    # Get all slots for this event.
+    #
+    # Slots represent the total interview capacity.
+    # --------------------------------------------------
+
+    slots = (
+        db.query(ParentTeacherInterviewSlot)
+        .filter(
+            ParentTeacherInterviewSlot.event_id == event_id,
+            ParentTeacherInterviewSlot.center_code == center_code
+        )
+        .all()
+    )
+
+    # --------------------------------------------------
+    # Teachers
+    #
+    # Count unique teachers who have slots for this
+    # completed event.
+    # --------------------------------------------------
+
+    teacher_ids = {
+        slot.teacher_id
+        for slot in slots
+        if slot.teacher_id is not None
+    }
+
+    teachers_count = len(teacher_ids)
+
+    # --------------------------------------------------
+    # Students
+    #
+    # In Event History, this represents the total
+    # interview capacity / available slots.
+    # --------------------------------------------------
+
+    students_count = len(slots)
+
+    # --------------------------------------------------
+    # Get bookings for this event.
+    # --------------------------------------------------
+
+    bookings = (
+        db.query(ParentTeacherInterviewBooking)
+        .filter(
+            ParentTeacherInterviewBooking.event_id == event_id,
+            ParentTeacherInterviewBooking.center_code == center_code,
+            ParentTeacherInterviewBooking.booking_status == "BOOKED"
+        )
+        .all()
+    )
+
+    # --------------------------------------------------
+    # Booked
+    #
+    # Count actual BOOKED interview slots.
+    # --------------------------------------------------
+
+    booked_count = len(bookings)
+
+    # --------------------------------------------------
+    # Not Booked
+    #
+    # Total slots minus booked slots.
+    # --------------------------------------------------
+
+    not_booked_count = max(
+        students_count - booked_count,
+        0
+    )
+
+    return {
+        "event_id": event.id,
+        "teachers": teachers_count,
+        "students": students_count,
+        "booked": booked_count,
+        "not_booked": not_booked_count
+    }
+
+@app.get("/parent-teacher-interview/reminder-settings")
+def get_reminder_settings(
+    center_code: str,
+    event_id: int,
+    db: Session = Depends(get_db),
+):
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == event_id,
+            ParentTeacherInterviewEvent.center_code == center_code,
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    settings = (
+        db.query(ParentTeacherInterviewReminderSettings)
+        .filter(
+            ParentTeacherInterviewReminderSettings.center_code == center_code,
+            ParentTeacherInterviewReminderSettings.event_id == event_id,
+        )
+        .first()
+    )
+
+    if not settings:
+        return {
+            "id": None,
+            "center_code": center_code,
+            "event_id": event_id,
+            "one_day_before_enabled": True,
+            "thirty_minutes_before_enabled": True,
+        }
+
+    return {
+        "id": settings.id,
+        "center_code": settings.center_code,
+        "event_id": settings.event_id,
+        "one_day_before_enabled": settings.one_day_before_enabled,
+        "thirty_minutes_before_enabled": settings.thirty_minutes_before_enabled,
+    }
+
+@app.put("/parent-teacher-interview/reminder-settings")
+def update_reminder_settings(
+    request: ParentTeacherInterviewReminderSettingsRequest,
+    db: Session = Depends(get_db),
+):
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == request.event_id,
+            ParentTeacherInterviewEvent.center_code == request.center_code,
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    settings = (
+        db.query(ParentTeacherInterviewReminderSettings)
+        .filter(
+            ParentTeacherInterviewReminderSettings.center_code
+            == request.center_code,
+            ParentTeacherInterviewReminderSettings.event_id
+            == request.event_id,
+        )
+        .first()
+    )
+
+    if settings:
+        settings.one_day_before_enabled = request.one_day_before_enabled
+        settings.thirty_minutes_before_enabled = (
+            request.thirty_minutes_before_enabled
+        )
+    else:
+        settings = ParentTeacherInterviewReminderSettings(
+            center_code=request.center_code,
+            event_id=request.event_id,
+            one_day_before_enabled=request.one_day_before_enabled,
+            thirty_minutes_before_enabled=(
+                request.thirty_minutes_before_enabled
+            ),
+        )
+
+        db.add(settings)
+
+    db.commit()
+    db.refresh(settings)
+
+    return {
+        "id": settings.id,
+        "center_code": settings.center_code,
+        "event_id": settings.event_id,
+        "one_day_before_enabled": settings.one_day_before_enabled,
+        "thirty_minutes_before_enabled": (
+            settings.thirty_minutes_before_enabled
+        ),
+    }   
+@app.get("/parent-teacher-interview/invitations")
+def get_parent_teacher_interview_invitations(
+    center_code: str,
+    event_id: int,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    # Validate the event belongs to this center
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == event_id,
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    invitations = (
+        db.query(
+            Student.student_id,
+            Student.name.label("student_name"),
+            Student.parent_email,
+
+            CenterTeacher.id.label("teacher_id"),
+            CenterTeacher.full_name.label("teacher_name"),
+
+            Class.class_name.label("class_name"),
+            ClassYearExamModule.year_name.label("class_year"),
+
+            ParentTeacherInterviewInvitation.id.label("invitation_id"),
+            ParentTeacherInterviewInvitation.status.label("invitation_status"),
+            ParentTeacherInterviewInvitation.sent_at
+        )
+        .select_from(Student)
+        .join(
+            Class,
+            (
+                Class.center_code == center_code
+            )
+            & (
+                Class.class_name == Student.class_name
+            )
+        )
+        .join(
+            ClassYearExamModule,
+            (
+                ClassYearExamModule.center_code == center_code
+            )
+            & (
+                ClassYearExamModule.class_name == Class.class_name
+            )
+            & (
+                ClassYearExamModule.year_name == Student.student_year
+            )
+        )
+        .join(
+            ParentTeacherInterviewTeacherAllocation,
+            (
+                ParentTeacherInterviewTeacherAllocation.class_id
+                == Class.id
+            )
+            & (
+                ParentTeacherInterviewTeacherAllocation.class_year_id
+                == ClassYearExamModule.id
+            )
+            & (
+                ParentTeacherInterviewTeacherAllocation.center_code
+                == center_code
+            )
+        )
+        .join(
+            CenterTeacher,
+            (
+                CenterTeacher.id
+                == ParentTeacherInterviewTeacherAllocation.teacher_id
+            )
+            & (
+                CenterTeacher.center_code
+                == center_code
+            )
+        )
+        .join(
+            ParentTeacherInterviewSlot,
+            (
+                ParentTeacherInterviewSlot.teacher_id
+                == ParentTeacherInterviewTeacherAllocation.teacher_id
+            )
+            & (
+                ParentTeacherInterviewSlot.event_id
+                == event_id
+            )
+            & (
+                ParentTeacherInterviewSlot.center_code
+                == center_code
+            )
+        )
+        .outerjoin(
+            ParentTeacherInterviewInvitation,
+            (
+                ParentTeacherInterviewInvitation.event_id
+                == event_id
+            )
+            & (
+                ParentTeacherInterviewInvitation.student_id
+                == Student.student_id
+            )
+            & (
+                ParentTeacherInterviewInvitation.center_code
+                == center_code
+            )
+        )
+        .filter(
+            Student.center_code == center_code,
+            Student.is_active == True
+        )
+        .distinct()
+        .order_by(
+            Student.name.asc()
+        )
+        .all()
+    )
+
+    return {
+        "invitations": [
+            {
+                "id": invitation_id
+                if invitation_id is not None
+                else f"{event_id}-{student_id}",
+
+                "event_id": event_id,
+
+                "teacher_id": teacher_id,
+                "teacher_name": teacher_name,
+
+                "student_id": student_id,
+                "student_name": student_name,
+                "parent_email": parent_email,
+
+                "class_name": class_name,
+                "class_year": class_year,
+
+                "status": invitation_status or "NOT_SENT",
+                "sent_at": sent_at,
+            }
+            for (
+                student_id,
+                student_name,
+                parent_email,
+                teacher_id,
+                teacher_name,
+                class_name,
+                class_year,
+                invitation_id,
+                invitation_status,
+                sent_at
+            ) in invitations
+        ]
+    }
+
+@app.get("/parent-teacher-interview/slots")
+def get_parent_teacher_interview_slots(
+    center_code: str,
+    event_id: int,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    slots = (
+        db.query(
+            ParentTeacherInterviewSlot,
+            CenterTeacher.full_name.label("teacher_name")
+        )
+        .join(
+            CenterTeacher,
+            CenterTeacher.id ==
+            ParentTeacherInterviewSlot.teacher_id
+        )
+        .filter(
+            ParentTeacherInterviewSlot.center_code == center_code,
+            ParentTeacherInterviewSlot.event_id == event_id,
+            CenterTeacher.center_code == center_code
+        )
+        .order_by(
+            ParentTeacherInterviewSlot.start_time.asc()
+        )
+        .all()
+    )
+
+    return {
+        "slots": [
+            {
+                "id": slot.id,
+                "center_code": slot.center_code,
+                "event_id": slot.event_id,
+                "teacher_id": slot.teacher_id,
+                "teacher_name": teacher_name,
+                "start_time": slot.start_time,
+                "end_time": slot.end_time,
+                "is_available": slot.is_available
+            }
+            for slot, teacher_name in slots
+        ]
+    }
+
+@app.post("/parent-teacher-interview/bookings")
+def create_parent_teacher_interview_booking(
+    request: ParentTeacherInterviewBookingRequest,
+    db: Session = Depends(get_db)
+):
+    center_code = request.center_code.strip()
+
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == request.event_id,
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    slot = (
+        db.query(ParentTeacherInterviewSlot)
+        .filter(
+            ParentTeacherInterviewSlot.id == request.slot_id,
+            ParentTeacherInterviewSlot.event_id == request.event_id,
+            ParentTeacherInterviewSlot.teacher_id == request.teacher_id,
+            ParentTeacherInterviewSlot.center_code == center_code
+        )
+        .first()
+    )
+
+    if not slot:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview slot not found."
+        )
+
+    if not slot.is_available:
+        raise HTTPException(
+            status_code=400,
+            detail="This interview slot is no longer available."
+        )
+
+    existing_slot_booking = (
+        db.query(ParentTeacherInterviewBooking)
+        .filter(
+            ParentTeacherInterviewBooking.event_id == request.event_id,
+            ParentTeacherInterviewBooking.slot_id == request.slot_id,
+            ParentTeacherInterviewBooking.center_code == center_code
+        )
+        .first()
+    )
+
+    if existing_slot_booking:
+        raise HTTPException(
+            status_code=400,
+            detail="This interview slot has already been booked."
+        )
+
+    existing_student_booking = (
+        db.query(ParentTeacherInterviewBooking)
+        .filter(
+            ParentTeacherInterviewBooking.event_id == request.event_id,
+            ParentTeacherInterviewBooking.student_id == request.student_id,
+            ParentTeacherInterviewBooking.center_code == center_code
+        )
+        .first()
+    )
+
+    if existing_student_booking:
+        raise HTTPException(
+            status_code=400,
+            detail="This student already has an interview booking for this event."
+        )
+
+    booking = ParentTeacherInterviewBooking(
+        center_code=center_code,
+        event_id=request.event_id,
+        slot_id=request.slot_id,
+        teacher_id=request.teacher_id,
+        student_id=request.student_id,
+        parent_email=request.parent_email.strip(),
+        booking_status="BOOKED"
+    )
+
+    db.add(booking)
+
+    slot.is_available = False
+
+    db.commit()
+    db.refresh(booking)
+
+    return {
+        "message": "Interview booked successfully.",
+        "booking_id": booking.id,
+        "event_id": booking.event_id,
+        "slot_id": booking.slot_id,
+        "teacher_id": booking.teacher_id,
+        "student_id": booking.student_id,
+        "booking_status": booking.booking_status
+    }
+
+@app.get("/parent-teacher-interview/bookings")
+def get_parent_teacher_interview_bookings(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    print("\n========== PARENT-TEACHER BOOKINGS DEBUG ==========")
+    print(f"[BOOKINGS] Requested center_code: {center_code}")
+
+    # ---------------------------------------------------------
+    # 1. Get all booked interview slots
+    # ---------------------------------------------------------
+
+    booked_rows = (
+        db.query(
+            ParentTeacherInterviewBooking,
+            ParentTeacherInterviewEvent.name.label("event_name"),
+            ParentTeacherInterviewEvent.event_date.label("event_date"),
+            ParentTeacherInterviewSlot.start_time.label("start_time"),
+            ParentTeacherInterviewSlot.end_time.label("end_time"),
+            CenterTeacher.full_name.label("teacher_name"),
+            Student.name.label("student_name"),
+            Student.class_name.label("class_name")
+        )
+        .join(
+            ParentTeacherInterviewEvent,
+            ParentTeacherInterviewEvent.id ==
+            ParentTeacherInterviewBooking.event_id
+        )
+        .join(
+            ParentTeacherInterviewSlot,
+            ParentTeacherInterviewSlot.id ==
+            ParentTeacherInterviewBooking.slot_id
+        )
+        .join(
+            CenterTeacher,
+            CenterTeacher.id ==
+            ParentTeacherInterviewBooking.teacher_id
+        )
+        .join(
+            Student,
+            Student.student_id ==
+            ParentTeacherInterviewBooking.student_id
+        )
+        .filter(
+            ParentTeacherInterviewBooking.center_code == center_code,
+            ParentTeacherInterviewEvent.center_code == center_code,
+            ParentTeacherInterviewSlot.center_code == center_code,
+            CenterTeacher.center_code == center_code,
+            Student.center_code == center_code
+        )
+        .order_by(
+            ParentTeacherInterviewBooking.id.asc()
+        )
+        .all()
+    )
+
+    print(
+        f"[BOOKINGS] Booked rows found: {len(booked_rows)}"
+    )
+
+    # ---------------------------------------------------------
+    # 2. Build response from booked rows
+    # ---------------------------------------------------------
+
+    response_bookings = []
+
+    booked_slot_keys = set()
+
+    for (
+        booking,
+        event_name,
+        event_date,
+        start_time,
+        end_time,
+        teacher_name,
+        student_name,
+        class_name
+    ) in booked_rows:
+
+        booked_slot_keys.add(
+            (booking.event_id, booking.slot_id)
+        )
+
+        response_bookings.append(
+            {
+                "id": booking.id,
+                "event_id": booking.event_id,
+                "event_name": event_name,
+                "event_date": event_date,
+                "slot_id": booking.slot_id,
+                "start_time": start_time,
+                "end_time": end_time,
+                "teacher_id": booking.teacher_id,
+                "teacher_name": teacher_name,
+                "student_id": booking.student_id,
+                "student_name": student_name,
+                "class_name": class_name,
+                "parent_email": booking.parent_email,
+                "booking_status": booking.booking_status,
+                "booked_at": booking.booked_at,
+            }
+        )
+
+    # ---------------------------------------------------------
+    # 3. Get available interview slots
+    # ---------------------------------------------------------
+
+    available_slots = (
+        db.query(
+            ParentTeacherInterviewSlot,
+            ParentTeacherInterviewEvent.name.label("event_name"),
+            ParentTeacherInterviewEvent.event_date.label("event_date"),
+            CenterTeacher.full_name.label("teacher_name"),
+            Class.class_name.label("class_name")
+        )
+        .join(
+            ParentTeacherInterviewEvent,
+            ParentTeacherInterviewEvent.id ==
+            ParentTeacherInterviewSlot.event_id
+        )
+        .join(
+            CenterTeacher,
+            CenterTeacher.id ==
+            ParentTeacherInterviewSlot.teacher_id
+        )
+        .join(
+            ParentTeacherInterviewTeacherAllocation,
+            ParentTeacherInterviewTeacherAllocation.teacher_id ==
+            ParentTeacherInterviewSlot.teacher_id
+        )
+        .join(
+            Class,
+            Class.id ==
+            ParentTeacherInterviewTeacherAllocation.class_id
+        )
+        .filter(
+            ParentTeacherInterviewSlot.center_code == center_code,
+            ParentTeacherInterviewSlot.is_available == True,
+            ParentTeacherInterviewEvent.center_code == center_code,
+            CenterTeacher.center_code == center_code,
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+            Class.center_code == center_code
+        )
+        .order_by(
+            ParentTeacherInterviewSlot.id.asc()
+        )
+        .all()
+    )
+
+    print(
+        f"[BOOKINGS] Available slots found: {len(available_slots)}"
+    )
+
+    # ---------------------------------------------------------
+    # 4. Add available slots that do NOT have a booking
+    # ---------------------------------------------------------
+
+    for (
+        slot,
+        event_name,
+        event_date,
+        teacher_name,
+        class_name
+    ) in available_slots:
+
+        slot_key = (
+            slot.event_id,
+            slot.id
+        )
+
+        # Skip slots that are already booked
+        if slot_key in booked_slot_keys:
+            continue
+
+        response_bookings.append(
+            {
+                # Negative ID prevents collision with real booking IDs
+                "id": -slot.id,
+                "event_id": slot.event_id,
+                "event_name": event_name,
+                "event_date": event_date,
+                "slot_id": slot.id,
+                "start_time": slot.start_time,
+                "end_time": slot.end_time,
+                "teacher_id": slot.teacher_id,
+                "teacher_name": teacher_name,
+                "student_id": None,
+                "student_name": None,
+                "class_name": class_name,
+                "parent_email": None,
+                "booking_status": "NOT_BOOKED",
+                "booked_at": None,
+            }
+        )
+
+    # ---------------------------------------------------------
+    # 5. Sort all rows by event, date and interview time
+    # ---------------------------------------------------------
+
+    response_bookings.sort(
+        key=lambda row: (
+            row["event_id"],
+            row["event_date"],
+            row["start_time"]
+        )
+    )
+
+    print(
+        f"[BOOKINGS] Final rows returned: "
+        f"{len(response_bookings)}"
+    )
+
+    for row in response_bookings:
+        print(
+            f"[FINAL ROW] "
+            f"status={row['booking_status']}, "
+            f"teacher={row['teacher_name']}, "
+            f"class={row['class_name']}, "
+            f"student={row['student_name']}, "
+            f"time={row['start_time']}-{row['end_time']}"
+        )
+
+    print(
+        "========== END BOOKINGS DEBUG ==========\n"
+    )
+
+    return {
+        "bookings": response_bookings
+    }
+
+@app.get("/parent-teacher-interview/teacher-allocations")
+def get_parent_teacher_interview_teacher_allocations(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    allocations = (
+        db.query(
+            ParentTeacherInterviewTeacherAllocation,
+            CenterTeacher.full_name.label("teacher_name"),
+            Class.class_name.label("class_name"),
+            ClassYearExamModule.year_name.label("class_year"),
+            func.count(
+                distinct(Student.parent_email)
+            ).label("parent_count")
+        )
+        .join(
+            CenterTeacher,
+            CenterTeacher.id ==
+            ParentTeacherInterviewTeacherAllocation.teacher_id
+        )
+        .join(
+            Class,
+            Class.id ==
+            ParentTeacherInterviewTeacherAllocation.class_id
+        )
+        .join(
+            ClassYearExamModule,
+            ClassYearExamModule.id ==
+            ParentTeacherInterviewTeacherAllocation.class_year_id
+        )
+        .outerjoin(
+            Student,
+            (Student.center_code == center_code)
+            & (Student.class_name == Class.class_name)
+            & (Student.student_year == ClassYearExamModule.year_name)
+            & (Student.is_active == True)
+        )
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+            CenterTeacher.center_code == center_code,
+            Class.center_code == center_code,
+            ClassYearExamModule.center_code == center_code
+        )
+        .group_by(
+            ParentTeacherInterviewTeacherAllocation.id,
+            ParentTeacherInterviewTeacherAllocation.teacher_id,
+            ParentTeacherInterviewTeacherAllocation.class_id,
+            ParentTeacherInterviewTeacherAllocation.class_year_id,
+            CenterTeacher.full_name,
+            Class.class_name,
+            ClassYearExamModule.year_name
+        )
+        .order_by(
+            ParentTeacherInterviewTeacherAllocation.id.asc()
+        )
+        .all()
+    )
+
+    return {
+        "allocations": [
+            {
+                "id": allocation.id,
+                "teacher_id": allocation.teacher_id,
+                "teacher_name": teacher_name,
+                "class_id": allocation.class_id,
+                "class_name": class_name,
+                "class_year_id": allocation.class_year_id,
+                "class_year": class_year,
+                "parent_count": parent_count,
+            }
+            for (
+                allocation,
+                teacher_name,
+                class_name,
+                class_year,
+                parent_count
+            ) in allocations
+        ]
+    }
+
 @app.post("/parent-teacher-interview/teacher-allocations")
 def create_parent_teacher_interview_teacher_allocation(
     payload: ParentTeacherInterviewTeacherAllocationRequest,
@@ -8442,6 +9787,7 @@ def create_parent_teacher_interview_teacher_allocation(
         "message": "Teacher allocation created successfully.",
         "allocation_id": new_allocation.id
     }
+
 @app.delete("/parent-teacher-interview/teacher-allocations/{allocation_id}")
 def delete_parent_teacher_interview_teacher_allocation(
     allocation_id: int,
@@ -8472,87 +9818,7 @@ def delete_parent_teacher_interview_teacher_allocation(
         "message": "Teacher allocation deleted successfully.",
         "allocation_id": allocation_id
     }
-@app.get("/parent-teacher-interview/teacher-allocations")
-def get_parent_teacher_interview_teacher_allocations(
-    center_code: str,
-    db: Session = Depends(get_db)
-):
-    center_code = center_code.strip()
 
-    allocations = (
-        db.query(
-            ParentTeacherInterviewTeacherAllocation,
-            CenterTeacher.full_name.label("teacher_name"),
-            Class.class_name.label("class_name"),
-            ClassYearExamModule.year_name.label("class_year"),
-            func.count(
-                distinct(Student.parent_email)
-            ).label("parent_count")
-        )
-        .join(
-            CenterTeacher,
-            CenterTeacher.id ==
-            ParentTeacherInterviewTeacherAllocation.teacher_id
-        )
-        .join(
-            Class,
-            Class.id ==
-            ParentTeacherInterviewTeacherAllocation.class_id
-        )
-        .join(
-            ClassYearExamModule,
-            ClassYearExamModule.id ==
-            ParentTeacherInterviewTeacherAllocation.class_year_id
-        )
-        .outerjoin(
-            Student,
-            (Student.center_code == center_code)
-            & (Student.class_name == Class.class_name)
-            & (Student.student_year == ClassYearExamModule.year_name)
-            & (Student.is_active == True)
-        )
-        .filter(
-            ParentTeacherInterviewTeacherAllocation.center_code == center_code,
-            CenterTeacher.center_code == center_code,
-            Class.center_code == center_code,
-            ClassYearExamModule.center_code == center_code
-        )
-        .group_by(
-            ParentTeacherInterviewTeacherAllocation.id,
-            ParentTeacherInterviewTeacherAllocation.teacher_id,
-            ParentTeacherInterviewTeacherAllocation.class_id,
-            ParentTeacherInterviewTeacherAllocation.class_year_id,
-            CenterTeacher.full_name,
-            Class.class_name,
-            ClassYearExamModule.year_name
-        )
-        .order_by(
-            ParentTeacherInterviewTeacherAllocation.id.asc()
-        )
-        .all()
-    )
-
-    return {
-        "allocations": [
-            {
-                "id": allocation.id,
-                "teacher_id": allocation.teacher_id,
-                "teacher_name": teacher_name,
-                "class_id": allocation.class_id,
-                "class_name": class_name,
-                "class_year_id": allocation.class_year_id,
-                "class_year": class_year,
-                "parent_count": parent_count,
-            }
-            for (
-                allocation,
-                teacher_name,
-                class_name,
-                class_year,
-                parent_count
-            ) in allocations
-        ]
-    }
 
 @app.put("/parent-teacher-interview/teacher-allocations/{allocation_id}")
 def update_parent_teacher_interview_teacher_allocation(
@@ -8811,6 +10077,21 @@ def save_parent_teacher_interview_teacher_availability(
             )
 
     # ------------------------------------
+    # Prepare availability values
+    # ------------------------------------
+
+    if payload.is_available:
+        start_time = payload.start_time
+        end_time = payload.end_time
+        slot_duration_minutes = payload.slot_duration
+        gap_minutes = payload.gap
+    else:
+        start_time = None
+        end_time = None
+        slot_duration_minutes = None
+        gap_minutes = None
+
+    # ------------------------------------
     # Find existing availability
     # ------------------------------------
 
@@ -8832,23 +10113,8 @@ def save_parent_teacher_interview_teacher_availability(
     )
 
     # ------------------------------------
-    # Prepare values
-    # ------------------------------------
-
-    if payload.is_available:
-        start_time = payload.start_time
-        end_time = payload.end_time
-        slot_duration_minutes = payload.slot_duration
-        gap_minutes = payload.gap
-
-    else:
-        start_time = None
-        end_time = None
-        slot_duration_minutes = None
-        gap_minutes = None
-
-    # ------------------------------------
     # Update existing availability
+    # or create new availability
     # ------------------------------------
 
     if existing_availability:
@@ -8861,42 +10127,204 @@ def save_parent_teacher_interview_teacher_availability(
         )
         existing_availability.gap_minutes = gap_minutes
 
+        availability_id = existing_availability.id
+
+    else:
+
+        new_availability = (
+            ParentTeacherInterviewTeacherAvailability(
+                center_code=center_code,
+                event_id=payload.event_id,
+                teacher_id=payload.teacher_id,
+                is_available=payload.is_available,
+                start_time=start_time,
+                end_time=end_time,
+                slot_duration_minutes=slot_duration_minutes,
+                gap_minutes=gap_minutes
+            )
+        )
+
+        db.add(new_availability)
+        db.flush()
+
+        availability_id = new_availability.id
+
+    # ------------------------------------
+    # Get existing bookings for this
+    # teacher/event
+    # ------------------------------------
+
+    booked_slot_rows = (
+        db.query(
+            ParentTeacherInterviewBooking.slot_id
+        )
+        .filter(
+            ParentTeacherInterviewBooking.center_code == center_code,
+            ParentTeacherInterviewBooking.event_id == payload.event_id,
+            ParentTeacherInterviewBooking.teacher_id == payload.teacher_id
+        )
+        .all()
+    )
+
+    booked_slot_ids = {
+        row[0]
+        for row in booked_slot_rows
+    }
+
+    # ------------------------------------
+    # Get existing slots
+    # ------------------------------------
+
+    existing_slots = (
+        db.query(ParentTeacherInterviewSlot)
+        .filter(
+            ParentTeacherInterviewSlot.center_code == center_code,
+            ParentTeacherInterviewSlot.event_id == payload.event_id,
+            ParentTeacherInterviewSlot.teacher_id == payload.teacher_id
+        )
+        .all()
+    )
+
+    existing_slots_by_time = {
+        (
+            slot.start_time,
+            slot.end_time
+        ): slot
+        for slot in existing_slots
+    }
+
+    # ------------------------------------
+    # Teacher unavailable
+    # ------------------------------------
+
+    if not payload.is_available:
+
+        for slot in existing_slots:
+
+            if slot.id not in booked_slot_ids:
+                slot.is_available = False
+
         db.commit()
-        db.refresh(existing_availability)
 
         return {
-            "message": (
-                "Teacher availability updated successfully."
-            ),
-            "availability_id": existing_availability.id
+            "message": "Teacher availability updated successfully.",
+            "availability_id": availability_id,
+            "slots_created": 0,
+            "slots_updated": len(existing_slots)
         }
 
     # ------------------------------------
-    # Create new availability
+    # Generate desired slots
     # ------------------------------------
 
-    new_availability = (
-        ParentTeacherInterviewTeacherAvailability(
+    current_datetime = datetime.combine(
+        datetime.today().date(),
+        start_time
+    )
+
+    end_datetime = datetime.combine(
+        datetime.today().date(),
+        end_time
+    )
+
+    slot_duration = timedelta(
+        minutes=slot_duration_minutes
+    )
+
+    slot_gap = timedelta(
+        minutes=gap_minutes
+    )
+
+    desired_slots = []
+
+    while current_datetime + slot_duration <= end_datetime:
+
+        slot_start = current_datetime.time()
+        slot_end = (
+            current_datetime + slot_duration
+        ).time()
+
+        desired_slots.append(
+            (
+                slot_start,
+                slot_end
+            )
+        )
+
+        current_datetime = (
+            current_datetime
+            + slot_duration
+            + slot_gap
+        )
+
+    # ------------------------------------
+    # Create/update actual DB slots
+    # ------------------------------------
+
+    slots_created = 0
+    slots_updated = 0
+
+    desired_slot_keys = set(desired_slots)
+
+    # Disable existing unbooked slots that
+    # are no longer part of the new availability.
+    for slot in existing_slots:
+
+        slot_key = (
+            slot.start_time,
+            slot.end_time
+        )
+
+        if slot_key not in desired_slot_keys:
+
+            if slot.id not in booked_slot_ids:
+                slot.is_available = False
+
+            continue
+
+        # Existing desired slot
+        if slot.id in booked_slot_ids:
+            slot.is_available = False
+        else:
+            slot.is_available = True
+
+        slots_updated += 1
+
+    # Create missing desired slots
+    for slot_start, slot_end in desired_slots:
+
+        slot_key = (
+            slot_start,
+            slot_end
+        )
+
+        if slot_key in existing_slots_by_time:
+            continue
+
+        new_slot = ParentTeacherInterviewSlot(
             center_code=center_code,
             event_id=payload.event_id,
             teacher_id=payload.teacher_id,
-            is_available=payload.is_available,
-            start_time=start_time,
-            end_time=end_time,
-            slot_duration_minutes=slot_duration_minutes,
-            gap_minutes=gap_minutes
+            start_time=slot_start,
+            end_time=slot_end,
+            is_available=True
         )
-    )
 
-    db.add(new_availability)
+        db.add(new_slot)
+        slots_created += 1
+
+    # ------------------------------------
+    # Commit everything together
+    # ------------------------------------
+
     db.commit()
-    db.refresh(new_availability)
 
     return {
-        "message": "Teacher availability saved successfully.",
-        "availability_id": new_availability.id
+        "message": "Teacher availability and interview slots saved successfully.",
+        "availability_id": availability_id,
+        "slots_created": slots_created,
+        "slots_updated": slots_updated
     }
-
 
 @app.get("/parent-teacher-interview/teacher-availability")
 def get_parent_teacher_interview_teacher_availability(
@@ -8908,21 +10336,41 @@ def get_parent_teacher_interview_teacher_availability(
 
     availability = (
         db.query(
-            ParentTeacherInterviewTeacherAvailability
+            ParentTeacherInterviewTeacherAvailability,
+            CenterTeacher.full_name.label("teacher_name")
+        )
+        .join(
+            CenterTeacher,
+            CenterTeacher.id ==
+            ParentTeacherInterviewTeacherAvailability.teacher_id
         )
         .filter(
             ParentTeacherInterviewTeacherAvailability.center_code
             == center_code,
-
             ParentTeacherInterviewTeacherAvailability.event_id
-            == event_id
+            == event_id,
+            CenterTeacher.center_code == center_code
         )
         .all()
     )
 
     return {
-        "availability": availability
+        "availability": [
+            {
+                "id": record.id,
+                "event_id": record.event_id,
+                "teacher_id": record.teacher_id,
+                "teacher_name": teacher_name,
+                "is_available": record.is_available,
+                "start_time": record.start_time,
+                "end_time": record.end_time,
+                "slot_duration_minutes": record.slot_duration_minutes,
+                "gap_minutes": record.gap_minutes,
+            }
+            for record, teacher_name in availability
+        ]
     }
+
 @app.get("/parent-teacher-interview/teachers")
 def get_parent_teacher_interview_teachers(
     center_code: str,
@@ -8947,6 +10395,162 @@ def get_parent_teacher_interview_teachers(
             }
             for teacher in teachers
         ]
+    }
+
+@app.get("/parent-teacher-interview/completed-events/{event_id}/bookings")
+def get_completed_parent_teacher_interview_bookings(
+    event_id: int,
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    bookings = (
+        db.query(ParentTeacherInterviewBooking)
+        .filter(
+            ParentTeacherInterviewBooking.event_id == event_id,
+            ParentTeacherInterviewBooking.center_code == center_code,
+        )
+        .all()
+    )
+
+    results = []
+
+    for booking in bookings:
+
+        student = (
+            db.query(Student)
+            .filter(
+                Student.student_id == booking.student_id,
+                Student.center_code == center_code,
+            )
+            .first()
+        )
+
+        teacher = (
+            db.query(CenterTeacher)
+            .filter(
+                CenterTeacher.id == booking.teacher_id,
+                CenterTeacher.center_code == center_code,
+            )
+            .first()
+        )
+
+        slot = (
+            db.query(ParentTeacherInterviewSlot)
+            .filter(
+                ParentTeacherInterviewSlot.id == booking.slot_id,
+                ParentTeacherInterviewSlot.event_id == event_id,
+                ParentTeacherInterviewSlot.center_code == center_code,
+            )
+            .first()
+        )
+
+        if not student or not teacher or not slot:
+            continue
+
+        results.append(
+            {
+                "booking_id": booking.id,
+                "teacher": teacher.full_name,
+                "class_name": student.class_name,
+                "student": student.name,
+                "parent": booking.parent_email,
+                "status": (
+                    "Booked"
+                    if booking.booking_status == "BOOKED"
+                    else booking.booking_status
+                ),
+                "start_time": slot.start_time,
+                "end_time": slot.end_time,
+            }
+        )
+
+    return {
+        "bookings": results
+    }
+
+
+@app.get("/parent-teacher-interview/completed-events")
+def get_completed_parent_teacher_interview_events(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    # --------------------------------------------------
+    # Get today's date
+    # --------------------------------------------------
+    today = date.today()
+
+    print(
+        f"[PTI EVENT HISTORY] Checking completed events "
+        f"for center {center_code}"
+    )
+    print(
+        f"[PTI EVENT HISTORY] Current date: {today}"
+    )
+
+    # --------------------------------------------------
+    # Automatically mark past events as COMPLETED
+    #
+    # An event is considered completed when its
+    # calendar date has passed.
+    # --------------------------------------------------
+
+    events_to_complete = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.center_code == center_code,
+            ParentTeacherInterviewEvent.event_date < today,
+            ParentTeacherInterviewEvent.status != "COMPLETED"
+        )
+        .all()
+    )
+
+    for event in events_to_complete:
+        print(
+            f"[PTI EVENT HISTORY] Marking event "
+            f"{event.id} ({event.name}) as COMPLETED"
+        )
+
+        event.status = "COMPLETED"
+
+    # --------------------------------------------------
+    # Save status changes
+    # --------------------------------------------------
+
+    if events_to_complete:
+        db.commit()
+
+        print(
+            f"[PTI EVENT HISTORY] Updated "
+            f"{len(events_to_complete)} event(s) to COMPLETED"
+        )
+
+    # --------------------------------------------------
+    # Get all completed events for this center
+    # --------------------------------------------------
+
+    events = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.center_code == center_code,
+            ParentTeacherInterviewEvent.status == "COMPLETED"
+        )
+        .order_by(
+            ParentTeacherInterviewEvent.event_date.desc()
+        )
+        .all()
+    )
+
+    print(
+        f"[PTI EVENT HISTORY] Completed events found: "
+        f"{len(events)}"
+    )
+
+    # --------------------------------------------------
+    # Return completed events
+    # --------------------------------------------------
+
+    return {
+        "events": events
     }
 
 @app.get("/parent-teacher-interview/events")
@@ -36567,6 +38171,8 @@ def generate_pdf_from_html(html_content: str) -> str:
 from sendgrid.helpers.mail import Mail, Email, Attachment, FileContent, FileName, FileType, Disposition
 import base64
 
+
+
 def send_homework_support_invitation_email(
     to_email: str
 ):
@@ -36662,6 +38268,217 @@ def send_homework_support_invitation_email(
 
         raise
 
+@app.post("/parent-teacher-interview/send-invitations")
+def send_parent_teacher_interview_invitations(
+    request: ParentTeacherInterviewSendInvitationsRequest,
+    db: Session = Depends(get_db)
+):
+    center_code = request.center_code.strip()
+
+    if not request.student_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No students were selected."
+        )
+
+    # Verify the event belongs to this center
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == request.event_id,
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    sent_count = 0
+    failed_count = 0
+    results = []
+
+    for student_id in request.student_ids:
+
+        # Find the student using the actual Student.student_id
+        student = (
+            db.query(Student)
+            .filter(
+                Student.student_id == student_id,
+                Student.center_code == center_code,
+                Student.is_active == True
+            )
+            .first()
+        )
+
+        if not student:
+            results.append({
+                "student_id": student_id,
+                "status": "FAILED",
+                "message": "Student not found."
+            })
+            failed_count += 1
+            continue
+
+        if not student.parent_email:
+            results.append({
+                "student_id": student.student_id,
+                "status": "FAILED",
+                "message": "Parent email not available."
+            })
+            failed_count += 1
+            continue
+
+        # Find existing invitation for this event/student
+        invitation = (
+            db.query(ParentTeacherInterviewInvitation)
+            .filter(
+                ParentTeacherInterviewInvitation.event_id ==
+                request.event_id,
+
+                ParentTeacherInterviewInvitation.student_id ==
+                student.student_id,
+
+                ParentTeacherInterviewInvitation.center_code ==
+                center_code
+            )
+            .first()
+        )
+
+        # Create invitation record if it does not exist
+        if not invitation:
+            invitation = ParentTeacherInterviewInvitation(
+                center_code=center_code,
+                event_id=request.event_id,
+                student_id=student.student_id,
+                parent_email=student.parent_email,
+                status="NOT_SENT"
+            )
+
+            db.add(invitation)
+            db.flush()
+
+        else:
+            invitation.parent_email = student.parent_email
+
+        # Do not send again if already sent
+        if invitation.status == "SENT":
+            results.append({
+                "student_id": student.student_id,
+                "parent_email": student.parent_email,
+                "status": "ALREADY_SENT"
+            })
+            continue
+
+        # Temporary development booking URL
+        booking_link = (
+            "http://localhost:5173/parent-teacher-interview"
+            f"?event_id={request.event_id}"
+            f"&student_id={student.student_id}"
+        )
+
+        subject = (
+            f"{event.name} - Parent Teacher Interview Booking"
+        )
+
+        body = f"""
+            <p>Dear Parent,</p>
+
+            <p>
+                You are invited to book a parent-teacher interview
+                for <strong>{student.name}</strong>.
+            </p>
+
+            <p>
+                <strong>Event:</strong> {event.name}<br>
+                <strong>Date:</strong> {event.event_date}
+            </p>
+
+            <p>
+                Please use the following link to select an available
+                interview time:
+            </p>
+
+            <p>
+                <a href="{booking_link}">
+                    Book Parent-Teacher Interview
+                </a>
+            </p>
+
+            <p>Thank you.</p>
+
+            <p>Gem Kids Academy</p>
+        """
+
+        try:
+            # -------------------------------------------------
+            # Send through your existing SendGrid setup
+            # -------------------------------------------------
+
+            message = Mail(
+                from_email="noreply@gemkidsacademy.com.au",
+                to_emails=student.parent_email,
+                subject=subject,
+                html_content=body,
+            )
+
+            message.reply_to = Email(
+                "do-not-reply@gemkidsacademy.com.au"
+            )
+
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+
+            response = sg.send(message)
+
+            print(
+                f"[INFO] Parent-teacher interview invitation sent "
+                f"to {student.parent_email}, "
+                f"status code {response.status_code}"
+            )
+
+            # -------------------------------------------------
+            # Mark invitation as sent
+            # -------------------------------------------------
+
+            invitation.status = "SENT"
+            invitation.sent_at = datetime.utcnow()
+
+            sent_count += 1
+
+            results.append({
+                "student_id": student.student_id,
+                "parent_email": student.parent_email,
+                "status": "SENT"
+            })
+
+        except Exception as error:
+
+            print(
+                f"[ERROR] Failed to send parent-teacher interview "
+                f"invitation to {student.parent_email}: {error}"
+            )
+
+            failed_count += 1
+
+            results.append({
+                "student_id": student.student_id,
+                "parent_email": student.parent_email,
+                "status": "FAILED",
+                "message": "Unable to send email."
+            })
+
+    db.commit()
+
+    return {
+        "message": "Invitation processing completed.",
+        "event_id": request.event_id,
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+        "results": results
+    }
 
 def send_report_email_with_pdf(
     to_email: str,
@@ -115106,6 +116923,7 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
             "parent_email": student.parent_email
         }
     }    
+
 @app.post("/interview-booking/admin/login")
 def interview_booking_admin_login(
     data: InterviewAdminLoginRequest,
