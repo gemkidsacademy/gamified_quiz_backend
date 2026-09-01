@@ -38177,10 +38177,10 @@ def send_homework_support_invitation_email(
     to_email: str
 ):
     homework_support_url = (
-        "https://homework.gemkidsacademy.com.au/"
-        "homework-support/"
+        "https://gemai.gemkidsacademy.com.au"
+        
     )
-
+    
     message = Mail(
         from_email="noreply@gemkidsacademy.com.au",
         to_emails=to_email,
@@ -38375,7 +38375,7 @@ def send_parent_teacher_interview_invitations(
 
         # Temporary development booking URL
         booking_link = (
-            "http://localhost:5173/parent-teacher-interview"
+            "https://gemai.gemkidsacademy.com.au/parent-teacher-interview"
             f"?event_id={request.event_id}"
             f"&student_id={student.student_id}"
         )
