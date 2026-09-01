@@ -1190,6 +1190,7 @@ class ParentTeacherInterviewTeacherAllocationRequest(BaseModel):
     teacher_id: int
     class_id: int
     class_year_id: int
+    class_day: str
 
 
 class ParentTeacherInterviewReminderSettingsRequest(BaseModel):
@@ -1239,6 +1240,7 @@ class ParentTeacherInterviewTeacherAllocation(Base):
         nullable=False,
         index=True
     )
+    class_day = Column(String, nullable=True)
 
     created_at = Column(
         DateTime,
@@ -8839,7 +8841,94 @@ def send_otp_sms(phone_number: str, otp: int):
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
 
+@app.get("/parent-teacher-interview/class-days")
+def get_parent_teacher_interview_class_days(
+    center_code: str,
+    class_name: str,
+    class_year: str,
+    db: Session = Depends(get_db)
+):
+    print("\n========== CLASS DAYS DEBUG ==========")
+    print(f"RAW center_code: {repr(center_code)}")
+    print(f"RAW class_name: {repr(class_name)}")
+    print(f"RAW class_year: {repr(class_year)}")
 
+    center_code = center_code.strip()
+    class_name = class_name.strip()
+    class_year = class_year.strip()
+
+    print(f"CLEAN center_code: {repr(center_code)}")
+    print(f"CLEAN class_name: {repr(class_name)}")
+    print(f"CLEAN class_year: {repr(class_year)}")
+
+    # Check active students matching center + class + year,
+    # before applying the class_day filters.
+    matching_students = (
+        db.query(
+            Student.id,
+            Student.student_id,
+            Student.name,
+            Student.class_name,
+            Student.student_year,
+            Student.class_day,
+            Student.center_code,
+            Student.is_active,
+        )
+        .filter(
+            Student.center_code == center_code,
+            Student.class_name == class_name,
+            Student.student_year == class_year,
+            Student.is_active == True,
+        )
+        .all()
+    )
+
+    print(f"ACTIVE MATCHING STUDENTS COUNT: {len(matching_students)}")
+
+    for student in matching_students:
+        print(
+            "ACTIVE STUDENT:",
+            {
+                "id": student.id,
+                "student_id": student.student_id,
+                "name": student.name,
+                "center_code": student.center_code,
+                "class_name": student.class_name,
+                "student_year": student.student_year,
+                "is_active": student.is_active,
+                "class_day": repr(student.class_day),
+            }
+        )
+
+    # Get distinct class days only from ACTIVE students
+    # who have a non-empty class_day.
+    class_days = (
+        db.query(Student.class_day)
+        .filter(
+            Student.center_code == center_code,
+            Student.class_name == class_name,
+            Student.student_year == class_year,
+            Student.is_active == True,
+            Student.class_day.isnot(None),
+            Student.class_day != "",
+        )
+        .distinct()
+        .order_by(Student.class_day.asc())
+        .all()
+    )
+
+    result = [
+        day[0]
+        for day in class_days
+    ]
+
+    print(f"ACTIVE CLASS DAYS QUERY RESULT: {result}")
+    print(f"ACTIVE CLASS DAYS COUNT: {len(result)}")
+    print("======================================\n")
+
+    return {
+        "class_days": result
+    }
 @app.get("/parent-teacher-interview/completed-events/{event_id}/summary")
 def get_completed_parent_teacher_interview_event_summary(
     event_id: int,
@@ -9601,6 +9690,7 @@ def get_parent_teacher_interview_bookings(
         "bookings": response_bookings
     }
 
+
 @app.get("/parent-teacher-interview/teacher-allocations")
 def get_parent_teacher_interview_teacher_allocations(
     center_code: str,
@@ -9651,6 +9741,7 @@ def get_parent_teacher_interview_teacher_allocations(
             ParentTeacherInterviewTeacherAllocation.teacher_id,
             ParentTeacherInterviewTeacherAllocation.class_id,
             ParentTeacherInterviewTeacherAllocation.class_year_id,
+            ParentTeacherInterviewTeacherAllocation.class_day,
             CenterTeacher.full_name,
             Class.class_name,
             ClassYearExamModule.year_name
@@ -9671,6 +9762,7 @@ def get_parent_teacher_interview_teacher_allocations(
                 "class_name": class_name,
                 "class_year_id": allocation.class_year_id,
                 "class_year": class_year,
+                "class_day": allocation.class_day,
                 "parent_count": parent_count,
             }
             for (
@@ -9683,12 +9775,16 @@ def get_parent_teacher_interview_teacher_allocations(
         ]
     }
 
+
+
+
 @app.post("/parent-teacher-interview/teacher-allocations")
 def create_parent_teacher_interview_teacher_allocation(
     payload: ParentTeacherInterviewTeacherAllocationRequest,
     db: Session = Depends(get_db)
 ):
     center_code = payload.center_code.strip()
+    class_day = payload.class_day.strip() if payload.class_day else None
 
     # Validate teacher belongs to this center
     teacher = (
@@ -9745,6 +9841,13 @@ def create_parent_teacher_interview_teacher_allocation(
             detail="Selected class year does not belong to the selected class."
         )
 
+    # Make sure a class day was selected
+    if not class_day:
+        raise HTTPException(
+            status_code=400,
+            detail="Class day is required."
+        )
+
     # Prevent duplicate allocation
     existing_allocation = (
         db.query(
@@ -9775,7 +9878,8 @@ def create_parent_teacher_interview_teacher_allocation(
             center_code=center_code,
             teacher_id=payload.teacher_id,
             class_id=payload.class_id,
-            class_year_id=payload.class_year_id
+            class_year_id=payload.class_year_id,
+            class_day=class_day
         )
     )
 
@@ -9787,6 +9891,7 @@ def create_parent_teacher_interview_teacher_allocation(
         "message": "Teacher allocation created successfully.",
         "allocation_id": new_allocation.id
     }
+
 
 @app.delete("/parent-teacher-interview/teacher-allocations/{allocation_id}")
 def delete_parent_teacher_interview_teacher_allocation(
