@@ -234,6 +234,7 @@ QuestionSchemaWithClassYear = {
     "additionalProperties": False
 }
 
+
 # -----------------------------
 # Google Cloud Storage Setup
 # -----------------------------
@@ -244,6 +245,7 @@ if not service_account_json:
 
 # 2️⃣ Replace literal "\n" with actual newlines for the private key
 service_account_info = json.loads(service_account_json)
+
 service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
 
 # 3️⃣ Initialize GCS client with credentials
@@ -258,6 +260,67 @@ gcs_bucket = gcs_client.bucket(BUCKET_NAME)
 
 print(f"✅ Initialized GCS client for bucket: {gcs_bucket}")
 
+
+# -----------------------------
+# Notification Google Cloud Storage Setup
+# -----------------------------
+
+NOTIFICATION_BUCKET_NAME = os.environ.get(
+    "NOTIFICATION_BUCKET_NAME"
+)
+
+notification_service_account_json = os.environ.get(
+    "NOTIFICATION_GOOGLE_APPLICATION_CREDENTIALS_JSON"
+)
+
+if not NOTIFICATION_BUCKET_NAME:
+    raise ValueError(
+        "Environment variable 'NOTIFICATION_BUCKET_NAME' is missing."
+    )
+
+if not notification_service_account_json:
+    raise ValueError(
+        "Environment variable "
+        "'NOTIFICATION_GOOGLE_APPLICATION_CREDENTIALS_JSON' is missing."
+    )
+
+notification_service_account_info = json.loads(
+    notification_service_account_json
+)
+
+notification_service_account_info["private_key"] = (
+    notification_service_account_info["private_key"]
+    .replace("\\n", "\n")
+)
+
+notification_gcs_client = storage.Client(
+    credentials=Credentials.from_service_account_info(
+        notification_service_account_info
+    ),
+    project=notification_service_account_info["project_id"]
+)
+
+notification_gcs_bucket = notification_gcs_client.bucket(
+    NOTIFICATION_BUCKET_NAME
+)
+
+print("\n========== NOTIFICATION GCS CONFIG ==========")
+print(
+    f"Notification bucket: {NOTIFICATION_BUCKET_NAME}"
+)
+print(
+    "Notification credentials loaded: "
+    f"{bool(notification_service_account_json)}"
+)
+print(
+    "Notification project ID: "
+    f"{notification_service_account_info['project_id']}"
+)
+print(
+    "Notification client email: "
+    f"{notification_service_account_info['client_email']}"
+)
+print("=============================================\n")
 
 #-------------------------------- for Twilio
                           
@@ -1132,10 +1195,44 @@ drive_service = build("drive", "v3", credentials=creds)
 #DEMO_FOLDER_ID = "1sWrRxOeH3MEVtc75Vk5My7MoDUk41gmf"
 DEMO_FOLDER_ID = "1EweJn82tRvVD5DlHwdPKzc_uppXU5LKH"
 
+print("========== GCS CONFIG DEBUG ==========")
+print("BUCKET_NAME:", BUCKET_NAME)
+print(
+    "GOOGLE_APPLICATION_CREDENTIALS_JSON loaded:",
+    bool(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
+)
 
+if service_account_info:
+    print("GCS project_id:", service_account_info.get("project_id"))
+    print("GCS client_email:", service_account_info.get("client_email"))
+
+print("======================================")
 # ---------------------------
 # Models
 # --------------------------
+class GemAINotification(Base):
+    __tablename__ = "gem_ai_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=True)
+    text = Column(Text, nullable=True)
+    image_url = Column(Text, nullable=True)
+    display_mode = Column(String, nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+
 class ParentTeacherInterviewReminderLog(Base):
     __tablename__ = "parent_teacher_interview_reminder_logs"
 
@@ -8840,6 +8937,396 @@ def send_otp_sms(phone_number: str, otp: int):
         to=phone_number
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
+
+@app.post("/notifications")
+def create_notification(
+    notification: dict,
+    db: Session = Depends(get_db)
+):
+    try:
+        start_date = date.fromisoformat(notification["startDate"])
+        end_date = date.fromisoformat(notification["endDate"])
+
+        if end_date < start_date:
+            raise HTTPException(
+                status_code=400,
+                detail="End date cannot be before start date."
+            )
+
+        display_mode = notification["displayMode"]
+
+        if display_mode not in {"text", "image", "text-image"}:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid display mode."
+            )
+
+        if display_mode in {"image", "text-image"}:
+            if not notification.get("image"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="An image is required for this display mode."
+                )
+
+        if display_mode in {"text", "text-image"}:
+            if not notification.get("title"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Notification title is required."
+                )
+
+            if not notification.get("text"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Notification text is required."
+                )
+
+        record = GemAINotification(
+            title=notification.get("title"),
+            text=notification.get("text"),
+            image_url=notification.get("image"),
+            display_mode=display_mode,
+            start_date=start_date,
+            end_date=end_date,
+            active=notification.get("active", True),
+        )
+
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        return {
+            "status": "success",
+            "notification": {
+                "id": record.id,
+                "title": record.title,
+                "text": record.text,
+                "image": record.image_url,
+                "displayMode": record.display_mode,
+                "startDate": record.start_date.isoformat(),
+                "endDate": record.end_date.isoformat(),
+                "active": record.active,
+            },
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create notification: {str(e)}"
+        )
+@app.put("/notifications/{notification_id}")
+def update_notification(
+    notification_id: int,
+    notification: dict,
+    db: Session = Depends(get_db)
+):
+    record = (
+        db.query(GemAINotification)
+        .filter(GemAINotification.id == notification_id)
+        .first()
+    )
+
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail="Notification not found."
+        )
+
+    try:
+        start_date = date.fromisoformat(notification["startDate"])
+        end_date = date.fromisoformat(notification["endDate"])
+
+        if end_date < start_date:
+            raise HTTPException(
+                status_code=400,
+                detail="End date cannot be before start date."
+            )
+
+        record.title = notification.get("title")
+        record.text = notification.get("text")
+        record.image_url = notification.get("image")
+        record.display_mode = notification["displayMode"]
+        record.start_date = start_date
+        record.end_date = end_date
+        record.active = notification.get("active", True)
+
+        db.commit()
+        db.refresh(record)
+
+        return {
+            "status": "success",
+            "notification": {
+                "id": record.id,
+                "title": record.title,
+                "text": record.text,
+                "image": record.image_url,
+                "displayMode": record.display_mode,
+                "startDate": record.start_date.isoformat(),
+                "endDate": record.end_date.isoformat(),
+                "active": record.active,
+            },
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update notification: {str(e)}"
+        )
+
+@app.patch("/notifications/{notification_id}/active")
+def toggle_notification_active(
+    notification_id: int,
+    db: Session = Depends(get_db)
+):
+    record = (
+        db.query(GemAINotification)
+        .filter(GemAINotification.id == notification_id)
+        .first()
+    )
+
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail="Notification not found."
+        )
+
+    record.active = not record.active
+
+    db.commit()
+    db.refresh(record)
+
+    return {
+        "status": "success",
+        "id": record.id,
+        "active": record.active,
+    }
+
+@app.get("/notifications")
+def get_notifications(
+    db: Session = Depends(get_db)
+):
+    notifications = (
+        db.query(GemAINotification)
+        .order_by(GemAINotification.created_at.desc())
+        .all()
+    )
+
+    return {
+        "status": "success",
+        "notifications": [
+            {
+                "id": notification.id,
+                "title": notification.title,
+                "text": notification.text,
+                "image": notification.image_url,
+                "displayMode": notification.display_mode,
+                "startDate": notification.start_date.isoformat(),
+                "endDate": notification.end_date.isoformat(),
+                "active": notification.active,
+            }
+            for notification in notifications
+        ],
+    }
+
+@app.get("/test-notification-gcs")
+def test_notification_gcs():
+    print("\n========== NOTIFICATION GCS TEST ==========")
+    
+    try:
+        bucket = notification_gcs_client.bucket("gemai-notification-images")
+
+        print(f"Bucket object: {bucket}")
+        print(f"Bucket name: {bucket.name}")
+
+        # Force an authenticated request to Google Cloud.
+        exists = bucket.exists()
+
+        print(f"Bucket exists: {exists}")
+        print("===========================================\n")
+
+        return {
+            "success": True,
+            "bucket": bucket.name,
+            "exists": exists
+        }
+
+    except Exception as e:
+        print("\n========== NOTIFICATION GCS TEST FAILED ==========")
+        print(repr(e))
+        print("===================================================\n")
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+@app.get("/notifications/images")
+async def get_notification_images():
+    """
+    Return all PNG/JPG/JPEG images currently stored
+    in the notification GCS bucket.
+    """
+    print("\n========== NOTIFICATION IMAGES LIST ==========")
+
+    try:
+        bucket = notification_gcs_client.bucket(NOTIFICATION_BUCKET_NAME)
+
+        images = []
+
+        for blob in bucket.list_blobs():
+            filename = blob.name
+
+            extension = os.path.splitext(filename)[1].lower()
+
+            if extension not in {".png", ".jpg", ".jpeg"}:
+                continue
+
+            public_url = (
+                f"https://storage.googleapis.com/"
+                f"{NOTIFICATION_BUCKET_NAME}/{filename}"
+            )
+
+            images.append({
+                "filename": filename,
+                "url": public_url
+            })
+
+        print(
+            f"[NOTIFICATION] Found {len(images)} notification images"
+        )
+
+        print("===============================================\n")
+
+        return {
+            "status": "success",
+            "images": images
+        }
+
+    except Exception as e:
+        print(
+            "[NOTIFICATION] Failed to list images:",
+            str(e)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load notification images: {str(e)}"
+        )
+
+
+@app.post("/notifications/upload-image")
+async def upload_notification_image(
+    image: UploadFile = File(...)
+):
+    print("\n========== NOTIFICATION IMAGE UPLOAD ==========")
+    print(
+        f"[NOTIFICATION] Filename: {image.filename}"
+    )
+    print(
+        f"[NOTIFICATION] Content type: {image.content_type}"
+    )
+
+    if not image.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="No image file provided."
+        )
+
+    allowed_extensions = {
+        ".png",
+        ".jpg",
+        ".jpeg"
+    }
+
+    filename = image.filename.strip()
+    extension = os.path.splitext(filename)[1].lower()
+
+    if extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only PNG, JPG, and JPEG images are allowed."
+            )
+        )
+
+    allowed_content_types = {
+        "image/png",
+        "image/jpeg",
+    }
+
+    if image.content_type not in allowed_content_types:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid image type. Only PNG and "
+                "JPG/JPEG images are allowed."
+            )
+        )
+
+    try:
+        file_bytes = await image.read()
+
+        if not file_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail="The uploaded image is empty."
+            )
+
+        print(
+            f"[NOTIFICATION] File size: "
+            f"{len(file_bytes)} bytes"
+        )
+
+        # Use the dedicated notification GCS helper.
+        # This does NOT affect the Exam Module GCS upload.
+        gcs_url = upload_notification_image_to_gcs(
+            file_bytes,
+            filename,
+            image.content_type
+        )
+
+        print(
+            f"[NOTIFICATION] GCS URL: {gcs_url}"
+        )
+        print(
+            "===============================================\n"
+        )
+
+        return {
+            "status": "success",
+            "filename": filename,
+            "url": gcs_url
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print(
+            "[NOTIFICATION] Upload failed:",
+            str(e)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to upload notification image: "
+                f"{str(e)}"
+            )
+        )
+
+
+
+
 
 @app.get("/parent-teacher-interview/class-days")
 def get_parent_teacher_interview_class_days(
@@ -22774,6 +23261,69 @@ def upload_to_gcs(file_bytes: bytes, filename: str) -> str:
         print("[GCS ERROR] Upload failed:", str(e))
         print("================== GCS UPLOAD FAILED ==================\n")
         raise Exception(f"GCS upload failed: {str(e)}")
+
+
+
+
+NOTIFICATION_BUCKET_NAME = "gemai-notification-images"
+
+def upload_notification_image_to_gcs(
+    file_bytes: bytes,
+    filename: str,
+    content_type: str
+) -> str:
+    """Upload a notification image to the dedicated notification GCS bucket."""
+
+    print("\n========== NOTIFICATION GCS UPLOAD ==========")
+    print(f"[NOTIFICATION GCS] Filename: {filename}")
+    print(f"[NOTIFICATION GCS] Content type: {content_type}")
+    print(
+        f"[NOTIFICATION GCS] Bucket: "
+        f"{NOTIFICATION_BUCKET_NAME}"
+    )
+
+    clean_filename = sanitize_filename(filename)
+
+    unique_name = f"{uuid.uuid4()}_{clean_filename}"
+
+    print(
+        f"[NOTIFICATION GCS] Stored object: {unique_name}"
+    )
+
+    blob = notification_gcs_bucket.blob(unique_name)
+
+    try:
+        blob.upload_from_string(
+            file_bytes,
+            content_type=content_type
+        )
+
+        public_url = (
+            f"https://storage.googleapis.com/"
+            f"{NOTIFICATION_BUCKET_NAME}/{unique_name}"
+        )
+
+        print(
+            f"[NOTIFICATION GCS] Upload successful: "
+            f"{public_url}"
+        )
+        print("==============================================\n")
+
+        return public_url
+
+    except Exception as e:
+        print(
+            "[NOTIFICATION GCS] Upload failed:",
+            str(e)
+        )
+        print("==============================================\n")
+
+        raise Exception(
+            f"Notification GCS upload failed: {str(e)}"
+        )
+
+
+
 
 #api end points
 def get_days_for_class(db: Session, class_name: str):
