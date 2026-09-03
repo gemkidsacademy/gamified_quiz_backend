@@ -6,7 +6,8 @@ from passlib.context import CryptContext
 import uvicorn       
 import os
 from twilio.rest import Client
-
+import time
+from datetime import datetime, timedelta, time as datetime_time
 from zoneinfo import ZoneInfo
 SYDNEY_TZ = ZoneInfo("Australia/Sydney")
 # Google APIs
@@ -47,7 +48,7 @@ from docx.oxml.ns import qn
 import copy
 
 import pandas as pd
-import time
+
 import random 
 from datetime import datetime, time as datetime_time
 from sendgrid.helpers.mail import Mail
@@ -833,6 +834,11 @@ def homework_support_scheduler_job(
     current_week_number = (
         (current_date - term_start).days // 7
     ) + 1
+    week_start_date = term_start + timedelta(
+        weeks=current_week_number - 1
+    )
+
+    week_end_date = week_start_date + timedelta(days=6)
 
     print("\n--- CURRENT TERM WEEK ---")
     print(f"Current Date      : {current_date}")
@@ -934,7 +940,9 @@ def homework_support_scheduler_job(
 
         try:
             send_homework_support_invitation_email(
-                student.parent_email
+                student.parent_email,
+                week_start_date,
+                week_end_date
             )
 
         except Exception as e:
@@ -1274,16 +1282,30 @@ class ParentTeacherInterviewSendInvitationsRequest(BaseModel):
     event_id: int
     student_ids: list[str]
 
-class ParentTeacherInterviewBookingRequest(BaseModel):
+class ParentTeacherInterviewBookingChangeRequest(BaseModel):
     center_code: str
+    start_time: datetime_time
+    end_time: datetime_time
+
+
+class ParentTeacherInterviewBookingRequest(BaseModel):
+
+    center_code: str
+
     event_id: int
-    slot_id: int
+
+    start_time: datetime_time
+    end_time: datetime_time
+
     teacher_id: int
+
     student_id: str
+
     parent_email: str
 
 class ParentTeacherInterviewTeacherAllocationRequest(BaseModel):
     center_code: str
+    event_id: int
     teacher_id: int
     class_id: int
     class_year_id: int
@@ -1316,6 +1338,11 @@ class ParentTeacherInterviewTeacherAllocation(Base):
 
     center_code = Column(
         String,
+        nullable=False,
+        index=True
+    )
+    event_id = Column(
+        Integer,
         nullable=False,
         index=True
     )
@@ -1353,9 +1380,11 @@ class ParentTeacherInterviewTeacherAllocation(Base):
     __table_args__ = (
         UniqueConstraint(
             "center_code",
+            "event_id",
             "teacher_id",
             "class_id",
             "class_year_id",
+            "class_day",
             name="uq_parent_teacher_allocation"
         ),
     )
@@ -8937,6 +8966,148 @@ def send_otp_sms(phone_number: str, otp: int):
         to=phone_number
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
+@app.put("/parent-teacher-interview/bookings/{booking_id}")
+def change_parent_teacher_interview_booking(
+    booking_id: int,
+    request: ParentTeacherInterviewBookingChangeRequest,
+    db: Session = Depends(get_db)
+):
+    center_code = request.center_code.strip()
+
+    booking = (
+        db.query(ParentTeacherInterviewBooking)
+        .filter(
+            ParentTeacherInterviewBooking.id == booking_id,
+            ParentTeacherInterviewBooking.center_code == center_code
+        )
+        .first()
+    )
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+
+    current_slot = (
+        db.query(ParentTeacherInterviewSlot)
+        .filter(
+            ParentTeacherInterviewSlot.id == booking.slot_id,
+            ParentTeacherInterviewSlot.center_code == center_code
+        )
+        .first()
+    )
+
+    if not current_slot:
+        raise HTTPException(status_code=404, detail="Current interview slot not found.")
+
+    availability = (
+        db.query(ParentTeacherInterviewTeacherAvailability)
+        .filter(
+            ParentTeacherInterviewTeacherAvailability.center_code == center_code,
+            ParentTeacherInterviewTeacherAvailability.event_id == booking.event_id,
+            ParentTeacherInterviewTeacherAvailability.teacher_id == booking.teacher_id
+        )
+        .first()
+    )
+
+    if not availability or not availability.is_available:
+        raise HTTPException(
+            status_code=400,
+            detail="This teacher is not currently available for interviews."
+        )
+
+    if request.end_time <= request.start_time:
+        raise HTTPException(
+            status_code=400,
+            detail="End time must be later than start time."
+        )
+
+    requested_start = datetime.combine(
+        datetime.today().date(),
+        request.start_time
+    )
+    requested_end = datetime.combine(
+        datetime.today().date(),
+        request.end_time
+    )
+
+    availability_start = datetime.combine(
+        datetime.today().date(),
+        availability.start_time
+    )
+    availability_end = datetime.combine(
+        datetime.today().date(),
+        availability.end_time
+    )
+
+    if requested_start < availability_start or requested_end > availability_end:
+        raise HTTPException(
+            status_code=400,
+            detail="The selected time is outside the teacher's availability."
+        )
+
+    expected_duration = timedelta(
+        minutes=availability.slot_duration_minutes
+    )
+
+    if requested_end - requested_start != expected_duration:
+        raise HTTPException(
+            status_code=400,
+            detail="The selected time does not match the teacher's slot duration."
+        )
+
+    existing_booking = (
+        db.query(ParentTeacherInterviewBooking)
+        .join(
+            ParentTeacherInterviewSlot,
+            ParentTeacherInterviewSlot.id ==
+            ParentTeacherInterviewBooking.slot_id
+        )
+        .filter(
+            ParentTeacherInterviewBooking.center_code == center_code,
+            ParentTeacherInterviewBooking.event_id == booking.event_id,
+            ParentTeacherInterviewBooking.teacher_id == booking.teacher_id,
+            ParentTeacherInterviewBooking.id != booking.id,
+            ParentTeacherInterviewSlot.start_time == request.start_time,
+            ParentTeacherInterviewSlot.end_time == request.end_time
+        )
+        .first()
+    )
+
+    if existing_booking:
+        raise HTTPException(
+            status_code=400,
+            detail="This interview slot has already been booked."
+        )
+
+    current_slot.is_available = True
+
+    new_slot = ParentTeacherInterviewSlot(
+        center_code=center_code,
+        event_id=booking.event_id,
+        teacher_id=booking.teacher_id,
+        start_time=request.start_time,
+        end_time=request.end_time,
+        is_available=False
+    )
+
+    db.add(new_slot)
+    db.flush()
+
+    booking.slot_id = new_slot.id
+
+    db.commit()
+    db.refresh(booking)
+
+    return {
+        "message": "Interview booking changed successfully.",
+        "booking_id": booking.id,
+        "event_id": booking.event_id,
+        "slot_id": booking.slot_id,
+        "teacher_id": booking.teacher_id,
+        "student_id": booking.student_id,
+        "start_time": new_slot.start_time,
+        "end_time": new_slot.end_time,
+        "booking_status": booking.booking_status
+    }
 
 @app.post("/notifications")
 def create_notification(
@@ -9800,53 +9971,221 @@ def get_parent_teacher_interview_invitations(
 def get_parent_teacher_interview_slots(
     center_code: str,
     event_id: int,
+    student_id: str,
     db: Session = Depends(get_db)
 ):
     center_code = center_code.strip()
+    student_id = student_id.strip()
 
-    slots = (
+    # ------------------------------------
+    # Find student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
+        .filter(
+            Student.student_id == student_id,
+            Student.center_code == center_code,
+            Student.is_active == True
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found."
+        )
+
+    # ------------------------------------
+    # Find teacher allocation for student
+    # ------------------------------------
+
+    allocation = (
         db.query(
-            ParentTeacherInterviewSlot,
+            ParentTeacherInterviewTeacherAllocation,
             CenterTeacher.full_name.label("teacher_name")
+        )
+        .join(
+            Class,
+            Class.id ==
+            ParentTeacherInterviewTeacherAllocation.class_id
+        )
+        .join(
+            ClassYearExamModule,
+            ClassYearExamModule.id ==
+            ParentTeacherInterviewTeacherAllocation.class_year_id
         )
         .join(
             CenterTeacher,
             CenterTeacher.id ==
-            ParentTeacherInterviewSlot.teacher_id
+            ParentTeacherInterviewTeacherAllocation.teacher_id
         )
         .filter(
-            ParentTeacherInterviewSlot.center_code == center_code,
-            ParentTeacherInterviewSlot.event_id == event_id,
-            CenterTeacher.center_code == center_code
+            ParentTeacherInterviewTeacherAllocation.center_code
+            == center_code,
+
+            ParentTeacherInterviewTeacherAllocation.event_id
+            == event_id,
+
+            Class.center_code == center_code,
+            ClassYearExamModule.center_code == center_code,
+            CenterTeacher.center_code == center_code,
+
+            Class.class_name == student.class_name,
+            ClassYearExamModule.year_name == student.student_year,
+            ParentTeacherInterviewTeacherAllocation.class_day
+            == student.class_day
         )
-        .order_by(
-            ParentTeacherInterviewSlot.start_time.asc()
+        .first()
+    )
+
+    if not allocation:
+        return {
+            "slots": []
+        }
+
+    allocation_record, teacher_name = allocation
+
+    teacher_id = allocation_record.teacher_id
+
+    # ------------------------------------
+    # Get teacher availability
+    # ------------------------------------
+
+    availability = (
+        db.query(ParentTeacherInterviewTeacherAvailability)
+        .filter(
+            ParentTeacherInterviewTeacherAvailability.center_code
+            == center_code,
+
+            ParentTeacherInterviewTeacherAvailability.event_id
+            == event_id,
+
+            ParentTeacherInterviewTeacherAvailability.teacher_id
+            == teacher_id
+        )
+        .first()
+    )
+
+    if not availability or not availability.is_available:
+        return {
+            "slots": []
+        }
+
+    # ------------------------------------
+    # Generate available times
+    # ------------------------------------
+
+    current_datetime = datetime.combine(
+        datetime.today().date(),
+        availability.start_time
+    )
+
+    end_datetime = datetime.combine(
+        datetime.today().date(),
+        availability.end_time
+    )
+
+    slot_duration = timedelta(
+        minutes=availability.slot_duration_minutes
+    )
+
+    slot_gap = timedelta(
+        minutes=availability.gap_minutes
+    )
+
+    generated_slots = []
+
+    while current_datetime + slot_duration <= end_datetime:
+
+        slot_start = current_datetime.time()
+
+        slot_end = (
+            current_datetime + slot_duration
+        ).time()
+
+        generated_slots.append(
+            {
+                "start_time": slot_start,
+                "end_time": slot_end
+            }
+        )
+
+        current_datetime = (
+            current_datetime
+            + slot_duration
+            + slot_gap
+        )
+
+    # ------------------------------------
+    # Get already booked times
+    # ------------------------------------
+
+    booked_slots = (
+        db.query(
+            ParentTeacherInterviewSlot.start_time,
+            ParentTeacherInterviewSlot.end_time
+        )
+        .join(
+            ParentTeacherInterviewBooking,
+            ParentTeacherInterviewBooking.slot_id
+            == ParentTeacherInterviewSlot.id
+        )
+        .filter(
+            ParentTeacherInterviewSlot.center_code
+            == center_code,
+
+            ParentTeacherInterviewSlot.event_id
+            == event_id,
+
+            ParentTeacherInterviewSlot.teacher_id
+            == teacher_id
         )
         .all()
     )
 
+    booked_times = {
+        (
+            start_time,
+            end_time
+        )
+        for start_time, end_time in booked_slots
+    }
+
+    # ------------------------------------
+    # Return only currently available times
+    # ------------------------------------
+
     return {
         "slots": [
             {
-                "id": slot.id,
-                "center_code": slot.center_code,
-                "event_id": slot.event_id,
-                "teacher_id": slot.teacher_id,
+                "id": None,
+                "center_code": center_code,
+                "event_id": event_id,
+                "teacher_id": teacher_id,
                 "teacher_name": teacher_name,
-                "start_time": slot.start_time,
-                "end_time": slot.end_time,
-                "is_available": slot.is_available
+                "start_time": slot["start_time"],
+                "end_time": slot["end_time"],
+                "is_available": True
             }
-            for slot, teacher_name in slots
+            for slot in generated_slots
+            if (
+                slot["start_time"],
+                slot["end_time"]
+            ) not in booked_times
         ]
     }
-
 @app.post("/parent-teacher-interview/bookings")
 def create_parent_teacher_interview_booking(
     request: ParentTeacherInterviewBookingRequest,
     db: Session = Depends(get_db)
 ):
     center_code = request.center_code.strip()
+
+    # ------------------------------------
+    # Validate event
+    # ------------------------------------
 
     event = (
         db.query(ParentTeacherInterviewEvent)
@@ -9863,44 +10202,155 @@ def create_parent_teacher_interview_booking(
             detail="Interview event not found."
         )
 
-    slot = (
-        db.query(ParentTeacherInterviewSlot)
+    # ------------------------------------
+    # Find student
+    # ------------------------------------
+
+    student = (
+        db.query(Student)
         .filter(
-            ParentTeacherInterviewSlot.id == request.slot_id,
-            ParentTeacherInterviewSlot.event_id == request.event_id,
-            ParentTeacherInterviewSlot.teacher_id == request.teacher_id,
-            ParentTeacherInterviewSlot.center_code == center_code
+            Student.student_id == request.student_id,
+            Student.center_code == center_code,
+            Student.is_active == True
         )
         .first()
     )
 
-    if not slot:
+    if not student:
         raise HTTPException(
             status_code=404,
-            detail="Interview slot not found."
+            detail="Student not found."
         )
 
-    if not slot.is_available:
-        raise HTTPException(
-            status_code=400,
-            detail="This interview slot is no longer available."
-        )
+    # ------------------------------------
+    # Verify student's teacher allocation
+    # ------------------------------------
 
-    existing_slot_booking = (
-        db.query(ParentTeacherInterviewBooking)
+    allocation = (
+        db.query(
+            ParentTeacherInterviewTeacherAllocation
+        )
+        .join(
+            Class,
+            Class.id ==
+            ParentTeacherInterviewTeacherAllocation.class_id
+        )
+        .join(
+            ClassYearExamModule,
+            ClassYearExamModule.id ==
+            ParentTeacherInterviewTeacherAllocation.class_year_id
+        )
         .filter(
-            ParentTeacherInterviewBooking.event_id == request.event_id,
-            ParentTeacherInterviewBooking.slot_id == request.slot_id,
-            ParentTeacherInterviewBooking.center_code == center_code
+            ParentTeacherInterviewTeacherAllocation.center_code
+            == center_code,
+
+            ParentTeacherInterviewTeacherAllocation.event_id
+            == request.event_id,
+
+            ParentTeacherInterviewTeacherAllocation.teacher_id
+            == request.teacher_id,
+
+            Class.center_code == center_code,
+            ClassYearExamModule.center_code == center_code,
+
+            Class.class_name == student.class_name,
+            ClassYearExamModule.year_name == student.student_year,
+
+            ParentTeacherInterviewTeacherAllocation.class_day
+            == student.class_day
         )
         .first()
     )
 
-    if existing_slot_booking:
+    if not allocation:
         raise HTTPException(
             status_code=400,
-            detail="This interview slot has already been booked."
+            detail="This teacher is not assigned to this student for this event."
         )
+
+    # ------------------------------------
+    # Validate teacher availability
+    # ------------------------------------
+
+    availability = (
+        db.query(
+            ParentTeacherInterviewTeacherAvailability
+        )
+        .filter(
+            ParentTeacherInterviewTeacherAvailability.center_code
+            == center_code,
+
+            ParentTeacherInterviewTeacherAvailability.event_id
+            == request.event_id,
+
+            ParentTeacherInterviewTeacherAvailability.teacher_id
+            == request.teacher_id
+        )
+        .first()
+    )
+
+    if not availability or not availability.is_available:
+        raise HTTPException(
+            status_code=400,
+            detail="This teacher is not currently available for interviews."
+        )
+
+    # ------------------------------------
+    # Validate requested time
+    # ------------------------------------
+
+    if request.end_time <= request.start_time:
+        raise HTTPException(
+            status_code=400,
+            detail="End time must be later than start time."
+        )
+
+    requested_start = datetime.combine(
+        datetime.today().date(),
+        request.start_time
+    )
+
+    requested_end = datetime.combine(
+        datetime.today().date(),
+        request.end_time
+    )
+
+    availability_start = datetime.combine(
+        datetime.today().date(),
+        availability.start_time
+    )
+
+    availability_end = datetime.combine(
+        datetime.today().date(),
+        availability.end_time
+    )
+
+    if (
+        requested_start < availability_start
+        or requested_end > availability_end
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="The selected time is outside the teacher's availability."
+        )
+
+    # ------------------------------------
+    # Validate slot duration
+    # ------------------------------------
+
+    expected_duration = timedelta(
+        minutes=availability.slot_duration_minutes
+    )
+
+    if requested_end - requested_start != expected_duration:
+        raise HTTPException(
+            status_code=400,
+            detail="The selected time does not match the teacher's slot duration."
+        )
+
+    # ------------------------------------
+    # Check whether student already booked
+    # ------------------------------------
 
     existing_student_booking = (
         db.query(ParentTeacherInterviewBooking)
@@ -9918,10 +10368,57 @@ def create_parent_teacher_interview_booking(
             detail="This student already has an interview booking for this event."
         )
 
+    # ------------------------------------
+    # Check whether this time is already booked
+    # ------------------------------------
+
+    existing_slot_booking = (
+        db.query(ParentTeacherInterviewBooking)
+        .join(
+            ParentTeacherInterviewSlot,
+            ParentTeacherInterviewSlot.id ==
+            ParentTeacherInterviewBooking.slot_id
+        )
+        .filter(
+            ParentTeacherInterviewBooking.center_code == center_code,
+            ParentTeacherInterviewBooking.event_id == request.event_id,
+            ParentTeacherInterviewBooking.teacher_id == request.teacher_id,
+            ParentTeacherInterviewSlot.start_time == request.start_time,
+            ParentTeacherInterviewSlot.end_time == request.end_time
+        )
+        .first()
+    )
+
+    if existing_slot_booking:
+        raise HTTPException(
+            status_code=400,
+            detail="This interview slot has already been booked."
+        )
+
+    # ------------------------------------
+    # Create actual slot record
+    # ------------------------------------
+
+    slot = ParentTeacherInterviewSlot(
+        center_code=center_code,
+        event_id=request.event_id,
+        teacher_id=request.teacher_id,
+        start_time=request.start_time,
+        end_time=request.end_time,
+        is_available=False
+    )
+
+    db.add(slot)
+    db.flush()
+
+    # ------------------------------------
+    # Create booking
+    # ------------------------------------
+
     booking = ParentTeacherInterviewBooking(
         center_code=center_code,
         event_id=request.event_id,
-        slot_id=request.slot_id,
+        slot_id=slot.id,
         teacher_id=request.teacher_id,
         student_id=request.student_id,
         parent_email=request.parent_email.strip(),
@@ -9930,7 +10427,9 @@ def create_parent_teacher_interview_booking(
 
     db.add(booking)
 
-    slot.is_available = False
+    # ------------------------------------
+    # Commit slot + booking together
+    # ------------------------------------
 
     db.commit()
     db.refresh(booking)
@@ -9944,7 +10443,6 @@ def create_parent_teacher_interview_booking(
         "student_id": booking.student_id,
         "booking_status": booking.booking_status
     }
-
 @app.get("/parent-teacher-interview/bookings")
 def get_parent_teacher_interview_bookings(
     center_code: str,
@@ -10177,6 +10675,31 @@ def get_parent_teacher_interview_bookings(
         "bookings": response_bookings
     }
 
+@app.get("/parent-teacher-interview/events-with-id")
+def get_parent_teacher_interview_events(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    events = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .order_by(
+            ParentTeacherInterviewEvent.event_date.desc()
+        )
+        .all()
+    )
+
+    return {
+        "events": [
+            {
+                "id": event.id,
+                "name": event.name,
+            }
+            for event in events
+        ]
+    }
 
 @app.get("/parent-teacher-interview/teacher-allocations")
 def get_parent_teacher_interview_teacher_allocations(
@@ -10191,6 +10714,7 @@ def get_parent_teacher_interview_teacher_allocations(
             CenterTeacher.full_name.label("teacher_name"),
             Class.class_name.label("class_name"),
             ClassYearExamModule.year_name.label("class_year"),
+            ParentTeacherInterviewEvent.name.label("event_name"),
             func.count(
                 distinct(Student.parent_email)
             ).label("parent_count")
@@ -10210,18 +10734,25 @@ def get_parent_teacher_interview_teacher_allocations(
             ClassYearExamModule.id ==
             ParentTeacherInterviewTeacherAllocation.class_year_id
         )
+        .join(
+            ParentTeacherInterviewEvent,
+            ParentTeacherInterviewEvent.id
+            == ParentTeacherInterviewTeacherAllocation.event_id
+        )
         .outerjoin(
             Student,
             (Student.center_code == center_code)
             & (Student.class_name == Class.class_name)
             & (Student.student_year == ClassYearExamModule.year_name)
+            & (Student.class_day == ParentTeacherInterviewTeacherAllocation.class_day)
             & (Student.is_active == True)
         )
         .filter(
             ParentTeacherInterviewTeacherAllocation.center_code == center_code,
             CenterTeacher.center_code == center_code,
             Class.center_code == center_code,
-            ClassYearExamModule.center_code == center_code
+            ClassYearExamModule.center_code == center_code,
+            ParentTeacherInterviewEvent.center_code == center_code
         )
         .group_by(
             ParentTeacherInterviewTeacherAllocation.id,
@@ -10231,7 +10762,8 @@ def get_parent_teacher_interview_teacher_allocations(
             ParentTeacherInterviewTeacherAllocation.class_day,
             CenterTeacher.full_name,
             Class.class_name,
-            ClassYearExamModule.year_name
+            ClassYearExamModule.year_name,
+            ParentTeacherInterviewEvent.name,
         )
         .order_by(
             ParentTeacherInterviewTeacherAllocation.id.asc()
@@ -10243,6 +10775,8 @@ def get_parent_teacher_interview_teacher_allocations(
         "allocations": [
             {
                 "id": allocation.id,
+                "event_id": allocation.event_id,
+                "event_name": event_name,
                 "teacher_id": allocation.teacher_id,
                 "teacher_name": teacher_name,
                 "class_id": allocation.class_id,
@@ -10257,12 +10791,70 @@ def get_parent_teacher_interview_teacher_allocations(
                 teacher_name,
                 class_name,
                 class_year,
+                event_name,
                 parent_count
             ) in allocations
         ]
     }
 
 
+
+    
+
+@app.get("/parent-teacher-interview/teacher-assigned-students")
+def get_parent_teacher_interview_teacher_assigned_students(
+    center_code: str,
+    event_id: int,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    allocations = (
+        db.query(
+            ParentTeacherInterviewTeacherAllocation.teacher_id,
+            func.count(distinct(Student.id)).label("assigned_students")
+        )
+        .join(
+            Class,
+            Class.id == ParentTeacherInterviewTeacherAllocation.class_id
+        )
+        .join(
+            ClassYearExamModule,
+            ClassYearExamModule.id ==
+            ParentTeacherInterviewTeacherAllocation.class_year_id
+        )
+        .outerjoin(
+            Student,
+            (Student.center_code == center_code)
+            & (Student.class_name == Class.class_name)
+            & (Student.student_year == ClassYearExamModule.year_name)
+            & (
+                Student.class_day ==
+                ParentTeacherInterviewTeacherAllocation.class_day
+            )
+            & (Student.is_active == True)
+        )
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+            ParentTeacherInterviewTeacherAllocation.event_id == event_id,
+            Class.center_code == center_code,
+            ClassYearExamModule.center_code == center_code
+        )
+        .group_by(
+            ParentTeacherInterviewTeacherAllocation.teacher_id
+        )
+        .all()
+    )
+
+    return {
+        "assignments": [
+            {
+                "teacher_id": teacher_id,
+                "assigned_students": assigned_students
+            }
+            for teacher_id, assigned_students in allocations
+        ]
+    }
 
 
 @app.post("/parent-teacher-interview/teacher-allocations")
@@ -10271,6 +10863,22 @@ def create_parent_teacher_interview_teacher_allocation(
     db: Session = Depends(get_db)
 ):
     center_code = payload.center_code.strip()
+
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == payload.event_id,
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
     class_day = payload.class_day.strip() if payload.class_day else None
 
     # Validate teacher belongs to this center
@@ -10343,12 +10951,16 @@ def create_parent_teacher_interview_teacher_allocation(
         .filter(
             ParentTeacherInterviewTeacherAllocation.center_code
             == center_code,
+            ParentTeacherInterviewTeacherAllocation.event_id
+            == payload.event_id,
             ParentTeacherInterviewTeacherAllocation.teacher_id
             == payload.teacher_id,
             ParentTeacherInterviewTeacherAllocation.class_id
             == payload.class_id,
             ParentTeacherInterviewTeacherAllocation.class_year_id
-            == payload.class_year_id
+            == payload.class_year_id,
+            ParentTeacherInterviewTeacherAllocation.class_day
+            == class_day
         )
         .first()
     )
@@ -10363,6 +10975,7 @@ def create_parent_teacher_interview_teacher_allocation(
     new_allocation = (
         ParentTeacherInterviewTeacherAllocation(
             center_code=center_code,
+            event_id=payload.event_id,
             teacher_id=payload.teacher_id,
             class_id=payload.class_id,
             class_year_id=payload.class_year_id,
@@ -10419,6 +11032,21 @@ def update_parent_teacher_interview_teacher_allocation(
     db: Session = Depends(get_db)
 ):
     center_code = payload.center_code.strip()
+
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == payload.event_id,
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
 
     # Find existing allocation
     allocation = (
@@ -10490,9 +11118,11 @@ def update_parent_teacher_interview_teacher_allocation(
         db.query(ParentTeacherInterviewTeacherAllocation)
         .filter(
             ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+            ParentTeacherInterviewTeacherAllocation.event_id == payload.event_id,
             ParentTeacherInterviewTeacherAllocation.teacher_id == payload.teacher_id,
             ParentTeacherInterviewTeacherAllocation.class_id == payload.class_id,
             ParentTeacherInterviewTeacherAllocation.class_year_id == payload.class_year_id,
+            ParentTeacherInterviewTeacherAllocation.class_day == payload.class_day,
             ParentTeacherInterviewTeacherAllocation.id != allocation_id
         )
         .first()
@@ -10505,9 +11135,11 @@ def update_parent_teacher_interview_teacher_allocation(
         )
 
     # Update existing allocation
+    allocation.event_id = payload.event_id
     allocation.teacher_id = payload.teacher_id
     allocation.class_id = payload.class_id
     allocation.class_year_id = payload.class_year_id
+    allocation.class_day = payload.class_day.strip() if payload.class_day else None
 
     db.commit()
     db.refresh(allocation)
@@ -10574,6 +11206,7 @@ def get_parent_teacher_interview_class_years(
             for item in class_years
         ]
     }
+
 
 @app.post("/parent-teacher-interview/teacher-availability")
 def save_parent_teacher_interview_teacher_availability(
@@ -10742,180 +11375,14 @@ def save_parent_teacher_interview_teacher_availability(
         availability_id = new_availability.id
 
     # ------------------------------------
-    # Get existing bookings for this
-    # teacher/event
-    # ------------------------------------
-
-    booked_slot_rows = (
-        db.query(
-            ParentTeacherInterviewBooking.slot_id
-        )
-        .filter(
-            ParentTeacherInterviewBooking.center_code == center_code,
-            ParentTeacherInterviewBooking.event_id == payload.event_id,
-            ParentTeacherInterviewBooking.teacher_id == payload.teacher_id
-        )
-        .all()
-    )
-
-    booked_slot_ids = {
-        row[0]
-        for row in booked_slot_rows
-    }
-
-    # ------------------------------------
-    # Get existing slots
-    # ------------------------------------
-
-    existing_slots = (
-        db.query(ParentTeacherInterviewSlot)
-        .filter(
-            ParentTeacherInterviewSlot.center_code == center_code,
-            ParentTeacherInterviewSlot.event_id == payload.event_id,
-            ParentTeacherInterviewSlot.teacher_id == payload.teacher_id
-        )
-        .all()
-    )
-
-    existing_slots_by_time = {
-        (
-            slot.start_time,
-            slot.end_time
-        ): slot
-        for slot in existing_slots
-    }
-
-    # ------------------------------------
-    # Teacher unavailable
-    # ------------------------------------
-
-    if not payload.is_available:
-
-        for slot in existing_slots:
-
-            if slot.id not in booked_slot_ids:
-                slot.is_available = False
-
-        db.commit()
-
-        return {
-            "message": "Teacher availability updated successfully.",
-            "availability_id": availability_id,
-            "slots_created": 0,
-            "slots_updated": len(existing_slots)
-        }
-
-    # ------------------------------------
-    # Generate desired slots
-    # ------------------------------------
-
-    current_datetime = datetime.combine(
-        datetime.today().date(),
-        start_time
-    )
-
-    end_datetime = datetime.combine(
-        datetime.today().date(),
-        end_time
-    )
-
-    slot_duration = timedelta(
-        minutes=slot_duration_minutes
-    )
-
-    slot_gap = timedelta(
-        minutes=gap_minutes
-    )
-
-    desired_slots = []
-
-    while current_datetime + slot_duration <= end_datetime:
-
-        slot_start = current_datetime.time()
-        slot_end = (
-            current_datetime + slot_duration
-        ).time()
-
-        desired_slots.append(
-            (
-                slot_start,
-                slot_end
-            )
-        )
-
-        current_datetime = (
-            current_datetime
-            + slot_duration
-            + slot_gap
-        )
-
-    # ------------------------------------
-    # Create/update actual DB slots
-    # ------------------------------------
-
-    slots_created = 0
-    slots_updated = 0
-
-    desired_slot_keys = set(desired_slots)
-
-    # Disable existing unbooked slots that
-    # are no longer part of the new availability.
-    for slot in existing_slots:
-
-        slot_key = (
-            slot.start_time,
-            slot.end_time
-        )
-
-        if slot_key not in desired_slot_keys:
-
-            if slot.id not in booked_slot_ids:
-                slot.is_available = False
-
-            continue
-
-        # Existing desired slot
-        if slot.id in booked_slot_ids:
-            slot.is_available = False
-        else:
-            slot.is_available = True
-
-        slots_updated += 1
-
-    # Create missing desired slots
-    for slot_start, slot_end in desired_slots:
-
-        slot_key = (
-            slot_start,
-            slot_end
-        )
-
-        if slot_key in existing_slots_by_time:
-            continue
-
-        new_slot = ParentTeacherInterviewSlot(
-            center_code=center_code,
-            event_id=payload.event_id,
-            teacher_id=payload.teacher_id,
-            start_time=slot_start,
-            end_time=slot_end,
-            is_available=True
-        )
-
-        db.add(new_slot)
-        slots_created += 1
-
-    # ------------------------------------
-    # Commit everything together
+    # Commit availability only
     # ------------------------------------
 
     db.commit()
 
     return {
-        "message": "Teacher availability and interview slots saved successfully.",
-        "availability_id": availability_id,
-        "slots_created": slots_created,
-        "slots_updated": slots_updated
+        "message": "Teacher availability updated successfully.",
+        "availability_id": availability_id
     }
 
 @app.get("/parent-teacher-interview/teacher-availability")
@@ -11166,6 +11633,32 @@ def get_parent_teacher_interview_events(
         "events": events
     }
 
+@app.get("/parent-teacher-interview/events")
+def get_parent_teacher_interview_events(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    events = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .order_by(
+            ParentTeacherInterviewEvent.event_date.desc()
+        )
+        .all()
+    )
+
+    return {
+        "events": [
+            {
+                "id": event.id,
+                "name": event.name,
+            }
+            for event in events
+        ]
+    }
+
 @app.post("/parent-teacher-interview/events")
 def create_parent_teacher_interview_event(
     payload: ParentTeacherInterviewEventRequest,
@@ -11317,7 +11810,26 @@ def submit_homework_support_response(
     # Calculate current term week
     # ------------------------------------
 
-    current_date = datetime.utcnow().date()
+    scheduler_configuration = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code
+            == student.center_code
+        )
+        .first()
+    )
+
+    if not scheduler_configuration:
+        raise HTTPException(
+            status_code=404,
+            detail="Scheduler configuration not found for this centre."
+        )
+
+    local_now = datetime.now(
+        ZoneInfo(scheduler_configuration.timezone)
+    )
+
+    current_date = local_now.date()
 
     if (
         current_date < active_term.start_date
@@ -11354,6 +11866,94 @@ def submit_homework_support_response(
                 f"{current_week_number} is not configured."
             )
         )
+
+    # ------------------------------------
+    # Calculate current Homework Support
+    # week start
+    # ------------------------------------
+
+    current_week_start = (
+        active_term.start_date
+        + timedelta(
+            weeks=current_week_number - 1
+        )
+    )
+
+    # ------------------------------------
+    # Load booking cutoff
+    # ------------------------------------
+
+    WEEKDAY_NUMBERS = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6,
+    }
+
+    booking_cutoff = (
+        db.query(HomeworkSupportBookingCutoff)
+        .filter(
+            HomeworkSupportBookingCutoff.center_code
+            == student.center_code,
+            HomeworkSupportBookingCutoff.academic_term_id
+            == active_term.id
+        )
+        .first()
+    )
+
+    if not booking_cutoff:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Homework Support booking cutoff "
+                "is not configured."
+            )
+        )
+
+    cutoff_weekday_number = WEEKDAY_NUMBERS[
+        booking_cutoff.cutoff_day.strip().capitalize()
+    ]
+
+    cutoff_day_offset = (
+        cutoff_weekday_number
+        - current_week_start.weekday()
+    ) % 7
+
+    cutoff_date = (
+        current_week_start
+        + timedelta(days=cutoff_day_offset)
+    )
+
+    cutoff_datetime = datetime.combine(
+        cutoff_date,
+        booking_cutoff.cutoff_time
+    ).replace(
+        tzinfo=local_now.tzinfo
+    )
+
+    # ------------------------------------
+    # Check booking cutoff
+    # ------------------------------------
+
+    if local_now >= cutoff_datetime:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Homework Support bookings are now closed "
+                "for this week."
+            )
+        )
+
+    # ------------------------------------
+    # Validate response
+    # ------------------------------------
+
+    # ------------------------------------
+    # Validate response
+    # ------------------------------------
 
     # ------------------------------------
     # Validate response
@@ -11655,6 +12255,74 @@ def get_homework_support_time_slots(
             detail=(
                 f"Homework Support Week "
                 f"{current_week_number} is not configured."
+            )
+        )
+
+    # ------------------------------------
+    # Load booking cutoff
+    # ------------------------------------
+
+    WEEKDAY_NUMBERS = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6,
+    }
+
+    booking_cutoff = (
+        db.query(HomeworkSupportBookingCutoff)
+        .filter(
+            HomeworkSupportBookingCutoff.center_code
+            == student.center_code,
+            HomeworkSupportBookingCutoff.academic_term_id
+            == active_term.id
+        )
+        .first()
+    )
+
+    if not booking_cutoff:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Homework Support booking cutoff "
+                "is not configured."
+            )
+        )
+
+    cutoff_weekday_number = WEEKDAY_NUMBERS[
+        booking_cutoff.cutoff_day.strip().capitalize()
+    ]
+
+    cutoff_day_offset = (
+        cutoff_weekday_number
+        - current_week_start.weekday()
+    ) % 7
+
+    cutoff_date = (
+        current_week_start
+        + timedelta(days=cutoff_day_offset)
+    )
+
+    cutoff_datetime = datetime.combine(
+        cutoff_date,
+        booking_cutoff.cutoff_time
+    ).replace(
+        tzinfo=local_now.tzinfo
+    )
+
+    # ------------------------------------
+    # Check booking cutoff
+    # ------------------------------------
+
+    if local_now >= cutoff_datetime:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Homework Support bookings are now closed "
+                "for this week."
             )
         )
 
@@ -12297,7 +12965,18 @@ def get_homework_support_parent_dashboard(
     )
 
     current_date = local_now.date()
+    
 
+    print("========== HOMEWORK SUPPORT DEBUG ==========")
+    print(f"[HOMEWORK DEBUG] Parent email: {parent_email}")
+    print(f"[HOMEWORK DEBUG] Student: {student.student_id}")
+    print(f"[HOMEWORK DEBUG] Center: {student.center_code}")
+    print(f"[HOMEWORK DEBUG] Timezone: {scheduler_configuration.timezone}")
+    print(f"[HOMEWORK DEBUG] Local datetime: {local_now}")
+    print(f"[HOMEWORK DEBUG] Local date: {current_date}")
+    print(f"[HOMEWORK DEBUG] Active term ID: {active_term.id}")
+    print(f"[HOMEWORK DEBUG] Active term start: {active_term.start_date}")
+    print(f"[HOMEWORK DEBUG] Active term end: {active_term.end_date}")
     # ------------------------------------
     # Check current date is inside term
     # ------------------------------------
@@ -12358,6 +13037,77 @@ def get_homework_support_parent_dashboard(
         )
     )
 
+    # ------------------------------------
+    # Check Homework Support booking cutoff
+    # ------------------------------------
+
+    WEEKDAY_NUMBERS = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6,
+    }
+
+    booking_cutoff = (
+        db.query(HomeworkSupportBookingCutoff)
+        .filter(
+            HomeworkSupportBookingCutoff.center_code
+            == student.center_code,
+            HomeworkSupportBookingCutoff.academic_term_id
+            == active_term.id
+        )
+        .first()
+    )
+
+    if not booking_cutoff:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Homework Support booking cutoff "
+                "is not configured."
+            )
+        )
+
+    cutoff_weekday_number = WEEKDAY_NUMBERS[
+        booking_cutoff.cutoff_day.strip().capitalize()
+    ]
+
+    cutoff_day_offset = (
+        cutoff_weekday_number
+        - current_week_start.weekday()
+    ) % 7
+
+    cutoff_date = (
+        current_week_start
+        + timedelta(days=cutoff_day_offset)
+    )
+
+    cutoff_datetime = datetime.combine(
+        cutoff_date,
+        booking_cutoff.cutoff_time
+    ).replace(
+        tzinfo=local_now.tzinfo
+    )
+
+    print(f"[HOMEWORK DEBUG] Cutoff day: {booking_cutoff.cutoff_day}")
+    print(f"[HOMEWORK DEBUG] Cutoff time: {booking_cutoff.cutoff_time}")
+    print(f"[HOMEWORK DEBUG] Calculated cutoff: {cutoff_datetime}")
+    print(f"[HOMEWORK DEBUG] Current local time: {local_now}")
+
+    if local_now >= cutoff_datetime:
+        print("[HOMEWORK DEBUG] BOOKING CLOSED")
+
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Homework Support bookings are now closed "
+                "for this week."
+            )
+        )
+
     days_until_saturday = (
         5 - current_week_start.weekday()
     ) % 7
@@ -12411,6 +13161,23 @@ def get_homework_support_parent_dashboard(
         selected_time_slot_id = (
             existing_response.selected_time_slot_id
         )
+
+        print(
+            f"[HOMEWORK DEBUG] Existing response found: "
+            f"{existing_response.response}"
+        )
+        print(
+            f"[HOMEWORK DEBUG] Selected slot ID: "
+            f"{existing_response.selected_time_slot_id}"
+        )
+
+    else:
+        print("[HOMEWORK DEBUG] No existing Homework Support response found.")
+
+    print(f"[HOMEWORK DEBUG] Current week number: {current_week_number}")
+    print(f"[HOMEWORK DEBUG] Homework week ID: {homework_week.id}")
+    print(f"[HOMEWORK DEBUG] Session date: {session_date_display}")
+    print("============================================")
 
     # ------------------------------------
     # Return dashboard Homework Support data
@@ -12868,6 +13635,7 @@ def get_homework_support_parent_invitation(
             "response": None,
             "selected_time_slot": None,
     }
+
 @app.post("/welcome-quote", response_model=GamifiedWelcomeQuoteResponse)
 def get_welcome_quote():
     print("\n==============================")
@@ -38829,13 +39597,22 @@ import base64
 
 
 def send_homework_support_invitation_email(
-    to_email: str
+    to_email: str,
+    week_start_date=None,
+    week_end_date=None
 ):
     homework_support_url = (
         "https://gemai.gemkidsacademy.com.au"
-        
     )
-    
+
+    if week_start_date and week_end_date:
+        week_dates_text = (
+            f"{week_start_date.strftime('%d %B %Y')} – "
+            f"{week_end_date.strftime('%d %B %Y')}"
+        )
+    else:
+        week_dates_text = "This week"
+
     message = Mail(
         from_email="noreply@gemkidsacademy.com.au",
         to_emails=to_email,
@@ -38867,7 +39644,19 @@ def send_homework_support_invitation_email(
                 <p>Dear Parent,</p>
 
                 <p>
-                    We are inviting your child to Homework Support this week.
+                    We are inviting your child to Homework Support for the
+                    following week:
+                </p>
+
+                <p style="
+                    text-align: center;
+                    margin: 20px 0;
+                    font-size: 16px;
+                ">
+                    <strong>
+                        Homework Support Week:
+                        {week_dates_text}
+                    </strong>
                 </p>
 
                 <p>
@@ -39256,6 +40045,64 @@ def send_test_homework_support_email(
     # Send emails
     # ------------------------------------
 
+    # ------------------------------------
+    # Calculate current Homework Support week
+    # ------------------------------------
+
+    active_term = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == payload.center_code,
+            AcademicTerm.is_active == True
+        )
+        .first()
+    )
+
+    if not active_term:
+        return {
+            "message": "No active academic term found.",
+            "successful": 0,
+            "failed": 0,
+            "results": []
+        }
+
+    current_date = datetime.now().date()
+
+    term_start = active_term.start_date
+    term_end = active_term.end_date
+
+    if current_date < term_start or current_date > term_end:
+        return {
+            "message": "Current date is outside the active academic term.",
+            "successful": 0,
+            "failed": 0,
+            "results": []
+        }
+
+    current_week_number = (
+        (current_date - term_start).days // 7
+    ) + 1
+
+    week_start_date = term_start + timedelta(
+        weeks=current_week_number - 1
+    )
+
+    week_end_date = week_start_date + timedelta(days=6)
+
+    print(
+        f"[TEST EMAIL] Current Homework Support week: "
+        f"{current_week_number}"
+    )
+
+    print(
+        f"[TEST EMAIL] Week dates: "
+        f"{week_start_date} - {week_end_date}"
+    )
+
+    # ------------------------------------
+    # Send emails
+    # ------------------------------------
+
     for student in students:
 
         print(
@@ -39280,7 +40127,9 @@ def send_test_homework_support_email(
             )
 
             send_homework_support_invitation_email(
-                student.parent_email
+                student.parent_email,
+                week_start_date,
+                week_end_date
             )
 
             print(
