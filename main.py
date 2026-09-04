@@ -72142,6 +72142,7 @@ def give_drive_access(file_id: str, emails: str, role: str = "reader", db: Sessi
     print("==== Drive access process completed ====")
 
 
+
 def send_student_credentials_email(
     to_email: str,
     student_id: str,
@@ -72158,7 +72159,7 @@ def send_student_credentials_email(
     message = Mail(
         from_email="noreply@gemkidsacademy.com.au",
         to_emails=to_email,
-        subject="Your Child's Gem Kids Academy Access",
+        subject="Welcome to Gem AI – Your Child's Digital Learning Hub",
         html_content=f"""
         <div style="
             max-width:650px;
@@ -72187,176 +72188,141 @@ def send_student_credentials_email(
             </p>
 
             <p style="font-size:16px;">
-                We're excited to let you know that your child's access to the
-                <strong>Gem Kids Digital Learning Platform</strong>
-                has now been activated.
-            </p>
-
-            <!-- Gem AI Chatbot -->
-            <div style="
-                margin-top:30px;
-                margin-bottom:25px;
-            ">
-
-                <h2 style="
-                    color:#2c3e50;
-                    font-size:21px;
-                    margin-bottom:10px;
-                ">
-                    🤖 Gem AI Chatbot (24/7 AI Learning Assistant)
-                </h2>
-
-                <p style="font-size:16px;">
-                    Your child can now access <strong>Gem AI</strong>, our
-                    AI-powered learning assistant that provides instant
-                    academic support anytime, anywhere.
-                </p>
-
-                <h3 style="
-                    color:#2c3e50;
-                    font-size:17px;
-                    margin-top:20px;
-                ">
-                    Login Details:
-                </h3>
-
-                <div style="
-                    background:#f7f7f7;
-                    border:1px solid #e5e5e5;
-                    border-radius:8px;
-                    padding:18px;
-                ">
-
-                    <p style="margin:8px 0;">
-                        <strong>Website:</strong>
-                        <a
-                            href="https://chatbot.gemkidsacademy.com.au"
-                            style="color:#008cc8;"
-                        >
-                            https://chatbot.gemkidsacademy.com.au
-                        </a>
-                    </p>
-
-                    <p style="margin:8px 0;">
-                        <strong>Username:</strong>
-                        Your registered parent email address
-                    </p>
-
-                    <p style="margin:8px 0;">
-                        <strong>Password:</strong>
-                        A One-Time Password (OTP) will be sent to your email
-                        each time you log in for secure access.
-                    </p>
-
-                </div>
-
-            </div>
-
-            <!-- Gamified Quiz Portal -->
-            <div style="
-                margin-top:35px;
-                margin-bottom:25px;
-            ">
-
-                <h2 style="
-                    color:#2c3e50;
-                    font-size:21px;
-                    margin-bottom:10px;
-                ">
-                    🎮 Gem AI Gamified Quiz Portal
-                </h2>
-
-                <p style="font-size:16px;">
-                    After every class, your child will receive engaging quizzes
-                    designed to reinforce learning through fun challenges,
-                    points, badges, and leaderboards.
-                </p>
-
-                <h3 style="
-                    color:#2c3e50;
-                    font-size:17px;
-                    margin-top:20px;
-                ">
-                    Login Details:
-                </h3>
-
-                <div style="
-                    background:#f7f7f7;
-                    border:1px solid #e5e5e5;
-                    border-radius:8px;
-                    padding:18px;
-                ">
-
-                    <p style="margin:8px 0;">
-                        <strong>Website:</strong>
-                        <a
-                            href="https://gamifiedquiz.gemkidsacademy.com.au"
-                            style="color:#008cc8;"
-                        >
-                            https://gamifiedquiz.gemkidsacademy.com.au
-                        </a>
-                    </p>
-
-                    <p style="margin:8px 0;">
-                        <strong>Student ID:</strong>
-                        {student_id}
-                    </p>
-
-                    <p style="margin:8px 0;">
-                        <strong>Password:</strong>
-                        {student_id}
-                    </p>
-
-                </div>
-
-            </div>
-
-            <!-- Features -->
-            <div style="
-                margin-top:35px;
-            ">
-
-                <h3 style="
-                    color:#2c3e50;
-                    font-size:18px;
-                ">
-                    What your child can enjoy:
-                </h3>
-
-                <p style="font-size:16px; margin:8px 0;">
-                    ✅ AI-powered homework assistance
-                </p>
-
-                <p style="font-size:16px; margin:8px 0;">
-                    ✅ Practice questions aligned with class topics
-                </p>
-
-                <p style="font-size:16px; margin:8px 0;">
-                    ✅ Interactive revision quizzes
-                </p>
-
-                <p style="font-size:16px; margin:8px 0;">
-                    ✅ Leaderboards and rewards
-                </p>
-
-                <p style="font-size:16px; margin:8px 0;">
-                    ✅ Learn anytime, anywhere
-                </p>
-
-            </div>
-
-            <!-- Support -->
-            <p style="
-                font-size:16px;
-                margin-top:30px;
-            ">
-                If you experience any login issues or require assistance,
-                please contact our team and we'll be happy to help.
+                We’re excited to welcome your child to
+                <strong>Gem AI – the digital learning hub from Gem Kids Academy!</strong> 🎉
             </p>
 
             <p style="font-size:16px;">
-                Thank you for choosing <strong>Gem Kids Academy</strong>.
+                With <strong>one simple login</strong>, you can access all Gem AI
+                learning and support tools in one place.
             </p>
+
+            <!-- Access Gem AI -->
+            <div style="
+                margin-top:30px;
+                margin-bottom:30px;
+            ">
+
+                <h2 style="
+                    color:#2c3e50;
+                    font-size:21px;
+                    margin-bottom:10px;
+                ">
+                    🌐 Access Gem AI
+                </h2>
+
+                <div style="
+                    background:#f7f7f7;
+                    border:1px solid #e5e5e5;
+                    border-radius:8px;
+                    padding:18px;
+                ">
+
+                    <p style="margin:8px 0;">
+                        <strong>Portal:</strong>
+                        <a
+                            href="https://gemai.gemkidsacademy.com.au"
+                            style="color:#008cc8;"
+                        >
+                            https://gemai.gemkidsacademy.com.au
+                        </a>
+                    </p>
+
+                    <p style="margin:8px 0;">
+                        Simply enter your <strong>registered email address</strong>
+                        and a secure <strong>One-Time Password (OTP)</strong> will
+                        be sent to your email.
+                    </p>
+
+                    <p style="margin:8px 0;">
+                        No password to remember!
+                    </p>
+
+                </div>
+
+            </div>
+
+            <!-- What's Inside Gem AI -->
+            <div style="
+                margin-top:35px;
+                margin-bottom:30px;
+            ">
+
+                <h2 style="
+                    color:#2c3e50;
+                    font-size:21px;
+                    margin-bottom:15px;
+                ">
+                    ✨ What’s inside Gem AI?
+                </h2>
+
+                <p style="font-size:16px; margin:12px 0;">
+                    🤖 <strong>Gem AI Chatbot</strong> – A 24/7,
+                    education-focused AI learning assistant with
+                    <strong>parental controls and academy monitoring</strong>,
+                    designed to provide students with a safe and supportive
+                    learning environment.
+                </p>
+
+                <p style="font-size:16px; margin:12px 0;">
+                    🎮 <strong>Gamified Learning</strong> – After
+                    <strong>every weekly class</strong>, students can complete
+                    fun quizzes based on their learning, earn points and compete
+                    on the leaderboard.
+                </p>
+
+                <p style="font-size:16px; margin:12px 0;">
+                    📝 <strong>Exam Portal</strong> – <strong>Where applicable</strong>,
+                    students can complete practice tests and assessments and
+                    receive detailed topic-wise performance reports.
+                </p>
+
+                <p style="font-size:16px; margin:12px 0;">
+                    📚 <strong>Homework Support</strong> – <strong>Every week</strong>,
+                    parents can easily book available Homework Support sessions
+                    for additional academic support.
+                </p>
+
+                <p style="font-size:16px; margin:12px 0;">
+                    👩‍🏫 <strong>Parent-Teacher Interviews</strong> – At the
+                    <strong>end of each term</strong>, parents can conveniently
+                    book their Parent-Teacher Interview through Gem AI.
+                </p>
+
+                <p style="font-size:16px; margin:12px 0;">
+                    📊 <strong>Learning &amp; Progress</strong> – Stay connected
+                    with your child’s learning journey and access relevant
+                    academic progress information in one place.
+                </p>
+
+            </div>
+
+            <!-- Closing Message -->
+            <div style="
+                margin-top:30px;
+            ">
+
+                <p style="font-size:16px;">
+                    We encourage parents and students to use Gem AI regularly
+                    and make the most of the tools available throughout the term.
+                </p>
+
+                <p style="
+                    font-size:18px;
+                    font-weight:bold;
+                    color:#2c3e50;
+                    text-align:center;
+                    margin:30px 0;
+                ">
+                    One Portal. One Login. Smarter Learning.
+                </p>
+
+                <p style="font-size:16px;">
+                    If you have any trouble accessing Gem AI, please contact our
+                    team and we’ll be happy to assist.
+                </p>
+
+            </div>
 
             <!-- Signature -->
             <p style="
@@ -72366,6 +72332,20 @@ def send_student_credentials_email(
                 Kind regards,<br><br>
 
                 <strong>Gem Kids Academy</strong>
+            </p>
+
+            <!-- Website -->
+            <p style="
+                font-size:16px;
+                margin-top:20px;
+            ">
+                🌐
+                <a
+                    href="https://gemkidsacademy.com.au"
+                    style="color:#008cc8;"
+                >
+                    https://gemkidsacademy.com.au
+                </a>
             </p>
 
             <hr style="
@@ -72401,7 +72381,8 @@ def send_student_credentials_email(
             f"[ERROR] Failed to send student access email "
             f"to {to_email}: {e}"
         )
-        raise    
+        raise
+
 
 @app.post("/add_student_exam_module")
 def add_student_exam_module(
