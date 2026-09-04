@@ -40246,10 +40246,7 @@ def send_test_homework_support_email(
         "Sunday": 6,
     }
 
-    class_day = (
-        homework_support_config.class_day
-        or "Saturday"
-    ).strip().capitalize()
+    class_day = "Saturday"
 
     if class_day not in day_numbers:
         return {
