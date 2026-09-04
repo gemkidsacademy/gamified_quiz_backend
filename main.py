@@ -39593,7 +39593,130 @@ def generate_pdf_from_html(html_content: str) -> str:
     return pdf_path
 from sendgrid.helpers.mail import Mail, Email, Attachment, FileContent, FileName, FileType, Disposition
 import base64
+def send_homework_support_test_email(
+    to_email: str,
+    term_name: str,
+    week_number: int,
+    session_date=None
+):
+    homework_support_url = (
+        "https://gemai.gemkidsacademy.com.au"
+    )
 
+    if session_date:
+        session_date_text = session_date.strftime(
+            "%A, %d %B %Y"
+        )
+    else:
+        session_date_text = "Date to be confirmed"
+
+    message = Mail(
+        from_email="noreply@gemkidsacademy.com.au",
+        to_emails=to_email,
+        subject="Homework Support — Please Confirm Attendance",
+        html_content=f"""
+            <div style="
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 30px 20px;
+                font-family: Arial, Helvetica, sans-serif;
+                color: #333333;
+            ">
+
+                <div style="
+                    text-align: center;
+                    margin-bottom: 25px;
+                ">
+                    <img
+                        src="https://gemkidsacademy.com.au/wp-content/uploads/2024/10/cropped-logo-4-1.png"
+                        alt="Gem Kids Academy"
+                        style="
+                            max-width: 180px;
+                            height: auto;
+                            display: inline-block;
+                        "
+                    >
+                </div>
+
+                <p>Dear Parent,</p>
+
+                <p>
+                    We are inviting your child to Homework Support.
+                </p>
+
+                <p style="
+                    text-align: center;
+                    margin: 20px 0;
+                    font-size: 16px;
+                ">
+                    <strong>
+                        Homework Support for {term_name},
+                        Week {week_number}
+                    </strong>
+                </p>
+
+                <p style="
+                    text-align: center;
+                    margin: 20px 0;
+                    font-size: 16px;
+                ">
+                    <strong>
+                        Session Date: {session_date_text}
+                    </strong>
+                </p>
+
+                <p>
+                    Please use the link below to confirm whether your child
+                    will attend and, if attending, select an available time.
+                </p>
+
+                <p style="text-align: center; margin: 30px 0;">
+                    <a
+                        href="{homework_support_url}"
+                        style="
+                            display: inline-block;
+                            padding: 12px 24px;
+                            background-color: #4285d4;
+                            color: #ffffff;
+                            text-decoration: none;
+                            border-radius: 5px;
+                            font-weight: bold;
+                        "
+                    >
+                        Confirm Homework Support Attendance
+                    </a>
+                </p>
+
+                <p>
+                    Thank you,<br>
+                    Gem Kids Academy
+                </p>
+
+            </div>
+        """,
+    )
+
+    message.reply_to = Email(
+        "do-not-reply@gemkidsacademy.com.au"
+    )
+
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+
+        response = sg.send(message)
+
+        print(
+            f"[INFO] Homework Support test invitation sent to "
+            f"{to_email}, status code {response.status_code}"
+        )
+
+    except Exception as e:
+        print(
+            f"[ERROR] Failed to send Homework Support test invitation "
+            f"to {to_email}: {e}"
+        )
+
+        raise
 
 
 def send_homework_support_invitation_email(
@@ -40089,6 +40212,67 @@ def send_test_homework_support_email(
 
     week_end_date = week_start_date + timedelta(days=6)
 
+    # ------------------------------------
+    # Calculate Homework Support session date
+    # ------------------------------------
+
+    homework_support_config = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code
+            == payload.center_code
+        )
+        .first()
+    )
+
+    if not homework_support_config:
+        return {
+            "message": (
+                "Homework Support configuration "
+                "not found."
+            ),
+            "successful": 0,
+            "failed": 0,
+            "results": []
+        }
+
+    day_numbers = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6,
+    }
+
+    class_day = (
+        homework_support_config.class_day
+        or "Saturday"
+    ).strip().capitalize()
+
+    if class_day not in day_numbers:
+        return {
+            "message": (
+                f"Invalid Homework Support class day: "
+                f"{class_day}"
+            ),
+            "successful": 0,
+            "failed": 0,
+            "results": []
+        }
+
+    class_day_number = day_numbers[class_day]
+
+    days_until_class = (
+        class_day_number - week_start_date.weekday()
+    ) % 7
+
+    session_date = (
+        week_start_date
+        + timedelta(days=days_until_class)
+    )
+
     print(
         f"[TEST EMAIL] Current Homework Support week: "
         f"{current_week_number}"
@@ -40097,6 +40281,16 @@ def send_test_homework_support_email(
     print(
         f"[TEST EMAIL] Week dates: "
         f"{week_start_date} - {week_end_date}"
+    )
+
+    print(
+        f"[TEST EMAIL] Homework Support class day: "
+        f"{class_day}"
+    )
+
+    print(
+        f"[TEST EMAIL] Homework Support session date: "
+        f"{session_date}"
     )
 
     # ------------------------------------
@@ -40126,10 +40320,11 @@ def send_test_homework_support_email(
                 "send_homework_support_invitation_email()..."
             )
 
-            send_homework_support_invitation_email(
+            send_homework_support_test_email(
                 student.parent_email,
-                week_start_date,
-                week_end_date
+                active_term.term_name,
+                current_week_number,
+                session_date
             )
 
             print(
