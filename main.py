@@ -10785,7 +10785,8 @@ def get_parent_teacher_interview_teacher_allocations(
             CenterTeacher.center_code == center_code,
             Class.center_code == center_code,
             ClassYearExamModule.center_code == center_code,
-            ParentTeacherInterviewEvent.center_code == center_code
+            ParentTeacherInterviewEvent.center_code == center_code,
+            ParentTeacherInterviewEvent.event_date >= func.current_date()
         )
         .group_by(
             ParentTeacherInterviewTeacherAllocation.id,
