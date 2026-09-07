@@ -40189,7 +40189,27 @@ def send_test_homework_support_email(
             "results": []
         }
 
-    current_date = datetime.now().date()
+    scheduler_configuration = (
+        db.query(SchedulerConfiguration)
+        .filter(
+            SchedulerConfiguration.center_code == payload.center_code
+        )
+        .first()
+    )
+
+    if not scheduler_configuration:
+        return {
+            "message": "Scheduler configuration not found for this centre.",
+            "successful": 0,
+            "failed": 0,
+            "results": []
+        }
+
+    local_now = datetime.now(
+        ZoneInfo(scheduler_configuration.timezone)
+    )
+
+    current_date = local_now.date()
 
     term_start = active_term.start_date
     term_end = active_term.end_date
