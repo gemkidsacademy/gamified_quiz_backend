@@ -1222,6 +1222,7 @@ class GemAINotification(Base):
     __tablename__ = "gem_ai_notifications"
 
     id = Column(Integer, primary_key=True, index=True)
+    center_code = Column(String, nullable=False, index=True)
     title = Column(String, nullable=True)
     text = Column(Text, nullable=True)
     image_url = Column(Text, nullable=True)
@@ -9115,6 +9116,15 @@ def create_notification(
     db: Session = Depends(get_db)
 ):
     try:
+        print(
+            "[NOTIFICATION DEBUG] incoming center_code:",
+            notification.get("center_code")
+        )
+        print(
+            "[NOTIFICATION DEBUG] incoming notification:",
+            notification
+        )
+
         start_date = date.fromisoformat(notification["startDate"])
         end_date = date.fromisoformat(notification["endDate"])
 
@@ -9153,6 +9163,7 @@ def create_notification(
                 )
 
         record = GemAINotification(
+            center_code=notification.get("center_code"),
             title=notification.get("title"),
             text=notification.get("text"),
             image_url=notification.get("image"),
@@ -9160,6 +9171,11 @@ def create_notification(
             start_date=start_date,
             end_date=end_date,
             active=notification.get("active", True),
+        )
+
+        print(
+            "[NOTIFICATION DEBUG] record center_code:",
+            record.center_code
         )
 
         db.add(record)
@@ -9185,6 +9201,10 @@ def create_notification(
 
     except Exception as e:
         db.rollback()
+        print(
+            "[NOTIFICATION DEBUG] create failed:",
+            repr(e)
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Failed to create notification: {str(e)}"
@@ -9195,9 +9215,14 @@ def update_notification(
     notification: dict,
     db: Session = Depends(get_db)
 ):
+    center_code = notification.get("center_code")
+
     record = (
         db.query(GemAINotification)
-        .filter(GemAINotification.id == notification_id)
+        .filter(
+            GemAINotification.id == notification_id,
+            GemAINotification.center_code == center_code,
+        )
         .first()
     )
 
@@ -9255,11 +9280,17 @@ def update_notification(
 @app.patch("/notifications/{notification_id}/active")
 def toggle_notification_active(
     notification_id: int,
+    notification: dict,
     db: Session = Depends(get_db)
 ):
+    center_code = notification.get("center_code")
+
     record = (
         db.query(GemAINotification)
-        .filter(GemAINotification.id == notification_id)
+        .filter(
+            GemAINotification.id == notification_id,
+            GemAINotification.center_code == center_code,
+        )
         .first()
     )
 
@@ -9282,10 +9313,12 @@ def toggle_notification_active(
 
 @app.get("/notifications")
 def get_notifications(
+    center_code: str,
     db: Session = Depends(get_db)
 ):
     notifications = (
         db.query(GemAINotification)
+        .filter(GemAINotification.center_code == center_code)
         .order_by(GemAINotification.created_at.desc())
         .all()
     )
@@ -13097,39 +13130,6 @@ def get_homework_support_parent_dashboard(
     print(f"[HOMEWORK DEBUG] Calculated cutoff: {cutoff_datetime}")
     print(f"[HOMEWORK DEBUG] Current local time: {local_now}")
 
-    if local_now >= cutoff_datetime:
-        print("[HOMEWORK DEBUG] BOOKING CLOSED")
-
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Homework Support bookings are now closed "
-                "for this week."
-            )
-        )
-
-    days_until_saturday = (
-        5 - current_week_start.weekday()
-    ) % 7
-
-    session_date = (
-        current_week_start
-        + timedelta(days=days_until_saturday)
-    )
-
-    if session_date > active_term.end_date:
-        session_date = None
-
-    session_date_display = None
-
-    if session_date:
-        session_date_display = (
-            f"{session_date.strftime('%A')}, "
-            f"{session_date.strftime('%B')} "
-            f"{session_date.day}, "
-            f"{session_date.year}"
-        )
-
     # ------------------------------------
     # Find existing parent response
     # ------------------------------------
@@ -13174,6 +13174,67 @@ def get_homework_support_parent_dashboard(
     else:
         print("[HOMEWORK DEBUG] No existing Homework Support response found.")
 
+    booking_slot = None
+
+    if (
+        existing_response
+        and existing_response.selected_time_slot_id is not None
+    ):
+        booking_slot = (
+            db.query(HomeworkSupportTimeSlot)
+            .filter(
+                HomeworkSupportTimeSlot.id
+                == existing_response.selected_time_slot_id,
+
+                HomeworkSupportTimeSlot.center_code
+                == student.center_code,
+
+                HomeworkSupportTimeSlot.homework_support_week_id
+                == homework_week.id
+            )
+            .first()
+        )
+
+    print(
+        f"[HOMEWORK DEBUG] Booking status: "
+        f"{'BOOKED' if booking_slot and existing_response.response == 'ATTENDING' else 'NOT_BOOKED'}"
+    )
+
+    if booking_slot:
+        print(
+            f"[HOMEWORK DEBUG] Booking slot: "
+            f"{booking_slot.start_time} - {booking_slot.end_time}"
+        )
+    else:
+        print("[HOMEWORK DEBUG] No booking slot found.")
+
+    bookings_closed = local_now >= cutoff_datetime
+
+    if bookings_closed:
+        print("[HOMEWORK DEBUG] BOOKING CLOSED")
+
+    days_until_saturday = (
+        5 - current_week_start.weekday()
+    ) % 7
+
+    session_date = (
+        current_week_start
+        + timedelta(days=days_until_saturday)
+    )
+
+    if session_date > active_term.end_date:
+        session_date = None
+
+    session_date_display = None
+
+    if session_date:
+        session_date_display = (
+            f"{session_date.strftime('%A')}, "
+            f"{session_date.strftime('%B')} "
+            f"{session_date.day}, "
+            f"{session_date.year}"
+        )
+
     print(f"[HOMEWORK DEBUG] Current week number: {current_week_number}")
     print(f"[HOMEWORK DEBUG] Homework week ID: {homework_week.id}")
     print(f"[HOMEWORK DEBUG] Session date: {session_date_display}")
@@ -13193,7 +13254,27 @@ def get_homework_support_parent_dashboard(
         ),
         "session_date": session_date_display,
         "response": response_value,
-        "selected_time_slot_id": selected_time_slot_id
+        "selected_time_slot_id": selected_time_slot_id,
+        "bookings_closed": bookings_closed,
+        "booking_status": (
+            "BOOKED"
+            if (
+                existing_response
+                and existing_response.response == "ATTENDING"
+                and booking_slot
+            )
+            else "NOT_BOOKED"
+        ),
+        "booking_start_time": (
+            booking_slot.start_time.strftime("%H:%M:%S")
+            if booking_slot
+            else None
+        ),
+        "booking_end_time": (
+            booking_slot.end_time.strftime("%H:%M:%S")
+            if booking_slot
+            else None
+        ),
     }
 
 @app.post("/homework-support/parent/invitation")
@@ -118658,6 +118739,7 @@ def interview_booking_admin_login(
             "email": admin.email,
         }
     }  
+
 @app.post("/login")
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
     phone = request.phone_number.strip()
