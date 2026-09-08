@@ -1945,10 +1945,16 @@ class HomeworkBookingCutoffRequest(BaseModel):
 
 
 class HomeworkConfigurationRequest(BaseModel):
+
     term_id: int
+
     selected_weeks: List[HomeworkSelectedWeekRequest]
+
     time_slots: List[HomeworkTimeSlotRequest]
+
     booking_cutoff: Optional[HomeworkBookingCutoffRequest] = None
+
+    class_day: str = "Saturday"
 
 class HomeworkAutomationSchedule(BaseModel):
     week: str
@@ -3411,6 +3417,12 @@ class HomeworkAutomationConfiguration(Base):
         String,
         nullable=False,
         default="09:00 AM"
+    )
+
+    class_day = Column(
+        String,
+        nullable=False,
+        default="Saturday"
     )
 
     created_at = Column(
@@ -10737,11 +10749,15 @@ def get_parent_teacher_interview_events(
 @app.get("/parent-teacher-interview/teacher-allocations")
 def get_parent_teacher_interview_teacher_allocations(
     center_code: str,
+    teacher_id: int | None = None,
     db: Session = Depends(get_db)
 ):
     center_code = center_code.strip()
+    print("=== TEACHER ALLOCATIONS DEBUG ===")
+    print("center_code received:", repr(center_code))
+    print("teacher_id received:", repr(teacher_id))
 
-    allocations = (
+    allocations_query = (
         db.query(
             ParentTeacherInterviewTeacherAllocation,
             CenterTeacher.full_name.label("teacher_name"),
@@ -10802,8 +10818,18 @@ def get_parent_teacher_interview_teacher_allocations(
         .order_by(
             ParentTeacherInterviewTeacherAllocation.id.asc()
         )
-        .all()
     )
+
+    if teacher_id is not None:
+        allocations_query = allocations_query.filter(
+            ParentTeacherInterviewTeacherAllocation.teacher_id == teacher_id
+        )
+
+    print("teacher_id filter applied:", teacher_id is not None)
+
+    allocations = allocations_query.all()
+
+    print("allocations returned:", len(allocations))
 
     return {
         "allocations": [
@@ -12056,6 +12082,37 @@ def submit_homework_support_response(
 
     if existing_response:
 
+        # ------------------------------------
+        # Check capacity when changing slot
+        # ------------------------------------
+
+        if (
+            payload.response == "ATTENDING"
+            and payload.selected_time_slot_id
+            != existing_response.selected_time_slot_id
+        ):
+
+            attending_count = (
+                db.query(HomeworkSupportStudentResponse)
+                .filter(
+                    HomeworkSupportStudentResponse.homework_support_week_id
+                    == homework_week.id,
+
+                    HomeworkSupportStudentResponse.selected_time_slot_id
+                    == payload.selected_time_slot_id,
+
+                    HomeworkSupportStudentResponse.response
+                    == "ATTENDING"
+                )
+                .count()
+            )
+
+            if attending_count >= slot.capacity:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The selected time slot is no longer available."
+                )
+
         existing_response.response = payload.response
         existing_response.selected_time_slot_id = (
             payload.selected_time_slot_id
@@ -12248,7 +12305,7 @@ def get_homework_support_time_slots(
     ) + 1
 
     # ------------------------------------
-    # Calculate Saturday of current week
+    # Calculate Homework Support session date
     # ------------------------------------
 
     current_week_start = (
@@ -12258,15 +12315,59 @@ def get_homework_support_time_slots(
         )
     )
 
-    session_date = current_week_start + timedelta(
-        days=5 - current_week_start.weekday()
+    homework_support_config = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code
+            == student.center_code
+        )
+        .first()
     )
+
+    class_day = (
+        homework_support_config.class_day.strip().capitalize()
+        if homework_support_config and homework_support_config.class_day
+        else None
+    )
+
+    WEEKDAY_NUMBERS = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6,
+    }
+
+    class_day_number = (
+        WEEKDAY_NUMBERS.get(class_day)
+        if class_day
+        else None
+    )
+
+    session_date = (
+        current_week_start
+        + timedelta(
+            days=(
+                class_day_number
+                - current_week_start.weekday()
+            ) % 7
+        )
+        if class_day_number is not None
+        else None
+    )
+
+    if session_date and session_date > active_term.end_date:
+        session_date = None
 
     session_date_display = (
         f"{session_date.strftime('%A')}, "
         f"{session_date.strftime('%B')} "
         f"{session_date.day}, "
         f"{session_date.year}"
+        if session_date
+        else "Session date unavailable"
     )
 
     # ------------------------------------
@@ -12296,15 +12397,7 @@ def get_homework_support_time_slots(
     # Load booking cutoff
     # ------------------------------------
 
-    WEEKDAY_NUMBERS = {
-        "Monday": 0,
-        "Tuesday": 1,
-        "Wednesday": 2,
-        "Thursday": 3,
-        "Friday": 4,
-        "Saturday": 5,
-        "Sunday": 6,
-    }
+    
 
     booking_cutoff = (
         db.query(HomeworkSupportBookingCutoff)
@@ -12515,6 +12608,46 @@ def get_homework_support_admin_weeks(
     )
 
     # ------------------------------------
+    # Get configured Homework Support class day
+    # ------------------------------------
+
+    homework_support_config = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    class_day = (
+        homework_support_config.class_day
+        if homework_support_config
+        else None
+    )
+
+    day_numbers = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6,
+    }
+
+    class_day = (
+        class_day.strip().capitalize()
+        if class_day
+        else None
+    )
+
+    class_day_number = (
+        day_numbers.get(class_day)
+        if class_day
+        else None
+    )
+
+    # ------------------------------------
     # Build week list
     # ------------------------------------
 
@@ -12529,15 +12662,24 @@ def get_homework_support_admin_weeks(
             )
         )
 
-        session_date = week_start + timedelta(
-            days=(5 - week_start.weekday()) % 7
+        session_date = (
+            week_start
+            + timedelta(
+                days=(class_day_number - week_start.weekday()) % 7
+            )
+            if class_day_number is not None
+            else None
         )
 
         session_date_display = (
-            f"{session_date.strftime('%A')}, "
-            f"{session_date.strftime('%B')} "
-            f"{session_date.day}, "
-            f"{session_date.year}"
+            (
+                f"{session_date.strftime('%A')}, "
+                f"{session_date.strftime('%B')} "
+                f"{session_date.day}, "
+                f"{session_date.year}"
+            )
+            if session_date
+            else None
         )
 
         weeks.append(
@@ -12563,10 +12705,12 @@ def get_homework_support_admin_weeks(
         "current_week_number": current_week_number,
         "weeks": weeks,
     }
+
 @app.get("/homework-support/admin/responses")
 def get_homework_support_admin_responses(
     center_code: str,
-    week_number: Optional[int] = None,
+    week_number: int | None = None,
+    teacher_id: int | None = None,
     db: Session = Depends(get_db)
 ):
     # ------------------------------------
@@ -12632,6 +12776,46 @@ def get_homework_support_admin_responses(
     current_week_number = (
         (current_date - active_term.start_date).days // 7
     ) + 1
+
+    # ------------------------------------
+    # Get configured Homework Support class day
+    # ------------------------------------
+
+    homework_support_config = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    class_day = (
+        homework_support_config.class_day
+        if homework_support_config
+        else None
+    )
+
+    day_numbers = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6,
+    }
+
+    class_day = (
+        class_day.strip().capitalize()
+        if class_day
+        else None
+    )
+
+    class_day_number = (
+        day_numbers.get(class_day)
+        if class_day
+        else None
+    )
     # ------------------------------------
     # Determine requested dashboard week
     # ------------------------------------
@@ -12665,15 +12849,24 @@ def get_homework_support_admin_responses(
         )
     )
 
-    session_date = selected_week_start + timedelta(
-        days=(5 - selected_week_start.weekday()) % 7
+    session_date = (
+        selected_week_start
+        + timedelta(
+            days=(class_day_number - selected_week_start.weekday()) % 7
+        )
+        if class_day_number is not None
+        else None
     )
 
     session_date_display = (
-        f"{session_date.strftime('%A')}, "
-        f"{session_date.strftime('%B')} "
-        f"{session_date.day}, "
-        f"{session_date.year}"
+        (
+            f"{session_date.strftime('%A')}, "
+            f"{session_date.strftime('%B')} "
+            f"{session_date.day}, "
+            f"{session_date.year}"
+        )
+        if session_date
+        else None
     )
 
     # ------------------------------------
@@ -12699,19 +12892,77 @@ def get_homework_support_admin_responses(
             )
         )
     
+
     # ------------------------------------
     # Load active students
     # ------------------------------------
 
-    students = (
-        db.query(Student)
-        .filter(
-            Student.center_code == center_code,
-            Student.is_active == True
+    if teacher_id is None:
+        # CENTER_ADMIN: load all active students in the center
+        students = (
+            db.query(Student)
+            .filter(
+                Student.center_code == center_code,
+                Student.is_active == True
+            )
+            .order_by(Student.name)
+            .all()
         )
-        .order_by(Student.name)
-        .all()
-    )
+    else:
+        # TEACHER: verify teacher belongs to this center
+        teacher = (
+            db.query(CenterTeacher)
+            .filter(
+                CenterTeacher.id == teacher_id,
+                CenterTeacher.center_code == center_code
+            )
+            .first()
+        )
+
+        if not teacher:
+            raise HTTPException(
+                status_code=403,
+                detail="Teacher is not authorized for this center."
+            )
+
+        # Load only students from classes/class-years
+        # allocated to this teacher.
+        students = (
+            db.query(Student)
+            .join(
+                Class,
+                (Class.center_code == center_code)
+                & (Class.class_name == Student.class_name)
+            )
+            .join(
+                ClassYearExamModule,
+                (ClassYearExamModule.center_code == center_code)
+                & (ClassYearExamModule.year_name == Student.student_year)
+            )
+            .join(
+                ParentTeacherInterviewTeacherAllocation,
+                (ParentTeacherInterviewTeacherAllocation.center_code == center_code)
+                & (
+                    ParentTeacherInterviewTeacherAllocation.teacher_id
+                    == teacher_id
+                )
+                & (
+                    ParentTeacherInterviewTeacherAllocation.class_id
+                    == Class.id
+                )
+                & (
+                    ParentTeacherInterviewTeacherAllocation.class_year_id
+                    == ClassYearExamModule.id
+                )
+            )
+            .filter(
+                Student.center_code == center_code,
+                Student.is_active == True
+            )
+            .distinct()
+            .order_by(Student.name)
+            .all()
+        )
 
     # ------------------------------------
     # Load time slots
@@ -12887,18 +13138,27 @@ def get_homework_support_admin_responses(
             )
         )
 
-        week_session_date = week_start + timedelta(
-            days=(5 - week_start.weekday()) % 7
+        week_session_date = (
+            week_start
+            + timedelta(
+                days=(class_day_number - week_start.weekday()) % 7
+            )
+            if class_day_number is not None
+            else None
         )
 
         available_weeks.append({
             "week_number": available_week.week_number,
             "week_label": f"Week {available_week.week_number}",
             "session_date": (
-                f"{week_session_date.strftime('%A')}, "
-                f"{week_session_date.strftime('%B')} "
-                f"{week_session_date.day}, "
-                f"{week_session_date.year}"
+                (
+                    f"{week_session_date.strftime('%A')}, "
+                    f"{week_session_date.strftime('%B')} "
+                    f"{week_session_date.day}, "
+                    f"{week_session_date.year}"
+                )
+                if week_session_date
+                else None
             ),
             "is_current": (
                 available_week.week_number == current_week_number
@@ -13214,16 +13474,46 @@ def get_homework_support_parent_dashboard(
     if bookings_closed:
         print("[HOMEWORK DEBUG] BOOKING CLOSED")
 
-    days_until_saturday = (
-        5 - current_week_start.weekday()
-    ) % 7
+    homework_support_config = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code
+            == student.center_code
+        )
+        .first()
+    )
+
+    class_day = (
+        homework_support_config.class_day
+        if homework_support_config
+        else None
+    )
+
+    class_day = (
+        class_day.strip().capitalize()
+        if class_day
+        else None
+    )
+
+    class_day_number = (
+        WEEKDAY_NUMBERS.get(class_day)
+        if class_day
+        else None
+    )
 
     session_date = (
         current_week_start
-        + timedelta(days=days_until_saturday)
+        + timedelta(
+            days=(
+                class_day_number
+                - current_week_start.weekday()
+            ) % 7
+        )
+        if class_day_number is not None
+        else None
     )
 
-    if session_date > active_term.end_date:
+    if session_date and session_date > active_term.end_date:
         session_date = None
 
     session_date_display = None
@@ -14182,6 +14472,22 @@ def update_homework_configuration(
 
     try:
 
+        homework_support_config = (
+            db.query(HomeworkAutomationConfiguration)
+            .filter(
+                HomeworkAutomationConfiguration.center_code == center_code
+            )
+            .first()
+        )
+
+        if not homework_support_config:
+            homework_support_config = HomeworkAutomationConfiguration(
+                center_code=center_code
+            )
+            db.add(homework_support_config)
+
+        homework_support_config.class_day = payload.class_day
+
         # -----------------------------------------------------
         # Load existing Homework Support weeks
         # -----------------------------------------------------
@@ -14568,6 +14874,8 @@ def update_homework_configuration(
 
         "center_code": center_code,
 
+        "class_day": payload.class_day,
+
         "term_id": payload.term_id,
 
         "selected_weeks": [
@@ -14646,6 +14954,20 @@ def get_homework_configuration(
         .all()
     )
 
+    homework_support_config = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    class_day = (
+        homework_support_config.class_day
+        if homework_support_config
+        else "Saturday"
+    )
+
     # ==========================================
     # 2. Find active term
     # ==========================================
@@ -14707,14 +15029,27 @@ def get_homework_configuration(
         if week_end > selected_term.end_date:
             week_end = selected_term.end_date
 
-        # Saturday = weekday 5
-        days_until_saturday = (
-            5 - week_start.weekday()
+        day_numbers = {
+            "Monday": 0,
+            "Tuesday": 1,
+            "Wednesday": 2,
+            "Thursday": 3,
+            "Friday": 4,
+            "Saturday": 5,
+            "Sunday": 6,
+        }
+
+        class_day = (class_day or "Saturday").strip().capitalize()
+
+        class_day_number = day_numbers.get(class_day, 5)
+
+        days_until_class = (
+            class_day_number - week_start.weekday()
         ) % 7
 
         session_date = (
             week_start +
-            timedelta(days=days_until_saturday)
+            timedelta(days=days_until_class)
         )
 
         if session_date > selected_term.end_date:
@@ -14725,7 +15060,7 @@ def get_homework_configuration(
             "week_label": f"Week {week_number}",
             "week_start": week_start.isoformat(),
             "week_end": week_end.isoformat(),
-            "session_day": "Saturday",
+            "session_day": class_day,
             "session_date": (
                 session_date.isoformat()
                 if session_date
@@ -14855,6 +15190,7 @@ def get_homework_configuration(
 
     return {
         "center_code": center_code,
+        "class_day": class_day,
 
         "academic_terms": [
             {
@@ -14908,6 +15244,20 @@ def get_homework_configuration_weeks(
             detail="Academic term not found"
         )
 
+    homework_support_config = (
+        db.query(HomeworkAutomationConfiguration)
+        .filter(
+            HomeworkAutomationConfiguration.center_code == center_code
+        )
+        .first()
+    )
+
+    class_day = (
+        homework_support_config.class_day
+        if homework_support_config
+        else None
+    )
+
     # ==========================================
     # 2. Calculate weeks
     # ==========================================
@@ -14928,17 +15278,30 @@ def get_homework_configuration_weeks(
         if week_end > term.end_date:
             week_end = term.end_date
 
-        # Saturday = Python weekday 5
-        days_until_saturday = (
-            5 - week_start.weekday()
-        ) % 7
+        day_numbers = {
+            "Monday": 0,
+            "Tuesday": 1,
+            "Wednesday": 2,
+            "Thursday": 3,
+            "Friday": 4,
+            "Saturday": 5,
+            "Sunday": 6,
+        }
+
+        class_day_number = (
+            day_numbers.get(class_day)
+            if class_day
+            else None
+        )
 
         session_date = (
             week_start +
-            timedelta(days=days_until_saturday)
+            timedelta(days=(class_day_number - week_start.weekday()) % 7)
+            if class_day_number is not None
+            else None
         )
 
-        if session_date > term.end_date:
+        if session_date and session_date > term.end_date:
             session_date = None
 
         weeks.append({
@@ -14946,7 +15309,7 @@ def get_homework_configuration_weeks(
             "week_label": f"Week {week_number}",
             "week_start": week_start.isoformat(),
             "week_end": week_end.isoformat(),
-            "session_day": "Saturday",
+            "session_day": class_day,
             "session_date": (
                 session_date.isoformat()
                 if session_date
@@ -14971,6 +15334,7 @@ def get_homework_configuration_weeks(
         "term_id": term.id,
         "weeks": weeks
     }
+
 @app.get("/homework/configuration/weeks/{center_code}")
 def get_homework_configuration_weeks(
     center_code: str,
@@ -40348,7 +40712,21 @@ def send_test_homework_support_email(
         "Sunday": 6,
     }
 
-    class_day = "Saturday"
+    class_day = (
+        homework_support_config.class_day.strip().capitalize()
+        if homework_support_config.class_day
+        else None
+    )
+
+    if not class_day:
+        return {
+            "message": (
+                "Homework Support class day has not been configured."
+            ),
+            "successful": 0,
+            "failed": 0,
+            "results": []
+        }
 
     if class_day not in day_numbers:
         return {
@@ -118717,29 +119095,44 @@ def interview_booking_admin_login(
         .first()
     )
 
-    if not admin:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid interview admin username or password"
-        )
-
-    if admin.password != data.password:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid interview admin username or password"
-        )
-
-    return {
-        "success": True,
-        "interview_admin": {
-            "id": admin.id,
-            "username": admin.username,
-            "full_name": admin.full_name,
-            "role": admin.role,
-            "center_code": admin.center_code,
-            "email": admin.email,
+    if admin and admin.password == data.password:
+        return {
+            "success": True,
+            "interview_admin": {
+                "id": admin.id,
+                "username": admin.username,
+                "full_name": admin.full_name,
+                "role": "CENTER_ADMIN",
+                "center_code": admin.center_code,
+                "email": admin.email,
+                "teacher_id": None,
+            }
         }
-    }  
+
+    teacher = (
+        db.query(CenterTeacher)
+        .filter(CenterTeacher.username == data.username)
+        .first()
+    )
+
+    if teacher and teacher.password == data.password:
+        return {
+            "success": True,
+            "interview_admin": {
+                "id": teacher.id,
+                "username": teacher.username,
+                "full_name": teacher.full_name,
+                "role": "TEACHER",
+                "center_code": teacher.center_code,
+                "email": teacher.email,
+                "teacher_id": teacher.id,
+            }
+        }
+
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid interview admin username or password"
+    )
 
 @app.post("/login")
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
