@@ -2239,6 +2239,9 @@ class ClassUpdate(BaseModel):
     class_name: str
     student_year: str
 
+class AdminClassUpdate(BaseModel):
+    class_name: str
+    center_code: str
 
 class ClassResponse(BaseModel):
     id: int
@@ -17155,18 +17158,58 @@ def update_class(
         "message": "Class updated successfully",
         "class": cls,
     }
-@app.delete("/classes/{class_id}")
-def delete_class(
+@app.put("/admin/update-class/{class_id}")
+def admin_update_class(
     class_id: int,
+    data: AdminClassUpdate,
     db: Session = Depends(get_db),
 ):
-
-    cls = db.query(Class).filter(Class.id == class_id).first()
+    cls = (
+        db.query(Class)
+        .filter(
+            Class.id == class_id,
+            Class.center_code == data.center_code,
+        )
+        .first()
+    )
 
     if not cls:
         return {
             "success": False,
-            "message": "Class not found",
+            "message": "Class not found for this centre",
+        }
+
+    cls.class_name = data.class_name
+
+    db.commit()
+    db.refresh(cls)
+
+    return {
+        "success": True,
+        "message": "Class updated successfully",
+        "class": cls,
+    }
+class AdminClassDelete(BaseModel):
+    center_code: str
+@app.delete("/admin/delete-class/{class_id}")
+def admin_delete_class(
+    class_id: int,
+    data: AdminClassDelete,
+    db: Session = Depends(get_db),
+):
+    cls = (
+        db.query(Class)
+        .filter(
+            Class.id == class_id,
+            Class.center_code == data.center_code,
+        )
+        .first()
+    )
+
+    if not cls:
+        return {
+            "success": False,
+            "message": "Class not found for this centre",
         }
 
     db.delete(cls)
@@ -17176,8 +17219,6 @@ def delete_class(
         "success": True,
         "message": "Class deleted successfully",
     }
-
-
   
 @app.post("/exam/clean-word-document")
 async def clean_word_document(
