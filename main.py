@@ -118753,6 +118753,11 @@ def send_otp_endpoint(
     # --------------------------------------------------
     otp = generate_otp()
 
+    print(f"[DEBUG] Generated OTP for {email}: {otp}")
+
+    
+
+
     otp_store[email] = {
         "otp": otp,
         "expiry": time.time() + 300
