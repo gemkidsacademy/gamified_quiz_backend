@@ -12651,6 +12651,266 @@ def get_parent_teacher_interview_class_years(
     }
 
 
+@app.get("/api/reports/homework/class/exams")
+def get_class_homework_exams(
+    center_code: str,
+    class_name: str,
+    class_year: str,
+    db: Session = Depends(get_db),
+):
+    center_code = center_code.strip()
+    class_name = class_name.strip()
+    class_year = class_year.strip()
+
+    # Normalize year for tables that store it as Integer.
+    normalized_year = class_year.lower().replace("year", "").strip()
+
+    exams = []
+
+    # --------------------------------------------------
+    # SELECTIVE
+    # --------------------------------------------------
+    if class_name.lower() == "selective":
+
+        thinking_exam = (
+            db.query(HomeWorkExam)
+            .filter(
+                func.lower(func.trim(HomeWorkExam.class_name)) == "selective",
+                HomeWorkExam.subject == "thinking_skills",
+                HomeWorkExam.class_year == int(normalized_year),
+                HomeWorkExam.center_code == center_code,
+            )
+            .order_by(HomeWorkExam.id.desc())
+            .first()
+        )
+
+        if thinking_exam:
+            exams.append({
+                "id": thinking_exam.id,
+                "subject": "thinking_skills",
+                "label": "Thinking Skills",
+            })
+
+        math_exam = (
+            db.query(HomeworkExamMathematicalReasoning)
+            .filter(
+                func.lower(func.trim(HomeworkExamMathematicalReasoning.class_name)) == "selective",
+                HomeworkExamMathematicalReasoning.subject == "mathematical_reasoning",
+                HomeworkExamMathematicalReasoning.class_year == normalized_year,
+                HomeworkExamMathematicalReasoning.center_code == center_code,
+            )
+            .order_by(HomeworkExamMathematicalReasoning.id.desc())
+            .first()
+        )
+
+        if math_exam:
+            exams.append({
+                "id": math_exam.id,
+                "subject": "mathematical_reasoning",
+                "label": "Mathematical Reasoning",
+            })
+
+        reading_exam = (
+            db.query(GeneratedHomeworkReading)
+            .filter(
+                func.lower(func.trim(GeneratedHomeworkReading.class_name)) == "selective",
+                GeneratedHomeworkReading.class_year == normalized_year,
+                GeneratedHomeworkReading.center_code == center_code,
+            )
+            .order_by(GeneratedHomeworkReading.id.desc())
+            .first()
+        )
+
+        if reading_exam:
+            exams.append({
+                "id": reading_exam.id,
+                "subject": "reading_comprehension",
+                "label": "Reading",
+            })
+
+        writing_exam = (
+            db.query(GeneratedHomeworkWriting)
+            .filter(
+                func.lower(func.trim(GeneratedHomeworkWriting.class_name)) == "selective",
+                GeneratedHomeworkWriting.class_year == class_year,
+                GeneratedHomeworkWriting.center_code == center_code,
+                GeneratedHomeworkWriting.is_current.is_(True),
+            )
+            .order_by(GeneratedHomeworkWriting.created_at.desc())
+            .first()
+        )
+
+        if writing_exam:
+            exams.append({
+                "id": writing_exam.id,
+                "subject": "writing",
+                "label": "Writing",
+            })
+
+    # --------------------------------------------------
+    # OC
+    # --------------------------------------------------
+    elif class_name.lower() == "oc":
+
+        thinking_exam = (
+            db.query(HomeworkExamOCThinkingSkills)
+            .filter(
+                func.lower(func.trim(HomeworkExamOCThinkingSkills.class_name)) == "oc",
+                HomeworkExamOCThinkingSkills.subject == "thinking_skills",
+                HomeworkExamOCThinkingSkills.class_year == int(normalized_year),
+                HomeworkExamOCThinkingSkills.center_code == center_code,
+            )
+            .order_by(HomeworkExamOCThinkingSkills.id.desc())
+            .first()
+        )
+
+        if thinking_exam:
+            exams.append({
+                "id": thinking_exam.id,
+                "subject": "thinking_skills",
+                "label": "Thinking Skills",
+            })
+
+        math_exam = (
+            db.query(HomeworkExamOCMathematicalReasoning)
+            .filter(
+                func.lower(func.trim(HomeworkExamOCMathematicalReasoning.class_name)) == "oc",
+                HomeworkExamOCMathematicalReasoning.subject == "mathematical_reasoning",
+                HomeworkExamOCMathematicalReasoning.class_year == normalized_year,
+                HomeworkExamOCMathematicalReasoning.center_code == center_code,
+            )
+            .order_by(HomeworkExamOCMathematicalReasoning.id.desc())
+            .first()
+        )
+
+        if math_exam:
+            exams.append({
+                "id": math_exam.id,
+                "subject": "mathematical_reasoning",
+                "label": "Mathematical Reasoning",
+            })
+
+        reading_exam = (
+            db.query(GeneratedHomeworkReading)
+            .filter(
+                func.lower(func.trim(GeneratedHomeworkReading.class_name)) == "oc",
+                GeneratedHomeworkReading.class_year == normalized_year,
+                GeneratedHomeworkReading.center_code == center_code,
+            )
+            .order_by(GeneratedHomeworkReading.id.desc())
+            .first()
+        )
+
+        if reading_exam:
+            exams.append({
+                "id": reading_exam.id,
+                "subject": "reading_comprehension",
+                "label": "Reading",
+            })
+
+        writing_exam = (
+            db.query(GeneratedHomeworkWriting)
+            .filter(
+                func.lower(func.trim(GeneratedHomeworkWriting.class_name)) == "oc",
+                GeneratedHomeworkWriting.class_year == normalized_year,
+                GeneratedHomeworkWriting.center_code == center_code,
+                GeneratedHomeworkWriting.is_current.is_(True),
+            )
+            .order_by(GeneratedHomeworkWriting.created_at.desc())
+            .first()
+        )
+
+        if writing_exam:
+            exams.append({
+                "id": writing_exam.id,
+                "subject": "writing",
+                "label": "Writing",
+            })
+
+    # --------------------------------------------------
+    # NAPLAN
+    # --------------------------------------------------
+    elif class_name.lower() == "naplan":
+
+        numeracy_exam = (
+            db.query(ExamNaplanNumeracyHomework)
+            .filter(
+                func.lower(func.trim(ExamNaplanNumeracyHomework.class_name)) == "naplan",
+                func.lower(func.trim(ExamNaplanNumeracyHomework.subject)) == "numeracy",
+                ExamNaplanNumeracyHomework.year == int(normalized_year),
+                ExamNaplanNumeracyHomework.center_code == center_code,
+            )
+            .order_by(ExamNaplanNumeracyHomework.id.desc())
+            .first()
+        )
+
+        if numeracy_exam:
+            exams.append({
+                "id": numeracy_exam.id,
+                "subject": "numeracy",
+                "label": "Numeracy",
+            })
+
+        language_exam = (
+            db.query(ExamNaplanLanguageConventionsHomework)
+            .filter(
+                func.lower(func.trim(ExamNaplanLanguageConventionsHomework.class_name)) == "naplan",
+                func.lower(func.trim(ExamNaplanLanguageConventionsHomework.subject)) == "language conventions",
+                ExamNaplanLanguageConventionsHomework.year == int(normalized_year),
+                ExamNaplanLanguageConventionsHomework.center_code == center_code,
+            )
+            .order_by(ExamNaplanLanguageConventionsHomework.id.desc())
+            .first()
+        )
+
+        if language_exam:
+            exams.append({
+                "id": language_exam.id,
+                "subject": "language_conventions",
+                "label": "Language Conventions",
+            })
+
+        reading_exam = (
+            db.query(ExamNaplanReadingHomework)
+            .filter(
+                func.lower(func.trim(ExamNaplanReadingHomework.class_name)) == "naplan",
+                ExamNaplanReadingHomework.subject == "reading",
+                ExamNaplanReadingHomework.year == int(normalized_year),
+                ExamNaplanReadingHomework.center_code == center_code,
+            )
+            .order_by(ExamNaplanReadingHomework.id.desc())
+            .first()
+        )
+
+        if reading_exam:
+            exams.append({
+                "id": reading_exam.id,
+                "subject": "reading",
+                "label": "Reading",
+            })
+
+        writing_exam = (
+            db.query(GeneratedHomeworkWriting)
+            .filter(
+                func.lower(func.trim(GeneratedHomeworkWriting.class_name)) == "naplan",
+                GeneratedHomeworkWriting.class_year == normalized_year,
+                GeneratedHomeworkWriting.center_code == center_code,
+                GeneratedHomeworkWriting.is_current.is_(True),
+            )
+            .order_by(GeneratedHomeworkWriting.created_at.desc())
+            .first()
+        )
+
+        if writing_exam:
+            exams.append({
+                "id": writing_exam.id,
+                "subject": "writing",
+                "label": "Writing",
+            })
+
+    return {
+        "exams": exams
+    }
 
 
 
