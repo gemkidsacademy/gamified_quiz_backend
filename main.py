@@ -11229,6 +11229,8 @@ def update_reminder_settings(
             settings.thirty_minutes_before_enabled
         ),
     }   
+
+
 @app.get("/parent-teacher-interview/invitations")
 def get_parent_teacher_interview_invitations(
     center_code: str,
@@ -11302,8 +11304,16 @@ def get_parent_teacher_interview_invitations(
                 == ClassYearExamModule.id
             )
             & (
+                ParentTeacherInterviewTeacherAllocation.class_day
+                == Student.class_day
+            )
+            & (
                 ParentTeacherInterviewTeacherAllocation.center_code
                 == center_code
+            )
+            & (
+                ParentTeacherInterviewTeacherAllocation.event_id
+                == event_id
             )
         )
         .join(
@@ -11314,21 +11324,6 @@ def get_parent_teacher_interview_invitations(
             )
             & (
                 CenterTeacher.center_code
-                == center_code
-            )
-        )
-        .join(
-            ParentTeacherInterviewSlot,
-            (
-                ParentTeacherInterviewSlot.teacher_id
-                == ParentTeacherInterviewTeacherAllocation.teacher_id
-            )
-            & (
-                ParentTeacherInterviewSlot.event_id
-                == event_id
-            )
-            & (
-                ParentTeacherInterviewSlot.center_code
                 == center_code
             )
         )
