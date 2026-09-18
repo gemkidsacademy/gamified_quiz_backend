@@ -11604,6 +11604,109 @@ def get_parent_teacher_interview_slots(
             ) not in booked_times
         ]
     }
+@app.get("/parent-teacher-interview/eligible-students")
+def get_parent_teacher_interview_eligible_students(
+    center_code: str,
+    event_id: int,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    # Verify event belongs to this centre
+    event = (
+        db.query(ParentTeacherInterviewEvent)
+        .filter(
+            ParentTeacherInterviewEvent.id == event_id,
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .first()
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Interview event not found."
+        )
+
+    # Find students matching the event's teacher allocations
+    rows = (
+        db.query(
+            Student.student_id,
+            Student.name.label("student_name"),
+            Student.parent_email,
+            Student.class_name,
+            Student.student_year.label("class_year"),
+            ParentTeacherInterviewTeacherAllocation.teacher_id,
+            CenterTeacher.full_name.label("teacher_name"),
+        )
+        .join(
+            Class,
+            Class.class_name == Student.class_name
+        )
+        .join(
+            ClassYearExamModule,
+            ClassYearExamModule.year_name == Student.student_year
+        )
+        .join(
+            ParentTeacherInterviewTeacherAllocation,
+            ParentTeacherInterviewTeacherAllocation.class_id == Class.id,
+        )
+        .join(
+            CenterTeacher,
+            CenterTeacher.id ==
+            ParentTeacherInterviewTeacherAllocation.teacher_id
+        )
+        .filter(
+            Student.center_code == center_code,
+            Student.is_active == True,
+
+            Class.center_code == center_code,
+            ClassYearExamModule.center_code == center_code,
+
+            ParentTeacherInterviewTeacherAllocation.center_code
+            == center_code,
+            ParentTeacherInterviewTeacherAllocation.event_id
+            == event_id,
+
+            ParentTeacherInterviewTeacherAllocation.class_day
+            == Student.class_day,
+
+            ParentTeacherInterviewTeacherAllocation.class_year_id
+            == ClassYearExamModule.id,
+
+            CenterTeacher.center_code == center_code,
+        )
+        .order_by(Student.student_id)
+        .all()
+    )
+
+    # Avoid duplicate students if a student happens to match
+    # more than one allocation.
+    students = []
+    seen_student_ids = set()
+
+    for row in rows:
+        if row.student_id in seen_student_ids:
+            continue
+
+        seen_student_ids.add(row.student_id)
+
+        students.append({
+            "student_id": row.student_id,
+            "student_name": row.student_name,
+            "parent_email": row.parent_email,
+            "class_name": row.class_name,
+            "class_year": row.class_year,
+            "teacher_id": row.teacher_id,
+            "teacher_name": row.teacher_name,
+            "event_id": event_id,
+        })
+
+    return {
+        "event_id": event_id,
+        "students": students,
+        "total": len(students),
+    }
 @app.post("/parent-teacher-interview/bookings")
 def create_parent_teacher_interview_booking(
     request: ParentTeacherInterviewBookingRequest,
