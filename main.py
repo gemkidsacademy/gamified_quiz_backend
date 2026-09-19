@@ -11397,8 +11397,15 @@ def get_parent_teacher_interview_slots(
     student_id: str,
     db: Session = Depends(get_db)
 ):
+    print("########## PTI SLOTS ENDPOINT HIT ##########")
+
     center_code = center_code.strip()
     student_id = student_id.strip()
+
+    print("\n========== PTI SLOTS DEBUG ==========")
+    print(f"[PTI SLOTS DEBUG] center_code: {center_code}")
+    print(f"[PTI SLOTS DEBUG] event_id: {event_id}")
+    print(f"[PTI SLOTS DEBUG] student_id: {student_id}")
 
     # ------------------------------------
     # Find student
@@ -11414,7 +11421,27 @@ def get_parent_teacher_interview_slots(
         .first()
     )
 
+    print(
+        f"[PTI SLOTS DEBUG] Student found: "
+        f"{student is not None}"
+    )
+
+    if student:
+        print(
+            f"[PTI SLOTS DEBUG] Student details: "
+            f"class_name={student.class_name}, "
+            f"student_year={student.student_year}, "
+            f"class_day={student.class_day}, "
+            f"center_code={student.center_code}, "
+            f"is_active={student.is_active}"
+        )
+
     if not student:
+        print(
+            "[PTI SLOTS DEBUG] STOP: Student not found"
+        )
+        print("========== END PTI SLOTS DEBUG ==========\n")
+
         raise HTTPException(
             status_code=404,
             detail="Student not found."
@@ -11423,6 +11450,25 @@ def get_parent_teacher_interview_slots(
     # ------------------------------------
     # Find teacher allocation for student
     # ------------------------------------
+
+    print(
+        "[PTI SLOTS DEBUG] Searching teacher allocation with:"
+    )
+    print(
+        f"    center_code={center_code}"
+    )
+    print(
+        f"    event_id={event_id}"
+    )
+    print(
+        f"    class_name={student.class_name}"
+    )
+    print(
+        f"    student_year={student.student_year}"
+    )
+    print(
+        f"    class_day={student.class_day}"
+    )
 
     allocation = (
         db.query(
@@ -11463,7 +11509,31 @@ def get_parent_teacher_interview_slots(
         .first()
     )
 
+    print(
+        f"[PTI SLOTS DEBUG] Allocation found: "
+        f"{allocation is not None}"
+    )
+
+    if allocation:
+        allocation_record, teacher_name = allocation
+
+        print(
+            f"[PTI SLOTS DEBUG] Allocation details: "
+            f"allocation_id={allocation_record.id}, "
+            f"teacher_id={allocation_record.teacher_id}, "
+            f"class_id={allocation_record.class_id}, "
+            f"class_year_id={allocation_record.class_year_id}, "
+            f"class_day={allocation_record.class_day}, "
+            f"event_id={allocation_record.event_id}, "
+            f"teacher_name={teacher_name}"
+        )
+
     if not allocation:
+        print(
+            "[PTI SLOTS DEBUG] STOP: No teacher allocation found"
+        )
+        print("========== END PTI SLOTS DEBUG ==========\n")
+
         return {
             "slots": []
         }
@@ -11471,6 +11541,13 @@ def get_parent_teacher_interview_slots(
     allocation_record, teacher_name = allocation
 
     teacher_id = allocation_record.teacher_id
+
+    print(
+        f"[PTI SLOTS DEBUG] Selected teacher_id: {teacher_id}"
+    )
+    print(
+        f"[PTI SLOTS DEBUG] Selected teacher_name: {teacher_name}"
+    )
 
     # ------------------------------------
     # Get teacher availability
@@ -11491,7 +11568,29 @@ def get_parent_teacher_interview_slots(
         .first()
     )
 
+    print(
+        f"[PTI SLOTS DEBUG] Availability found: "
+        f"{availability is not None}"
+    )
+
+    if availability:
+        print(
+            f"[PTI SLOTS DEBUG] Availability details: "
+            f"id={availability.id}, "
+            f"start_time={availability.start_time}, "
+            f"end_time={availability.end_time}, "
+            f"slot_duration={availability.slot_duration_minutes}, "
+            f"gap={availability.gap_minutes}, "
+            f"is_available={availability.is_available}"
+        )
+
     if not availability or not availability.is_available:
+        print(
+            "[PTI SLOTS DEBUG] STOP: "
+            "No availability or availability is disabled"
+        )
+        print("========== END PTI SLOTS DEBUG ==========\n")
+
         return {
             "slots": []
         }
@@ -11541,6 +11640,17 @@ def get_parent_teacher_interview_slots(
             + slot_gap
         )
 
+    print(
+        f"[PTI SLOTS DEBUG] Generated slots count: "
+        f"{len(generated_slots)}"
+    )
+
+    for slot in generated_slots:
+        print(
+            f"[PTI SLOTS DEBUG] Generated slot: "
+            f"{slot['start_time']}-{slot['end_time']}"
+        )
+
     # ------------------------------------
     # Get already booked times
     # ------------------------------------
@@ -11568,6 +11678,17 @@ def get_parent_teacher_interview_slots(
         .all()
     )
 
+    print(
+        f"[PTI SLOTS DEBUG] Booked slots count: "
+        f"{len(booked_slots)}"
+    )
+
+    for start_time, end_time in booked_slots:
+        print(
+            f"[PTI SLOTS DEBUG] Booked slot: "
+            f"{start_time}-{end_time}"
+        )
+
     booked_times = {
         (
             start_time,
@@ -11576,29 +11697,53 @@ def get_parent_teacher_interview_slots(
         for start_time, end_time in booked_slots
     }
 
+    print(
+        f"[PTI SLOTS DEBUG] Booked times set: "
+        f"{booked_times}"
+    )
+
     # ------------------------------------
     # Return only currently available times
     # ------------------------------------
 
+    final_slots = [
+        {
+            "id": None,
+            "center_code": center_code,
+            "event_id": event_id,
+            "teacher_id": teacher_id,
+            "teacher_name": teacher_name,
+            "start_time": slot["start_time"],
+            "end_time": slot["end_time"],
+            "is_available": True
+        }
+        for slot in generated_slots
+        if (
+            slot["start_time"],
+            slot["end_time"]
+        ) not in booked_times
+    ]
+
+    print(
+        f"[PTI SLOTS DEBUG] Final available slots count: "
+        f"{len(final_slots)}"
+    )
+
+    for slot in final_slots:
+        print(
+            f"[PTI SLOTS DEBUG] Final slot: "
+            f"{slot['start_time']}-{slot['end_time']}, "
+            f"teacher_id={slot['teacher_id']}, "
+            f"teacher_name={slot['teacher_name']}"
+        )
+
+    print("========== END PTI SLOTS DEBUG ==========\n")
+
     return {
-        "slots": [
-            {
-                "id": None,
-                "center_code": center_code,
-                "event_id": event_id,
-                "teacher_id": teacher_id,
-                "teacher_name": teacher_name,
-                "start_time": slot["start_time"],
-                "end_time": slot["end_time"],
-                "is_available": True
-            }
-            for slot in generated_slots
-            if (
-                slot["start_time"],
-                slot["end_time"]
-            ) not in booked_times
-        ]
+        "slots": final_slots
     }
+
+
 @app.get("/parent-teacher-interview/eligible-students")
 def get_parent_teacher_interview_eligible_students(
     center_code: str,
