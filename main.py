@@ -9597,7 +9597,37 @@ def send_otp_sms(phone_number: str, otp: int):
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
 
+@app.get("/parent-teacher-interview/my-event")
+def get_parent_teacher_interview_event(
+    center_code: str,
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+    student_id = student_id.strip()
 
+    invitation = (
+        db.query(ParentTeacherInterviewInvitation)
+        .filter(
+            ParentTeacherInterviewInvitation.center_code == center_code,
+            ParentTeacherInterviewInvitation.student_id == student_id,
+            ParentTeacherInterviewInvitation.status == "SENT"
+        )
+        .order_by(
+            ParentTeacherInterviewInvitation.created_at.desc()
+        )
+        .first()
+    )
+
+    if not invitation:
+        raise HTTPException(
+            status_code=404,
+            detail="No parent-teacher interview invitation found for this student."
+        )
+
+    return {
+        "event_id": invitation.event_id
+    }
 @app.get("/api/reports/homework/dates")
 def get_homework_report_dates(
     student_id: str,
