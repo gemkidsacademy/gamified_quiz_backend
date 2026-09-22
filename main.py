@@ -1308,6 +1308,7 @@ class AdminHomeworkExamResponseOCThinkingSkills(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
 class AdminHomeworkExamReportOCThinkingSkills(Base):
     __tablename__ = "admin_homework_exam_reports_oc_thinking_skills"
 
@@ -1378,6 +1379,7 @@ class AdminHomeworkExamReportMathematicalReasoning(Base):
             name="uq_admin_homework_math_reasoning_report_attempt_exam"
         ),
     )
+
 class AdminHomeworkExamResponseMathematicalReasoning(Base):
     __tablename__ = "admin_homework_exam_response_mathematical_reasoning"
 
@@ -5451,6 +5453,7 @@ class AdminExamResponseWriting(Base):
      ai_evaluation_json = Column(JSON)
  
      created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class StudentExamMathematicalReasoning(Base):
     __tablename__ = "student_exam_mathematical_reasoning"
 
@@ -10239,6 +10242,82 @@ def get_available_homework_exams(
         .order_by(GeneratedHomeworkWriting.created_at.desc())
         .all()
     )
+    # --------------------------------------------------
+    # OC Writing homework exams
+    # --------------------------------------------------
+    oc_writing_exams = (
+        db.query(GeneratedHomeworkWriting)
+        .join(
+            AdminHomeworkExamResponseWriting,
+            GeneratedHomeworkWriting.id
+            == AdminHomeworkExamResponseWriting.homework_exam_id,
+        )
+        .filter(
+            GeneratedHomeworkWriting.center_code == center_code,
+            func.lower(GeneratedHomeworkWriting.class_name)
+            == str(student.class_name).strip().lower(),
+            AdminHomeworkExamResponseWriting.student_id
+            == student.student_id,
+            AdminHomeworkExamResponseWriting.center_code == center_code,
+            AdminHomeworkExamResponseWriting.attempt_completed_at.isnot(None),
+        )
+        .order_by(GeneratedHomeworkWriting.created_at.desc())
+        .all()
+    )
+    print("\n========== OC WRITING SOURCE DEBUG ==========")
+
+    oc_writing_responses = (
+        db.query(AdminHomeworkExamResponseWriting)
+        .filter(
+            AdminHomeworkExamResponseWriting.student_id == student.student_id,
+            AdminHomeworkExamResponseWriting.center_code == center_code,
+        )
+        .all()
+    )
+
+    print(
+        "OC Writing response rows:",
+        len(oc_writing_responses),
+    )
+
+    for response in oc_writing_responses[:10]:
+        exam = (
+            db.query(GeneratedHomeworkWriting)
+            .filter(
+                GeneratedHomeworkWriting.id == response.homework_exam_id
+            )
+            .first()
+        )
+
+        print(
+            "Response:",
+            {
+                "response_id": response.id,
+                "student_id": response.student_id,
+                "center_code": response.center_code,
+                "homework_exam_id": response.homework_exam_id,
+                "homework_attempt_id": response.homework_attempt_id,
+                "topic": response.topic,
+                "attempt_completed_at": response.attempt_completed_at,
+            }
+        )
+
+        print(
+            "Generated Writing Exam:",
+            None
+            if not exam
+            else {
+                "id": exam.id,
+                "class_name": exam.class_name,
+                "class_year": exam.class_year,
+                "subject": exam.subject,
+                "topic": exam.topic,
+                "center_code": exam.center_code,
+            }
+        )
+
+    print("=============================================\n")
+    
 
     naplan_numeracy_exams = (
         db.query(ExamNaplanNumeracyHomework)
@@ -10352,6 +10431,15 @@ def get_available_homework_exams(
         })
 
     for exam in writing_exams:
+        exams.append({
+            "id": exam.id,
+            "label": exam.subject.replace("_", " ").title(),
+            "subject": exam.subject,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+        })
+    
+    for exam in oc_writing_exams:
         exams.append({
             "id": exam.id,
             "label": exam.subject.replace("_", " ").title(),
@@ -53319,7 +53407,1494 @@ def normalize_topic_reporting(value: str) -> str:
     return topic_aliases.get(normalized, normalized)
 
 
+@app.get("/api/reports/homework/cumulative")
+def get_homework_cumulative_report(
+    student_id: str,
+    subject: str,
+    topic: str,
+    center_code: str,
+    homework_attempt_ids: list[int] = Query(...),
+    db: Session = Depends(get_db),
+):
+    print("\n==============================")
+    print("📥 [HOMEWORK CUMULATIVE] REQUEST RECEIVED")
+    print("   student_id:", student_id)
+    print("   subject:", subject)
+    print("   topic:", repr(topic))
+    print("   homework_attempt_ids:", homework_attempt_ids)
+    print("   center_code:", center_code)
+    print("==============================")
 
+    try:
+        # --------------------------------------------------
+        # 0. Validate attempt IDs
+        # --------------------------------------------------
+        if not homework_attempt_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one homework attempt is required",
+            )
+
+        # --------------------------------------------------
+        # 1. Resolve student
+        # --------------------------------------------------
+        student = (
+            db.query(Student)
+            .filter(
+                Student.student_id == student_id,
+                Student.center_code == center_code,
+            )
+            .first()
+        )
+
+        if not student:
+            raise HTTPException(
+                status_code=404,
+                detail="Student not found for this center",
+            )
+
+        # --------------------------------------------------
+        # 2. Resolve subject / response model
+        # --------------------------------------------------
+        if subject.lower() == "thinking_skills":
+            if str(student.class_name).lower() == "oc":
+                ResponseModel = AdminHomeworkExamResponseOCThinkingSkills
+            else:
+                ResponseModel = AdminHomeworkExamResponseThinkingSkills
+
+        elif subject.lower() == "mathematical_reasoning":
+            if str(student.class_name).lower() == "oc":
+                ResponseModel = AdminHomeworkExamResponseOCMathematicalReasoning
+            else:
+                ResponseModel = AdminHomeworkExamResponseMathematicalReasoning
+
+        elif subject.lower() == "reading_comprehension":
+            if str(student.class_name).lower() == "oc":
+                ResponseModel = AdminHomeworkExamResponseOCReading
+            else:
+                ResponseModel = AdminHomeworkExamResponseReading
+        elif subject.lower() in ("numeracy", "naplan_numeracy"):
+            ResponseModel = AdminHomeworkExamResponseNaplanNumeracy
+        elif subject.lower() in (
+            "language conventions",
+            "language_conventions",
+            "naplan_language_conventions",
+        ):
+            ResponseModel = AdminHomeworkExamResponseNaplanLanguageConventions
+        elif subject.lower() in (
+            "reading",
+            "naplan_reading",
+        ):
+            ResponseModel = AdminHomeworkExamResponseNaplanReading
+        elif subject.lower() == "writing":
+            ResponseModel = AdminHomeworkExamResponseWriting
+        elif subject.lower() == "naplan_writing":
+            ResponseModel = AdminHomeworkExamResponseWriting
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported homework subject: {subject}"
+            )
+
+        # --------------------------------------------------
+        # 3. Normalize requested topic
+        # --------------------------------------------------
+        normalized_request_topic = normalize_topic_reporting(topic)
+
+        TOPIC_ALIASES = {
+            "main_idea_and_summary": "main_idea",
+        }
+
+        normalized_request_topic = TOPIC_ALIASES.get(
+            normalized_request_topic,
+            normalized_request_topic,
+        )
+
+        print("   normalized topic:", normalized_request_topic)
+
+        results = []
+
+        # --------------------------------------------------
+        # 4. Process each selected homework attempt
+        # --------------------------------------------------
+        for homework_attempt_id in homework_attempt_ids:
+            if subject.lower() in (
+                "numeracy",
+                "naplan_numeracy",
+                "language conventions",
+                "language_conventions",
+                "naplan_language_conventions",
+                "reading",
+                "naplan_reading",
+                "naplan_writing",
+            ):
+                response_student_id = student.student_id
+
+            elif subject.lower() == "writing":
+                response_student_id = student.student_id
+
+            elif (
+                subject.lower() == "reading_comprehension"
+                and str(student.class_name).lower() == "oc"
+            ):
+                response_student_id = student.student_id
+
+            elif subject.lower() == "reading_comprehension":
+                response_student_id = str(student.id)
+
+            else:
+                response_student_id = student.id
+
+            raw_responses = db.query(ResponseModel).filter(
+                ResponseModel.student_id == response_student_id,
+                ResponseModel.homework_attempt_id == homework_attempt_id,
+            ).all()
+
+            print(
+                f"CUMULATIVE DEBUG - attempt={homework_attempt_id} "
+                f"student_id={student.id} "
+                f"raw_response_count={len(raw_responses)}"
+            )
+
+            print(
+                "CUMULATIVE DEBUG - raw topics:",
+                sorted(
+                    {
+                        str(r.topic).strip()
+                        for r in raw_responses
+                        if r.topic
+                    }
+                )
+            )
+
+            print(
+                "   Raw responses found:",
+                len(raw_responses),
+            )
+
+            if not raw_responses:
+                print(
+                    "   ⚠️ No responses found for attempt:",
+                    homework_attempt_id,
+                )
+                continue
+
+            # --------------------------------------------------
+            # Filter responses by selected topic
+            # --------------------------------------------------
+            responses = [
+                r
+                for r in raw_responses
+                if r.topic
+                and normalize_topic_reporting(r.topic)
+                == normalized_request_topic
+            ]
+            print(
+                f"CUMULATIVE DEBUG - attempt={homework_attempt_id} "
+                f"requested_topic={topic} "
+                f"normalized_topic={normalized_request_topic} "
+                f"matching_response_count={len(responses)}"
+            )
+
+            print(
+                "   Topic responses:",
+                len(responses),
+            )
+
+            # --------------------------------------------------
+            # Skip attempt if topic has no questions
+            # --------------------------------------------------
+            if not responses:
+                print(
+                    "   ⚠️ No matching topic questions for attempt:",
+                    homework_attempt_id,
+                )
+                continue
+
+
+            # --------------------------------------------------
+            # Calculate metrics
+            # --------------------------------------------------
+            if subject.lower() in (
+                "writing",
+                "naplan_writing",
+            ):
+                writing_scores = [
+                    r.writing_score
+                    for r in responses
+                    if r.writing_score is not None
+                ]
+
+                if not writing_scores:
+                    print(
+                        "   ⚠️ No writing score found for attempt:",
+                        homework_attempt_id
+                    )
+                    continue
+
+                score = round(
+                    sum(writing_scores) / len(writing_scores),
+                    2
+                )
+
+                accuracy = round(
+                    (score / 25) * 100,
+                    2
+                )
+
+                attempted = 1
+                correct = None
+
+            else:
+                attempted = len(responses)
+
+                correct = sum(
+                    1
+                    for r in responses
+                    if r.is_correct
+                )
+
+                accuracy = (
+                    round((correct / attempted) * 100, 2)
+                    if attempted > 0
+                    else 0
+                )
+
+                score = accuracy
+
+
+            # --------------------------------------------------
+            # Resolve attempt date
+            # --------------------------------------------------
+            if subject.lower() in (
+                "numeracy",
+                "naplan_numeracy",
+            ):
+                naplan_numeracy_attempt = (
+                    db.query(StudentExamNaplanNumeracyHomework)
+                    .filter(
+                        StudentExamNaplanNumeracyHomework.id
+                        == homework_attempt_id,
+                        StudentExamNaplanNumeracyHomework.student_id
+                        == student.id,
+                    )
+                    .first()
+                )
+
+                attempt_completed_at = (
+                    naplan_numeracy_attempt.completed_at
+                    if naplan_numeracy_attempt
+                    else None
+                )
+
+            elif subject.lower() in (
+                "language conventions",
+                "language_conventions",
+                "naplan_language_conventions",
+            ):
+                language_conventions_attempt = (
+                    db.query(StudentExamNaplanLanguageConventionsHomework)
+                    .filter(
+                        StudentExamNaplanLanguageConventionsHomework.id
+                        == homework_attempt_id,
+                        StudentExamNaplanLanguageConventionsHomework.student_id
+                        == student.id,
+                    )
+                    .first()
+                )
+
+                attempt_completed_at = (
+                    language_conventions_attempt.completed_at
+                    if language_conventions_attempt
+                    else None
+                )
+
+            elif subject.lower() in (
+                "reading",
+                "naplan_reading",
+            ):
+                completed_at_values = [
+                    r.attempt_completed_at
+                    for r in responses
+                    if r.attempt_completed_at
+                ]
+
+                attempt_completed_at = (
+                    min(completed_at_values)
+                    if completed_at_values
+                    else None
+                )
+
+            elif subject.lower() == "naplan_writing":
+                completed_at_values = [
+                    r.attempt_completed_at
+                    for r in responses
+                    if r.attempt_completed_at
+                ]
+
+                attempt_completed_at = (
+                    min(completed_at_values)
+                    if completed_at_values
+                    else None
+                )
+
+            elif (
+                subject.lower() == "reading_comprehension"
+                and str(student.class_name).lower() != "oc"
+            ):
+                reading_attempt = (
+                    db.query(StudentHomeworkReading)
+                    .filter(
+                        StudentHomeworkReading.id == homework_attempt_id,
+                        StudentHomeworkReading.student_id == str(student.id),
+                    )
+                    .first()
+                )
+
+                attempt_completed_at = (
+                    reading_attempt.completed_at
+                    if reading_attempt
+                    else None
+                )
+
+            else:
+                completed_at_values = [
+                    r.attempt_completed_at
+                    for r in responses
+                    if r.attempt_completed_at
+                ]
+
+                attempt_completed_at = (
+                    min(completed_at_values)
+                    if completed_at_values
+                    else None
+                )
+
+            # --------------------------------------------------
+            # Add result
+            # --------------------------------------------------
+            results.append(
+                {
+                    "date": attempt_completed_at.date().isoformat(),
+                    "questions_attempted": attempted,
+                    "correct_answers": correct,
+                    "accuracy": accuracy,
+                    "score": score,
+                }
+            )
+
+        # --------------------------------------------------
+        # 5. Sort results chronologically
+        # --------------------------------------------------
+        results.sort(
+            key=lambda item: item["date"]
+        )
+
+        # --------------------------------------------------
+        # 6. Validate results
+        # --------------------------------------------------
+        if not results:
+            raise HTTPException(
+                status_code=400,
+                detail="No data found to generate the required report.",
+            )
+
+        # --------------------------------------------------
+        # 7. Build cumulative summary
+        # --------------------------------------------------
+        first = results[0]
+        last = results[-1]
+
+        summary = {
+            "first_attempt_score": first["score"],
+            "latest_attempt_score": last["score"],
+            "score_change": round(
+                last["score"] - first["score"],
+                2,
+            ),
+            "first_attempt_accuracy": first["accuracy"],
+            "latest_attempt_accuracy": last["accuracy"],
+            "accuracy_change": round(
+                last["accuracy"] - first["accuracy"],
+                2,
+            ),
+            "trend": (
+                "improving"
+                if last["accuracy"] > first["accuracy"]
+                else "declining"
+                if last["accuracy"] < first["accuracy"]
+                else "stable"
+            ),
+        }
+
+        # --------------------------------------------------
+        # 8. Return same structure as actual cumulative report
+        # --------------------------------------------------
+        return {
+            "student_id": student_id,
+            "student_name": student.name,
+            "exam": subject,
+            "topic": {
+                "key": topic,
+                "label": topic.replace("_", " ").title(),
+            },
+            "attempts": results,
+            "summary": summary,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("🔥🔥🔥 UNHANDLED HOMEWORK CUMULATIVE ERROR 🔥🔥🔥")
+        print("Type:", type(e))
+        print("Message:", str(e))
+
+        import traceback
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error while generating homework cumulative report",
+        )
+    
+
+
+@app.get("/api/reports/homework/cumulative/options")
+def get_homework_cumulative_report_options(
+    student_id: str = Query(..., description="Student ID"),
+    center_code: str = Query(..., description="Center code"),
+    db: Session = Depends(get_db),
+):
+    student = (
+        db.query(Student)
+        .filter(
+            Student.student_id == student_id,
+            Student.center_code == center_code,
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found for this center",
+        )
+
+    exam_sources = [
+        (
+            AdminHomeworkExamResponseThinkingSkills,
+            "thinking_skills",
+            "Thinking Skills",
+        ),
+        (
+            AdminHomeworkExamResponseMathematicalReasoning,
+            "mathematical_reasoning",
+            "Mathematical Reasoning",
+        ),
+        (
+            AdminHomeworkExamResponseReading,
+            "reading_comprehension",
+            "Reading Comprehension",
+        ),
+        (
+            AdminHomeworkExamResponseWriting,
+            "writing",
+            "Writing",
+        ),
+    ]
+
+    exam_data = {}
+
+    for ResponseModel, exam_key, exam_label in exam_sources:
+        if exam_key in ["reading_comprehension"]:
+            student_id_filter = str(student.id)
+        elif exam_key == "writing":
+            student_id_filter = student.student_id
+        else:
+            student_id_filter = student.id
+
+        responses = (
+            db.query(ResponseModel)
+            .filter(
+                ResponseModel.student_id == student_id_filter
+            )
+            .all()
+        )
+
+        for response in responses:
+            
+            if not response.homework_attempt_id:
+                continue
+
+            raw_topic = getattr(response, "topic", None)
+
+            if not raw_topic:
+                continue
+
+            normalized_topic = normalize_topic_reporting(raw_topic)
+
+            if not normalized_topic:
+                continue
+
+            if exam_key not in exam_data:
+                exam_data[exam_key] = {
+                    "key": exam_key,
+                    "label": exam_label,
+                    "topics": {},
+                }
+
+            if normalized_topic not in exam_data[exam_key]["topics"]:
+                exam_data[exam_key]["topics"][normalized_topic] = {
+                    "key": normalized_topic,
+                    "label": str(raw_topic).strip(),
+                    "attempts": {},
+                }
+
+            if exam_key == "reading_comprehension":
+                reading_attempt = (
+                    db.query(StudentHomeworkReading)
+                    .filter(
+                        StudentHomeworkReading.id == response.homework_attempt_id,
+                        StudentHomeworkReading.student_id == str(student.id),
+                        StudentHomeworkReading.exam_id == response.homework_exam_id,
+                    )
+                    .first()
+                )
+
+                if reading_attempt and reading_attempt.completed_at:
+                    homework_attempt_id = response.homework_attempt_id
+
+                    exam_data[exam_key]["topics"][
+                        normalized_topic
+                    ]["attempts"][homework_attempt_id] = {
+                        "homework_attempt_id": homework_attempt_id,
+                        "date": reading_attempt.completed_at.date().isoformat(),
+                    }
+
+            else:
+                completed_at = getattr(
+                    response,
+                    "attempt_completed_at",
+                    None,
+                )
+
+                if completed_at:
+                    homework_attempt_id = response.homework_attempt_id
+
+                    exam_data[exam_key]["topics"][
+                        normalized_topic
+                    ]["attempts"][homework_attempt_id] = {
+                        "homework_attempt_id": homework_attempt_id,
+                        "date": completed_at.date().isoformat(),
+                    }
+    
+    # --------------------------------------------------
+    # OC Thinking Skills Homework
+    # --------------------------------------------------
+    oc_responses = (
+        db.query(AdminHomeworkExamResponseOCThinkingSkills)
+        .filter(
+            AdminHomeworkExamResponseOCThinkingSkills.student_id == student.id,
+            AdminHomeworkExamResponseOCThinkingSkills.center_code == center_code,
+        )
+        .all()
+    )
+
+    print("\n========== OC HOMEWORK CUMULATIVE DEBUG ==========")
+    print("student.id:", student.id)
+    print("student.student_id:", student.student_id)
+    print("center_code:", center_code)
+    print("OC homework response count:", len(oc_responses))
+
+    for r in oc_responses[:10]:
+        print(
+            "OC homework response:",
+            {
+                "id": r.id,
+                "student_id": r.student_id,
+                "homework_exam_id": r.homework_exam_id,
+                "homework_attempt_id": r.homework_attempt_id,
+                "q_id": r.q_id,
+                "topic": r.topic,
+                "is_correct": r.is_correct,
+                "attempt_completed_at": r.attempt_completed_at,
+                "center_code": r.center_code,
+            }
+        )
+
+    print("===================================================\n")
+
+    for response in oc_responses:
+
+        raw_topic = getattr(response, "topic", None)
+
+        if not raw_topic:
+            print(
+                "OC SKIPPED - no topic:",
+                response.id,
+            )
+            continue
+
+        normalized_topic = normalize_topic_reporting(raw_topic)
+
+        if not normalized_topic:
+            print(
+                "OC SKIPPED - topic normalization returned empty:",
+                raw_topic,
+            )
+            continue
+
+        if "oc_thinking_skills" not in exam_data:
+            exam_data["oc_thinking_skills"] = {
+                "key": "oc_thinking_skills",
+                "label": "OC Thinking Skills",
+                "topics": {},
+            }
+
+        if normalized_topic not in exam_data["oc_thinking_skills"]["topics"]:
+            exam_data["oc_thinking_skills"]["topics"][
+                normalized_topic
+            ] = {
+                "key": normalized_topic,
+                "label": str(raw_topic).strip(),
+                "attempts": {},
+            }
+
+        completed_at = getattr(
+            response,
+            "attempt_completed_at",
+            None,
+        )
+
+        if not completed_at:
+            print(
+                "OC SKIPPED - no attempt_completed_at:",
+                {
+                    "response_id": response.id,
+                    "homework_attempt_id": response.homework_attempt_id,
+                    "topic": raw_topic,
+                }
+            )
+            continue
+
+        homework_attempt_id = response.homework_attempt_id
+
+        exam_data["oc_thinking_skills"]["topics"][
+            normalized_topic
+        ]["attempts"][homework_attempt_id] = {
+            "homework_attempt_id": homework_attempt_id,
+            "date": completed_at.date().isoformat(),
+        }
+
+    print("\n========== OC HOMEWORK RESULT ==========")
+
+    oc_topics = (
+        exam_data
+        .get("oc_thinking_skills", {})
+        .get("topics", {})
+    )
+
+    print("OC topic count:", len(oc_topics))
+
+    for topic_key, topic_info in oc_topics.items():
+        print(
+            "OC topic:",
+            {
+                "key": topic_key,
+                "label": topic_info["label"],
+                "attempt_count": len(topic_info["attempts"]),
+                "attempts": topic_info["attempts"],
+            }
+        )
+
+    print("=========================================\n")
+    # --------------------------------------------------
+    # OC Mathematical Reasoning Homework
+    # --------------------------------------------------
+    oc_mr_responses = (
+        db.query(AdminHomeworkExamResponseOCMathematicalReasoning)
+        .filter(
+            AdminHomeworkExamResponseOCMathematicalReasoning.student_id == student.id,
+            AdminHomeworkExamResponseOCMathematicalReasoning.center_code == center_code,
+        )
+        .all()
+    )
+
+    print("\n========== OC MR HOMEWORK CUMULATIVE DEBUG ==========")
+    print("student.id:", student.id)
+    print("student.student_id:", student.student_id)
+    print("center_code:", center_code)
+    print("OC MR homework response count:", len(oc_mr_responses))
+
+    for r in oc_mr_responses[:10]:
+        print(
+            "OC MR homework response:",
+            {
+                "id": r.id,
+                "student_id": r.student_id,
+                "homework_exam_id": r.homework_exam_id,
+                "homework_attempt_id": r.homework_attempt_id,
+                "q_id": r.q_id,
+                "topic": r.topic,
+                "is_correct": r.is_correct,
+                "attempt_completed_at": r.attempt_completed_at,
+                "center_code": r.center_code,
+            }
+        )
+
+    print("=======================================================\n")
+
+    for response in oc_mr_responses:
+
+        raw_topic = getattr(response, "topic", None)
+
+        if not raw_topic:
+            print(
+                "OC MR SKIPPED - no topic:",
+                response.id,
+            )
+            continue
+
+        normalized_topic = normalize_topic_reporting(raw_topic)
+
+        if not normalized_topic:
+            print(
+                "OC MR SKIPPED - topic normalization returned empty:",
+                raw_topic,
+            )
+            continue
+
+        if "oc_mathematical_reasoning" not in exam_data:
+            exam_data["oc_mathematical_reasoning"] = {
+                "key": "oc_mathematical_reasoning",
+                "label": "OC Mathematical Reasoning",
+                "topics": {},
+            }
+
+        if normalized_topic not in exam_data[
+            "oc_mathematical_reasoning"
+        ]["topics"]:
+            exam_data["oc_mathematical_reasoning"]["topics"][
+                normalized_topic
+            ] = {
+                "key": normalized_topic,
+                "label": str(raw_topic).strip(),
+                "attempts": {},
+            }
+
+        completed_at = getattr(
+            response,
+            "attempt_completed_at",
+            None,
+        )
+
+        if not completed_at:
+            print(
+                "OC MR SKIPPED - no attempt_completed_at:",
+                {
+                    "response_id": response.id,
+                    "homework_attempt_id": response.homework_attempt_id,
+                    "topic": raw_topic,
+                }
+            )
+            continue
+
+        homework_attempt_id = response.homework_attempt_id
+
+        exam_data["oc_mathematical_reasoning"]["topics"][
+            normalized_topic
+        ]["attempts"][homework_attempt_id] = {
+            "homework_attempt_id": homework_attempt_id,
+            "date": completed_at.date().isoformat(),
+        }
+
+    print("\n========== OC MR HOMEWORK RESULT ==========")
+
+    oc_mr_topics = (
+        exam_data
+        .get("oc_mathematical_reasoning", {})
+        .get("topics", {})
+    )
+
+    print("OC MR topic count:", len(oc_mr_topics))
+
+    for topic_key, topic_info in oc_mr_topics.items():
+        print(
+            "OC MR topic:",
+            {
+                "key": topic_key,
+                "label": topic_info["label"],
+                "attempt_count": len(topic_info["attempts"]),
+                "attempts": topic_info["attempts"],
+            }
+        )
+
+    print("============================================\n")
+
+    # --------------------------------------------------
+    # OC Reading Homework
+    # --------------------------------------------------
+    oc_reading_responses = (
+        db.query(AdminHomeworkExamResponseOCReading)
+        .filter(
+            AdminHomeworkExamResponseOCReading.student_id == student.student_id,
+            AdminHomeworkExamResponseOCReading.center_code == center_code,
+        )
+        .all()
+    )
+
+    print("\n========== OC READING HOMEWORK CUMULATIVE DEBUG ==========")
+    print("student.id:", student.id)
+    print("student.student_id:", student.student_id)
+    print("center_code:", center_code)
+    print(
+        "OC Reading homework response count:",
+        len(oc_reading_responses),
+    )
+
+    for r in oc_reading_responses[:10]:
+        print(
+            "OC Reading homework response:",
+            {
+                "id": r.id,
+                "student_id": r.student_id,
+                "homework_exam_id": r.homework_exam_id,
+                "homework_attempt_id": r.homework_attempt_id,
+                "q_id": r.q_id,
+                "topic": r.topic,
+                "is_correct": r.is_correct,
+                "attempt_completed_at": r.attempt_completed_at,
+                "center_code": r.center_code,
+            }
+        )
+
+    print("===========================================================\n")
+
+    for response in oc_reading_responses:
+
+        raw_topic = getattr(response, "topic", None)
+
+        if not raw_topic:
+            print(
+                "OC READING SKIPPED - no topic:",
+                response.id,
+            )
+            continue
+
+        normalized_topic = normalize_topic_reporting(raw_topic)
+
+        if not normalized_topic:
+            print(
+                "OC READING SKIPPED - topic normalization returned empty:",
+                raw_topic,
+            )
+            continue
+
+        if "oc_reading" not in exam_data:
+            exam_data["oc_reading"] = {
+                "key": "oc_reading",
+                "label": "OC Reading",
+                "topics": {},
+            }
+
+        if normalized_topic not in exam_data["oc_reading"]["topics"]:
+            exam_data["oc_reading"]["topics"][
+                normalized_topic
+            ] = {
+                "key": normalized_topic,
+                "label": str(raw_topic).strip(),
+                "attempts": {},
+            }
+
+        completed_at = getattr(
+            response,
+            "attempt_completed_at",
+            None,
+        )
+
+        if not completed_at:
+            print(
+                "OC READING SKIPPED - no attempt_completed_at:",
+                {
+                    "response_id": response.id,
+                    "homework_attempt_id": response.homework_attempt_id,
+                    "topic": raw_topic,
+                }
+            )
+            continue
+
+        homework_attempt_id = response.homework_attempt_id
+
+        exam_data["oc_reading"]["topics"][
+            normalized_topic
+        ]["attempts"][homework_attempt_id] = {
+            "homework_attempt_id": homework_attempt_id,
+            "date": completed_at.date().isoformat(),
+        }
+
+    print("\n========== OC READING HOMEWORK RESULT ==========")
+
+    oc_reading_topics = (
+        exam_data
+        .get("oc_reading", {})
+        .get("topics", {})
+    )
+
+    print(
+        "OC Reading topic count:",
+        len(oc_reading_topics),
+    )
+
+    for topic_key, topic_info in oc_reading_topics.items():
+        print(
+            "OC Reading topic:",
+            {
+                "key": topic_key,
+                "label": topic_info["label"],
+                "attempt_count": len(topic_info["attempts"]),
+                "attempts": topic_info["attempts"],
+            }
+        )
+
+    print("=================================================\n")
+    # --------------------------------------------------
+    # OC Writing Homework
+    # --------------------------------------------------
+    oc_writing_responses = (
+        db.query(AdminHomeworkExamResponseWriting)
+        .join(
+            GeneratedHomeworkWriting,
+            GeneratedHomeworkWriting.id
+            == AdminHomeworkExamResponseWriting.homework_exam_id,
+        )
+        .filter(
+            AdminHomeworkExamResponseWriting.student_id
+            == student.student_id,
+            AdminHomeworkExamResponseWriting.center_code
+            == center_code,
+            GeneratedHomeworkWriting.class_name.ilike("oc"),
+            GeneratedHomeworkWriting.center_code == center_code,
+        )
+        .all()
+    )
+
+    print("\n========== OC WRITING HOMEWORK CUMULATIVE DEBUG ==========")
+    print("student.id:", student.id)
+    print("student.student_id:", student.student_id)
+    print("center_code:", center_code)
+    print(
+        "OC Writing homework response count:",
+        len(oc_writing_responses),
+    )
+
+    for r in oc_writing_responses[:10]:
+        print(
+            "OC Writing homework response:",
+            {
+                "id": r.id,
+                "student_id": r.student_id,
+                "homework_exam_id": r.homework_exam_id,
+                "homework_attempt_id": r.homework_attempt_id,
+                "topic": r.topic,
+                "writing_type": r.writing_type,
+                "writing_score": r.writing_score,
+                "attempt_completed_at": r.attempt_completed_at,
+                "center_code": r.center_code,
+            }
+        )
+
+    print("============================================================\n")
+
+    for response in oc_writing_responses:
+
+        raw_topic = getattr(response, "topic", None)
+
+        if not raw_topic:
+            print(
+                "OC WRITING SKIPPED - no topic:",
+                response.id,
+            )
+            continue
+
+        normalized_topic = normalize_topic_reporting(raw_topic)
+
+        if not normalized_topic:
+            print(
+                "OC WRITING SKIPPED - topic normalization returned empty:",
+                raw_topic,
+            )
+            continue
+
+        if "oc_writing" not in exam_data:
+            exam_data["oc_writing"] = {
+                "key": "oc_writing",
+                "label": "OC Writing",
+                "topics": {},
+            }
+
+        if normalized_topic not in exam_data["oc_writing"]["topics"]:
+            exam_data["oc_writing"]["topics"][
+                normalized_topic
+            ] = {
+                "key": normalized_topic,
+                "label": str(raw_topic).strip(),
+                "attempts": {},
+            }
+
+        completed_at = getattr(
+            response,
+            "attempt_completed_at",
+            None,
+        )
+
+        if not completed_at:
+            print(
+                "OC WRITING SKIPPED - no attempt_completed_at:",
+                {
+                    "response_id": response.id,
+                    "homework_attempt_id": response.homework_attempt_id,
+                    "topic": raw_topic,
+                }
+            )
+            continue
+
+        homework_attempt_id = response.homework_attempt_id
+
+        exam_data["oc_writing"]["topics"][
+            normalized_topic
+        ]["attempts"][homework_attempt_id] = {
+            "homework_attempt_id": homework_attempt_id,
+            "date": completed_at.date().isoformat(),
+        }
+
+    print("\n========== OC WRITING HOMEWORK RESULT ==========")
+
+    oc_writing_topics = (
+        exam_data
+        .get("oc_writing", {})
+        .get("topics", {})
+    )
+
+    print(
+        "OC Writing topic count:",
+        len(oc_writing_topics),
+    )
+
+    for topic_key, topic_info in oc_writing_topics.items():
+        print(
+            "OC Writing topic:",
+            {
+                "key": topic_key,
+                "label": topic_info["label"],
+                "attempt_count": len(topic_info["attempts"]),
+                "attempts": topic_info["attempts"],
+            }
+        )
+
+    print("=================================================\n")
+    # --------------------------------------------------
+    # NAPLAN Numeracy Homework
+    # --------------------------------------------------
+    naplan_numeracy_responses = (
+        db.query(AdminHomeworkExamResponseNaplanNumeracy)
+        .filter(
+            AdminHomeworkExamResponseNaplanNumeracy.student_id
+            == student.student_id,
+            AdminHomeworkExamResponseNaplanNumeracy.center_code
+            == center_code,
+        )
+        .all()
+    )
+
+    print("\n========== NAPLAN NUMERACY HOMEWORK CUMULATIVE DEBUG ==========")
+    print("student.id:", student.id)
+    print("student.student_id:", student.student_id)
+    print("center_code:", center_code)
+    print(
+        "NAPLAN Numeracy homework response count:",
+        len(naplan_numeracy_responses),
+    )
+
+    for r in naplan_numeracy_responses[:10]:
+        print(
+            {
+                "response_id": r.id,
+                "student_id": r.student_id,
+                "homework_exam_id": r.homework_exam_id,
+                "homework_attempt_id": r.homework_attempt_id,
+                "topic": r.topic,
+                "is_correct": r.is_correct,
+                "attempt_completed_at": r.attempt_completed_at,
+            }
+        )
+
+    print("=================================================\n")
+
+    for response in naplan_numeracy_responses:
+
+        raw_topic = getattr(response, "topic", None)
+
+        if not raw_topic:
+            print(
+                "NAPLAN NUMERACY SKIPPED - no topic:",
+                response.id,
+            )
+            continue
+
+        normalized_topic = normalize_topic_reporting(raw_topic)
+
+        if not normalized_topic:
+            print(
+                "NAPLAN NUMERACY SKIPPED - topic normalization returned empty:",
+                raw_topic,
+            )
+            continue
+
+        if "naplan_numeracy" not in exam_data:
+            exam_data["naplan_numeracy"] = {
+                "key": "naplan_numeracy",
+                "label": "NAPLAN Numeracy",
+                "topics": {},
+            }
+
+        if normalized_topic not in exam_data["naplan_numeracy"]["topics"]:
+            exam_data["naplan_numeracy"]["topics"][
+                normalized_topic
+            ] = {
+                "key": normalized_topic,
+                "label": str(raw_topic).strip(),
+                "attempts": {},
+            }
+
+        homework_attempt_id = response.homework_attempt_id
+
+        homework_attempt = (
+            db.query(StudentExamNaplanNumeracyHomework)
+            .filter(
+                StudentExamNaplanNumeracyHomework.id
+                == homework_attempt_id,
+                StudentExamNaplanNumeracyHomework.student_id
+                == student.id,
+            )
+            .first()
+        )
+
+        if not homework_attempt:
+            print(
+                "NAPLAN NUMERACY SKIPPED - homework attempt not found:",
+                homework_attempt_id,
+            )
+            continue
+
+        completed_at = homework_attempt.completed_at
+
+        if not completed_at:
+            print(
+                "NAPLAN NUMERACY SKIPPED - homework attempt not completed:",
+                {
+                    "response_id": response.id,
+                    "homework_attempt_id": homework_attempt_id,
+                    "topic": raw_topic,
+                }
+            )
+            continue
+
+        exam_data["naplan_numeracy"]["topics"][
+            normalized_topic
+        ]["attempts"][homework_attempt_id] = {
+            "homework_attempt_id": homework_attempt_id,
+            "date": completed_at.date().isoformat(),
+        }
+
+    print("\n========== NAPLAN NUMERACY HOMEWORK RESULT ==========")
+
+    naplan_numeracy_topics = (
+        exam_data
+        .get("naplan_numeracy", {})
+        .get("topics", {})
+    )
+
+    print(
+        "NAPLAN Numeracy topic count:",
+        len(naplan_numeracy_topics),
+    )
+
+    for topic_key, topic_info in naplan_numeracy_topics.items():
+        print(
+            "NAPLAN Numeracy topic:",
+            {
+                "key": topic_key,
+                "label": topic_info["label"],
+                "attempt_count": len(topic_info["attempts"]),
+                "attempts": topic_info["attempts"],
+            }
+        )
+
+    print("=======================================================\n")
+    # --------------------------------------------------
+    # NAPLAN Language Conventions
+    # --------------------------------------------------
+    naplan_language_conventions_responses = (
+        db.query(AdminHomeworkExamResponseNaplanLanguageConventions)
+        .filter(
+            AdminHomeworkExamResponseNaplanLanguageConventions.student_id
+            == student.student_id,
+            AdminHomeworkExamResponseNaplanLanguageConventions.center_code
+            == center_code,
+        )
+        .all()
+    )
+
+    for response in naplan_language_conventions_responses:
+        if not response.homework_attempt_id:
+            continue
+
+        raw_topic = getattr(response, "topic", None)
+
+        if not raw_topic:
+            continue
+
+        normalized_topic = normalize_topic_reporting(raw_topic)
+
+        if not normalized_topic:
+            continue
+
+        if "naplan_language_conventions" not in exam_data:
+            exam_data["naplan_language_conventions"] = {
+                "key": "naplan_language_conventions",
+                "label": "NAPLAN Language Conventions",
+                "topics": {},
+            }
+
+        if (
+            normalized_topic
+            not in exam_data["naplan_language_conventions"]["topics"]
+        ):
+            exam_data["naplan_language_conventions"]["topics"][
+                normalized_topic
+            ] = {
+                "key": normalized_topic,
+                "label": str(raw_topic).strip(),
+                "attempts": {},
+            }
+
+        homework_attempt_id = response.homework_attempt_id
+
+        homework_attempt = (
+            db.query(StudentExamNaplanLanguageConventionsHomework)
+            .filter(
+                StudentExamNaplanLanguageConventionsHomework.id
+                == homework_attempt_id,
+                StudentExamNaplanLanguageConventionsHomework.student_id
+                == student.id,
+            )
+            .first()
+        )
+
+        if not homework_attempt or not homework_attempt.completed_at:
+            continue
+
+        exam_data["naplan_language_conventions"]["topics"][
+            normalized_topic
+        ]["attempts"][homework_attempt_id] = {
+            "homework_attempt_id": homework_attempt_id,
+            "date": homework_attempt.completed_at.date().isoformat(),
+        }
+    
+    # --------------------------------------------------
+    # NAPLAN Reading
+    # --------------------------------------------------
+    naplan_reading_responses = (
+        db.query(AdminHomeworkExamResponseNaplanReading)
+        .filter(
+            AdminHomeworkExamResponseNaplanReading.student_id
+            == student.student_id,
+            AdminHomeworkExamResponseNaplanReading.center_code
+            == center_code,
+        )
+        .all()
+    )
+
+    for response in naplan_reading_responses:
+        if not response.homework_attempt_id:
+            continue
+
+        raw_topic = getattr(response, "topic", None)
+
+        if not raw_topic:
+            continue
+
+        normalized_topic = normalize_topic_reporting(raw_topic)
+
+        if not normalized_topic:
+            continue
+
+        if "naplan_reading" not in exam_data:
+            exam_data["naplan_reading"] = {
+                "key": "naplan_reading",
+                "label": "NAPLAN Reading",
+                "topics": {},
+            }
+
+        if (
+            normalized_topic
+            not in exam_data["naplan_reading"]["topics"]
+        ):
+            exam_data["naplan_reading"]["topics"][
+                normalized_topic
+            ] = {
+                "key": normalized_topic,
+                "label": str(raw_topic).strip(),
+                "attempts": {},
+            }
+
+        homework_attempt_id = response.homework_attempt_id
+
+        # attempt_completed_at is already populated
+        # in the admin snapshot for NAPLAN Reading.
+        completed_at = getattr(
+            response,
+            "attempt_completed_at",
+            None,
+        )
+
+        if not completed_at:
+            continue
+
+        exam_data["naplan_reading"]["topics"][
+            normalized_topic
+        ]["attempts"][homework_attempt_id] = {
+            "homework_attempt_id": homework_attempt_id,
+            "date": completed_at.date().isoformat(),
+        }
+
+    # --------------------------------------------------
+    # NAPLAN Writing
+    # --------------------------------------------------
+    naplan_writing_responses = (
+        db.query(AdminHomeworkExamResponseWriting)
+        .join(
+            GeneratedHomeworkWriting,
+            GeneratedHomeworkWriting.id
+            == AdminHomeworkExamResponseWriting.homework_exam_id,
+        )
+        .filter(
+            AdminHomeworkExamResponseWriting.student_id
+            == student.student_id,
+            AdminHomeworkExamResponseWriting.center_code
+            == center_code,
+            func.lower(GeneratedHomeworkWriting.class_name)
+            == "naplan",
+            AdminHomeworkExamResponseWriting.attempt_completed_at.isnot(None),
+        )
+        .all()
+    )
+
+    for response in naplan_writing_responses:
+        if not response.homework_attempt_id:
+            continue
+
+        raw_topic = getattr(response, "topic", None)
+
+        if not raw_topic:
+            continue
+
+        normalized_topic = normalize_topic_reporting(raw_topic)
+
+        if not normalized_topic:
+            continue
+
+        if "naplan_writing" not in exam_data:
+            exam_data["naplan_writing"] = {
+                "key": "naplan_writing",
+                "label": "NAPLAN Writing",
+                "topics": {},
+            }
+
+        if (
+            normalized_topic
+            not in exam_data["naplan_writing"]["topics"]
+        ):
+            exam_data["naplan_writing"]["topics"][
+                normalized_topic
+            ] = {
+                "key": normalized_topic,
+                "label": str(raw_topic).strip(),
+                "attempts": {},
+            }
+
+        homework_attempt_id = response.homework_attempt_id
+
+        completed_at = getattr(
+            response,
+            "attempt_completed_at",
+            None,
+        )
+
+        if not completed_at:
+            continue
+
+        exam_data["naplan_writing"]["topics"][
+            normalized_topic
+        ]["attempts"][homework_attempt_id] = {
+            "homework_attempt_id": homework_attempt_id,
+            "date": completed_at.date().isoformat(),
+        }
+
+    
+    exams = []
+
+    for exam_key, exam_info in exam_data.items():
+        topics = []
+
+        for topic_key, topic_info in exam_info["topics"].items():
+            attempts = sorted(
+                topic_info["attempts"].values(),
+                key=lambda item: item["date"],
+                reverse=True,
+            )
+
+            if not attempts:
+                continue
+
+            topics.append({
+                "key": topic_info["key"],
+                "label": topic_info["label"],
+                "attempts": attempts,
+            })
+
+        if topics:
+            topics.sort(
+                key=lambda item: item["label"].lower()
+            )
+
+            exams.append({
+                "key": exam_info["key"],
+                "label": exam_info["label"],
+                "topics": topics,
+            })
+
+    exams.sort(
+        key=lambda item: item["label"].lower()
+    )
+    print("\n========== CUMULATIVE OPTIONS DEBUG ==========")
+    print("student_id:", student_id)
+    print("center_code:", center_code)
+    print("exam_data keys:", list(exam_data.keys()))
+    print("exam_data:", exam_data)
+    print("final exams:", exams)
+    print("==============================================\n")
+
+    return {
+        "student_id": student_id,
+        "student_name": student.name,
+        "exams": exams,
+    }
+
+#here123
+    
 @app.get("/api/reports/student/cumulative/options")
 def get_cumulative_report_options(
     student_id: str = Query(..., description="Student ID"),
@@ -53828,7 +55403,7 @@ def get_cumulative_report_options(
     # ==========================================================
     # 8. RETURN
     # ==========================================================
-
+    
     return {
         "student_id": student_id,
         "student_name": student.name,
@@ -61154,7 +62729,226 @@ def get_distinct_topics_exam_setup(
 
     return [t[0] for t in topics]
 
+@app.get("/api/admin/students/{student_id}/homework-selective-report-dates")
+def get_homework_selective_report_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    print("\n====================================================")
+    print("📅 HOMEWORK SELECTIVE REPORT DATES")
+    print("====================================================")
+    print(f"📥 Requested student_id: {student_id}")
 
+    # --------------------------------------------------
+    # 1️⃣ Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) ==
+            func.lower(student_id.strip())
+        )
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    print("✅ Student resolved")
+    print(f"   External student_id : {student.student_id}")
+    print(f"   Internal student.id : {student.id}")
+    print(f"   Center code         : {student.center_code}")
+    print(f"   Class name          : {student.class_name}")
+    print(f"   Student year        : {student.student_year}")
+
+    dates = set()
+
+    # --------------------------------------------------
+    # 2️⃣ Thinking Skills
+    # --------------------------------------------------
+    print("\n🧠 THINKING SKILLS")
+    print("   Looking for Selective homework reports...")
+
+    thinking_rows = (
+        db.query(AdminHomeworkExamReport)
+        .join(
+            HomeWorkExam,
+            HomeWorkExam.id ==
+            AdminHomeworkExamReport.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReport.student_id == student.id,
+            AdminHomeworkExamReport.center_code == student.center_code,
+            func.lower(HomeWorkExam.class_name) == "selective",
+            AdminHomeworkExamReport.completed_at.isnot(None)
+        )
+        .all()
+    )
+
+    print(f"   ✅ Reports found: {len(thinking_rows)}")
+
+    for row in thinking_rows:
+        print(
+            f"   → report_id={row.id}, "
+            f"exam_id={row.homework_exam_id}, "
+            f"attempt_id={row.homework_attempt_id}, "
+            f"completed_at={row.completed_at}"
+        )
+
+        if row.completed_at:
+            dates.add(row.completed_at.date())
+
+    print(f"   📅 Dates collected: {sorted(dates, reverse=True)}")
+
+    # --------------------------------------------------
+    # 3️⃣ Mathematical Reasoning
+    # --------------------------------------------------
+    print("\n➗ MATHEMATICAL REASONING")
+    print("   Looking for Selective homework reports...")
+
+    math_rows = (
+        db.query(AdminHomeworkExamReportMathematicalReasoning)
+        .join(
+            HomeworkExamMathematicalReasoning,
+            HomeworkExamMathematicalReasoning.id ==
+            AdminHomeworkExamReportMathematicalReasoning.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportMathematicalReasoning.student_id == student.id,
+            AdminHomeworkExamReportMathematicalReasoning.center_code == student.center_code,
+            func.lower(
+                HomeworkExamMathematicalReasoning.class_name
+            ) == "selective",
+            AdminHomeworkExamReportMathematicalReasoning.completed_at.isnot(None)
+        )
+        .all()
+    )
+
+    print(f"   ✅ Reports found: {len(math_rows)}")
+
+    for row in math_rows:
+        print(
+            f"   → report_id={row.id}, "
+            f"exam_id={row.homework_exam_id}, "
+            f"attempt_id={row.homework_attempt_id}, "
+            f"completed_at={row.completed_at}"
+        )
+
+        if row.completed_at:
+            dates.add(row.completed_at.date())
+
+    print(f"   📅 Dates collected: {sorted(dates, reverse=True)}")
+
+    # --------------------------------------------------
+    # 4️⃣ Reading
+    # --------------------------------------------------
+    print("\n📖 READING")
+    print("   Looking for Selective homework reports...")
+
+    reading_rows = (
+        db.query(AdminHomeworkExamReportReading)
+        .join(
+            GeneratedHomeworkReading,
+            GeneratedHomeworkReading.id ==
+            AdminHomeworkExamReportReading.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportReading.student_id == student.id,
+            AdminHomeworkExamReportReading.center_code == student.center_code,
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkReading.class_name
+                )
+            ) == "selective",
+            AdminHomeworkExamReportReading.completed_at.isnot(None)
+        )
+        .all()
+    )
+
+    print(f"   ✅ Reports found: {len(reading_rows)}")
+
+    for row in reading_rows:
+        print(
+            f"   → report_id={row.id}, "
+            f"exam_id={row.homework_exam_id}, "
+            f"attempt_id={row.homework_attempt_id}, "
+            f"completed_at={row.completed_at}"
+        )
+
+        if row.completed_at:
+            dates.add(row.completed_at.date())
+
+    print(f"   📅 Dates collected: {sorted(dates, reverse=True)}")
+
+    # --------------------------------------------------
+    # 5️⃣ Writing
+    # --------------------------------------------------
+    print("\n✍️ WRITING")
+    print("   Looking for Selective homework reports...")
+
+    writing_rows = (
+        db.query(AdminHomeworkExamReportsWriting)
+        .join(
+            GeneratedHomeworkWriting,
+            GeneratedHomeworkWriting.id ==
+            AdminHomeworkExamReportsWriting.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportsWriting.student_id ==
+            student.student_id,
+
+            AdminHomeworkExamReportsWriting.center_code ==
+            student.center_code,
+
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkWriting.class_name
+                )
+            ) == "selective",
+
+            AdminHomeworkExamReportsWriting.completed_at.isnot(None)
+        )
+        .all()
+    )
+
+    print(f"   ✅ Reports found: {len(writing_rows)}")
+
+    for row in writing_rows:
+        print(
+            f"   → report_id={row.id}, "
+            f"exam_id={row.homework_exam_id}, "
+            f"attempt_id={row.homework_attempt_id}, "
+            f"completed_at={row.completed_at}"
+        )
+
+        if row.completed_at:
+            dates.add(row.completed_at.date())
+
+    print(f"   📅 Dates collected: {sorted(dates, reverse=True)}")
+
+    # --------------------------------------------------
+    # 6️⃣ Final result
+    # --------------------------------------------------
+    final_dates = sorted(dates, reverse=True)
+
+    print("\n====================================================")
+    print("📊 FINAL HOMEWORK SELECTIVE REPORT DATES")
+    print("====================================================")
+    print(f"👤 Student: {student.student_id}")
+    print(f"🏢 Center : {student.center_code}")
+    print(f"📅 Dates  : {final_dates}")
+    print(f"🔢 Count  : {len(final_dates)}")
+
+    print("====================================================\n")
+
+    return [
+        d.isoformat()
+        for d in final_dates
+    ]
 @app.get("/api/admin/students/{student_id}/selective-report-dates")
 def get_selective_report_dates(
     student_id: str,
@@ -80480,6 +82274,11 @@ def submit_homework_writing(
     if not student:
         raise HTTPException(404, "Student not found")
 
+    print("✅ STUDENT RESOLVED")
+    print(f"   external_student_id={student.student_id}")
+    print(f"   internal_student_id={student.id}")
+    print(f"   center_code={student.center_code}")
+
     # --------------------------------------------------
     # 2️⃣ Load active homework attempt
     # --------------------------------------------------
@@ -80495,6 +82294,11 @@ def submit_homework_writing(
 
     if not attempt:
         raise HTTPException(404, "No active homework attempt")
+
+    print("✅ ACTIVE ATTEMPT FOUND")
+    print(f"   attempt_id={attempt.id}")
+    print(f"   homework_id={attempt.homework_id}")
+    print(f"   completed_at={attempt.completed_at}")
 
     # --------------------------------------------------
     # 3️⃣ Load homework definition
@@ -80573,6 +82377,11 @@ def submit_homework_writing(
     # --------------------------------------------------
     db.commit()
 
+    print("✅ FIRST COMMIT SUCCESS")
+    print(f"   attempt_id={attempt.id}")
+    print(f"   homework_id={attempt.homework_id}")
+    print(f"   admin_response_student_id={admin_response_row.student_id}")
+
     # --------------------------------------------------
     # 6️⃣ AI Evaluation (SAFE VERSION)
     # --------------------------------------------------
@@ -80586,6 +82395,9 @@ def submit_homework_writing(
     - 10–13: Below {exam_short_name} standard – significant improvement needed
     - Below 10: Well below {exam_short_name} standard at this stage
     """
+    print("🤖 STARTING AI EVALUATION")
+    print(f"   attempt_id={attempt.id}")
+    print(f"   homework_id={attempt.homework_id}")
     try:
         #come here123
         prompt = f"""
@@ -80637,14 +82449,19 @@ def submit_homework_writing(
             temperature=0.4
         )
 
+        print("🤖 AI RESPONSE RECEIVED")
+        print(f"   attempt_id={attempt.id}")
+        print(f"   ai_text_exists={bool(response.output_text)}")
+
         ai_text = response.output_text
-        print("🧠 AI TEXT:", ai_text)
         
 
         if ai_text:
             evaluation = json.loads(ai_text)
             evaluation = normalize_homework_evaluation_structure(evaluation)
-            print("✅ PARSED JSON:", evaluation)
+            print("✅ AI JSON PARSED SUCCESSFULLY")
+            print(f"   attempt_id={attempt.id}")
+            print(f"   evaluation_keys={list(evaluation.keys())}")
             
             # 🔁 NORMALIZE TO EXAM FORMAT (FINAL FIXED VERSION)
             # --------------------------------------------------
@@ -80679,7 +82496,10 @@ def submit_homework_writing(
                 }
 
     except Exception as e:
-        print("❌ AI failed:", str(e))
+        print("❌ AI FAILED")
+        print(f"   attempt_id={attempt.id}")
+        print(f"   error_type={type(e).__name__}")
+        print(f"   error={str(e)}")
 
     # --------------------------------------------------
     # 7️⃣ Fallback (MANDATORY)
@@ -80772,10 +82592,22 @@ def submit_homework_writing(
 
         db.add(admin_report)
 
+        print("📝 ADMIN WRITING REPORT ADDED")
+        print(f"   attempt_id={admin_report.homework_attempt_id}")
+        print(f"   homework_id={admin_report.homework_exam_id}")
+        print(f"   student_id={admin_report.student_id}")
+        print(f"   score_percent={admin_report.score_percent}")
+
     # --------------------------------------------------
     # 9️⃣ Final commit
     # --------------------------------------------------
     db.commit()
+
+    print("✅ FINAL COMMIT SUCCESS")
+    print(f"   attempt_id={attempt.id}")
+    print(f"   homework_id={attempt.homework_id}")
+    print(f"   writing_score={writing_score}")
+    print(f"   readiness_band={band}")
 
     print("🎉 Homework writing submitted successfully")
 
@@ -112733,6 +114565,364 @@ def snapshot_thinking_skills_responses_for_admin(db, attempt):
             )
         )
 
+@app.post("/api/admin/students/{student_id}/overall-selective-homework-report")
+def generate_overall_selective_homework_report(
+    student_id: str,
+    exam_date: date,
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 60)
+    print("🎯 GENERATE OVERALL SELECTIVE HOMEWORK REPORT")
+    print("=" * 60)
+    print(f"📥 Student ID : {student_id}")
+    print(f"📅 Exam date  : {exam_date}")
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    center_code = student.center_code
+
+    print(f"✅ Student found")
+    print(f"   External student ID : {student.student_id}")
+    print(f"   Internal student ID : {student.id}")
+    print(f"   Student name        : {student.name}")
+    print(f"   Center code         : {center_code}")
+    print(f"   Class name          : {student.class_name}")
+    print(f"   Student year        : {student.student_year}")
+
+    # --------------------------------------------------
+    # 2. Find Selective homework reports for the date
+    # --------------------------------------------------
+
+    # Thinking Skills
+    thinking_report = (
+        db.query(AdminHomeworkExamReport)
+        .join(
+            HomeWorkExam,
+            HomeWorkExam.id == AdminHomeworkExamReport.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReport.student_id == str(student.id),
+            AdminHomeworkExamReport.center_code == center_code,
+            HomeWorkExam.class_name.ilike("selective"),
+            AdminHomeworkExamReport.completed_at.isnot(None),
+            func.date(AdminHomeworkExamReport.completed_at) == exam_date
+        )
+        .order_by(AdminHomeworkExamReport.completed_at.desc())
+        .first()
+    )
+
+    print(
+        f"🧠 Thinking Skills: "
+        f"{'FOUND' if thinking_report else 'MISSING'}"
+    )
+    if thinking_report:
+        print(f"   report_id={thinking_report.id}")
+        print(f"   homework_exam_id={thinking_report.homework_exam_id}")
+        print(f"   homework_attempt_id={thinking_report.homework_attempt_id}")
+        print(f"   score_percent={thinking_report.score_percent}")
+        print(f"   completed_at={thinking_report.completed_at}")
+        print(f"   center_code={thinking_report.center_code}")
+
+    # Mathematical Reasoning
+    math_report = (
+        db.query(AdminHomeworkExamReportMathematicalReasoning)
+        .join(
+            HomeworkExamMathematicalReasoning,
+            HomeworkExamMathematicalReasoning.id
+            == AdminHomeworkExamReportMathematicalReasoning.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportMathematicalReasoning.student_id == student.id,
+            AdminHomeworkExamReportMathematicalReasoning.center_code == center_code,
+            HomeworkExamMathematicalReasoning.class_name.ilike("selective"),
+            AdminHomeworkExamReportMathematicalReasoning.completed_at.isnot(None),
+            func.date(
+                AdminHomeworkExamReportMathematicalReasoning.completed_at
+            ) == exam_date
+        )
+        .order_by(
+            AdminHomeworkExamReportMathematicalReasoning.completed_at.desc()
+        )
+        .first()
+    )
+
+    print(
+        f"➗ Mathematical Reasoning: "
+        f"{'FOUND' if math_report else 'MISSING'}"
+    )
+    if math_report:
+        print(f"   report_id={math_report.id}")
+        print(f"   homework_exam_id={math_report.homework_exam_id}")
+        print(f"   homework_attempt_id={math_report.homework_attempt_id}")
+        print(f"   score_percent={math_report.score_percent}")
+        print(f"   completed_at={math_report.completed_at}")
+        print(f"   center_code={math_report.center_code}")
+
+    # Reading
+    reading_report = (
+        db.query(AdminHomeworkExamReportReading)
+        .join(
+            GeneratedHomeworkReading,
+            GeneratedHomeworkReading.id
+            == AdminHomeworkExamReportReading.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportReading.student_id == str(student.id),
+            AdminHomeworkExamReportReading.center_code == center_code,
+            func.lower(
+                func.trim(GeneratedHomeworkReading.class_name)
+            ) == "selective",
+            AdminHomeworkExamReportReading.completed_at.isnot(None),
+            func.date(
+                AdminHomeworkExamReportReading.completed_at
+            ) == exam_date
+        )
+        .order_by(
+            AdminHomeworkExamReportReading.completed_at.desc()
+        )
+        .first()
+    )
+
+    print(
+        f"📖 Reading: "
+        f"{'FOUND' if reading_report else 'MISSING'}"
+    )
+    if reading_report:
+        print(f"   report_id={reading_report.id}")
+        print(f"   homework_exam_id={reading_report.homework_exam_id}")
+        print(f"   homework_attempt_id={reading_report.homework_attempt_id}")
+        print(f"   score_percent={reading_report.score_percent}")
+        print(f"   completed_at={reading_report.completed_at}")
+        print(f"   center_code={reading_report.center_code}")
+
+    # Writing
+    writing_report = (
+        db.query(AdminHomeworkExamReportsWriting)
+        .join(
+            GeneratedHomeworkWriting,
+            GeneratedHomeworkWriting.id
+            == AdminHomeworkExamReportsWriting.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportsWriting.student_id == student.student_id,
+            AdminHomeworkExamReportsWriting.center_code == center_code,
+            func.lower(
+                func.trim(GeneratedHomeworkWriting.class_name)
+            ) == "selective",
+            AdminHomeworkExamReportsWriting.completed_at.isnot(None),
+            func.date(
+                AdminHomeworkExamReportsWriting.completed_at
+            ) == exam_date
+        )
+        .order_by(
+            AdminHomeworkExamReportsWriting.completed_at.desc()
+        )
+        .first()
+    )
+
+    print(
+        f"✍️ Writing: "
+        f"{'FOUND' if writing_report else 'MISSING'}"
+    )
+    if writing_report:
+        print(f"   report_id={writing_report.id}")
+        print(f"   homework_exam_id={writing_report.homework_exam_id}")
+        print(f"   homework_attempt_id={writing_report.homework_attempt_id}")
+        print(f"   score_percent={writing_report.score_percent}")
+        print(f"   completed_at={writing_report.completed_at}")
+        print(f"   center_code={writing_report.center_code}")
+
+    # --------------------------------------------------
+    # 3. Verify all four Selective subjects exist
+    # --------------------------------------------------
+
+    reports_by_subject = {
+        "reading": reading_report,
+        "mathematical_reasoning": math_report,
+        "thinking_skills": thinking_report,
+        "writing": writing_report,
+    }
+
+    print("\n🔎 SELECTIVE HOMEWORK COMPLETENESS CHECK")
+    for subject, report in reports_by_subject.items():
+        print(f"   {subject}: {'FOUND' if report else 'MISSING'}")
+
+    missing_subjects = [
+        subject
+        for subject, report in reports_by_subject.items()
+        if report is None
+    ]
+
+    if missing_subjects:
+        print(
+            f"❌ Selective homework report incomplete. "
+            f"Missing: {missing_subjects}"
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Selective homework report is incomplete",
+                "missing_subjects": missing_subjects,
+                "exam_date": exam_date.isoformat()
+            }
+        )
+
+    print("✅ All four Selective subjects found")
+
+    # --------------------------------------------------
+    # 4. Build component scores
+    # --------------------------------------------------
+
+    components = {
+        "reading": {
+            "score_percent": reading_report.score_percent,
+            "homework_exam_id": reading_report.homework_exam_id,
+            "homework_attempt_id": reading_report.homework_attempt_id,
+            "completed_at": reading_report.completed_at,
+        },
+        "mathematical_reasoning": {
+            "score_percent": math_report.score_percent,
+            "homework_exam_id": math_report.homework_exam_id,
+            "homework_attempt_id": math_report.homework_attempt_id,
+            "completed_at": math_report.completed_at,
+        },
+        "thinking_skills": {
+            "score_percent": thinking_report.score_percent,
+            "homework_exam_id": thinking_report.homework_exam_id,
+            "homework_attempt_id": thinking_report.homework_attempt_id,
+            "completed_at": thinking_report.completed_at,
+        },
+        "writing": {
+            "score_percent": writing_report.score_percent,
+            "homework_exam_id": writing_report.homework_exam_id,
+            "homework_attempt_id": writing_report.homework_attempt_id,
+            "completed_at": writing_report.completed_at,
+        },
+    }
+
+    print("\n📊 COMPONENT SCORES")
+
+    for subject, component in components.items():
+        print(
+            f"   {subject}: "
+            f"{component['score_percent']}%"
+        )
+
+    # --------------------------------------------------
+    # 5. Validate scores
+    # --------------------------------------------------
+
+    missing_scores = [
+        subject
+        for subject, component in components.items()
+        if component["score_percent"] is None
+    ]
+
+    if missing_scores:
+        print(
+            f"❌ Missing score_percent for: {missing_scores}"
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "One or more Selective homework reports have no score",
+                "missing_scores": missing_scores,
+                "exam_date": exam_date.isoformat()
+            }
+        )
+
+    # --------------------------------------------------
+    # 6. Calculate overall percentage
+    # --------------------------------------------------
+
+    percentages = [
+        component["score_percent"]
+        for component in components.values()
+    ]
+
+    print(f"📊 Selective homework percentages: {percentages}")
+
+    overall_percent = round(
+        sum(percentages) / len(percentages),
+        2
+    )
+
+    print(f"📈 Overall percentage: {overall_percent}")
+
+    helper_components = {
+        subject: {
+            "percent": component["score_percent"]
+        }
+        for subject, component in components.items()
+    }
+
+    print(f"🧩 Readiness helper components: {helper_components}")
+    print("🎯 Calling existing Selective readiness helper")
+
+    result = generate_selective_school_recommendations_and_override(
+        components=helper_components,
+        overall_percent=overall_percent
+    )
+
+    band = result["band"]
+    recommended_schools = result["recommended_schools"]
+    override_flag = result["override_flag"]
+    override_message = result["override_message"]
+
+    print("✅ Selective readiness helper returned")
+    print(f"   band={band}")
+    print(f"   recommended_schools={recommended_schools}")
+    print(f"   override_flag={override_flag}")
+    print(f"   override_message={override_message}")
+
+    print(f"\n📈 Overall Selective percentage: {overall_percent}%")
+
+    # --------------------------------------------------
+    # 7. Return initial Selective Readiness data
+    # --------------------------------------------------
+
+    response = {
+        "student_id": student.student_id,
+        "student_name": student.name,
+        "year_level": student.student_year,
+        "center_code": center_code,
+        "exam_date": exam_date,
+        "overall_percent": overall_percent,
+        "readiness_band": band,
+        "recommended_schools": recommended_schools,
+        "override_flag": override_flag,
+        "override_message": override_message,
+        "components": components,
+    }
+
+    print("\n📦 FINAL SELECTIVE HOMEWORK RESPONSE SUMMARY")
+    print(f"   student_id={student.student_id}")
+    print(f"   exam_date={exam_date}")
+    print(f"   overall_percent={overall_percent}")
+    print(f"   readiness_band={band}")
+    print(f"   recommended_school_count={len(recommended_schools)}")
+    print(f"   override_flag={override_flag}")
+
+    print("=" * 60)
+    print("✅ SELECTIVE HOMEWORK REPORT GENERATED SUCCESSFULLY")
+    print("=" * 60 + "\n")
+
+    return response
 
 @app.get("/api/reports/homework/student")
 def get_student_homework_exam_report(
@@ -116764,7 +118954,70 @@ def extract_class_year_numeric(raw_year):
     if isinstance(raw_year, str):
         return int(raw_year.replace("Year", "").strip())
     raise ValueError("Invalid class_year format")
+@app.get("/api/reports/homework/attempt/topics")
+def get_homework_attempt_topics(
+    student_id: str,
+    homework_attempt_id: int,
+    center_code: str,
+    subject: str = "",
+    db: Session = Depends(get_db),
+):
+    # --------------------------------------------------
+    # 1. Verify student belongs to this center
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(
+            Student.student_id == student_id,
+            Student.center_code == center_code,
+        )
+        .first()
+    )
 
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found for this center",
+        )
+
+    # --------------------------------------------------
+    # 2. Thinking Skills
+    # --------------------------------------------------
+    if subject.lower() == "thinking_skills":
+        responses = (
+            db.query(AdminHomeworkExamResponseThinkingSkills)
+            .filter(
+                AdminHomeworkExamResponseThinkingSkills.student_id
+                == student.id,
+                AdminHomeworkExamResponseThinkingSkills.homework_attempt_id
+                == homework_attempt_id,
+            )
+            .all()
+        )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported homework subject: {subject}",
+        )
+
+    # --------------------------------------------------
+    # 3. Extract unique topics
+    # --------------------------------------------------
+    topics = sorted(
+        {
+            str(response.topic).strip()
+            for response in responses
+            if response.topic
+        },
+        key=str.lower,
+    )
+
+    return {
+        "homework_attempt_id": homework_attempt_id,
+        "subject": subject,
+        "topics": topics,
+    }
 @app.post("/api/student/finish-homework-thinkingskills")
 def finish_homework_exam(
     req: FinishExamRequestHomework = Body(...),
@@ -116955,6 +119208,7 @@ def finish_homework_exam(
         "accuracy_percent": accuracy,
         "score_percent": score_percent
     }
+
 @app.post("/api/student/finish-exam/thinking-skills")
 def finish_thinking_skills_exam(
     req: FinishExamRequest,
@@ -117567,7 +119821,534 @@ def submit_homework_oc_thinking_skills(
         "accuracy": accuracy
     }
 
+@app.get("/api/admin/students/{student_id}/homework-oc-report-dates")
+def get_homework_oc_report_dates(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Return calendar dates on which at least one OC homework
+    subject report was completed for this student.
 
+    Subjects:
+    - Reading
+    - Mathematical Reasoning
+    - Thinking Skills
+
+    A date is included if ANY of the three subjects has a
+    completed report on that date. The overall report endpoint
+    will later require all three subjects.
+    """
+
+    print("\n================ OC HOMEWORK REPORT DATES ================")
+    print("Student:", student_id)
+
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        print("❌ Student not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    center_code = student.center_code
+
+    dates = set()
+
+    # --------------------------------------------------
+    # Reading
+    # --------------------------------------------------
+    reading_dates = (
+        db.query(
+            func.date(
+                AdminHomeworkExamReportsOCReading.completed_at
+            )
+        )
+        .join(
+            GeneratedHomeworkReading,
+            GeneratedHomeworkReading.id
+            == AdminHomeworkExamReportsOCReading.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportsOCReading.student_id
+            == student.student_id,
+
+            AdminHomeworkExamReportsOCReading.center_code
+            == center_code,
+
+            GeneratedHomeworkReading.class_name.ilike("oc"),
+
+            AdminHomeworkExamReportsOCReading.completed_at.isnot(None)
+        )
+        .distinct()
+        .all()
+    )
+
+    dates.update(
+        d[0] for d in reading_dates if d[0] is not None
+    )
+
+    # --------------------------------------------------
+    # Mathematical Reasoning
+    # --------------------------------------------------
+    math_dates = (
+        db.query(
+            func.date(
+                AdminHomeworkExamReportOCMathematicalReasoning.completed_at
+            )
+        )
+        .join(
+            HomeworkExamOCMathematicalReasoning,
+            HomeworkExamOCMathematicalReasoning.id
+            == AdminHomeworkExamReportOCMathematicalReasoning.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportOCMathematicalReasoning.student_id
+            == student.student_id,
+
+            AdminHomeworkExamReportOCMathematicalReasoning.center_code
+            == center_code,
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCMathematicalReasoning.class_name
+                )
+            ) == "oc",
+
+            AdminHomeworkExamReportOCMathematicalReasoning.completed_at.isnot(None)
+        )
+        .distinct()
+        .all()
+    )
+
+    dates.update(
+        d[0] for d in math_dates if d[0] is not None
+    )
+
+    # --------------------------------------------------
+    # Thinking Skills
+    # --------------------------------------------------
+    thinking_dates = (
+        db.query(
+            func.date(
+                AdminHomeworkExamReportOCThinkingSkills.completed_at
+            )
+        )
+        .join(
+            HomeworkExamOCThinkingSkills,
+            HomeworkExamOCThinkingSkills.id
+            == AdminHomeworkExamReportOCThinkingSkills.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportOCThinkingSkills.student_id
+            == student.student_id,
+
+            AdminHomeworkExamReportOCThinkingSkills.center_code
+            == center_code,
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCThinkingSkills.class_name
+                )
+            ) == "oc",
+
+            AdminHomeworkExamReportOCThinkingSkills.completed_at.isnot(None)
+        )
+        .distinct()
+        .all()
+    )
+
+    dates.update(
+        d[0] for d in thinking_dates if d[0] is not None
+    )
+
+    result = sorted(
+        [str(d) for d in dates],
+        reverse=True
+    )
+
+    print("📅 OC homework dates:", result)
+    print("==========================================================\n")
+
+    return result
+
+@app.post("/api/admin/students/{student_id}/overall-oc-homework-report")
+def generate_overall_oc_homework_report(
+    student_id: str,
+    exam_date: date,
+    db: Session = Depends(get_db)
+):
+    print("\n" + "=" * 60)
+    print("🎯 GENERATE OVERALL OC HOMEWORK REPORT")
+    print("=" * 60)
+    print(f"📥 Student ID : {student_id}")
+    print(f"📅 Exam date  : {exam_date}")
+
+    # --------------------------------------------------
+    # 1. Resolve student
+    # --------------------------------------------------
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    center_code = student.center_code
+
+    print("✅ Student found")
+    print(f"   External student ID : {student.student_id}")
+    print(f"   Internal student ID : {student.id}")
+    print(f"   Student name        : {student.name}")
+    print(f"   Center code         : {center_code}")
+    print(f"   Class name          : {student.class_name}")
+    print(f"   Student year        : {student.student_year}")
+
+    # --------------------------------------------------
+    # 2. Find OC homework reports for exact date
+    # --------------------------------------------------
+
+    # --------------------------------------------------
+    # Thinking Skills
+    # --------------------------------------------------
+    thinking_report = (
+        db.query(AdminHomeworkExamReportOCThinkingSkills)
+        .join(
+            HomeworkExamOCThinkingSkills,
+            HomeworkExamOCThinkingSkills.id
+            == AdminHomeworkExamReportOCThinkingSkills.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportOCThinkingSkills.student_id
+            == student.student_id,
+
+            AdminHomeworkExamReportOCThinkingSkills.center_code
+            == center_code,
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCThinkingSkills.class_name
+                )
+            ) == "oc",
+
+            AdminHomeworkExamReportOCThinkingSkills.completed_at.isnot(None),
+
+            func.date(
+                AdminHomeworkExamReportOCThinkingSkills.completed_at
+            ) == exam_date
+        )
+        .order_by(
+            AdminHomeworkExamReportOCThinkingSkills.completed_at.desc()
+        )
+        .first()
+    )
+
+    print(
+        f"🧠 Thinking Skills: "
+        f"{'FOUND' if thinking_report else 'MISSING'}"
+    )
+
+    if thinking_report:
+        print(f"   report_id={thinking_report.id}")
+        print(f"   homework_exam_id={thinking_report.homework_exam_id}")
+        print(f"   homework_attempt_id={thinking_report.homework_attempt_id}")
+        print(f"   score_percent={thinking_report.score_percent}")
+        print(f"   completed_at={thinking_report.completed_at}")
+        print(f"   center_code={thinking_report.center_code}")
+
+    # --------------------------------------------------
+    # Mathematical Reasoning
+    # --------------------------------------------------
+    math_report = (
+        db.query(AdminHomeworkExamReportOCMathematicalReasoning)
+        .join(
+            HomeworkExamOCMathematicalReasoning,
+            HomeworkExamOCMathematicalReasoning.id
+            == AdminHomeworkExamReportOCMathematicalReasoning.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportOCMathematicalReasoning.student_id
+            == student.student_id,
+
+            AdminHomeworkExamReportOCMathematicalReasoning.center_code
+            == center_code,
+
+            func.lower(
+                func.trim(
+                    HomeworkExamOCMathematicalReasoning.class_name
+                )
+            ) == "oc",
+
+            AdminHomeworkExamReportOCMathematicalReasoning.completed_at.isnot(None),
+
+            func.date(
+                AdminHomeworkExamReportOCMathematicalReasoning.completed_at
+            ) == exam_date
+        )
+        .order_by(
+            AdminHomeworkExamReportOCMathematicalReasoning.completed_at.desc()
+        )
+        .first()
+    )
+
+    print(
+        f"➗ Mathematical Reasoning: "
+        f"{'FOUND' if math_report else 'MISSING'}"
+    )
+
+    if math_report:
+        print(f"   report_id={math_report.id}")
+        print(f"   homework_exam_id={math_report.homework_exam_id}")
+        print(f"   homework_attempt_id={math_report.homework_attempt_id}")
+        print(f"   score_percent={math_report.score_percent}")
+        print(f"   completed_at={math_report.completed_at}")
+        print(f"   center_code={math_report.center_code}")
+
+    # --------------------------------------------------
+    # Reading
+    # --------------------------------------------------
+    reading_report = (
+        db.query(AdminHomeworkExamReportsOCReading)
+        .join(
+            GeneratedHomeworkReading,
+            GeneratedHomeworkReading.id
+            == AdminHomeworkExamReportsOCReading.homework_exam_id
+        )
+        .filter(
+            AdminHomeworkExamReportsOCReading.student_id
+            == student.student_id,
+
+            AdminHomeworkExamReportsOCReading.center_code
+            == center_code,
+
+            func.lower(
+                func.trim(
+                    GeneratedHomeworkReading.class_name
+                )
+            ) == "oc",
+
+            AdminHomeworkExamReportsOCReading.completed_at.isnot(None),
+
+            func.date(
+                AdminHomeworkExamReportsOCReading.completed_at
+            ) == exam_date
+        )
+        .order_by(
+            AdminHomeworkExamReportsOCReading.completed_at.desc()
+        )
+        .first()
+    )
+
+    print(
+        f"📖 Reading: "
+        f"{'FOUND' if reading_report else 'MISSING'}"
+    )
+
+    if reading_report:
+        print(f"   report_id={reading_report.id}")
+        print(f"   homework_exam_id={reading_report.homework_exam_id}")
+        print(f"   homework_attempt_id={reading_report.homework_attempt_id}")
+        print(f"   score_percent={reading_report.score_percent}")
+        print(f"   completed_at={reading_report.completed_at}")
+        print(f"   center_code={reading_report.center_code}")
+
+    # --------------------------------------------------
+    # 3. Verify all three OC subjects exist
+    # --------------------------------------------------
+    reports_by_subject = {
+        "reading": reading_report,
+        "thinking_skills": thinking_report,
+        "mathematical_reasoning": math_report,
+    }
+
+    print("\n🔎 OC HOMEWORK COMPLETENESS CHECK")
+
+    for subject, report in reports_by_subject.items():
+        print(
+            f"   {subject}: "
+            f"{'FOUND' if report else 'MISSING'}"
+        )
+
+    missing_subjects = [
+        subject
+        for subject, report in reports_by_subject.items()
+        if report is None
+    ]
+
+    if missing_subjects:
+        print(
+            f"❌ OC homework report incomplete. "
+            f"Missing: {missing_subjects}"
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "OC homework report is incomplete",
+                "missing_subjects": missing_subjects,
+                "exam_date": exam_date.isoformat()
+            }
+        )
+
+    print("✅ All three OC subjects found")
+
+    # --------------------------------------------------
+    # 4. Build components
+    # --------------------------------------------------
+    components = {
+        "reading": {
+            "score_percent": reading_report.score_percent,
+            "homework_exam_id": reading_report.homework_exam_id,
+            "homework_attempt_id": reading_report.homework_attempt_id,
+            "completed_at": reading_report.completed_at,
+        },
+        "mathematical_reasoning": {
+            "score_percent": math_report.score_percent,
+            "homework_exam_id": math_report.homework_exam_id,
+            "homework_attempt_id": math_report.homework_attempt_id,
+            "completed_at": math_report.completed_at,
+        },
+        "thinking_skills": {
+            "score_percent": thinking_report.score_percent,
+            "homework_exam_id": thinking_report.homework_exam_id,
+            "homework_attempt_id": thinking_report.homework_attempt_id,
+            "completed_at": thinking_report.completed_at,
+        },
+    }
+
+    print("\n📊 COMPONENT SCORES")
+
+    for subject, component in components.items():
+        print(
+            f"   {subject}: "
+            f"{component['score_percent']}%"
+        )
+
+    # --------------------------------------------------
+    # 5. Validate scores
+    # --------------------------------------------------
+    missing_scores = [
+        subject
+        for subject, component in components.items()
+        if component["score_percent"] is None
+    ]
+
+    if missing_scores:
+        print(
+            f"❌ Missing score_percent for: "
+            f"{missing_scores}"
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "One or more OC homework reports have no score",
+                "missing_scores": missing_scores,
+                "exam_date": exam_date.isoformat()
+            }
+        )
+
+    # --------------------------------------------------
+    # 6. Calculate overall percentage
+    # --------------------------------------------------
+    percentages = [
+        component["score_percent"]
+        for component in components.values()
+    ]
+
+    print(
+        f"📊 OC homework percentages: "
+        f"{percentages}"
+    )
+
+    overall_percent = round(
+        sum(percentages) / len(percentages),
+        2
+    )
+
+    print(
+        f"📈 Overall OC percentage: "
+        f"{overall_percent}"
+    )
+
+    # --------------------------------------------------
+    # 7. Existing OC readiness helper
+    # --------------------------------------------------
+    helper_components = {
+        subject: {
+            "percent": component["score_percent"]
+        }
+        for subject, component in components.items()
+    }
+
+    print(
+        f"🧩 OC readiness helper components: "
+        f"{helper_components}"
+    )
+
+    print(
+        "🎯 Calling existing OC readiness helper"
+    )
+
+    result = generate_oc_school_recommendations_and_override(
+        components=helper_components,
+        overall_percent=overall_percent
+    )
+
+    readiness_band = result["band"]
+    recommended_schools = result["recommended_schools"]
+    override_flag = result["override_flag"]
+    override_message = result["override_message"]
+
+    print("✅ OC readiness helper returned")
+    print(f"   band={readiness_band}")
+    print(f"   recommended_schools={recommended_schools}")
+    print(f"   override_flag={override_flag}")
+    print(f"   override_message={override_message}")
+
+    # --------------------------------------------------
+    # 8. Return
+    # --------------------------------------------------
+    response = {
+        "student_id": student.student_id,
+        "student_name": student.name,
+        "year_level": student.student_year,
+        "center_code": center_code,
+        "exam_date": exam_date,
+        "overall_percent": overall_percent,
+        "readiness_band": readiness_band,
+        "recommended_schools": recommended_schools,
+        "override_flag": override_flag,
+        "override_message": override_message,
+        "components": components,
+    }
+
+    print("\n📦 FINAL OC HOMEWORK RESPONSE SUMMARY")
+    print(f"   student_id={student.student_id}")
+    print(f"   exam_date={exam_date}")
+    print(f"   overall_percent={overall_percent}")
+    print(f"   readiness_band={readiness_band}")
+    print(
+        f"   recommended_school_count="
+        f"{len(recommended_schools)}"
+    )
+    print(f"   override_flag={override_flag}")
+
+    print("=" * 60)
+    print("✅ OC HOMEWORK REPORT GENERATED SUCCESSFULLY")
+    print("=" * 60 + "\n")
+
+    return response
 
 @app.post("/api/student/finish-exam/oc-thinking-skills")
 def finish_oc_thinking_skills_exam(
