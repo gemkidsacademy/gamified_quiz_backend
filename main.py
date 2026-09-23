@@ -346,6 +346,7 @@ def send_parent_teacher_interview_reminder_email(
     to_email: str,
     parent_name: str,
     student_name: str,
+    event_name: str,
     teacher_name: str,
     event_date,
     start_time,
@@ -354,15 +355,16 @@ def send_parent_teacher_interview_reminder_email(
     reminder_type: str,
 ):
     if reminder_type == "ONE_DAY_BEFORE":
-        reminder_text = (
-            "This is a reminder that your child's "
-            "Parent–Teacher Interview is tomorrow."
+        email_title = "Parent teacher 1 day reminder"
+        subject = (
+            f"Reminder: Parent–Teacher Interview – {student_name}"
         )
 
     elif reminder_type == "THIRTY_MINUTES_BEFORE":
-        reminder_text = (
-            "This is a reminder that your child's "
-            "Parent–Teacher Interview will begin in 30 minutes."
+        email_title = "Parent teacher 30 min reminder"
+        subject = (
+            f"Starting in 30 Minutes: Parent–Teacher Interview – "
+            f"{student_name}"
         )
 
     else:
@@ -370,96 +372,122 @@ def send_parent_teacher_interview_reminder_email(
             f"Unsupported reminder type: {reminder_type}"
         )
 
+    time_slot = f"{start_time} – {end_time}"
+
+    duration_minutes = (
+        datetime.combine(
+            datetime.today().date(),
+            end_time
+        )
+        - datetime.combine(
+            datetime.today().date(),
+            start_time
+        )
+    ).total_seconds() / 60
+
+    duration_minutes = int(duration_minutes)
+
+    slot_duration = f"{duration_minutes} minutes"
+
     message = Mail(
-        from_email="noreply@gemkidsacademy.com.au",
-        to_emails=to_email,
-        subject="Parent–Teacher Interview Reminder",
-        html_content=f"""
+    from_email="noreply@gemkidsacademy.com.au",
+    to_emails=to_email,
+    subject=subject,
+    html_content=f"""
+        <div style="
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 30px 20px;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #333333;
+        ">
+
             <div style="
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 30px 20px;
-                font-family: Arial, Helvetica, sans-serif;
-                color: #333333;
+                text-align: center;
+                margin-bottom: 25px;
             ">
-
-                <div style="
-                    text-align: center;
-                    margin-bottom: 25px;
-                ">
-                    <img
-                        src="https://gemkidsacademy.com.au/wp-content/uploads/2024/10/cropped-logo-4-1.png"
-                        alt="Gem Kids Academy"
-                        style="
-                            max-width: 180px;
-                            height: auto;
-                            display: inline-block;
-                        "
-                    >
-                </div>
-
-                <p>Hi {parent_name},</p>
-
-                <p>
-                    {reminder_text}
-                </p>
-
-                <div style="
-                    margin: 25px 0;
-                    padding: 20px;
-                    background-color: #f7f5ff;
-                    border: 1px solid #e2dcff;
-                    border-radius: 8px;
-                ">
-
-                    <p style="
-                        margin: 0 0 15px 0;
-                        font-weight: bold;
-                        font-size: 16px;
-                    ">
-                        Interview Details
-                    </p>
-
-                    <p style="margin: 8px 0;">
-                        <strong>Student:</strong>
-                        {student_name}
-                    </p>
-
-                    <p style="margin: 8px 0;">
-                        <strong>Teacher:</strong>
-                        {teacher_name}
-                    </p>
-
-                    <p style="margin: 8px 0;">
-                        <strong>Date:</strong>
-                        {event_date}
-                    </p>
-
-                    <p style="margin: 8px 0;">
-                        <strong>Time:</strong>
-                        {start_time} – {end_time}
-                    </p>
-
-                    <p style="margin: 8px 0;">
-                        <strong>Location:</strong>
-                        {location}
-                    </p>
-
-                </div>
-
-                <p>
-                    We look forward to seeing you.
-                </p>
-
-                <p>
-                    Thank you,<br>
-                    Gem Kids Academy
-                </p>
-
+                <img
+                    src="https://gemkidsacademy.com.au/wp-content/uploads/2024/10/cropped-logo-4-1.png"
+                    alt="Gem Kids Academy"
+                    style="
+                        max-width: 180px;
+                        height: auto;
+                        display: inline-block;
+                    "
+                >
             </div>
-        """,
-    )
 
+            <p>
+                <strong>{email_title}</strong>
+            </p>
+
+            <p>
+                <strong>
+                    Sub - {subject}
+                </strong>
+            </p>
+
+            <p>Dear Parent,</p>
+
+            <p>
+                This is a reminder about your upcoming
+                Parent–Teacher Interview with Gem Kids Academy.
+            </p>
+
+            <p>
+                <strong>Event:</strong> {event_name}
+            </p>
+
+            <p>
+                <strong>Student:</strong> {student_name}
+            </p>
+
+            <p>
+                <strong>Teacher:</strong> {teacher_name}
+            </p>
+
+            <p>
+                <strong>Date:</strong> {event_date}
+            </p>
+
+            <p>
+                <strong>Time:</strong> {time_slot}
+            </p>
+
+            <p>
+                <strong>Duration:</strong> {slot_duration}
+            </p>
+
+            <p>
+                <strong>Location:</strong> {location}
+            </p>
+
+            <p>
+                <strong>Important:</strong>
+                Please arrive on time and kindly ensure the discussion
+                is completed within the allocated
+                <strong>{slot_duration}</strong>.
+                This will help us keep appointments running on schedule
+                and ensure every parent receives their allocated time
+                with the teacher.
+            </p>
+
+            <p>
+                We look forward to meeting you and discussing
+                {student_name}'s learning and progress.
+            </p>
+
+            <p>
+                Kind regards,
+            </p>
+
+            <p>
+                <strong>Gem Kids Academy</strong>
+            </p>
+
+        </div>
+    """,
+)
     message.reply_to = Email(
         "do-not-reply@gemkidsacademy.com.au"
     )
@@ -633,6 +661,7 @@ def parent_teacher_interview_reminder_scheduler_job(
                         to_email=booking.parent_email,
                         parent_name="Parent",
                         student_name=student.name,
+                        event_name=event.name,
                         teacher_name=teacher.full_name,
                         event_date=event.event_date,
                         start_time=slot.start_time,
@@ -694,6 +723,7 @@ def parent_teacher_interview_reminder_scheduler_job(
                         to_email=booking.parent_email,
                         parent_name="Parent",
                         student_name=student.name,
+                        event_name=event.name,
                         teacher_name=teacher.full_name,
                         event_date=event.event_date,
                         start_time=slot.start_time,
@@ -954,7 +984,7 @@ def homework_support_scheduler_job(
 
 
 
-#running the scheduler for gamified quiz
+#running the scheduler for gamified quiz + homework booking + parent teacher interview 
 def scheduler_job():
     print("\n" + "=" * 70)
     print("SCHEDULER TRIGGERED")
@@ -1218,6 +1248,17 @@ print("======================================")
 # ---------------------------
 # Models
 # --------------------------
+
+class ParentTeacherInterviewTestReminderRequest(BaseModel):
+    to_email: str
+    student_name: str = "Test Student"
+    event_name: str = "Parent–Teacher Interview"
+    teacher_name: str = "Test Teacher"
+    event_date: str = "25 September 2026"
+    start_time: str = "18:45"
+    end_time: str = "18:55"
+    location: str = "Marsden Park Centre"
+    reminder_type: str = "ONE_DAY_BEFORE"
 class AdminHomeworkExamResponseOCMathematicalReasoning(Base):
     __tablename__ = "admin_homework_exam_response_oc_mathematical_reasoning"
 
@@ -9737,6 +9778,57 @@ def get_latest_gamified_quiz(
         ),
         "quiz_json": quiz.quiz_json,
     }
+
+from pydantic import BaseModel
+
+
+
+
+@app.post("/parent-teacher-interview/test-reminder")
+def test_parent_teacher_interview_reminder(
+    request: ParentTeacherInterviewTestReminderRequest
+):
+    try:
+        start_time = datetime.strptime(
+            request.start_time,
+            "%H:%M"
+        ).time()
+
+        end_time = datetime.strptime(
+            request.end_time,
+            "%H:%M"
+        ).time()
+
+        event_date = datetime.strptime(
+            request.event_date,
+            "%d %B %Y"
+        ).date()
+
+        send_parent_teacher_interview_reminder_email(
+            to_email=request.to_email,
+            parent_name="Parent",
+            student_name=request.student_name,
+            event_name=request.event_name,
+            teacher_name=request.teacher_name,
+            event_date=event_date,
+            start_time=start_time,
+            end_time=end_time,
+            location=request.location,
+            reminder_type=request.reminder_type,
+        )
+
+        return {
+            "success": True,
+            "message": "Test Parent–Teacher Interview reminder sent successfully.",
+            "to_email": request.to_email,
+            "reminder_type": request.reminder_type,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )    
 @app.get("/parent-teacher-interview/my-event")
 def get_parent_teacher_interview_event(
     center_code: str,
@@ -42242,91 +42334,97 @@ def send_homework_support_test_email(
         session_date_text = "Date to be confirmed"
 
     message = Mail(
-        from_email="noreply@gemkidsacademy.com.au",
-        to_emails=to_email,
-        subject="Homework Support — Please Confirm Attendance",
-        html_content=f"""
+    from_email="noreply@gemkidsacademy.com.au",
+    to_emails=to_email,
+    subject="Homework Support — Please Confirm Attendance",
+    html_content=f"""
+        <div style="
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 30px 20px;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #333333;
+        ">
+
             <div style="
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 30px 20px;
-                font-family: Arial, Helvetica, sans-serif;
-                color: #333333;
+                text-align: center;
+                margin-bottom: 25px;
             ">
-
-                <div style="
-                    text-align: center;
-                    margin-bottom: 25px;
-                ">
-                    <img
-                        src="https://gemkidsacademy.com.au/wp-content/uploads/2024/10/cropped-logo-4-1.png"
-                        alt="Gem Kids Academy"
-                        style="
-                            max-width: 180px;
-                            height: auto;
-                            display: inline-block;
-                        "
-                    >
-                </div>
-
-                <p>Dear Parent,</p>
-
-                <p>
-                    We are inviting your child to Homework Support.
-                </p>
-
-                <p style="
-                    text-align: center;
-                    margin: 20px 0;
-                    font-size: 16px;
-                ">
-                    <strong>
-                        Homework Support for {term_name},
-                        Week {week_number}
-                    </strong>
-                </p>
-
-                <p style="
-                    text-align: center;
-                    margin: 20px 0;
-                    font-size: 16px;
-                ">
-                    <strong>
-                        Session Date: {session_date_text}
-                    </strong>
-                </p>
-
-                <p>
-                    Please use the link below to confirm whether your child
-                    will attend and, if attending, select an available time.
-                </p>
-
-                <p style="text-align: center; margin: 30px 0;">
-                    <a
-                        href="{homework_support_url}"
-                        style="
-                            display: inline-block;
-                            padding: 12px 24px;
-                            background-color: #4285d4;
-                            color: #ffffff;
-                            text-decoration: none;
-                            border-radius: 5px;
-                            font-weight: bold;
-                        "
-                    >
-                        Confirm Homework Support Attendance
-                    </a>
-                </p>
-
-                <p>
-                    Thank you,<br>
-                    Gem Kids Academy
-                </p>
-
+                <img
+                    src="https://gemkidsacademy.com.au/wp-content/uploads/2024/10/cropped-logo-4-1.png"
+                    alt="Gem Kids Academy"
+                    style="
+                        max-width: 180px;
+                        height: auto;
+                        display: inline-block;
+                    "
+                >
             </div>
-        """,
-    )
 
+            <p>Dear Parent,</p>
+
+            <p>
+                We are inviting your child to Homework Support.
+            </p>
+
+            <p style="
+                text-align: center;
+                margin: 20px 0;
+                font-size: 16px;
+            ">
+                <strong>
+                    Homework Support for {term_name},
+                    Week {week_number}
+                </strong>
+            </p>
+
+            <p style="
+                text-align: center;
+                margin: 20px 0;
+                font-size: 16px;
+            ">
+                <strong>
+                    Session Date: {session_date_text}
+                </strong>
+            </p>
+
+            <p>
+                Please use the link below to confirm whether your child
+                will attend and, if attending, select an available time.
+            </p>
+
+            <p style="text-align: center; margin: 30px 0;">
+                <a
+                    href="{homework_support_url}"
+                    style="
+                        display: inline-block;
+                        padding: 12px 24px;
+                        background-color: #4285d4;
+                        color: #ffffff;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        font-weight: bold;
+                    "
+                >
+                    Confirm Homework Support Attendance
+                </a>
+            </p>
+
+            <p style="
+                margin-top: 20px;
+                margin-bottom: 20px;
+            ">
+                <strong>Note:</strong> Please be advised that missed Homework Support classes are not eligible for make-up sessions.
+            </p>
+
+            <p>
+                Thank you,<br>
+                Gem Kids Academy
+            </p>
+
+        </div>
+    """,
+)
     message.reply_to = Email(
         "do-not-reply@gemkidsacademy.com.au"
     )
@@ -42433,6 +42531,12 @@ def send_homework_support_invitation_email(
                     >
                         Confirm Homework Support Attendance
                     </a>
+                </p>
+                <p style="
+                    margin-top: 20px;
+                    margin-bottom: 20px;
+                ">
+                    <strong>Note:</strong> Please be advised that missed Homework Support classes are not eligible for make-up sessions.
                 </p>
 
                 <p>
