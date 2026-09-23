@@ -81736,11 +81736,17 @@ homework_id={hw.id}
         "🔵 CASE C → Starting new attempt"
     )
 
+    new_attempt_duration = (
+        42
+        if student_year_normalized == "6"
+        else homework.duration_minutes
+    )
+
     new_attempt = StudentHomeworkWriting(
         student_id=student.id,
         homework_id=homework.id,
         started_at=datetime.now(timezone.utc),
-        duration_minutes=homework.duration_minutes
+        duration_minutes=new_attempt_duration
     )
 
     db.add(new_attempt)
@@ -82470,11 +82476,25 @@ exam_id={e.id}
         "🔵 CASE C → Starting new attempt"
     )
 
+    # Year 6 writing exams have a fixed duration of 42 minutes.
+    # All other year levels continue using the duration configured
+    # on the generated exam.
+    duration_minutes = (
+        42
+        if student_year_normalized == "6"
+        else exam.duration_minutes
+    )
+
+    print(
+        f"⏱️ Duration selected: "
+        f"{duration_minutes} minutes"
+    )
+
     new_attempt = StudentExamWriting(
         student_id=student.id,
         exam_id=exam.id,
         started_at=datetime.now(timezone.utc),
-        duration_minutes=exam.duration_minutes
+        duration_minutes=duration_minutes
     )
 
     db.add(new_attempt)
@@ -105644,6 +105664,8 @@ def strip_correct_answers_from_question(question: dict) -> dict:
     return q
 
 def get_exam_duration(student_year):
+    if student_year == 6:
+        return 65
     if student_year == 3:
         return 40
 
@@ -107035,7 +107057,11 @@ def start_naplan_numeracy_homework_exam(
 
     now = datetime.now(timezone.utc)
 
-    MAX_DURATION = timedelta(minutes=42)
+    duration_minutes = 65 if class_year == 6 else 42
+
+    MAX_DURATION = timedelta(
+        minutes=duration_minutes
+    )
 
     # ==================================================
     # 3️⃣ Fetch latest CENTER-SPECIFIC
@@ -107379,21 +107405,11 @@ def start_naplan_numeracy_homework_exam(
 
     new_attempt = (
         StudentExamNaplanNumeracyHomework(
-
-            student_id=
-                student.id,
-
-            exam_id=
-                exam.id,
-
-            year=
-                class_year,
-
-            started_at=
-                now,
-
-            duration_minutes=
-                42
+            student_id=student.id,
+            exam_id=exam.id,
+            year=class_year,
+            started_at=now,
+            duration_minutes=duration_minutes
         )
     )
 
@@ -107514,7 +107530,11 @@ def start_naplan_numeracy_exam(
 
     now = datetime.now(timezone.utc)
 
-    MAX_DURATION = timedelta(minutes=42)
+    duration_minutes = 65 if class_year == 6 else 42
+
+    MAX_DURATION = timedelta(
+        minutes=duration_minutes
+    )
 
     # ==================================================
     # 3️⃣ Fetch latest CENTER-SPECIFIC exam
@@ -107722,7 +107742,9 @@ def start_naplan_numeracy_exam(
 
         expires_at = (
             started_at
-            + MAX_DURATION
+            + timedelta(
+                minutes=active_attempt.duration_minutes
+            )
         )
 
         elapsed = int(
@@ -107849,21 +107871,11 @@ def start_naplan_numeracy_exam(
 
     new_attempt = (
         StudentExamNaplanNumeracy(
-
-            student_id=
-                student.id,
-
-            exam_id=
-                exam.id,
-
-            year=
-                class_year,
-
-            started_at=
-                now,
-
-            duration_minutes=
-                42
+            student_id=student.id,
+            exam_id=exam.id,
+            year=class_year,
+            started_at=now,
+            duration_minutes=duration_minutes
         )
     )
 
@@ -127190,13 +127202,7 @@ def login_exam_module(
     print("\nAdmin user not found")
     print("Checking students table...")
 
-    student = (
-        db.query(Student)
-        .filter(
-            Student.student_id == login_data.student_id
-        )
-        .first()
-    )
+    student = ( db.query(Student) .filter( Student.student_id == login_data.student_id, Student.is_active.is_(True) ) .first() )
 
     # --------------------------------------------------
     # STUDENT FOUND
