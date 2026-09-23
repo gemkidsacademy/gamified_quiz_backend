@@ -13032,7 +13032,21 @@ def delete_parent_teacher_interview_teacher_allocation(
     center_code: str,
     db: Session = Depends(get_db)
 ):
+    print("\n" + "=" * 70)
+    print("PARENT–TEACHER INTERVIEW ALLOCATION DELETE")
+    print("=" * 70)
+    print(f"[DELETE ALLOCATION] Allocation ID : {allocation_id}")
+    print(f"[DELETE ALLOCATION] Center Code   : {center_code}")
+
     center_code = center_code.strip()
+
+    # ------------------------------------
+    # Find teacher allocation
+    # ------------------------------------
+
+    print(
+        "[DELETE ALLOCATION] Looking for teacher allocation..."
+    )
 
     allocation = (
         db.query(ParentTeacherInterviewTeacherAllocation)
@@ -13044,19 +13058,485 @@ def delete_parent_teacher_interview_teacher_allocation(
     )
 
     if not allocation:
+        print(
+            "[DELETE ALLOCATION] ERROR: Teacher allocation not found."
+        )
+
         raise HTTPException(
             status_code=404,
             detail="Teacher allocation not found."
         )
 
+    print(
+        "[DELETE ALLOCATION] Teacher allocation found."
+    )
+    print(
+        f"[DELETE ALLOCATION] Teacher ID    : {allocation.teacher_id}"
+    )
+    print(
+        f"[DELETE ALLOCATION] Class ID      : {allocation.class_id}"
+    )
+    print(
+        f"[DELETE ALLOCATION] Class Year ID : {allocation.class_year_id}"
+    )
+
+    # ------------------------------------
+    # Resolve class and class year
+    # ------------------------------------
+
+    print(
+        "[DELETE ALLOCATION] Resolving class..."
+    )
+
+    class_record = (
+        db.query(Class)
+        .filter(
+            Class.id == allocation.class_id,
+            Class.center_code == center_code
+        )
+        .first()
+    )
+
+    if not class_record:
+        print(
+            "[DELETE ALLOCATION] ERROR: Class not found."
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail="Class associated with teacher allocation not found."
+        )
+
+    print(
+        f"[DELETE ALLOCATION] Class Name: {class_record.class_name}"
+    )
+
+    print(
+        "[DELETE ALLOCATION] Resolving class year..."
+    )
+
+    class_year = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.id == allocation.class_year_id,
+            ClassYearExamModule.center_code == center_code
+        )
+        .first()
+    )
+
+    if not class_year:
+        print(
+            "[DELETE ALLOCATION] ERROR: Class year not found."
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail="Class year associated with teacher allocation not found."
+        )
+
+    print(
+        f"[DELETE ALLOCATION] Class Year: {class_year.year_name}"
+    )
+
+    # ------------------------------------
+    # Find students belonging to allocation
+    # ------------------------------------
+
+    print(
+        "[DELETE ALLOCATION] Finding active students "
+        "belonging to this allocation..."
+    )
+
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code,
+            Student.class_name == class_record.class_name,
+            Student.student_year == class_year.year_name,
+            Student.is_active == True
+        )
+        .all()
+    )
+
+    print(
+        f"[DELETE ALLOCATION] Matching active students found: "
+        f"{len(students)}"
+    )
+
+    student_ids = [
+        student.student_id
+        for student in students
+    ]
+
+    print(
+        f"[DELETE ALLOCATION] Student IDs: {student_ids}"
+    )
+
+    # ------------------------------------
+    # Find active bookings for this allocation
+    # ------------------------------------
+
+    print(
+        "[DELETE ALLOCATION] Checking for BOOKED "
+        "interview bookings..."
+    )
+
+    bookings = []
+
+    if student_ids:
+        bookings = (
+            db.query(ParentTeacherInterviewBooking)
+            .filter(
+                ParentTeacherInterviewBooking.center_code == center_code,
+                ParentTeacherInterviewBooking.teacher_id == allocation.teacher_id,
+                ParentTeacherInterviewBooking.student_id.in_(student_ids),
+                ParentTeacherInterviewBooking.booking_status == "BOOKED"
+            )
+            .all()
+        )
+
+    print(
+        f"[DELETE ALLOCATION] BOOKED bookings found: "
+        f"{len(bookings)}"
+    )
+
+    for booking in bookings:
+        print(
+            "[DELETE ALLOCATION] Booking found:"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Booking ID : {booking.id}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Student ID : {booking.student_id}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Event ID   : {booking.event_id}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Slot ID    : {booking.slot_id}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Parent     : {booking.parent_email}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Status     : {booking.booking_status}"
+        )
+
+    # ------------------------------------
+    # No bookings
+    # Delete allocation normally
+    # ------------------------------------
+
+    if not bookings:
+
+        print(
+            "[DELETE ALLOCATION] No BOOKED bookings found."
+        )
+        print(
+            "[DELETE ALLOCATION] Deleting teacher allocation "
+            "without sending cancellation emails."
+        )
+
+        db.delete(allocation)
+        db.commit()
+
+        print(
+            "[DELETE ALLOCATION] Teacher allocation deleted successfully."
+        )
+        print("=" * 70)
+
+        return {
+            "message": "Teacher allocation deleted successfully.",
+            "allocation_id": allocation_id,
+            "bookings_cancelled": 0
+        }
+
+    # ------------------------------------
+    # Bookings exist
+    # Send cancellation emails
+    # ------------------------------------
+
+    print(
+        f"[DELETE ALLOCATION] {len(bookings)} BOOKED booking(s) "
+        "found."
+    )
+
+    print(
+        "[DELETE ALLOCATION] Cancellation emails will now be sent "
+        "to affected parents."
+    )
+
+    for booking in bookings:
+
+        print(
+            "\n[DELETE ALLOCATION] ------------------------------------"
+        )
+        print(
+            f"[DELETE ALLOCATION] Processing booking {booking.id}"
+        )
+
+        event = (
+            db.query(ParentTeacherInterviewEvent)
+            .filter(
+                ParentTeacherInterviewEvent.id == booking.event_id,
+                ParentTeacherInterviewEvent.center_code == center_code
+            )
+            .first()
+        )
+
+        slot = (
+            db.query(ParentTeacherInterviewSlot)
+            .filter(
+                ParentTeacherInterviewSlot.id == booking.slot_id,
+                ParentTeacherInterviewSlot.center_code == center_code
+            )
+            .first()
+        )
+
+        teacher = (
+            db.query(CenterTeacher)
+            .filter(
+                CenterTeacher.id == booking.teacher_id,
+                CenterTeacher.center_code == center_code
+            )
+            .first()
+        )
+
+        student = (
+            db.query(Student)
+            .filter(
+                Student.student_id == booking.student_id,
+                Student.center_code == center_code
+            )
+            .first()
+        )
+
+        print(
+            f"[DELETE ALLOCATION] Event found   : {bool(event)}"
+        )
+        print(
+            f"[DELETE ALLOCATION] Slot found    : {bool(slot)}"
+        )
+        print(
+            f"[DELETE ALLOCATION] Teacher found : {bool(teacher)}"
+        )
+        print(
+            f"[DELETE ALLOCATION] Student found : {bool(student)}"
+        )
+
+        if not event or not slot or not teacher or not student:
+
+            print(
+                f"[DELETE ALLOCATION] ERROR: Unable to prepare "
+                f"cancellation email for booking {booking.id}."
+            )
+
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Unable to prepare cancellation email "
+                    f"for booking {booking.id}."
+                )
+            )
+
+        time_slot = (
+            f"{slot.start_time} – {slot.end_time}"
+        )
+
+        print(
+            "[DELETE ALLOCATION] Cancellation email details:"
+        )
+        print(
+            f"[DELETE ALLOCATION]   To      : {booking.parent_email}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Student : {student.name}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Teacher : {teacher.full_name}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Event   : {event.name}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Date    : {event.event_date}"
+        )
+        print(
+            f"[DELETE ALLOCATION]   Time    : {time_slot}"
+        )
+
+        message = Mail(
+            from_email="noreply@gemkidsacademy.com.au",
+            to_emails=booking.parent_email,
+            subject=(
+                "Parent–Teacher Interview Booking "
+                f"Cancelled – {student.name}"
+            ),
+            html_content=f"""
+                <div style="
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 30px 20px;
+                    font-family: Arial, Helvetica, sans-serif;
+                    color: #333333;
+                ">
+
+                    <div style="
+                        text-align: center;
+                        margin-bottom: 25px;
+                    ">
+                        <img
+                            src="https://gemkidsacademy.com.au/wp-content/uploads/2024/10/cropped-logo-4-1.png"
+                            alt="Gem Kids Academy"
+                            style="
+                                max-width: 180px;
+                                height: auto;
+                                display: inline-block;
+                            "
+                        >
+                    </div>
+
+                    <p>Dear Parent,</p>
+
+                    <p>
+                        We are writing to let you know that your
+                        Parent–Teacher Interview booking for
+                        <strong>{student.name}</strong>
+                        has been cancelled.
+                    </p>
+
+                    <p>
+                        <strong>Event:</strong> {event.name}
+                    </p>
+
+                    <p>
+                        <strong>Student:</strong> {student.name}
+                    </p>
+
+                    <p>
+                        <strong>Teacher:</strong> {teacher.full_name}
+                    </p>
+
+                    <p>
+                        <strong>Date:</strong> {event.event_date}
+                    </p>
+
+                    <p>
+                        <strong>Time:</strong> {time_slot}
+                    </p>
+
+                    <p>
+                        We apologise for any inconvenience caused.
+                    </p>
+
+                    <p>
+                        Kind regards,<br>
+                        Gem Kids Academy
+                    </p>
+
+                </div>
+            """,
+        )
+
+        message.reply_to = Email(
+            "do-not-reply@gemkidsacademy.com.au"
+        )
+
+        try:
+
+            print(
+                f"[DELETE ALLOCATION] Sending cancellation email "
+                f"for booking {booking.id}..."
+            )
+
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+            response = sg.send(message)
+
+            print(
+                f"[DELETE ALLOCATION] Cancellation email sent "
+                f"successfully for booking {booking.id}."
+            )
+            print(
+                f"[DELETE ALLOCATION] SendGrid status code: "
+                f"{response.status_code}"
+            )
+
+        except Exception as e:
+
+            print(
+                f"[DELETE ALLOCATION] ERROR: Failed to send "
+                f"cancellation email for booking {booking.id}."
+            )
+            print(
+                f"[DELETE ALLOCATION] Error type: {type(e).__name__}"
+            )
+            print(
+                f"[DELETE ALLOCATION] Error: {str(e)}"
+            )
+
+            db.rollback()
+
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Failed to send cancellation email "
+                    f"for booking {booking.id}: {str(e)}"
+                )
+            )
+
+    # ------------------------------------
+    # Mark bookings as CANCELLED
+    # ------------------------------------
+
+    print(
+        "\n[DELETE ALLOCATION] All cancellation emails "
+        "sent successfully."
+    )
+
+    print(
+        "[DELETE ALLOCATION] Marking affected bookings "
+        "as CANCELLED..."
+    )
+
+    for booking in bookings:
+        print(
+            f"[DELETE ALLOCATION] Booking {booking.id}: "
+            f"{booking.booking_status} -> CANCELLED"
+        )
+
+        booking.booking_status = "CANCELLED"
+
+    # ------------------------------------
+    # Delete teacher allocation
+    # ------------------------------------
+
+    print(
+        "[DELETE ALLOCATION] Deleting teacher allocation..."
+    )
+
     db.delete(allocation)
+
     db.commit()
 
-    return {
-        "message": "Teacher allocation deleted successfully.",
-        "allocation_id": allocation_id
-    }
+    print(
+        "[DELETE ALLOCATION] Teacher allocation deleted successfully."
+    )
+    print(
+        f"[DELETE ALLOCATION] Total bookings cancelled: "
+        f"{len(bookings)}"
+    )
+    print("=" * 70)
 
+    return {
+        "message": (
+            "Teacher allocation deleted successfully. "
+            "Affected bookings were cancelled and "
+            "parents were notified."
+        ),
+        "allocation_id": allocation_id,
+        "bookings_cancelled": len(bookings)
+    }
 
 @app.put("/parent-teacher-interview/teacher-allocations/{allocation_id}")
 def update_parent_teacher_interview_teacher_allocation(
