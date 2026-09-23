@@ -3344,6 +3344,20 @@ class GeneratedGamifiedQuiz(Base):
         default=datetime.utcnow
     )
 
+class LatestGamifiedQuizResponse(BaseModel):
+    id: int
+    center_code: str
+    term_id: int
+    term_name: str
+    category: str
+    class_year: str
+    class_day: str
+    session: int
+    activity_type: str
+    topic: str
+    generated_at: Optional[str]
+    quiz_json: Dict[str, Any]
+
 class UpdateClassConfigurationRequest(BaseModel):
     term_id: int
     term_name: str
@@ -9600,6 +9614,81 @@ def send_otp_sms(phone_number: str, otp: int):
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
 
+
+@app.put("/gamified-quiz/{quiz_id}")
+def update_gamified_quiz(
+    quiz_id: int,
+    quiz_json: dict,
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.id == quiz_id,
+            GeneratedGamifiedQuiz.center_code == center_code
+        )
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="Generated quiz not found."
+        )
+
+    quiz.quiz_json = quiz_json
+
+    db.commit()
+    db.refresh(quiz)
+
+    return {
+        "message": "Quiz updated successfully.",
+        "id": quiz.id,
+        "quiz_json": quiz.quiz_json
+    }
+
+@app.get("/gamified-quiz/latest")
+def get_latest_gamified_quiz(
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code == center_code
+        )
+        .order_by(
+            GeneratedGamifiedQuiz.generated_at.desc(),
+            GeneratedGamifiedQuiz.id.desc()
+        )
+        .first()
+    )
+
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No generated gamified quiz found."
+        )
+
+    return {
+        "id": quiz.id,
+        "center_code": quiz.center_code,
+        "term_id": quiz.term_id,
+        "term_name": quiz.term_name,
+        "category": quiz.category,
+        "class_year": quiz.class_year,
+        "class_day": quiz.class_day,
+        "session": quiz.session,
+        "activity_type": quiz.activity_type,
+        "topic": quiz.topic,
+        "generated_at": (
+            quiz.generated_at.isoformat()
+            if quiz.generated_at
+            else None
+        ),
+        "quiz_json": quiz.quiz_json,
+    }
 @app.get("/parent-teacher-interview/my-event")
 def get_parent_teacher_interview_event(
     center_code: str,
