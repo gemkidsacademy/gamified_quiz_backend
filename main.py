@@ -9614,7 +9614,55 @@ def send_otp_sms(phone_number: str, otp: int):
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
 
+@app.get("/gamified-quiz/manage")
+def get_gamified_quiz_for_management(
+    center_code: str,
+    category: str,
+    class_year: str,
+    class_day: str,
+    db: Session = Depends(get_db)
+):
+    quiz = (
+        db.query(GeneratedGamifiedQuiz)
+        .filter(
+            GeneratedGamifiedQuiz.center_code == center_code,
+            GeneratedGamifiedQuiz.category == category,
+            GeneratedGamifiedQuiz.class_year == class_year,
+            GeneratedGamifiedQuiz.class_day == class_day,
+        )
+        .order_by(
+            GeneratedGamifiedQuiz.generated_at.desc(),
+            GeneratedGamifiedQuiz.id.desc()
+        )
+        .first()
+    )
 
+    if not quiz:
+        raise HTTPException(
+            status_code=404,
+            detail="No generated quiz found for the selected filters."
+        )
+
+    return {
+        "id": quiz.id,
+        "center_code": quiz.center_code,
+        "term_id": quiz.term_id,
+        "term_name": quiz.term_name,
+        "category": quiz.category,
+        "class_year": quiz.class_year,
+        "class_day": quiz.class_day,
+        "session": quiz.session,
+        "activity_type": quiz.activity_type,
+        "topic": quiz.topic,
+        "generated_at": (
+            quiz.generated_at.isoformat()
+            if quiz.generated_at
+            else None
+        ),
+        "quiz_json": quiz.quiz_json,
+    }
+
+    
 @app.put("/gamified-quiz/{quiz_id}")
 def update_gamified_quiz(
     quiz_id: int,
