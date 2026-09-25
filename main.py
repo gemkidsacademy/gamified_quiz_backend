@@ -72,7 +72,7 @@ import base64
  
 import json
 
-from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, ForeignKey,or_,select, func, text, Boolean, Date, Text, desc, Float, Index, case, Numeric, distinct, cast, UniqueConstraint, Time
+from sqlalchemy import create_engine, Column,and_, Integer, String, JSON, DateTime, ForeignKey,or_,select, func, text, Boolean, Date, Text, desc, Float, Index, case, Numeric, distinct, cast, UniqueConstraint, Time
 from fastapi.responses import JSONResponse, HTMLResponse
 
 
@@ -12461,6 +12461,7 @@ def create_parent_teacher_interview_booking(
         "student_id": booking.student_id,
         "booking_status": booking.booking_status
     }
+
 @app.get("/parent-teacher-interview/bookings")
 def get_parent_teacher_interview_bookings(
     center_code: str,
@@ -12484,7 +12485,8 @@ def get_parent_teacher_interview_bookings(
             ParentTeacherInterviewSlot.end_time.label("end_time"),
             CenterTeacher.full_name.label("teacher_name"),
             Student.name.label("student_name"),
-            Student.class_name.label("class_name")
+            Student.class_name.label("class_name"),
+            Student.student_year.label("class_year")
         )
         .join(
             ParentTeacherInterviewEvent,
@@ -12539,7 +12541,8 @@ def get_parent_teacher_interview_bookings(
         end_time,
         teacher_name,
         student_name,
-        class_name
+        class_name,
+        class_year
     ) in booked_rows:
 
         booked_slot_keys.add(
@@ -12560,6 +12563,7 @@ def get_parent_teacher_interview_bookings(
                 "student_id": booking.student_id,
                 "student_name": student_name,
                 "class_name": class_name,
+                "class_year": class_year,
                 "parent_email": booking.parent_email,
                 "booking_status": booking.booking_status,
                 "booked_at": booking.booked_at,
@@ -12576,7 +12580,8 @@ def get_parent_teacher_interview_bookings(
             ParentTeacherInterviewEvent.name.label("event_name"),
             ParentTeacherInterviewEvent.event_date.label("event_date"),
             CenterTeacher.full_name.label("teacher_name"),
-            Class.class_name.label("class_name")
+            Class.class_name.label("class_name"),
+            ClassYearExamModule.year_name.label("class_year")
         )
         .join(
             ParentTeacherInterviewEvent,
@@ -12597,6 +12602,14 @@ def get_parent_teacher_interview_bookings(
             Class,
             Class.id ==
             ParentTeacherInterviewTeacherAllocation.class_id
+        )
+        .join(
+            ClassYearExamModule,
+            and_(
+                ClassYearExamModule.id ==
+                ParentTeacherInterviewTeacherAllocation.class_year_id,
+                ClassYearExamModule.center_code == center_code
+            )
         )
         .filter(
             ParentTeacherInterviewSlot.center_code == center_code,
@@ -12625,7 +12638,8 @@ def get_parent_teacher_interview_bookings(
         event_name,
         event_date,
         teacher_name,
-        class_name
+        class_name,
+        class_year
     ) in available_slots:
 
         slot_key = (
@@ -12652,6 +12666,7 @@ def get_parent_teacher_interview_bookings(
                 "student_id": None,
                 "student_name": None,
                 "class_name": class_name,
+                "class_year": class_year,
                 "parent_email": None,
                 "booking_status": "NOT_BOOKED",
                 "booked_at": None,
