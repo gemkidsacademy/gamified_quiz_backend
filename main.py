@@ -9141,61 +9141,62 @@ def serialize_blocks_for_gpt_cloze(blocks: list[dict]) -> str:
 async def parse_with_gpt(payload: dict, retries: int = 2):
 
     SYSTEM_PROMPT = (
-       "You are a deterministic exam-question parser.\n\n"
-   
-       "INPUT CONTRACT:\n"
-       "- You will receive text representing EXACTLY ONE exam\n"
-       "- The exam contains AT MOST ONE question\n"
-       "- A METADATA section may appear before the question\n"
-       "- Metadata fields may include: CLASS, CLASS_YEAR, SUBJECT, TOPIC, DIFFICULTY\n\n"
+        "You are a deterministic exam-question parser.\n\n"
 
-       "PRIMARY OBJECTIVE:\n"
+        "INPUT CONTRACT:\n"
+        "- You will receive text representing EXACTLY ONE exam\n"
+        "- The exam contains AT MOST ONE question\n"
+        "- A METADATA section may appear before the question\n"
+        "- Metadata fields may include: CLASS, CLASS_YEAR, SUBJECT, TOPIC, DIFFICULTY\n\n"
+
+        "PRIMARY OBJECTIVE:\n"
         "- Extract structured data exactly as written.\n"
         "- Accuracy is more important than creativity.\n"
         "- Missing an explicitly present field is an error.\n\n"
-   
-       "CONTENT RULES:\n"
-       "- Preserve wording exactly as provided\n"
-       "- Do NOT rephrase or summarize\n"
-       "- Do NOT invent or infer missing fields\n"
-       "- Do NOT merge multiple questions\n\n"
-   
-       "EXTRACTION RULES:\n"
-       "- Extract the following fields ONLY if explicitly present:\n"
-       "  class_name (from CLASS)\n"
-       "  class_year (from CLASS_YEAR)\n"
-       "  subject (from SUBJECT)\n"
-       "  topic (from TOPIC)\n"
-       "  difficulty (from DIFFICULTY)\n"
-       "  options (A–D)\n"
-       "  correct_answer\n\n"
-   
-       "CLASS_YEAR RULES:\n"
-       "- CLASS_YEAR appears in metadata as: CLASS_YEAR: \"5\"\n"
-       "- Extract class_year as an integer (e.g. 5, not \"5\")\n"
-       "- Do NOT guess or infer class_year if it is missing\n\n"
-   
-       "OPTIONS RULES:\n"
-       "- Extract options only if clearly labeled (A, B, C, D)\n"
-       "- Preserve option text exactly\n\n"
-   
-       "ANSWER RULES:\n"
-       "- Extract correct_answer exactly as provided (e.g. \"A\", \"B\", \"C\", \"D\")\n"
-       "- Do NOT infer the answer if it is missing\n\n"
-   
-       "OMISSION RULES:\n"
-       "- Extract all fields that are explicitly present\n"
-       "- If a field is missing, return it as null\n"
-       "- Partial extraction is allowed\n\n"
-   
-       "OUTPUT RULES:\n"
-       "- Return ONLY valid JSON\n"
-       "- No markdown, no commentary, no extra text\n"
-       "- Always return a single question object\n\n"
-   
-       "OUTPUT FORMAT:\n"
-       '{ "question": { ... } }'
-   )
+
+        "CONTENT RULES:\n"
+        "- Preserve wording exactly as provided\n"
+        "- Do NOT rephrase or summarize\n"
+        "- Do NOT invent or infer missing fields\n"
+        "- Do NOT merge multiple questions\n\n"
+
+        "EXTRACTION RULES:\n"
+        "- Extract the following fields ONLY if explicitly present:\n"
+        "  class_name (from CLASS)\n"
+        "  class_year (from CLASS_YEAR)\n"
+        "  subject (from SUBJECT)\n"
+        "  topic (from TOPIC)\n"
+        "  difficulty (from DIFFICULTY)\n"
+        "  options (A–E)\n"
+        "  correct_answer\n\n"
+
+        "CLASS_YEAR RULES:\n"
+        '- CLASS_YEAR appears in metadata as: CLASS_YEAR: "5"\n'
+        '- Extract class_year as an integer (e.g. 5, not "5")\n'
+        "- Do NOT guess or infer class_year if it is missing\n\n"
+
+        "OPTIONS RULES:\n"
+        "- Extract all options that are clearly labeled (A, B, C, D, E)\n"
+        "- Preserve option text exactly\n"
+        "- If an E option is explicitly present, it MUST be included in the options object\n\n"
+
+        "ANSWER RULES:\n"
+        '- Extract correct_answer exactly as provided (e.g. "A", "B", "C", "D", "E")\n'
+        "- Do NOT infer the answer if it is missing\n\n"
+
+        "OMISSION RULES:\n"
+        "- Extract all fields that are explicitly present\n"
+        "- If a field is missing, return it as null\n"
+        "- Partial extraction is allowed\n\n"
+
+        "OUTPUT RULES:\n"
+        "- Return ONLY valid JSON\n"
+        "- No markdown, no commentary, no extra text\n"
+        "- Always return a single question object\n\n"
+
+        "OUTPUT FORMAT:\n"
+        '{ "question": { ... } }'
+    )
 
 
     serialized = serialize_blocks_for_gpt(payload["blocks"])
@@ -123637,9 +123638,49 @@ async def upload_word(
                     print(f"BLOCK {i} TEXT -> {repr(b['content'][:500])}")
                 else:
                     print(f"BLOCK {i} IMAGE -> {b}")
+            print(
+                "[OPTIONS TRACE - RAW BLOCKS] OPTION-LIKE TEXT BLOCKS:",
+                [
+                    b["content"]
+                    for b in gpt_blocks
+                    if b["type"] == "text"
+                    and any(
+                        line.strip().upper().startswith(
+                            ("A.", "B.", "C.", "D.", "E.")
+                        )
+                        for line in b["content"].splitlines()
+                    )
+                ]
+            )
+            print(
+                "[OPTIONS TRACE - RAW BLOCKS] COMPLETE GPT BLOCKS:",
+                repr(gpt_blocks)
+            )
             gpt_result = await parse_with_gpt({
                 "blocks": gpt_blocks
             })
+            print("[OPTIONS TRACE - GPT] GPT RESULT:", repr(gpt_result))
+            print(
+                "[OPTIONS TRACE - GPT] OPTIONS:",
+                repr(
+                    gpt_result.get("question", {}).get("options")
+                    if isinstance(gpt_result, dict)
+                    and isinstance(gpt_result.get("question"), dict)
+                    else None
+                )
+            )
+            print(
+                "[OPTIONS TRACE - GPT] KEYS A-E:",
+                {
+                    key: key in (
+                        gpt_result.get("question", {}).get("options") or {}
+                    )
+                    for key in ("A", "B", "C", "D", "E")
+                }
+                if isinstance(gpt_result, dict)
+                and isinstance(gpt_result.get("question"), dict)
+                else {key: False for key in ("A", "B", "C", "D", "E")}
+            )
             print(f"[EXAM {exam_idx}] GPT RESULT:")
             print(repr(gpt_result))
             
@@ -123699,6 +123740,19 @@ async def upload_word(
                 f"options={question.get('options')}, "
                 f"correct={question.get('correct_answer')}"
             )
+
+        print(
+            "[OPTIONS TRACE - FALLBACK] OPTIONS:",
+            repr(question.get("options"))
+        )
+        print(
+            "[OPTIONS TRACE - FALLBACK] OPTION KEYS:",
+            list((question.get("options") or {}).keys())
+        )
+        print(
+            "[OPTIONS TRACE - FALLBACK] E EXISTS:",
+            "E" in (question.get("options") or {})
+        )
         
         if not question.get("options") or not question.get("correct_answer"):
             skipped += 1
@@ -123869,6 +123923,14 @@ async def upload_word(
             # -----------------------------------
             if use_new_flow:
 
+                print(
+                    "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTIONS:",
+                    repr(question.get("options"))
+                )
+                print(
+                    "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTION KEYS:",
+                    list((question.get("options") or {}).keys())
+                )
                 resolved_options = {}
 
                 for key, raw_value in question.get("options", {}).items():
@@ -123924,7 +123986,28 @@ async def upload_word(
                         resolved_options[key] = normalized
 
             else:
+                print(
+                    "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTIONS:",
+                    repr(question.get("options"))
+                )
+                print(
+                    "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTION KEYS:",
+                    list((question.get("options") or {}).keys())
+                )
                 resolved_options = question["options"]
+
+            print(
+                "[OPTIONS TRACE - RESOLVED] RESOLVED OPTIONS:",
+                repr(resolved_options)
+            )
+            print(
+                "[OPTIONS TRACE - RESOLVED] RESOLVED OPTION KEYS:",
+                list(resolved_options.keys())
+            )
+            print(
+                "[OPTIONS TRACE - RESOLVED] E EXISTS:",
+                "E" in resolved_options
+            )
 
             # -----------------------------------
             # Save row
@@ -123941,6 +124024,16 @@ async def upload_word(
             print("question_text length =", len(question_text))
             print("question_text preview =", repr(question_text[:1000]))
             print("question_blocks =", repr(filter_display_blocks(resolved_blocks)))
+            print("[OPTIONS TRACE - BEFORE DB] FINAL OPTIONS BEFORE DB INSERT")
+            print("[OPTIONS TRACE - BEFORE DB] OPTIONS:", repr(resolved_options))
+            print(
+                "[OPTIONS TRACE - BEFORE DB] OPTION KEYS:",
+                list(resolved_options.keys())
+            )
+            print(
+                "[OPTIONS TRACE - BEFORE DB] OPTION E:",
+                resolved_options.get("E")
+            )
             new_question = Question(
                 batch_id=next_batch_id,
                 class_name=question.get("class_name"),
@@ -123962,6 +124055,22 @@ async def upload_word(
             db.add(new_question)
             db.commit()
             db.refresh(new_question)
+            print(
+                "[OPTIONS TRACE - AFTER DB] SAVED QUESTION ID:",
+                new_question.id
+            )
+            print(
+                "[OPTIONS TRACE - AFTER DB] OPTIONS:",
+                repr(new_question.options)
+            )
+            print(
+                "[OPTIONS TRACE - AFTER DB] OPTION KEYS:",
+                list(new_question.options.keys())
+            )
+            print(
+                "[OPTIONS TRACE - AFTER DB] OPTION E:",
+                new_question.options.get("E")
+            )
             print(f"[EXAM {exam_idx}] SAVED SUCCESSFULLY -> ID {new_question.id}")
 
             saved += 1
