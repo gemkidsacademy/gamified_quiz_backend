@@ -4797,6 +4797,18 @@ class WritingGenerateSchemaHomeWork(BaseModel):
     class_year: str
 
     center_code: str
+
+class WritingGenerateSchemaHomeWorkLatest(BaseModel):
+    class_year: str
+    selected_date: str
+    batch_id: int
+    center_code: str
+
+class WritingGenerateSchemaHomeWorkLatest(BaseModel):
+    class_year: str
+    selected_date: str
+    batch_id: int
+    center_code: str
     
 class QuizSetupWritingHomework(Base):
     __tablename__ = "quiz_setup_writing_homework"
@@ -7387,6 +7399,12 @@ class WritingGenerateSchema(BaseModel):
 
     class_year: str
 
+    center_code: str
+
+class WritingGenerateSchemaLatest(BaseModel):
+    class_year: str
+    selected_date: str
+    batch_id: int
     center_code: str
     
 class StudentExamWriting(Base):
@@ -12741,10 +12759,33 @@ def get_parent_teacher_interview_teacher_allocations(
     db: Session = Depends(get_db)
 ):
     center_code = center_code.strip()
+    print("=== DATE DEBUG ===")
+    print("Database current date:", db.query(func.current_date()).scalar())
     print("=== TEACHER ALLOCATIONS DEBUG ===")
     print("center_code received:", repr(center_code))
     print("teacher_id received:", repr(teacher_id))
+    debug_events = (
+    db.query(
+            ParentTeacherInterviewEvent.id,
+            ParentTeacherInterviewEvent.name,
+            ParentTeacherInterviewEvent.event_date,
+            ParentTeacherInterviewEvent.center_code,
+        )
+        .filter(
+            ParentTeacherInterviewEvent.center_code == center_code
+        )
+        .order_by(ParentTeacherInterviewEvent.event_date.asc())
+        .all()
+    )
 
+    print("=== INTERVIEW EVENTS DATE DEBUG ===")
+    for event_id, event_name, event_date, event_center in debug_events:
+        print(
+            "event_id:", event_id,
+            "| name:", event_name,
+            "| event_date:", event_date,
+            "| center:", event_center
+        )
     allocations_query = (
         db.query(
             ParentTeacherInterviewTeacherAllocation,
@@ -12814,6 +12855,42 @@ def get_parent_teacher_interview_teacher_allocations(
         )
 
     print("teacher_id filter applied:", teacher_id is not None)
+    print("=== ALLOCATION DATE FILTER DEBUG ===")
+
+    debug_allocations = (
+        db.query(
+            ParentTeacherInterviewTeacherAllocation.id,
+            ParentTeacherInterviewTeacherAllocation.event_id,
+            ParentTeacherInterviewTeacherAllocation.center_code,
+            ParentTeacherInterviewEvent.name,
+            ParentTeacherInterviewEvent.event_date,
+        )
+        .join(
+            ParentTeacherInterviewEvent,
+            ParentTeacherInterviewEvent.id
+            == ParentTeacherInterviewTeacherAllocation.event_id
+        )
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code
+        )
+        .all()
+    )
+
+    for (
+        allocation_id,
+        event_id,
+        allocation_center,
+        event_name,
+        event_date,
+    ) in debug_allocations:
+        print(
+            "allocation_id:", allocation_id,
+            "| event_id:", event_id,
+            "| allocation_center:", allocation_center,
+            "| event:", event_name,
+            "| event_date:", event_date
+        )
+    
 
     allocations = allocations_query.all()
 
@@ -34718,6 +34795,509 @@ def generate_naplan_writing_homework(
 
         raise
 
+@app.post("/api/exams/generate-naplan-writing-latest")
+def generate_naplan_writing_latest(
+    payload: WritingGenerateSchemaLatest,
+    db: Session = Depends(get_db)
+):
+    try:
+        print(
+            "\n=========== GENERATE NAPLAN WRITING LATEST ==========="
+        )
+
+        # -------------------------------------------------
+        # Inputs
+        # -------------------------------------------------
+        class_name = "Naplan"
+
+        class_year_raw = payload.class_year
+        selected_date = payload.selected_date
+        batch_id = payload.batch_id
+        center_code = payload.center_code.strip().upper()
+
+        class_name_norm = class_name.strip().lower()
+
+        class_year_digits = "".join(
+            ch for ch in class_year_raw
+            if ch.isdigit()
+        )
+
+        print("\n📥 INPUTS:")
+        print(f"   class_name     = '{class_name}'")
+        print(f"   class_year     = '{class_year_raw}'")
+        print(f"   selected_date  = '{selected_date}'")
+        print(f"   batch_id       = {batch_id}")
+        print(f"   center_code    = '{center_code}'")
+
+        # -------------------------------------------------
+        # Validate required latest-upload inputs
+        # -------------------------------------------------
+        if not class_year_raw:
+            raise HTTPException(
+                status_code=400,
+                detail="Class year is required."
+            )
+
+        if not selected_date:
+            raise HTTPException(
+                status_code=400,
+                detail="Selected date is required."
+            )
+
+        if batch_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Batch ID is required."
+            )
+
+        if not center_code:
+            raise HTTPException(
+                status_code=400,
+                detail="Center code is required."
+            )
+
+        # -------------------------------------------------
+        # Previously used questions
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                func.lower(
+                    func.trim(
+                        QuestionUsageWriting.center_code
+                    )
+                ) == center_code.lower()
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        print(
+            f"\n🚫 USED QUESTION IDS: {used_question_ids}"
+        )
+
+        # -------------------------------------------------
+        # Fetch question directly from selected batch/date
+        # -------------------------------------------------
+        question_query = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits,
+
+                func.date(
+                    WritingQuestionBank.created_at
+                ) == selected_date,
+
+                WritingQuestionBank.batch_id == batch_id
+            )
+        )
+
+        if used_question_ids:
+            question_query = question_query.filter(
+                ~WritingQuestionBank.id.in_(
+                    used_question_ids
+                )
+            )
+
+        question = (
+            question_query
+            .order_by(func.random())
+            .first()
+        )
+
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "No unused NAPLAN writing question "
+                    "available for the selected date and batch."
+                )
+            )
+
+        print("\n✅ MATCHED LATEST QUESTION:")
+        print(f"   question_id = {question.id}")
+        print(f"   batch_id    = {question.batch_id}")
+        print(f"   created_at  = {question.created_at}")
+        print(f"   topic       = {question.topic}")
+        print(f"   difficulty  = {question.difficulty}")
+
+        # -------------------------------------------------
+        # Build exam text
+        # -------------------------------------------------
+        parts = []
+
+        if question.title:
+            parts.append(
+                f"TITLE:\n{question.title}\n"
+            )
+
+        parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
+
+        if question.statement:
+            parts.append(
+                f"STATEMENT:\n{question.statement}\n"
+            )
+
+        parts.append(
+            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+            parts.append(
+                f"OPENING SENTENCE:\n{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+            formatted_guidelines = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            parts.append(
+                f"GUIDELINES:\n{formatted_guidelines}\n"
+            )
+
+        full_exam_text = "\n".join(parts).strip()
+
+        # -------------------------------------------------
+        # Save generated exam
+        # -------------------------------------------------
+        exam = GeneratedExamWriting(
+            class_name=class_name,
+            class_year=class_year_raw,
+            subject="Writing",
+            topic=question.topic,
+            difficulty=question.difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            center_code=center_code
+        )
+
+        db.add(exam)
+        db.commit()
+        db.refresh(exam)
+
+        print(
+            f"✅ Exam saved with ID: {exam.id}"
+        )
+
+        # -------------------------------------------------
+        # Register question usage
+        # -------------------------------------------------
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+        db.commit()
+
+        print(
+            "✅ Question usage registered"
+        )
+
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "center_code": exam.center_code,
+            "exam_text": full_exam_text,
+            "selected_date": selected_date,
+            "batch_id": batch_id,
+            "question_id": question.id,
+            "question_created_at": question.created_at,
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception:
+        db.rollback()
+        traceback.print_exc()
+        raise
+
+
+
+@app.post("/api/exams/generate-naplan-writing-homework-latest")
+def generate_naplan_writing_homework_latest(
+    payload: WritingGenerateSchemaHomeWorkLatest,
+    db: Session = Depends(get_db)
+):
+    try:
+        print(
+            "\n=========== GENERATE NAPLAN WRITING HOMEWORK LATEST ==========="
+        )
+
+        class_name = "Naplan"
+
+        class_year_raw = payload.class_year
+        selected_date = payload.selected_date
+        batch_id = payload.batch_id
+        center_code = payload.center_code.strip().upper()
+
+        class_name_norm = class_name.strip().lower()
+
+        class_year_digits = "".join(
+            ch for ch in class_year_raw
+            if ch.isdigit()
+        )
+
+        print("\n📥 INPUTS:")
+        print(f"   class_name     = '{class_name}'")
+        print(f"   class_year     = '{class_year_raw}'")
+        print(f"   selected_date  = '{selected_date}'")
+        print(f"   batch_id       = {batch_id}")
+        print(f"   center_code    = '{center_code}'")
+
+        # -------------------------------------------------
+        # Delete previous homework for this centre/year
+        # -------------------------------------------------
+        homework_ids = (
+            db.query(GeneratedHomeworkWriting.id)
+            .filter(
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.class_year
+                    )
+                ) == class_year_raw.strip().lower(),
+
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.center_code
+                    )
+                ) == center_code.lower()
+            )
+            .all()
+        )
+
+        homework_ids = [h[0] for h in homework_ids]
+
+        if homework_ids:
+
+            db.query(StudentHomeworkResponseWriting).filter(
+                StudentHomeworkResponseWriting.homework_id.in_(
+                    homework_ids
+                )
+            ).delete(synchronize_session=False)
+
+            db.query(StudentHomeworkWriting).filter(
+                StudentHomeworkWriting.homework_id.in_(
+                    homework_ids
+                )
+            ).delete(synchronize_session=False)
+
+            db.query(GeneratedHomeworkWriting).filter(
+                GeneratedHomeworkWriting.id.in_(homework_ids)
+            ).delete(synchronize_session=False)
+
+            db.commit()
+
+        # -------------------------------------------------
+        # Previously used questions
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                func.lower(
+                    func.trim(
+                        QuestionUsageWriting.center_code
+                    )
+                ) == center_code.lower()
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        # -------------------------------------------------
+        # Fetch question directly from selected batch/date
+        # -------------------------------------------------
+        question_query = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits,
+
+                func.date(
+                    WritingQuestionBank.created_at
+                ) == selected_date,
+
+                WritingQuestionBank.batch_id == batch_id
+            )
+        )
+
+        if used_question_ids:
+            question_query = question_query.filter(
+                ~WritingQuestionBank.id.in_(
+                    used_question_ids
+                )
+            )
+
+        question = (
+            question_query
+            .order_by(func.random())
+            .first()
+        )
+
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "No unused NAPLAN writing homework question "
+                    "available for the selected date and batch."
+                )
+            )
+
+        print("\n✅ MATCHED LATEST QUESTION:")
+        print(f"   question_id = {question.id}")
+        print(f"   batch_id    = {question.batch_id}")
+        print(f"   created_at  = {question.created_at}")
+
+        # -------------------------------------------------
+        # Build exam text
+        # -------------------------------------------------
+        parts = []
+
+        if question.title:
+            parts.append(
+                f"TITLE:\n{question.title}\n"
+            )
+
+        parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
+
+        if question.statement:
+            parts.append(
+                f"STATEMENT:\n{question.statement}\n"
+            )
+
+        parts.append(
+            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+            parts.append(
+                f"OPENING SENTENCE:\n{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+            formatted = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            parts.append(
+                f"GUIDELINES:\n{formatted}\n"
+            )
+
+        full_exam_text = "\n".join(parts).strip()
+
+        # -------------------------------------------------
+        # Save homework
+        # -------------------------------------------------
+        exam = GeneratedHomeworkWriting(
+            class_name=class_name,
+            class_year=class_year_raw,
+            subject="Writing",
+            topic=question.topic,
+            difficulty=question.difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            is_current=True,
+            center_code=center_code
+        )
+
+        db.add(exam)
+        db.commit()
+        db.refresh(exam)
+
+        # -------------------------------------------------
+        # Register question usage
+        # -------------------------------------------------
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+        db.commit()
+
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "center_code": exam.center_code,
+            "exam_text": full_exam_text,
+            "selected_date": selected_date,
+            "batch_id": batch_id,
+            "question_id": question.id,
+            "question_created_at": question.created_at,
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception:
+        db.rollback()
+        traceback.print_exc()
+        raise
+
+
 
 @app.post("/api/exams/generate-oc-writing-homework")
 def generate_oc_writing_homework(
@@ -35013,6 +35593,357 @@ def generate_oc_writing_homework(
 
         raise e
 
+
+@app.post("/api/exams/generate-oc-writing-homework-latest")
+def generate_oc_writing_homework_latest(
+    payload: WritingGenerateSchemaHomeWorkLatest,
+    db: Session = Depends(get_db)
+):
+    try:
+
+        print(
+            "\n=========== GENERATE OC WRITING HOMEWORK (LATEST) ==========="
+        )
+
+        # -------------------------------------------------
+        # Helpers
+        # -------------------------------------------------
+        def normalize_text_helper(value: str) -> str:
+            return value.strip().lower()
+
+        def normalize_year_digits_helper(value: str) -> str:
+            return "".join(
+                ch for ch in value
+                if ch.isdigit()
+            )
+
+        # -------------------------------------------------
+        # Inputs
+        # -------------------------------------------------
+        class_name = "OC"
+        class_name_norm = normalize_text_helper(class_name)
+
+        class_year_raw = payload.class_year
+        class_year_digits = normalize_year_digits_helper(
+            class_year_raw
+        )
+
+        selected_date = payload.selected_date
+        batch_id = payload.batch_id
+
+        center_code = payload.center_code.strip().upper()
+
+        print("\n📥 INPUTS:")
+        print(f"   class_name     = '{class_name}'")
+        print(f"   class_year     = '{class_year_raw}'")
+        print(f"   selected_date  = '{selected_date}'")
+        print(f"   batch_id       = '{batch_id}'")
+        print(f"   center_code    = '{center_code}'")
+        print(f"   year_digits    = '{class_year_digits}'")
+
+        # -------------------------------------------------
+        # Validate latest-upload inputs
+        # -------------------------------------------------
+        if not class_year_raw:
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required."
+            )
+
+        if not selected_date:
+            raise HTTPException(
+                status_code=400,
+                detail="selected_date is required."
+            )
+
+        if batch_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="batch_id is required."
+            )
+
+        if not center_code:
+            raise HTTPException(
+                status_code=400,
+                detail="center_code is required."
+            )
+
+        # -------------------------------------------------
+        # Delete previous homework for this centre/year
+        # -------------------------------------------------
+        print("\n🗑️ REMOVING PREVIOUS HOMEWORK...")
+
+        homework_ids = (
+            db.query(GeneratedHomeworkWriting.id)
+            .filter(
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.class_name
+                    )
+                ) == class_name_norm,
+
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.class_year
+                    )
+                ) == normalize_text_helper(class_year_raw),
+
+                func.lower(
+                    func.trim(
+                        GeneratedHomeworkWriting.center_code
+                    )
+                ) == center_code.lower()
+            )
+            .all()
+        )
+
+        homework_ids = [h[0] for h in homework_ids]
+
+        if homework_ids:
+
+            db.query(StudentHomeworkResponseWriting).filter(
+                StudentHomeworkResponseWriting.homework_id.in_(
+                    homework_ids
+                )
+            ).delete(
+                synchronize_session=False
+            )
+
+            db.query(StudentHomeworkWriting).filter(
+                StudentHomeworkWriting.homework_id.in_(
+                    homework_ids
+                )
+            ).delete(
+                synchronize_session=False
+            )
+
+            db.query(GeneratedHomeworkWriting).filter(
+                GeneratedHomeworkWriting.id.in_(
+                    homework_ids
+                )
+            ).delete(
+                synchronize_session=False
+            )
+
+            db.commit()
+
+            print(
+                f"   Deleted previous homework IDs: {homework_ids}"
+            )
+
+        # -------------------------------------------------
+        # Previously used questions
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                func.lower(
+                    func.trim(
+                        QuestionUsageWriting.center_code
+                    )
+                ) == center_code.lower()
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        print(
+            f"\nUSED QUESTION IDS: {used_question_ids}"
+        )
+
+        # -------------------------------------------------
+        # Find question from selected upload
+        # -------------------------------------------------
+        print("\n🔎 FINDING QUESTION FROM SELECTED UPLOAD...")
+
+        question_query = (
+            db.query(WritingQuestionBank)
+            .filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits,
+
+                func.date(
+                    WritingQuestionBank.created_at
+                ) == selected_date,
+
+                WritingQuestionBank.batch_id == batch_id
+            )
+        )
+
+        if used_question_ids:
+
+            question_query = question_query.filter(
+                ~WritingQuestionBank.id.in_(
+                    used_question_ids
+                )
+            )
+
+        question = (
+            question_query
+            .order_by(func.random())
+            .first()
+        )
+
+        if not question:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "No unused OC writing homework question found "
+                    f"for class_year={class_year_raw}, "
+                    f"selected_date={selected_date}, "
+                    f"batch_id={batch_id}, "
+                    f"center_code={center_code}."
+                )
+            )
+
+        # -------------------------------------------------
+        # Confirm selected question
+        # -------------------------------------------------
+        print(
+            "\n✅ QUESTION CONFIRMED FROM SELECTED UPLOAD:"
+        )
+        print(
+            f"   question_id = {question.id}"
+        )
+        print(
+            f"   created_at  = {question.created_at}"
+        )
+        print(
+            f"   batch_id    = {question.batch_id}"
+        )
+        print(
+            f"   topic       = {question.topic}"
+        )
+        print(
+            f"   difficulty  = {question.difficulty}"
+        )
+
+        # -------------------------------------------------
+        # Build homework text
+        # -------------------------------------------------
+        print("\n📝 BUILDING HOMEWORK TEXT...")
+
+        parts = []
+
+        if question.title:
+            parts.append(
+                f"TITLE:\n{question.title}\n"
+            )
+
+        parts.append(
+            f"TASK:\n{question.question_text}\n"
+        )
+
+        if question.statement:
+            parts.append(
+                f"STATEMENT:\n{question.statement}\n"
+            )
+
+        parts.append(
+            f"INSTRUCTIONS:\n{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+            parts.append(
+                f"OPENING SENTENCE:\n{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+            formatted = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            parts.append(
+                f"GUIDELINES:\n{formatted}\n"
+            )
+
+        full_exam_text = "\n".join(parts).strip()
+
+        # -------------------------------------------------
+        # Save homework
+        # -------------------------------------------------
+        print("\n💾 SAVING HOMEWORK...")
+
+        exam = GeneratedHomeworkWriting(
+            class_name=class_name,
+            class_year=class_year_raw,
+            subject="writing",
+            topic=question.topic,
+            difficulty=question.difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            is_current=True,
+            center_code=center_code
+        )
+
+        db.add(exam)
+        db.commit()
+        db.refresh(exam)
+
+        print(
+            f"   Homework saved with ID: {exam.id}"
+        )
+
+        # -------------------------------------------------
+        # Register question usage
+        # -------------------------------------------------
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+        db.commit()
+
+        print(
+            f"   Question usage registered: {question.id}"
+        )
+
+        # -------------------------------------------------
+        # Response
+        # -------------------------------------------------
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "center_code": exam.center_code,
+            "exam_text": full_exam_text,
+            "selected_date": selected_date,
+            "batch_id": batch_id,
+            "question_id": question.id,
+            "question_created_at": question.created_at,
+        }
+
+    except Exception as e:
+
+        db.rollback()
+
+        traceback.print_exc()
+
+        raise e
 @app.post("/api/exams/generate-writing-homework")
 def generate_writing_homework(
     payload: WritingGenerateSchemaHomeWork,
@@ -50961,6 +51892,7 @@ def reset_writing_questions(
 def get_writing_available_batches(
     class_year: str,
     date: str,
+    class_name: str = None,
     db: Session = Depends(get_db)
 ):
 
@@ -51005,7 +51937,7 @@ def get_writing_available_batches(
         # -------------------------------------------------
         # Query distinct batch ids
         # -------------------------------------------------
-        batch_rows = (
+        batch_query = (
             db.query(
                 WritingQuestionBank.batch_id
             )
@@ -51024,6 +51956,19 @@ def get_writing_available_batches(
                     WritingQuestionBank.created_at
                 ) == date
             )
+        )
+
+        if class_name:
+            batch_query = batch_query.filter(
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name.strip().lower()
+            )
+
+        batch_rows = (
+            batch_query
             .distinct()
             .order_by(
                 WritingQuestionBank.batch_id.asc()
@@ -51062,6 +52007,7 @@ def get_writing_available_batches(
             status_code=500,
             detail=str(e)
         )  
+
 @app.get("/api/student/homework-review-by-session/reading")
 def review_homework_reading_by_session(
     session_id: int = Query(..., description="Homework reading session ID"),
@@ -82658,106 +83604,35 @@ def start_oc_writing_exam(
             detail="Student center code is missing"
         )
 
-    # --------------------------------------------------
-    # 🔍 STEP 1: Fetch ALL active exams
-    # --------------------------------------------------
-    all_exams = (
+    matched_exam = (
         db.query(GeneratedExamWriting)
         .filter(
             GeneratedExamWriting.is_current.is_(True),
             func.lower(
-                func.trim(GeneratedExamWriting.class_name)
-            ) == "oc"
+                func.trim(
+                    GeneratedExamWriting.class_name
+                )
+            ) == "oc",
+            func.trim(
+                func.replace(
+                    func.lower(
+                        GeneratedExamWriting.class_year
+                    ),
+                    "year",
+                    ""
+                )
+            ) == student_year_normalized,
+            func.upper(
+                func.trim(
+                    GeneratedExamWriting.center_code
+                )
+            ) == student_center_code.strip().upper()
         )
-        .all()
+        .order_by(
+            GeneratedExamWriting.created_at.desc()
+        )
+        .first()
     )
-
-    print(
-        f"\n📦 Total active exams found: "
-        f"{len(all_exams)}"
-    )
-
-    for e in all_exams:
-
-        raw = e.class_year
-
-        normalized = (
-            raw.strip().lower()
-            if raw
-            else None
-        )
-
-        print(
-            f"""
-📘 Exam
-   ID={e.id}
-   YEAR_RAW={repr(raw)}
-   YEAR_NORMALIZED={repr(normalized)}
-   CENTER_CODE={repr(e.center_code)}
-            """.strip()
-        )
-
-    # --------------------------------------------------
-    # 🔍 STEP 2: Manual strict matching
-    # --------------------------------------------------
-    matched_exam = None
-
-    for e in all_exams:
-
-        exam_year_normalized = (
-            e.class_year.strip().lower()
-            if e.class_year
-            else None
-        )
-
-        exam_center_code = (
-            e.center_code.strip().upper()
-            if e.center_code
-            else None
-        )
-
-        student_center_code_normalized = (
-            student_center_code
-            .strip()
-            .upper()
-        )
-
-        print(
-            f"""
-🔎 COMPARISON
-
-student_year='{student_year_normalized}'
-exam_year='{exam_year_normalized}'
-
-student_center='{student_center_code_normalized}'
-exam_center='{exam_center_code}'
-
-exam_id={e.id}
-            """.strip()
-        )
-
-        # --------------------------------------------------
-        # STRICT MATCH:
-        # year + center_code
-        # --------------------------------------------------
-        if (
-            exam_year_normalized
-            == student_year_normalized
-
-            and
-
-            exam_center_code
-            == student_center_code_normalized
-        ):
-
-            print(
-                f"✅ MATCH FOUND → "
-                f"Exam ID={e.id}"
-            )
-
-            matched_exam = e
-
-            break
 
     if not matched_exam:
 
@@ -85557,6 +86432,348 @@ def generate_oc_exam_writing(
             detail=str(e)
         )
 
+@app.post("/api/exams/generate-oc-writing-latest")
+def generate_oc_exam_writing_latest(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    try:
+
+        print("\n" + "=" * 70)
+        print("========== GENERATE OC WRITING EXAM (LATEST) ==========")
+        print("=" * 70)
+
+        # -------------------------------------------------
+        # Helpers
+        # -------------------------------------------------
+        def normalize_text_helper(value: str) -> str:
+            return value.strip().lower()
+
+        def normalize_year_digits_helper(value: str) -> str:
+            return "".join(
+                ch for ch in value
+                if ch.isdigit()
+            )
+
+        # -------------------------------------------------
+        # Inputs
+        # -------------------------------------------------
+        class_name = "OC"
+
+        class_year_raw = payload.get("class_year")
+        selected_date = payload.get("selected_date")
+        batch_id = payload.get("batch_id")
+        center_code = payload.get("center_code")
+
+        # -------------------------------------------------
+        # Validation
+        # -------------------------------------------------
+        if not class_year_raw:
+            raise HTTPException(
+                status_code=400,
+                detail="class_year is required"
+            )
+
+        if not selected_date:
+            raise HTTPException(
+                status_code=400,
+                detail="selected_date is required"
+            )
+
+        if not batch_id:
+            raise HTTPException(
+                status_code=400,
+                detail="batch_id is required"
+            )
+
+        if not center_code:
+            raise HTTPException(
+                status_code=400,
+                detail="center_code is required"
+            )
+
+        class_name_norm = normalize_text_helper(
+            class_name
+        )
+
+        class_year_digits = normalize_year_digits_helper(
+            class_year_raw
+        )
+
+        print("\n📥 INPUTS:")
+        print(
+            f"   class_name      = '{class_name}'"
+        )
+        print(
+            f"   class_year_raw  = '{class_year_raw}'"
+        )
+        print(
+            f"   selected_date   = '{selected_date}'"
+        )
+        print(
+            f"   batch_id        = '{batch_id}'"
+        )
+        print(
+            f"   center_code     = '{center_code}'"
+        )
+        print(
+            f"   year_digits     = '{class_year_digits}'"
+        )
+
+        # -------------------------------------------------
+        # Previously used questions
+        # -------------------------------------------------
+        used_question_ids = (
+            db.query(
+                QuestionUsageWriting.question_id
+            )
+            .filter(
+                QuestionUsageWriting.center_code
+                == center_code
+            )
+            .all()
+        )
+
+        used_question_ids = [
+            q[0]
+            for q in used_question_ids
+        ]
+
+        print(
+            f"\n🚫 USED QUESTION IDS: "
+            f"{used_question_ids}"
+        )
+
+        # -------------------------------------------------
+        # Fetch UNUSED question from selected upload
+        # -------------------------------------------------
+        question_query = (
+            db.query(WritingQuestionBank)
+            .filter(
+
+                # OC question
+                func.lower(
+                    func.trim(
+                        WritingQuestionBank.class_name
+                    )
+                ) == class_name_norm,
+
+                # Same class year
+                func.regexp_replace(
+                    func.trim(
+                        WritingQuestionBank.class_year
+                    ),
+                    "[^0-9]",
+                    "",
+                    "g"
+                ) == class_year_digits,
+
+                # IMPORTANT:
+                # Selected upload date
+                func.date(
+                    WritingQuestionBank.created_at
+                ) == selected_date,
+
+                # IMPORTANT:
+                # Selected upload batch
+                WritingQuestionBank.batch_id
+                == batch_id
+            )
+        )
+
+        # -------------------------------------------------
+        # Exclude previously used questions
+        # -------------------------------------------------
+        if used_question_ids:
+
+            question_query = (
+                question_query.filter(
+                    ~WritingQuestionBank.id.in_(
+                        used_question_ids
+                    )
+                )
+            )
+
+        # -------------------------------------------------
+        # Select one unused question
+        # -------------------------------------------------
+        question = (
+            question_query
+            .order_by(func.random())
+            .first()
+        )
+
+        print(
+            f"\n🔍 MATCHED UNUSED QUESTION: "
+            f"{question}"
+        )
+
+        if not question:
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No unused OC writing question "
+                    f"found for "
+                    f"class_year='{class_year_raw}', "
+                    f"selected_date='{selected_date}', "
+                    f"batch_id='{batch_id}', "
+                    f"center_code='{center_code}'."
+                )
+            )
+
+        print("\n✅ QUESTION CONFIRMED FROM SELECTED UPLOAD:")
+        print(
+            f"   question_id = {question.id}"
+        )
+        print(
+            f"   created_at   = {question.created_at}"
+        )
+        print(
+            f"   batch_id     = {question.batch_id}"
+        )
+
+        # -------------------------------------------------
+        # Build exam text
+        # -------------------------------------------------
+        print("\n📝 Building exam text...")
+
+        parts = []
+
+        if question.title:
+            parts.append(
+                f"TITLE:\n"
+                f"{question.title}\n"
+            )
+
+        parts.append(
+            f"TASK:\n"
+            f"{question.question_text}\n"
+        )
+
+        if question.statement:
+            parts.append(
+                f"STATEMENT:\n"
+                f"{question.statement}\n"
+            )
+
+        parts.append(
+            f"INSTRUCTIONS:\n"
+            f"{question.question_prompt}\n"
+        )
+
+        if question.opening_sentence:
+            parts.append(
+                f"OPENING SENTENCE:\n"
+                f"{question.opening_sentence}\n"
+            )
+
+        if question.guidelines:
+
+            formatted_guidelines = "\n".join(
+                f"- {line.strip()}"
+                for line in question.guidelines.splitlines()
+                if line.strip()
+            )
+
+            parts.append(
+                f"GUIDELINES:\n"
+                f"{formatted_guidelines}\n"
+            )
+
+        full_exam_text = (
+            "\n".join(parts).strip()
+        )
+
+        print(
+            "✅ Exam text built successfully"
+        )
+
+        # -------------------------------------------------
+        # Save generated exam
+        # -------------------------------------------------
+        print("\n💾 Saving generated exam...")
+
+        exam = GeneratedExamWriting(
+            class_name=class_name,
+            class_year=class_year_raw,
+            subject="writing",
+            topic=question.topic,
+            difficulty=question.difficulty.capitalize(),
+            question_text=full_exam_text,
+            duration_minutes=30,
+            center_code=center_code
+        )
+
+        db.add(exam)
+
+        db.commit()
+
+        db.refresh(exam)
+
+        print(
+            f"✅ Exam saved with ID: "
+            f"{exam.id}"
+        )
+
+        # -------------------------------------------------
+        # Register question usage
+        # -------------------------------------------------
+        print(
+            "\n📝 Registering question usage..."
+        )
+
+        usage = QuestionUsageWriting(
+            question_id=question.id,
+            center_code=center_code
+        )
+
+        db.add(usage)
+
+        db.commit()
+
+        print(
+            "✅ Question usage registered"
+        )
+
+        print("=" * 70)
+        print("========== OC WRITING LATEST COMPLETE ==========")
+        print("=" * 70 + "\n")
+
+        # -------------------------------------------------
+        # Response
+        # -------------------------------------------------
+        return {
+            "exam_id": exam.id,
+            "class_name": exam.class_name,
+            "class_year": exam.class_year,
+            "difficulty": exam.difficulty,
+            "topic": exam.topic,
+            "duration_minutes": exam.duration_minutes,
+            "selected_date": selected_date,
+            "batch_id": batch_id,
+            "question_id": question.id,
+            "question_created_at": question.created_at,
+            "center_code": exam.center_code,
+            "exam_text": full_exam_text,
+        }
+
+    except HTTPException:
+
+        db.rollback()
+        raise
+
+    except Exception as e:
+
+        db.rollback()
+
+        print("\n🔥 FULL ERROR TRACE:")
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 @app.post("/api/exams/generate-writing")
 def generate_exam_writing(
@@ -86339,79 +87556,221 @@ def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
 
     WRITING_NORMALIZE_PROMPT = f"""
     You are a document normalizer for an exam authoring system.
-    
-    Convert the input text into STRICT, VALID JSON.
-    
-    Rules:
-    - Preserve meaning exactly
-    - Do NOT invent content
-    - If missing, return empty string
-    - Return JSON only
-    
+
+    Convert the input document text into STRICT, VALID JSON using the schema below.
+
+    IMPORTANT:
+    The source document may place the title, stimulus/scenario, writing instruction,
+    administrative information, and guidelines together under a section such as
+    QUESTION_TEXT.
+
+    Do NOT assume that everything under QUESTION_TEXT belongs in the
+    question_text field.
+
+    Your job is to identify and separate each piece of content into the correct field.
+
+    GENERAL RULES:
+    - Preserve the original meaning and wording exactly wherever possible.
+    - Do NOT invent, rewrite, summarize, or omit meaningful task content.
+    - Do NOT discard a title, scenario, stimulus, or story simply because it appears
+    inside QUESTION_TEXT.
+    - If a field is genuinely absent, return an empty string.
+    - Return JSON only.
+    - Return one JSON object for each writing task detected.
+    - Do not include markdown or explanations outside the JSON.
+
     FIELD DEFINITIONS:
-    
+
     class_name:
-    Exam stream name like Selective, OC, Scholarship.
-    
+    The exam stream or program name.
+    Examples:
+    NAPLAN
+    Selective
+    OC
+    Scholarship
+
+    Preserve the value from the document.
+
     class_year:
-    Year level exactly as written (example: Year 6)
-    
+    The year level exactly as written.
+    Example:
+    Year 4
+
     subject:
-    Always "Writing"
-    
+    Always return:
+    Writing
+
     topic:
-    Writing genre/category.
-    
+    The writing genre or category.
+    Example:
+    Informative Writing (News Report)
+
     difficulty:
-    Easy / Medium / Hard if present.
-    
+    Return Easy, Medium, or Hard if explicitly provided.
+    If not provided, return an empty string.
+
     title:
-    Main heading of the writing task.
-    Example: A Shift in Perspective
-    
+    The main heading or title of the writing task.
+
+    IMPORTANT:
+    If the document contains a standalone heading immediately before a stimulus,
+    scenario, story, or writing task, that heading MUST be extracted into title.
+
+    Example:
+
+    The Runaway School
+
+    Yesterday morning, right before the morning bell, the local primary school
+    suddenly started to rumble...
+
+    The result must contain:
+
+    "title": "The Runaway School"
+
+    Do NOT leave title empty when a clear standalone task heading is present.
+
     question_text:
-    Administrative text only.
+    ONLY administrative information about the task.
+
     Examples:
     Time Allowed: 30 Minutes
     Word Limit: 500 words
-    
-    Do NOT place the actual writing task here.
-    
+
+    Do NOT put the writing stimulus, scenario, story, title, or actual writing
+    instruction into question_text.
+
+    If multiple administrative lines exist, preserve them as newline-separated text.
+
     question_prompt:
-    The actual writing instruction telling the student what to write.
-    Usually starts with:
-    Write...
-    Discuss...
+    The actual instruction telling the student what they must write.
+
+    Examples:
+    Write an exciting, factual news report covering this bizarre event for the
+    front page of the paper.
+
+    Write a persuasive letter...
+
     Describe...
+
     Explain...
-    Compose...
-    
+
+    The question_prompt must contain the actual writing instruction, not the
+    stimulus/scenario.
+
     statement:
-    Only fill when a stimulus statement is given.
-    
+    The main stimulus, scenario, passage, situation, or contextual information
+    that the student must respond to.
+
+    IMPORTANT:
+    If a title is followed by a descriptive scenario, story, passage, or situation,
+    that content belongs in statement.
+
+    Example:
+
+    The Runaway School
+
+    Yesterday morning, right before the morning bell, the local primary school
+    suddenly started to rumble. Without warning, four giant mechanical legs
+    sprouted from underneath the brick foundations...
+
+    The result must contain:
+
+    "title": "The Runaway School"
+
+    "statement": "Yesterday morning, right before the morning bell, the local
+    primary school suddenly started to rumble. Without warning, four giant
+    mechanical legs sprouted from underneath the brick foundations..."
+
+    Preserve the complete stimulus/scenario. Do not summarize it.
+
+    Do NOT put the actual writing instruction into statement.
+
     opening_sentence:
-    Only fill when a story starter/opening sentence is given.
-    
+    Only use this field when the document explicitly provides a story starter,
+    opening sentence, or sentence that the student is expected to continue.
+
+    If there is no such opening sentence, return an empty string.
+
     guidelines:
-    Checklist or bullet instructions.
-    Plain newline separated text.
-    
-    Schema:
+    Instructions or checklist items explaining how the student should complete
+    the writing task.
+
+    Return guidelines as plain newline-separated text.
+
+    Do not include bullet characters such as "-", "•", or "*" at the beginning
+    of each line.
+
+    CONTENT CLASSIFICATION RULE:
+
+    When the source contains a sequence like:
+
+    administrative information
+    title
+    stimulus/scenario
+    writing instruction
+    guidelines
+
+    classify them as follows:
+
+    administrative information -> question_text
+    standalone heading -> title
+    stimulus/scenario/story -> statement
+    actual instruction beginning with words such as Write, Discuss, Describe,
+    Explain, Compose -> question_prompt
+    checklist/bullet instructions -> guidelines
+
+    IMPORTANT PRESERVATION RULE:
+
+    If meaningful text appears between the title and the writing instruction,
+    do NOT discard it.
+
+    That text should normally be placed in statement unless it is clearly
+    administrative information, a guideline, or the actual writing instruction.
+
+    For example, if the source contains:
+
+    Time Allowed: 30 Minutes
+
+    The Runaway School
+
+    Yesterday morning, right before the morning bell, the local primary school
+    suddenly started to rumble...
+
+    Write an exciting, factual news report covering this bizarre event for the
+    front page of the paper.
+
+    Then the expected classification is:
+
+    question_text = "Time Allowed: 30 Minutes"
+
+    title = "The Runaway School"
+
+    statement = "Yesterday morning, right before the morning bell, the local
+    primary school suddenly started to rumble..."
+
+    question_prompt = "Write an exciting, factual news report covering this
+    bizarre event for the front page of the paper."
+
+    Do not merge these fields together.
+
+    SCHEMA:
+
     {{
-      "class_name": "",
-      "class_year": "",
-      "subject": "Writing",
-      "topic": "",
-      "difficulty": "",
-      "title": "",
-      "question_text": "",
-      "question_prompt": "",
-      "statement": "",
-      "opening_sentence": "",
-      "guidelines": ""
+    "class_name": "",
+    "class_year": "",
+    "subject": "Writing",
+    "topic": "",
+    "difficulty": "",
+    "title": "",
+    "question_text": "",
+    "question_prompt": "",
+    "statement": "",
+    "opening_sentence": "",
+    "guidelines": ""
     }}
-    
-    Input text:
+
+    INPUT TEXT:
+
     {text}
     """
 
