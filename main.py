@@ -14220,7 +14220,40 @@ def get_parent_teacher_interview_teacher_availability(
             for record, teacher_name in availability
         ]
     }
+@app.get("/parent-teacher-interview/event-teachers")
+def get_parent_teacher_interview_event_teachers(
+    center_code: str,
+    event_id: int,
+    db: Session = Depends(get_db)
+):
+    teachers = (
+        db.query(CenterTeacher)
+        .filter(
+            CenterTeacher.center_code == center_code,
+            CenterTeacher.id.in_(
+                db.query(
+                    ParentTeacherInterviewTeacherAllocation.teacher_id
+                ).filter(
+                    ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+                    ParentTeacherInterviewTeacherAllocation.event_id == event_id
+                )
+            )
+        )
+        .order_by(
+            CenterTeacher.full_name.asc()
+        )
+        .all()
+    )
 
+    return {
+        "teachers": [
+            {
+                "id": teacher.id,
+                "full_name": teacher.full_name,
+            }
+            for teacher in teachers
+        ]
+    }
 @app.get("/parent-teacher-interview/teachers")
 def get_parent_teacher_interview_teachers(
     center_code: str,
