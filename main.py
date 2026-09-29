@@ -175,6 +175,7 @@ QuestionSchema = {
 
     "additionalProperties": False
 }
+
 QuestionSchemaWithClassYear = {
     "type": "object",
     "properties": {
@@ -4135,6 +4136,7 @@ class ExamNaplanNumeracyHomework(Base):
         DateTime(timezone=True),
         server_default=func.now()
     )
+
 class GenerateExamRequest(BaseModel):
     class_year: int 
     center_code: str
@@ -10135,6 +10137,30 @@ def get_class_homework_report_dates(
     if not students:
         return {"dates": []}
 
+    if (
+        subject.lower() == "mathematical_reasoning"
+        and class_name.lower() == "selective"
+    ):
+        homework = (
+            db.query(HomeworkExamMathematicalReasoning)
+            .filter(
+                HomeworkExamMathematicalReasoning.id == homework_exam_id,
+                HomeworkExamMathematicalReasoning.center_code == center_code,
+            )
+            .first()
+        )
+
+        if homework and homework.created_at:
+            return {
+                "dates": [
+                    {
+                        "date": homework.created_at.date().isoformat()
+                    }
+                ]
+            }
+
+        return {"dates": []}
+
     completed_dates = set()
 
     # --------------------------------------------------
@@ -10310,9 +10336,47 @@ def get_class_homework_report_dates(
         # --------------------------------------------------
         for attempt in attempts:
             if attempt.completed_at:
-                completed_dates.add(
-                    attempt.completed_at.date().isoformat()
-                )
+                if subject.lower() in (
+                    "reading",
+                    "numeracy",
+                    "language_conventions",
+                ):
+                    completed_dates.add(
+                        attempt.exam.created_at.date().isoformat()
+                    )
+                elif subject.lower() == "writing":
+                    homework = (
+                        db.query(GeneratedHomeworkWriting)
+                        .filter(
+                            GeneratedHomeworkWriting.id == attempt.homework_id
+                        )
+                        .first()
+                    )
+                    if homework and homework.created_at:
+                        completed_dates.add(
+                            homework.created_at.date().isoformat()
+                        )
+                elif subject.lower() == "thinking_skills":
+                    if attempt.homework_exam and attempt.homework_exam.created_at:
+                        completed_dates.add(
+                            attempt.homework_exam.created_at.date().isoformat()
+                        )
+                elif subject.lower() == "mathematical_reasoning":
+                    homework = (
+                        db.query(HomeworkExamMathematicalReasoning)
+                        .filter(
+                            HomeworkExamMathematicalReasoning.id == attempt.homework_id
+                        )
+                        .first()
+                    )
+                    if homework and homework.created_at:
+                        completed_dates.add(
+                            homework.created_at.date().isoformat()
+                        )
+                else:
+                    completed_dates.add(
+                        attempt.completed_at.date().isoformat()
+                    )
 
     # --------------------------------------------------
     # 3. Return distinct dates, newest first
@@ -10328,6 +10392,319 @@ def get_class_homework_report_dates(
             )
         ]
     }
+
+@app.get("/api/reports/homework/class/available-dates")
+def get_available_class_homework_report_dates(
+    center_code: str,
+    class_name: str,
+    class_year: str,
+    subject: str = "",
+    db: Session = Depends(get_db),
+):
+    center_code = center_code.strip()
+    class_name = class_name.strip()
+    class_year = class_year.strip()
+    subject = subject.strip().lower()
+
+    available_dates = {}
+
+    # --------------------------------------------------
+    # Selective Mathematical Reasoning
+    # --------------------------------------------------
+    if (
+        subject == "mathematical_reasoning"
+        and class_name.lower() == "selective"
+    ):
+        exams = (
+            db.query(HomeworkExamMathematicalReasoning)
+            .filter(
+                HomeworkExamMathematicalReasoning.center_code
+                == center_code,
+                HomeworkExamMathematicalReasoning.class_name
+                == class_name.lower(),
+                HomeworkExamMathematicalReasoning.class_year
+                == class_year.replace("Year ", ""),
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+    elif (
+        subject == "mathematical_reasoning"
+        and class_name.lower() == "oc"
+    ):
+        exams = (
+            db.query(HomeworkExamOCMathematicalReasoning)
+            .filter(
+                HomeworkExamOCMathematicalReasoning.center_code
+                == center_code,
+                func.lower(
+                    HomeworkExamOCMathematicalReasoning.class_name
+                )
+                == class_name.lower(),
+                HomeworkExamOCMathematicalReasoning.class_year
+                == class_year.replace("Year ", ""),
+                HomeworkExamOCMathematicalReasoning.subject
+                == subject,
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+    # --------------------------------------------------
+    # NAPLAN Numeracy
+    # --------------------------------------------------
+    elif subject == "numeracy":
+        exams = (
+            db.query(ExamNaplanNumeracyHomework)
+            .filter(
+                ExamNaplanNumeracyHomework.center_code == center_code,
+                ExamNaplanNumeracyHomework.class_name == class_name,
+                ExamNaplanNumeracyHomework.year
+                == int(class_year.replace("Year ", "")),
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+
+    # --------------------------------------------------
+    # NAPLAN Language Conventions
+    # --------------------------------------------------
+    elif subject == "language_conventions":
+        exams = (
+            db.query(ExamNaplanLanguageConventionsHomework)
+            .filter(
+                ExamNaplanLanguageConventionsHomework.center_code
+                == center_code,
+                func.lower(ExamNaplanLanguageConventionsHomework.class_name)
+                == class_name.lower(),
+                ExamNaplanLanguageConventionsHomework.year
+                == int(class_year.replace("Year ", "")),
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+
+    elif subject == "reading_comprehension" and class_name.lower() == "selective":
+        exams = (
+            db.query(GeneratedHomeworkReading)
+            .filter(
+                GeneratedHomeworkReading.center_code == center_code,
+                GeneratedHomeworkReading.class_name == class_name.lower(),
+                GeneratedHomeworkReading.class_year
+                == class_year.replace("Year ", ""),
+                GeneratedHomeworkReading.subject == "reading_comprehension",
+            )
+            .all()
+        )
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+    # --------------------------------------------------
+    # OC Reading
+    # --------------------------------------------------
+    elif (
+        subject == "reading_comprehension"
+        and class_name.lower() == "oc"
+    ):
+        exams = (
+            db.query(GeneratedHomeworkReading)
+            .filter(
+                GeneratedHomeworkReading.center_code == center_code,
+                func.lower(GeneratedHomeworkReading.class_name)
+                == class_name.lower(),
+                GeneratedHomeworkReading.class_year
+                == class_year.replace("Year ", ""),
+                GeneratedHomeworkReading.subject == subject,
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+    # --------------------------------------------------
+    # NAPLAN Reading
+    # --------------------------------------------------
+    elif subject == "reading":
+        exams = (
+            db.query(ExamNaplanReadingHomework)
+            .filter(
+                ExamNaplanReadingHomework.center_code == center_code,
+                ExamNaplanReadingHomework.class_name == class_name,
+                ExamNaplanReadingHomework.year
+                == int(class_year.replace("Year ", "")),
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+    # --------------------------------------------------
+    # NAPLAN Writing
+    # --------------------------------------------------
+    elif (
+        subject == "writing"
+        and class_name.lower() == "naplan"
+    ):
+        exams = (
+            db.query(GeneratedHomeworkWriting)
+            .filter(
+                GeneratedHomeworkWriting.center_code == center_code,
+                func.lower(GeneratedHomeworkWriting.class_name)
+                == class_name.lower(),
+                GeneratedHomeworkWriting.class_year
+                == class_year.replace("Year ", ""),
+                func.lower(GeneratedHomeworkWriting.subject)
+                == subject,
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+    # --------------------------------------------------
+    # Writing
+    # --------------------------------------------------
+    # --------------------------------------------------
+    # OC Writing
+    # --------------------------------------------------
+    elif (
+        subject == "writing"
+        and class_name.lower() == "oc"
+    ):
+        exams = (
+            db.query(GeneratedHomeworkWriting)
+            .filter(
+                GeneratedHomeworkWriting.center_code == center_code,
+                func.lower(GeneratedHomeworkWriting.class_name)
+                == class_name.lower(),
+                GeneratedHomeworkWriting.class_year
+                == class_year.replace("Year ", ""),
+                GeneratedHomeworkWriting.subject == subject,
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+
+    # --------------------------------------------------
+    # Writing
+    # --------------------------------------------------
+    elif subject == "writing":
+        exams = (
+            db.query(GeneratedHomeworkWriting)
+            .filter(
+                GeneratedHomeworkWriting.center_code == center_code,
+                func.lower(GeneratedHomeworkWriting.class_name)
+                == class_name.lower(),
+                GeneratedHomeworkWriting.class_year == class_year,
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+
+    # --------------------------------------------------
+    # Thinking Skills
+    # --------------------------------------------------
+    # --------------------------------------------------
+    # Thinking Skills
+    # --------------------------------------------------
+    elif (
+        subject == "thinking_skills"
+        and class_name.lower() == "selective"
+    ):
+        exams = (
+            db.query(HomeWorkExam)
+            .filter(
+                HomeWorkExam.center_code == center_code,
+                HomeWorkExam.class_name == class_name.lower(),
+                HomeWorkExam.class_year
+                == int(class_year.replace("Year ", "")),
+                HomeWorkExam.subject == subject,
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+
+    elif (
+        subject == "thinking_skills"
+        and class_name.lower() == "oc"
+    ):
+        exams = (
+            db.query(HomeworkExamOCThinkingSkills)
+            .filter(
+                HomeworkExamOCThinkingSkills.center_code == center_code,
+                func.lower(HomeworkExamOCThinkingSkills.class_name)
+                == class_name.lower(),
+                HomeworkExamOCThinkingSkills.class_year
+                == int(class_year.replace("Year ", "")),
+                HomeworkExamOCThinkingSkills.subject == subject,
+            )
+            .all()
+        )
+
+        for exam in exams:
+            if exam.created_at:
+                available_dates[
+                    exam.created_at.date().isoformat()
+                ] = exam.id
+
+    return {
+        "dates": [
+            {
+                "homework_exam_id": available_dates[date],
+                "date": date,
+            }
+            for date in sorted(
+                available_dates,
+                reverse=True,
+            )
+        ]
+    }
+
 
 @app.get("/api/reports/homework/exams/available")
 def get_available_homework_exams(
@@ -38740,7 +39117,7 @@ def get_oc_exam_dates(
     # 5️⃣ Extract unique dates
     # --------------------------------------------------
     dates = sorted(list(set(
-        row.timestamp.date().isoformat()
+        row.timestamp.isoformat()
         for row in rows if row.timestamp
     )), reverse=True)
 
@@ -59174,11 +59551,43 @@ def class_exam_report(
         "highest_score": combined_highest_score
     }
 
+    combined_leaderboard = []
+    for idx, s in enumerate(
+        sorted(all_student_results, key=lambda x: x["score"], reverse=True),
+        start=1
+    ):
+        combined_leaderboard.append({
+            "rank": idx,
+            "student": f"{s['student_name']} ({s['student_code']})",
+            "score": s["score"],
+            "accuracy": s["accuracy"]
+        })
+
+    combined_buckets = {
+        "0-40": 0,
+        "41-60": 0,
+        "61-80": 0,
+        "81-100": 0
+    }
+
+    for s in all_student_results:
+        if s["score"] <= 40:
+            combined_buckets["0-40"] += 1
+        elif s["score"] <= 60:
+            combined_buckets["41-60"] += 1
+        elif s["score"] <= 80:
+            combined_buckets["61-80"] += 1
+        else:
+            combined_buckets["81-100"] += 1
+
     combined_report = {
         "class_day": "All Class Days",
         "summary": combined_summary,
-        "leaderboard": [],
-        "score_distribution": []
+        "leaderboard": combined_leaderboard,
+        "score_distribution": [
+            {"range": k, "count": v}
+            for k, v in combined_buckets.items()
+        ]
     }
 
     print("\n========== COMBINED SUMMARY ==========")
@@ -112733,6 +113142,7 @@ def copy_to_admin_snapshot_naplan_language_conventions(db, attempt_id, student_y
 @app.post(
     "/api/student/finish-homework-exam/naplan-language-conventions"
 )
+
 def finish_naplan_language_conventions_homework_exam(
     payload: dict,
     db: Session = Depends(get_db)
@@ -113429,7 +113839,7 @@ def finish_naplan_language_conventions_exam(
         
                 if isinstance(normalized_correct, dict) and "value" in normalized_correct:
                     normalized_correct = normalized_correct["value"]
-        
+
                 # ⭐ Normalize both answers using evaluation helper
                 normalized_student = normalize_naplan_evaluation_answer_value(student_answer)
                 normalized_correct = normalize_naplan_evaluation_answer_value(normalized_correct)
@@ -113446,10 +113856,10 @@ def finish_naplan_language_conventions_exam(
                 # Normalize case for multi-select answers
                 if isinstance(normalized_correct, list):
                     normalized_correct = [str(x).upper() for x in normalized_correct]
-                
+
                 if isinstance(normalized_student, list):
                     normalized_student = [str(x).upper() for x in normalized_student]
-        
+
                 # 3️⃣ Compare answers
                 if isinstance(normalized_correct, list):
                     if isinstance(normalized_student, list):
@@ -119390,7 +119800,7 @@ def get_homework_report_attempt(
         "center_code": center_code,
         "completed_at": attempt.completed_at,
     }
-
+#here000
 @app.get("/api/reports/homework/class")
 def get_class_homework_report(
     center_code: str,
@@ -119509,10 +119919,6 @@ def get_class_homework_report(
                 == homework_exam_id,
                 AdminHomeworkExamReportMathematicalReasoning.center_code
                 == center_code,
-                func.date(
-                    AdminHomeworkExamReportMathematicalReasoning.completed_at
-                )
-                == selected_date,
             )
             .all()
         )
@@ -119660,10 +120066,6 @@ def get_class_homework_report(
                 == homework_exam_id,
                 AdminHomeworkExamReportReading.center_code
                 == center_code,
-                func.date(
-                    AdminHomeworkExamReportReading.completed_at
-                )
-                == selected_date,
             )
             .all()
         )
@@ -119803,8 +120205,6 @@ def get_class_homework_report(
                 ),
                 StudentHomeworkWriting.homework_id == homework_exam_id,
                 StudentHomeworkWriting.completed_at.isnot(None),
-                func.date(StudentHomeworkWriting.completed_at)
-                == selected_date,
             )
             .all()
         )
@@ -119915,10 +120315,7 @@ def get_class_homework_report(
                 == homework_exam_id,
                 AdminHomeworkExamReportOCThinkingSkills.center_code
                 == center_code,
-                func.date(
-                    AdminHomeworkExamReportOCThinkingSkills.completed_at
-                )
-                == selected_date,
+                
             )
             .all()
         )
@@ -120064,10 +120461,6 @@ def get_class_homework_report(
                 StudentHomeworkOCMathematicalReasoning.homework_exam_id
                 == homework_exam_id,
                 StudentHomeworkOCMathematicalReasoning.completed_at.isnot(None),
-                func.date(
-                    StudentHomeworkOCMathematicalReasoning.completed_at
-                )
-                == selected_date,
             )
             .all()
         )
@@ -120209,10 +120602,7 @@ def get_class_homework_report(
                 == homework_exam_id,
                 AdminHomeworkExamReportsOCReading.center_code
                 == center_code,
-                func.date(
-                    AdminHomeworkExamReportsOCReading.completed_at
-                )
-                == selected_date,
+                
             )
             .all()
         )
@@ -120356,10 +120746,6 @@ def get_class_homework_report(
                 == homework_exam_id,
                 AdminHomeworkExamReportsWriting.center_code
                 == center_code,
-                func.date(
-                    AdminHomeworkExamReportsWriting.completed_at
-                )
-                == selected_date,
             )
             .all()
         )
@@ -120454,10 +120840,6 @@ def get_class_homework_report(
                 == homework_exam_id,
                 AdminHomeworkExamReportsNaplanNumeracy.center_code
                 == center_code,
-                func.date(
-                    AdminHomeworkExamReportsNaplanNumeracy.completed_at
-                )
-                == selected_date,
             )
             .all()
         )
@@ -120599,10 +120981,6 @@ def get_class_homework_report(
                 == homework_exam_id,
                 AdminHomeworkExamReportsNaplanLanguageConventions.center_code
                 == center_code,
-                func.date(
-                    AdminHomeworkExamReportsNaplanLanguageConventions.completed_at
-                )
-                == selected_date,
             )
             .all()
         )
@@ -120732,11 +121110,7 @@ def get_class_homework_report(
                 AdminHomeworkExamReportsNaplanReading.homework_exam_id
                 == homework_exam_id,
                 AdminHomeworkExamReportsNaplanReading.center_code
-                == center_code,
-                func.date(
-                    AdminHomeworkExamReportsNaplanReading.completed_at
-                )
-                == selected_date,
+                == center_code,                
             )
             .all()
         )
@@ -120957,8 +121331,6 @@ def get_class_homework_report(
             AdminHomeworkExamReport.homework_exam_id
             == homework_exam_id,
             AdminHomeworkExamReport.center_code == center_code,
-            func.date(AdminHomeworkExamReport.completed_at)
-            == selected_date,
         )
         .all()
     )
