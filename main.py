@@ -5630,6 +5630,37 @@ class SelectiveProfileReport(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
  
+class OCProfileReport(Base):
+    __tablename__ = "oc_profile_reports"
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(String, index=True)
+    exam_date = Column(Date, index=True)
+
+    student_year = Column(String, index=True)
+    gender = Column(String, nullable=True)
+
+    reading_percent = Column(Float)
+    maths_percent = Column(Float)
+    thinking_percent = Column(Float)
+
+    profile_score = Column(Float)      # out of 100
+    overall_rank = Column(Integer)
+    gender_rank = Column(Integer)
+
+    total_students = Column(Integer)
+    total_gender_students = Column(Integer)
+
+    readiness_band = Column(String)
+    summary_insight = Column(Text)
+
+    competitive_schools = Column(JSON)
+    next_tier_schools = Column(JSON)
+
+    prep_timeline = Column(String)
+
+    created_at = Column(DateTime, default=datetime.utcnow) 
 class AdminExamRawScore(Base):
     __tablename__ = "admin_exam_raw_scores"
 
@@ -9675,6 +9706,325 @@ def send_otp_sms(phone_number: str, otp: int):
         to=phone_number
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
+
+
+def sync_oc_profile_report_record(
+    db,
+    student,
+    exam_date,
+    components,
+    overall_percent,
+    readiness_band
+):
+    """
+    Create/update the OC profile report and calculate
+    overall and gender rankings within the same student year.
+    """
+
+    print(
+        f"[OC PROFILE] Starting sync | "
+        f"student_id={student.student_id} | "
+        f"exam_date={exam_date} | "
+        f"student_year={student.student_year}"
+    )
+
+    print(f"[OC PROFILE] Input components: {components}")
+    print(
+        f"[OC PROFILE] Overall values | "
+        f"overall_percent={overall_percent} | "
+        f"readiness_band={readiness_band}"
+    )
+
+    try:
+        # --------------------------------------------------
+        # 1. Extract component percentages
+        # --------------------------------------------------
+
+        def helper_extract_component_percent(component_key):
+            item = components.get(component_key, {})
+
+            if isinstance(item, dict):
+                value = float(item.get("percent", 0) or 0)
+            else:
+                value = float(item or 0)
+
+            print(
+                f"[OC PROFILE] Extracted component | "
+                f"{component_key}={value}"
+            )
+
+            return value
+
+        reading_percent = helper_extract_component_percent("reading")
+
+        maths_percent = helper_extract_component_percent(
+            "mathematical_reasoning"
+        )
+
+        thinking_percent = helper_extract_component_percent(
+            "thinking_skills"
+        )
+
+        # --------------------------------------------------
+        # 2. Calculate profile score
+        # --------------------------------------------------
+
+        profile_score = round(
+            (
+                reading_percent
+                + maths_percent
+                + thinking_percent
+            ) / 3,
+            2
+        )
+
+        print(
+            f"[OC PROFILE] Profile score calculated | "
+            f"reading={reading_percent} | "
+            f"maths={maths_percent} | "
+            f"thinking={thinking_percent} | "
+            f"profile_score={profile_score}"
+        )
+
+        # --------------------------------------------------
+        # 3. Student metadata
+        # --------------------------------------------------
+
+        student_gender = student.gender or "Unknown"
+        student_year = student.student_year
+
+        print(
+            f"[OC PROFILE] Student metadata | "
+            f"student_id={student.student_id} | "
+            f"student_year={student_year} | "
+            f"gender={student_gender}"
+        )
+
+        # --------------------------------------------------
+        # 4. Find existing profile
+        # --------------------------------------------------
+
+        existing = (
+            db.query(OCProfileReport)
+            .filter(
+                OCProfileReport.student_id == student.student_id,
+                OCProfileReport.exam_date == exam_date
+            )
+            .first()
+        )
+
+        if existing:
+            row = existing
+
+            print(
+                f"[OC PROFILE] Existing profile found | "
+                f"profile_id={row.id}"
+            )
+
+        else:
+            row = OCProfileReport(
+                student_id=student.student_id,
+                exam_date=exam_date
+            )
+
+            db.add(row)
+
+            print(
+                f"[OC PROFILE] Creating new profile | "
+                f"student_id={student.student_id} | "
+                f"exam_date={exam_date}"
+            )
+
+        # --------------------------------------------------
+        # 5. Save profile values
+        # --------------------------------------------------
+
+        row.student_year = student_year
+        row.gender = student_gender
+
+        row.reading_percent = reading_percent
+        row.maths_percent = maths_percent
+        row.thinking_percent = thinking_percent
+
+        row.profile_score = profile_score
+        row.readiness_band = readiness_band
+
+        print(
+            f"[OC PROFILE] Profile values prepared | "
+            f"profile_score={profile_score} | "
+            f"readiness_band={readiness_band}"
+        )
+
+        db.commit()
+
+        print(
+            f"[OC PROFILE] Profile record committed | "
+            f"profile_id={row.id}"
+        )
+
+        # --------------------------------------------------
+        # 6. Build overall ranking cohort
+        # --------------------------------------------------
+
+        cohort = (
+            db.query(OCProfileReport)
+            .filter(
+                OCProfileReport.student_year == student_year
+            )
+            .order_by(
+                OCProfileReport.profile_score.desc(),
+                OCProfileReport.created_at.asc()
+            )
+            .all()
+        )
+
+        total_students = len(cohort)
+
+        print(
+            f"[OC PROFILE] Overall cohort | "
+            f"student_year={student_year} | "
+            f"total_students={total_students}"
+        )
+
+        # --------------------------------------------------
+        # 7. Print overall cohort
+        # --------------------------------------------------
+
+        for index, item in enumerate(cohort, start=1):
+            print(
+                f"[OC PROFILE] Overall cohort member | "
+                f"position={index} | "
+                f"student_id={item.student_id} | "
+                f"exam_date={item.exam_date} | "
+                f"profile_score={item.profile_score}"
+            )
+
+        # --------------------------------------------------
+        # 8. Calculate overall rank
+        # --------------------------------------------------
+
+        overall_rank = 0
+
+        for index, item in enumerate(cohort, start=1):
+            if (
+                item.student_id == student.student_id
+                and item.exam_date == exam_date
+            ):
+                overall_rank = index
+                break
+
+        print(
+            f"[OC PROFILE] Overall rank calculated | "
+            f"student_id={student.student_id} | "
+            f"rank={overall_rank}/{total_students}"
+        )
+
+        # --------------------------------------------------
+        # 9. Build gender cohort
+        # --------------------------------------------------
+
+        gender_cohort = [
+            item
+            for item in cohort
+            if (item.gender or "Unknown") == student_gender
+        ]
+
+        total_gender_students = len(gender_cohort)
+
+        print(
+            f"[OC PROFILE] Gender cohort | "
+            f"gender={student_gender} | "
+            f"total_gender_students={total_gender_students}"
+        )
+
+        # --------------------------------------------------
+        # 10. Print gender cohort
+        # --------------------------------------------------
+
+        for index, item in enumerate(gender_cohort, start=1):
+            print(
+                f"[OC PROFILE] Gender cohort member | "
+                f"position={index} | "
+                f"student_id={item.student_id} | "
+                f"exam_date={item.exam_date} | "
+                f"profile_score={item.profile_score}"
+            )
+
+        # --------------------------------------------------
+        # 11. Calculate gender rank
+        # --------------------------------------------------
+
+        gender_rank = 0
+
+        for index, item in enumerate(gender_cohort, start=1):
+            if (
+                item.student_id == student.student_id
+                and item.exam_date == exam_date
+            ):
+                gender_rank = index
+                break
+
+        print(
+            f"[OC PROFILE] Gender rank calculated | "
+            f"student_id={student.student_id} | "
+            f"gender={student_gender} | "
+            f"rank={gender_rank}/{total_gender_students}"
+        )
+
+        # --------------------------------------------------
+        # 12. Save ranking values
+        # --------------------------------------------------
+
+        row.overall_rank = overall_rank
+        row.gender_rank = gender_rank
+        row.total_students = total_students
+        row.total_gender_students = total_gender_students
+
+        db.commit()
+
+        print(
+            f"[OC PROFILE] Ranking values committed | "
+            f"profile_id={row.id} | "
+            f"overall_rank={overall_rank}/{total_students} | "
+            f"gender_rank={gender_rank}/{total_gender_students}"
+        )
+
+        # --------------------------------------------------
+        # 13. Final result
+        # --------------------------------------------------
+
+        result = {
+            "profile_score": profile_score,
+            "overall_rank": overall_rank,
+            "gender_rank": gender_rank,
+            "total_students": total_students,
+            "total_gender_students": total_gender_students
+        }
+
+        print(
+            f"[OC PROFILE] Sync completed successfully | "
+            f"student_id={student.student_id} | "
+            f"exam_date={exam_date} | "
+            f"result={result}"
+        )
+
+        return result
+
+    except Exception as e:
+        print(
+            f"[OC PROFILE] ERROR during sync | "
+            f"student_id={student.student_id} | "
+            f"exam_date={exam_date} | "
+            f"error={str(e)}"
+        )
+
+        db.rollback()
+
+        print(
+            "[OC PROFILE] Database rollback completed"
+        )
+
+        raise
 
 @app.get("/gamified-quiz/manage")
 def get_gamified_quiz_for_management(
@@ -65323,6 +65673,7 @@ def sync_selective_profile_report_record(
         "total_students": total_students,
         "total_gender_students": total_gender_students
     } 
+
 def percentile_to_band(rank: int, total: int) -> str:
     if not rank or not total or total <= 0:
         return "lower_50"
@@ -65676,6 +66027,19 @@ def generate_overall_oc_report(
     db.commit()
     db.refresh(overall_report)
 
+    print("🧠 Syncing OC profile report...")
+
+    profile_metrics = sync_oc_profile_report_record(
+        db=db,
+        student=student,
+        exam_date=exam_date,
+        components=components,
+        overall_percent=overall_percent,
+        readiness_band=readiness_band
+    )
+
+    print("✅ OC profile report synced:", profile_metrics)
+
     print("🧠 Building Thinking Skills diagnostics...")
 
     thinking_report = build_oc_thinking_skills_topic_report(
@@ -65755,6 +66119,12 @@ def generate_overall_oc_report(
         "override_message": overall_report.override_message,
 
         "components": overall_report.components,
+
+        "profile_score": profile_metrics["profile_score"],
+        "overall_rank": profile_metrics["overall_rank"],
+        "gender_rank": profile_metrics["gender_rank"],
+        "total_students": profile_metrics["total_students"],
+        "total_gender_students": profile_metrics["total_gender_students"],
 
         "section_diagnostics": {
 
@@ -122830,6 +123200,89 @@ def generate_overall_oc_homework_report(
     print(f"   override_message={override_message}")
 
     # --------------------------------------------------
+    # OC Profile / Ranking Sync
+    # --------------------------------------------------
+
+    profile_components = {
+        "reading": {
+            "percent": components["reading"]["score_percent"]
+        },
+        "mathematical_reasoning": {
+            "percent": components["mathematical_reasoning"]["score_percent"]
+        },
+        "thinking_skills": {
+            "percent": components["thinking_skills"]["score_percent"]
+        }
+    }
+
+    print("🧠 Syncing OC homework profile report...")
+    print("   Profile components:", profile_components)
+
+    profile_metrics = sync_oc_profile_report_record(
+        db=db,
+        student=student,
+        exam_date=exam_date,
+        components=profile_components,
+        overall_percent=overall_percent,
+        readiness_band=readiness_band
+    )
+
+    print("✅ OC homework profile report synced:", profile_metrics)
+
+    # --------------------------------------------------
+    # 8. DEBUG - OC READINESS REPORT RANKING DATA
+    # --------------------------------------------------
+    print("\n" + "=" * 80)
+    print("🔍 DEBUG: OC READINESS REPORT - PROFILE / RANK / SCORE DATA")
+    print("=" * 80)
+
+    print("👤 STUDENT")
+    print(f"   student_id        = {student.student_id}")
+    print(f"   student_name      = {student.name}")
+    print(f"   student_year      = {student.student_year}")
+    print(f"   center_code       = {center_code}")
+    print(f"   exam_date         = {exam_date}")
+
+    print("\n📊 CALCULATED SCORES")
+    print(f"   reading_percent              = {reading_report.score_percent}")
+    print(f"   mathematical_reasoning      = {math_report.score_percent}")
+    print(f"   thinking_skills             = {thinking_report.score_percent}")
+    print(f"   overall_percent             = {overall_percent}")
+
+    print("\n🎯 READINESS RESULT")
+    print(f"   readiness_band              = {readiness_band}")
+    print(f"   recommended_schools         = {recommended_schools}")
+    print(f"   override_flag               = {override_flag}")
+    print(f"   override_message            = {override_message}")
+
+    print("\n⚠️ PROFILE / RANK VALUES")
+    print("   profile_score               =", profile_metrics["profile_score"])
+    print("   gender_rank                 =", profile_metrics["gender_rank"])
+    print("   overall_rank                =", profile_metrics["overall_rank"])
+
+    print("\n📦 RESPONSE FIELDS")
+    print("   response will contain:")
+    print("   - student_id")
+    print("   - student_name")
+    print("   - year_level")
+    print("   - center_code")
+    print("   - exam_date")
+    print("   - overall_percent")
+    print("   - readiness_band")
+    print("   - recommended_schools")
+    print("   - override_flag")
+    print("   - override_message")
+    print("   - components")
+
+    print("\n🔎 IMPORTANT:")
+    print("   This endpoint currently does NOT return profile_score,")
+    print("   gender_rank, or overall_rank.")
+    print("   If the frontend expects these values from this endpoint,")
+    print("   they will be undefined/missing.")
+
+    print("=" * 80 + "\n")
+
+    # --------------------------------------------------
     # 8. Return
     # --------------------------------------------------
     response = {
@@ -122844,13 +123297,43 @@ def generate_overall_oc_homework_report(
         "override_flag": override_flag,
         "override_message": override_message,
         "components": components,
+        "profile_score": profile_metrics["profile_score"],
+        "overall_rank": profile_metrics["overall_rank"],
+        "gender_rank": profile_metrics["gender_rank"],
+        "total_students": profile_metrics["total_students"],
+        "total_gender_students": profile_metrics["total_gender_students"],
     }
+    print("\n" + "=" * 80)
+    print("📦 DEBUG: FINAL OC REPORT API RESPONSE")
+    print("=" * 80)
+
+    print(f"student_id       : {response.get('student_id')}")
+    print(f"student_name     : {response.get('student_name')}")
+    print(f"year_level       : {response.get('year_level')}")
+    print(f"center_code      : {response.get('center_code')}")
+    print(f"exam_date        : {response.get('exam_date')}")
+
+    print(f"overall_percent  : {response.get('overall_percent')}")
+    print(f"readiness_band   : {response.get('readiness_band')}")
+
+    print(f"profile_score    : {response.get('profile_score')}")
+    print(f"gender_rank      : {response.get('gender_rank')}")
+    print(f"overall_rank     : {response.get('overall_rank')}")
+
+    print(f"components       : {response.get('components')}")
+
+    print("=" * 80 + "\n")
 
     print("\n📦 FINAL OC HOMEWORK RESPONSE SUMMARY")
     print(f"   student_id={student.student_id}")
     print(f"   exam_date={exam_date}")
     print(f"   overall_percent={overall_percent}")
     print(f"   readiness_band={readiness_band}")
+    print(f"   profile_score={profile_metrics['profile_score']}")
+    print(f"   overall_rank={profile_metrics['overall_rank']}")
+    print(f"   gender_rank={profile_metrics['gender_rank']}")
+    print(f"   total_students={profile_metrics['total_students']}")
+    print(f"   total_gender_students={profile_metrics['total_gender_students']}")
     print(
         f"   recommended_school_count="
         f"{len(recommended_schools)}"
