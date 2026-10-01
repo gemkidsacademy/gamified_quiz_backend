@@ -10211,10 +10211,16 @@ def get_parent_teacher_interview_event(
 
     invitation = (
         db.query(ParentTeacherInterviewInvitation)
+        .join(
+            ParentTeacherInterviewEvent,
+            ParentTeacherInterviewEvent.id == ParentTeacherInterviewInvitation.event_id
+        )
         .filter(
             ParentTeacherInterviewInvitation.center_code == center_code,
             ParentTeacherInterviewInvitation.student_id == student_id,
-            ParentTeacherInterviewInvitation.status == "SENT"
+            ParentTeacherInterviewInvitation.status == "SENT",
+            ParentTeacherInterviewEvent.center_code == center_code,
+            ParentTeacherInterviewEvent.status == "UPCOMING"
         )
         .order_by(
             ParentTeacherInterviewInvitation.created_at.desc()
@@ -10225,7 +10231,7 @@ def get_parent_teacher_interview_event(
     if not invitation:
         raise HTTPException(
             status_code=404,
-            detail="No parent-teacher interview invitation found for this student."
+            detail="No active parent-teacher interview invitation found for this student."
         )
 
     return {
