@@ -558,9 +558,13 @@ def parent_teacher_interview_reminder_scheduler_job(
         if not settings:
             print(
                 f"[PTI REMINDERS] No reminder settings "
-                f"for booking {booking.id}"
+                f"for booking {booking.id}; using default settings."
             )
-            continue
+            one_day_before_enabled = True
+            thirty_minutes_before_enabled = True
+        else:
+            one_day_before_enabled = settings.one_day_before_enabled
+            thirty_minutes_before_enabled = settings.thirty_minutes_before
 
         # --------------------------------------------------
         # Convert booking date/time into center-local datetime
@@ -626,11 +630,27 @@ def parent_teacher_interview_reminder_scheduler_job(
             tzinfo=local_now.tzinfo
         )
 
+        print(
+            f"[PTI DEBUG] Booking {booking.id} "
+            f"Interview datetime: {interview_datetime}"
+        )
+
+        print(
+            f"[PTI DEBUG] Booking {booking.id} "
+            f"30-min reminder datetime: "
+            f"{interview_datetime - timedelta(minutes=30)}"
+        )
+
+        print(
+            f"[PTI DEBUG] Booking {booking.id} "
+            f"Current local time: {local_now}"
+        )
+
         # --------------------------------------------------
         # Check 1-day reminder
         # --------------------------------------------------
 
-        if settings.one_day_before_enabled:
+        if one_day_before_enabled:
 
             reminder_datetime = (
                 interview_datetime - timedelta(days=1)
@@ -692,7 +712,7 @@ def parent_teacher_interview_reminder_scheduler_job(
         # Check 30-minute reminder
         # --------------------------------------------------
 
-        if settings.thirty_minutes_before_enabled:
+        if thirty_minutes_before_enabled:
 
             reminder_datetime = (
                 interview_datetime - timedelta(minutes=30)
