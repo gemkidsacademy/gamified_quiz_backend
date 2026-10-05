@@ -1270,6 +1270,19 @@ print("======================================")
 # Models
 # --------------------------
 
+
+
+class ManageExamAccessRequest(BaseModel):
+    center_code: str
+    class_name: str
+    student_year: str
+    class_day: str
+    exam_type: str
+    student_ids_disabled: List[str]
+
+class ParentTeacherInterviewStudentAllocationUpdate(BaseModel):
+    student_ids: list[str]
+
 class ParentTeacherInterviewTestReminderRequest(BaseModel):
     to_email: str
     student_name: str = "Test Student"
@@ -2048,13 +2061,7 @@ class ParentTeacherInterviewBooking(Base):
             "slot_id",
             name="uq_parent_teacher_booking_slot"
         ),
-        UniqueConstraint(
-            "event_id",
-            "student_id",
-            name="uq_parent_teacher_booking_student"
-        ),
     )
-
 class ParentTeacherInterviewInvitation(Base):
     __tablename__ = "parent_teacher_interview_invitations"
 
@@ -8010,6 +8017,19 @@ class Student(Base):
         String,
         nullable=False
     )
+    active_exam = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true"
+    )
+
+    homework_exam = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true"
+    )
     is_active = Column(
         Boolean,
         nullable=False,
@@ -8728,6 +8748,59 @@ class StudentExamAnswer(Base):
     is_correct = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class ParentTeacherInterviewStudentAllocation(Base):
+    __tablename__ = "parent_teacher_interview_student_allocations"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    center_code = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    event_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    allocation_id = Column(
+        Integer,
+        nullable=False,
+        index=True
+    )
+
+    student_id = Column(
+        String,
+        nullable=False,
+        index=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "center_code",
+            "event_id",
+            "student_id",
+            name="uq_parent_teacher_student_allocation"
+        ),
+    )
 
 
 
@@ -10045,6 +10118,162 @@ def sync_oc_profile_report_record(
         )
 
         raise
+@app.put("/api/manage-exams/students/access")
+def update_manage_exam_access(
+    data: ManageExamAccessRequest,
+    db: Session = Depends(get_db),
+):
+    print("\n========== MANAGE EXAMS: UPDATE ACCESS ==========")
+
+    print("Filters:")
+    print(f"  center_code  = {data.center_code!r}")
+    print(f"  class_name   = {data.class_name!r}")
+    print(f"  student_year = {data.student_year!r}")
+    print(f"  class_day    = {data.class_day!r}")
+    print(f"  exam_type    = {data.exam_type!r}")
+    print(f"  disabled IDs = {data.student_ids_disabled}")
+
+    if data.exam_type not in ["active_exam", "homework_exam"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid exam_type"
+        )
+
+    students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == data.center_code,
+            Student.class_name == data.class_name,
+            Student.student_year == data.student_year,
+            Student.class_day == data.class_day,
+        )
+        .all()
+    )
+
+    print(f"Students found for update: {len(students)}")
+
+    for student in students:
+        disabled = student.id in data.student_ids_disabled
+
+        if data.exam_type == "active_exam":
+            student.active_exam = not disabled
+        else:
+            student.homework_exam = not disabled
+
+        print(
+            f"  {student.student_id} | "
+            f"disabled={disabled} | "
+            f"active_exam={student.active_exam} | "
+            f"homework_exam={student.homework_exam}"
+        )
+
+    db.commit()
+
+    print("Access settings saved successfully.")
+    print("===============================================\n")
+
+    return {
+        "success": True,
+        "message": "Exam access updated successfully",
+        "updated_count": len(students),
+    }
+
+
+@app.get("/api/student/exam-access")
+def get_student_exam_access(
+    student_id: str,
+    db: Session = Depends(get_db),
+):
+    student = (
+        db.query(Student)
+        .filter(Student.student_id == student_id)
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail="Student not found"
+        )
+
+    return {
+        "active_exam": student.active_exam,
+        "homework_exam": student.homework_exam,
+    }
+
+
+
+@app.get("/api/manage-exams/students")
+def get_manage_exam_students(
+    center_code: str,
+    class_name: str,
+    student_year: str,
+    class_day: str,
+    db: Session = Depends(get_db),
+):
+    print("\n========== MANAGE EXAMS: GET STUDENTS ==========")
+
+    print("Received filters:")
+    print(f"  center_code  = {center_code!r}")
+    print(f"  class_name   = {class_name!r}")
+    print(f"  student_year = {student_year!r}")
+    print(f"  class_day    = {class_day!r}")
+
+    try:
+        students = (
+            db.query(Student)
+            .filter(
+                Student.center_code == center_code,
+                Student.class_name == class_name,
+                Student.student_year == student_year,
+                Student.class_day == class_day,
+            )
+            .order_by(Student.name.asc())
+            .all()
+        )
+
+        print(f"Students found: {len(students)}")
+
+        for student in students:
+            print(
+                f"  Student: "
+                f"id={student.id!r}, "
+                f"student_id={student.student_id!r}, "
+                f"name={student.name!r}, "
+                f"class={student.class_name!r}, "
+                f"year={student.student_year!r}, "
+                f"day={student.class_day!r}, "
+                f"active_exam={student.active_exam!r}, "
+                f"homework_exam={student.homework_exam!r}"
+            )
+
+        response = {
+            "students": [
+                {
+                    "id": student.id,
+                    "student_id": student.student_id,
+                    "name": student.name,
+                    "class_name": student.class_name,
+                    "student_year": student.student_year,
+                    "class_day": student.class_day,
+                    "parent_email": student.parent_email,
+                    "active_exam": student.active_exam,
+                    "homework_exam": student.homework_exam,
+                }
+                for student in students
+            ]
+        }
+
+        print(f"Returning {len(response['students'])} students")
+        print("================================================\n")
+
+        return response
+
+    except Exception as e:
+        print("\n❌ ERROR IN MANAGE EXAMS STUDENT ENDPOINT")
+        print(f"Error: {e}")
+        print("================================================\n")
+        raise
 
 @app.get("/gamified-quiz/manage")
 def get_gamified_quiz_for_management(
@@ -10220,6 +10449,8 @@ def test_parent_teacher_interview_reminder(
             status_code=500,
             detail=str(e)
         )    
+from datetime import date
+
 @app.get("/parent-teacher-interview/my-event")
 def get_parent_teacher_interview_event(
     center_code: str,
@@ -10240,7 +10471,8 @@ def get_parent_teacher_interview_event(
             ParentTeacherInterviewInvitation.student_id == student_id,
             ParentTeacherInterviewInvitation.status == "SENT",
             ParentTeacherInterviewEvent.center_code == center_code,
-            ParentTeacherInterviewEvent.status == "UPCOMING"
+            ParentTeacherInterviewEvent.status == "UPCOMING",
+            ParentTeacherInterviewEvent.event_date >= date.today()
         )
         .order_by(
             ParentTeacherInterviewInvitation.created_at.desc()
@@ -10257,6 +10489,7 @@ def get_parent_teacher_interview_event(
     return {
         "event_id": invitation.event_id
     }
+
 @app.get("/api/reports/homework/dates")
 def get_homework_report_dates(
     student_id: str,
@@ -12570,24 +12803,27 @@ def get_parent_teacher_interview_slots(
     # Find teacher allocation for student
     # ------------------------------------
 
-    print(
-        "[PTI SLOTS DEBUG] Searching teacher allocation with:"
+    student_allocation = (
+        db.query(ParentTeacherInterviewStudentAllocation)
+        .filter(
+            ParentTeacherInterviewStudentAllocation.center_code
+            == center_code,
+            ParentTeacherInterviewStudentAllocation.event_id == event_id,
+            ParentTeacherInterviewStudentAllocation.student_id
+            == student.student_id,
+        )
+        .first()
     )
-    print(
-        f"    center_code={center_code}"
-    )
-    print(
-        f"    event_id={event_id}"
-    )
-    print(
-        f"    class_name={student.class_name}"
-    )
-    print(
-        f"    student_year={student.student_year}"
-    )
-    print(
-        f"    class_day={student.class_day}"
-    )
+
+    if not student_allocation:
+        print(
+            "[PTI SLOTS DEBUG] STOP: No teacher allocation found"
+        )
+        print("========== END PTI SLOTS DEBUG ==========\n")
+
+        return {
+            "slots": []
+        }
 
     allocation = (
         db.query(
@@ -12595,35 +12831,18 @@ def get_parent_teacher_interview_slots(
             CenterTeacher.full_name.label("teacher_name")
         )
         .join(
-            Class,
-            Class.id ==
-            ParentTeacherInterviewTeacherAllocation.class_id
-        )
-        .join(
-            ClassYearExamModule,
-            ClassYearExamModule.id ==
-            ParentTeacherInterviewTeacherAllocation.class_year_id
-        )
-        .join(
             CenterTeacher,
             CenterTeacher.id ==
             ParentTeacherInterviewTeacherAllocation.teacher_id
         )
         .filter(
+            ParentTeacherInterviewTeacherAllocation.id
+            == student_allocation.allocation_id,
             ParentTeacherInterviewTeacherAllocation.center_code
             == center_code,
-
             ParentTeacherInterviewTeacherAllocation.event_id
             == event_id,
-
-            Class.center_code == center_code,
-            ClassYearExamModule.center_code == center_code,
             CenterTeacher.center_code == center_code,
-
-            Class.class_name == student.class_name,
-            ClassYearExamModule.year_name == student.student_year,
-            ParentTeacherInterviewTeacherAllocation.class_day
-            == student.class_day
         )
         .first()
     )
@@ -13016,21 +13235,37 @@ def create_parent_teacher_interview_booking(
     # Verify student's teacher allocation
     # ------------------------------------
 
+    student_allocation = (
+        db.query(
+            ParentTeacherInterviewStudentAllocation
+        )
+        .filter(
+            ParentTeacherInterviewStudentAllocation.center_code
+            == center_code,
+
+            ParentTeacherInterviewStudentAllocation.event_id
+            == request.event_id,
+
+            ParentTeacherInterviewStudentAllocation.student_id
+            == student.student_id,
+        )
+        .first()
+    )
+
+    if not student_allocation:
+        raise HTTPException(
+            status_code=400,
+            detail="This teacher is not assigned to this student for this event."
+        )
+
     allocation = (
         db.query(
             ParentTeacherInterviewTeacherAllocation
         )
-        .join(
-            Class,
-            Class.id ==
-            ParentTeacherInterviewTeacherAllocation.class_id
-        )
-        .join(
-            ClassYearExamModule,
-            ClassYearExamModule.id ==
-            ParentTeacherInterviewTeacherAllocation.class_year_id
-        )
         .filter(
+            ParentTeacherInterviewTeacherAllocation.id
+            == student_allocation.allocation_id,
+
             ParentTeacherInterviewTeacherAllocation.center_code
             == center_code,
 
@@ -13039,15 +13274,6 @@ def create_parent_teacher_interview_booking(
 
             ParentTeacherInterviewTeacherAllocation.teacher_id
             == request.teacher_id,
-
-            Class.center_code == center_code,
-            ClassYearExamModule.center_code == center_code,
-
-            Class.class_name == student.class_name,
-            ClassYearExamModule.year_name == student.student_year,
-
-            ParentTeacherInterviewTeacherAllocation.class_day
-            == student.class_day
         )
         .first()
     )
@@ -13147,7 +13373,8 @@ def create_parent_teacher_interview_booking(
         .filter(
             ParentTeacherInterviewBooking.event_id == request.event_id,
             ParentTeacherInterviewBooking.student_id == request.student_id,
-            ParentTeacherInterviewBooking.center_code == center_code
+            ParentTeacherInterviewBooking.center_code == center_code,
+            ParentTeacherInterviewBooking.booking_status == "BOOKED"
         )
         .first()
     )
@@ -13237,6 +13464,7 @@ def create_parent_teacher_interview_booking(
 @app.get("/parent-teacher-interview/bookings")
 def get_parent_teacher_interview_bookings(
     center_code: str,
+    teacher_id: int | None = None,
     db: Session = Depends(get_db)
 ):
     center_code = center_code.strip()
@@ -13287,11 +13515,16 @@ def get_parent_teacher_interview_bookings(
             CenterTeacher.center_code == center_code,
             Student.center_code == center_code
         )
-        .order_by(
-            ParentTeacherInterviewBooking.id.asc()
-        )
-        .all()
     )
+
+    if teacher_id is not None:
+        booked_rows = booked_rows.filter(
+            ParentTeacherInterviewBooking.teacher_id == teacher_id
+        )
+
+    booked_rows = booked_rows.order_by(
+        ParentTeacherInterviewBooking.id.asc()
+    ).all()
 
     print(
         f"[BOOKINGS] Booked rows found: {len(booked_rows)}"
@@ -13391,11 +13624,16 @@ def get_parent_teacher_interview_bookings(
             ParentTeacherInterviewTeacherAllocation.center_code == center_code,
             Class.center_code == center_code
         )
-        .order_by(
-            ParentTeacherInterviewSlot.id.asc()
-        )
-        .all()
     )
+
+    if teacher_id is not None:
+        available_slots = available_slots.filter(
+            ParentTeacherInterviewSlot.teacher_id == teacher_id
+        )
+
+    available_slots = available_slots.order_by(
+        ParentTeacherInterviewSlot.id.asc()
+    ).all()
 
     print(
         f"[BOOKINGS] Available slots found: {len(available_slots)}"
@@ -13548,7 +13786,7 @@ def get_parent_teacher_interview_teacher_allocations(
             ClassYearExamModule.year_name.label("class_year"),
             ParentTeacherInterviewEvent.name.label("event_name"),
             func.count(
-                distinct(Student.parent_email)
+                distinct(ParentTeacherInterviewStudentAllocation.student_id)
             ).label("parent_count")
         )
         .join(
@@ -13572,12 +13810,14 @@ def get_parent_teacher_interview_teacher_allocations(
             == ParentTeacherInterviewTeacherAllocation.event_id
         )
         .outerjoin(
-            Student,
-            (Student.center_code == center_code)
-            & (Student.class_name == Class.class_name)
-            & (Student.student_year == ClassYearExamModule.year_name)
-            & (Student.class_day == ParentTeacherInterviewTeacherAllocation.class_day)
-            & (Student.is_active == True)
+            ParentTeacherInterviewStudentAllocation,
+            (
+                (ParentTeacherInterviewStudentAllocation.allocation_id
+                == ParentTeacherInterviewTeacherAllocation.id)
+                &
+                (ParentTeacherInterviewStudentAllocation.center_code
+                == center_code)
+            )
         )
         .filter(
             ParentTeacherInterviewTeacherAllocation.center_code == center_code,
@@ -13650,6 +13890,59 @@ def get_parent_teacher_interview_teacher_allocations(
 
     print("allocations returned:", len(allocations))
 
+    # Get the allocation IDs returned by the main query
+    allocation_ids = [
+        allocation.id
+        for (
+            allocation,
+            teacher_name,
+            class_name,
+            class_year,
+            event_name,
+            parent_count
+        ) in allocations
+    ]
+
+    # Load explicitly assigned students for these allocations
+    student_allocations = (
+        db.query(
+            ParentTeacherInterviewStudentAllocation.allocation_id,
+            Student.student_id,
+            Student.name.label("student_name"),
+        )
+        .join(
+            Student,
+            Student.student_id
+            == ParentTeacherInterviewStudentAllocation.student_id
+        )
+        .filter(
+            ParentTeacherInterviewStudentAllocation.center_code == center_code,
+            ParentTeacherInterviewStudentAllocation.allocation_id.in_(allocation_ids),
+            Student.is_active == True,
+        )
+        .order_by(Student.student_id.asc())
+        .all()
+    )
+
+    # Group students by teacher allocation
+    students_by_allocation = {}
+
+    for (
+        allocation_id,
+        student_id,
+        student_name,
+    ) in student_allocations:
+
+        if allocation_id not in students_by_allocation:
+            students_by_allocation[allocation_id] = []
+
+        students_by_allocation[allocation_id].append(
+            {
+                "student_id": student_id,
+                "student_name": student_name,
+            }
+        )
+
     return {
         "allocations": [
             {
@@ -13664,6 +13957,10 @@ def get_parent_teacher_interview_teacher_allocations(
                 "class_year": class_year,
                 "class_day": allocation.class_day,
                 "parent_count": parent_count,
+                "students": students_by_allocation.get(
+                    allocation.id,
+                    []
+                ),
             }
             for (
                 allocation,
@@ -13678,6 +13975,334 @@ def get_parent_teacher_interview_teacher_allocations(
 
 
 
+@app.get("/parent-teacher-interview/teacher-allocations/{allocation_id}/students")
+def get_parent_teacher_interview_allocation_students(
+    allocation_id: int,
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    # 1. Get the teacher allocation
+    allocation = (
+        db.query(ParentTeacherInterviewTeacherAllocation)
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.id == allocation_id,
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+        )
+        .first()
+    )
+
+    if not allocation:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher allocation not found"
+        )
+
+    # 2. Get the class and class year information
+    class_record = (
+        db.query(Class)
+        .filter(
+            Class.id == allocation.class_id,
+            Class.center_code == center_code,
+        )
+        .first()
+    )
+
+    class_year = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.id == allocation.class_year_id,
+            ClassYearExamModule.center_code == center_code,
+        )
+        .first()
+    )
+
+    if not class_record or not class_year:
+        raise HTTPException(
+            status_code=404,
+            detail="Class or class year not found"
+        )
+
+    # 3. Find all active students eligible for this allocation
+    eligible_students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code,
+            Student.class_name == class_record.class_name,
+            Student.student_year == class_year.year_name,
+            Student.class_day == allocation.class_day,
+            Student.is_active == True,
+        )
+        .order_by(Student.student_id.asc())
+        .all()
+    )
+
+    # 4. Find which of these students are already assigned
+    #    to a teacher for this same event
+    student_ids = [
+        student.student_id
+        for student in eligible_students
+    ]
+
+    existing_assignments = []
+
+    if student_ids:
+        existing_assignments = (
+            db.query(
+                ParentTeacherInterviewStudentAllocation.student_id,
+                ParentTeacherInterviewStudentAllocation.allocation_id,
+                ParentTeacherInterviewTeacherAllocation.teacher_id,
+                CenterTeacher.full_name.label("teacher_name"),
+            )
+            .join(
+                ParentTeacherInterviewTeacherAllocation,
+                ParentTeacherInterviewTeacherAllocation.id
+                == ParentTeacherInterviewStudentAllocation.allocation_id
+            )
+            .join(
+                CenterTeacher,
+                CenterTeacher.id
+                == ParentTeacherInterviewTeacherAllocation.teacher_id
+            )
+            .filter(
+                ParentTeacherInterviewStudentAllocation.center_code
+                == center_code,
+                ParentTeacherInterviewStudentAllocation.event_id
+                == allocation.event_id,
+                ParentTeacherInterviewStudentAllocation.student_id.in_(
+                    student_ids
+                ),
+                ParentTeacherInterviewTeacherAllocation.center_code
+                == center_code,
+                CenterTeacher.center_code == center_code,
+            )
+            .all()
+        )
+
+    # 5. Create a lookup by student_id
+    assignment_by_student = {
+        student_id: {
+            "allocation_id": assigned_allocation_id,
+            "teacher_id": teacher_id,
+            "teacher_name": teacher_name,
+        }
+        for (
+            student_id,
+            assigned_allocation_id,
+            teacher_id,
+            teacher_name,
+        ) in existing_assignments
+    }
+
+    # 6. Build response
+    students = []
+
+    for student in eligible_students:
+
+        assignment = assignment_by_student.get(
+            student.student_id
+        )
+
+        is_assigned_to_this_allocation = (
+            assignment is not None
+            and assignment["allocation_id"] == allocation.id
+        )
+
+        students.append(
+            {
+                "student_id": student.student_id,
+                "student_name": student.name,
+                "assigned": is_assigned_to_this_allocation,
+                "assigned_teacher_id": (
+                    assignment["teacher_id"]
+                    if assignment
+                    else None
+                ),
+                "assigned_teacher_name": (
+                    assignment["teacher_name"]
+                    if assignment
+                    else None
+                ),
+                "assigned_allocation_id": (
+                    assignment["allocation_id"]
+                    if assignment
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "allocation_id": allocation.id,
+        "event_id": allocation.event_id,
+        "teacher_id": allocation.teacher_id,
+        "class_name": class_record.class_name,
+        "class_year": class_year.year_name,
+        "class_day": allocation.class_day,
+        "students": students,
+    }
+
+@app.put(
+    "/parent-teacher-interview/teacher-allocations/{allocation_id}/students"
+)
+def update_parent_teacher_interview_student_allocations(
+    allocation_id: int,
+    payload: ParentTeacherInterviewStudentAllocationUpdate,
+    center_code: str,
+    db: Session = Depends(get_db)
+):
+    center_code = center_code.strip()
+
+    # 1. Find the teacher allocation
+    allocation = (
+        db.query(ParentTeacherInterviewTeacherAllocation)
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.id == allocation_id,
+            ParentTeacherInterviewTeacherAllocation.center_code == center_code,
+        )
+        .first()
+    )
+
+    if not allocation:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher allocation not found"
+        )
+
+    # Remove duplicates from submitted student IDs
+    requested_student_ids = list(dict.fromkeys(payload.student_ids))
+
+    # 2. Get class information
+    class_record = (
+        db.query(Class)
+        .filter(
+            Class.id == allocation.class_id,
+            Class.center_code == center_code,
+        )
+        .first()
+    )
+
+    class_year = (
+        db.query(ClassYearExamModule)
+        .filter(
+            ClassYearExamModule.id == allocation.class_year_id,
+            ClassYearExamModule.center_code == center_code,
+        )
+        .first()
+    )
+
+    if not class_record or not class_year:
+        raise HTTPException(
+            status_code=404,
+            detail="Class or class year not found"
+        )
+
+    # 3. Verify that every submitted student is eligible
+    eligible_students = (
+        db.query(Student)
+        .filter(
+            Student.center_code == center_code,
+            Student.class_name == class_record.class_name,
+            Student.student_year == class_year.year_name,
+            Student.class_day == allocation.class_day,
+            Student.is_active == True,
+        )
+        .all()
+    )
+
+    eligible_student_ids = {
+        student.student_id
+        for student in eligible_students
+    }
+
+    invalid_student_ids = [
+        student_id
+        for student_id in requested_student_ids
+        if student_id not in eligible_student_ids
+    ]
+
+    if invalid_student_ids:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "One or more students are not eligible for this allocation",
+                "student_ids": invalid_student_ids,
+            }
+        )
+
+    # 4. Check whether any requested student is already assigned
+    #    to another teacher allocation for this same event.
+    if requested_student_ids:
+        existing_assignments = (
+            db.query(
+                ParentTeacherInterviewStudentAllocation
+            )
+            .filter(
+                ParentTeacherInterviewStudentAllocation.center_code
+                == center_code,
+                ParentTeacherInterviewStudentAllocation.event_id
+                == allocation.event_id,
+                ParentTeacherInterviewStudentAllocation.student_id.in_(
+                    requested_student_ids
+                ),
+                ParentTeacherInterviewStudentAllocation.allocation_id
+                != allocation.id,
+            )
+            .all()
+        )
+
+        if existing_assignments:
+            already_assigned = [
+                assignment.student_id
+                for assignment in existing_assignments
+            ]
+
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "One or more students are already assigned to another teacher",
+                    "student_ids": already_assigned,
+                }
+            )
+
+    try:
+        # 5. Remove existing assignments for this teacher allocation
+        db.query(
+            ParentTeacherInterviewStudentAllocation
+        ).filter(
+            ParentTeacherInterviewStudentAllocation.center_code
+            == center_code,
+            ParentTeacherInterviewStudentAllocation.event_id
+            == allocation.event_id,
+            ParentTeacherInterviewStudentAllocation.allocation_id
+            == allocation.id,
+        ).delete(
+            synchronize_session=False
+        )
+
+        # 6. Insert the new selection
+        for student_id in requested_student_ids:
+            db.add(
+                ParentTeacherInterviewStudentAllocation(
+                    center_code=center_code,
+                    event_id=allocation.event_id,
+                    allocation_id=allocation.id,
+                    student_id=student_id,
+                )
+            )
+
+        db.commit()
+
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "message": "Student allocations updated successfully",
+        "allocation_id": allocation.id,
+        "student_ids": requested_student_ids,
+        "student_count": len(requested_student_ids),
+    }
     
 
 @app.get("/parent-teacher-interview/teacher-assigned-students")
@@ -13691,33 +14316,19 @@ def get_parent_teacher_interview_teacher_assigned_students(
     allocations = (
         db.query(
             ParentTeacherInterviewTeacherAllocation.teacher_id,
-            func.count(distinct(Student.id)).label("assigned_students")
+            func.count(
+                distinct(ParentTeacherInterviewStudentAllocation.student_id)
+            ).label("assigned_students")
         )
         .join(
-            Class,
-            Class.id == ParentTeacherInterviewTeacherAllocation.class_id
-        )
-        .join(
-            ClassYearExamModule,
-            ClassYearExamModule.id ==
-            ParentTeacherInterviewTeacherAllocation.class_year_id
-        )
-        .outerjoin(
-            Student,
-            (Student.center_code == center_code)
-            & (Student.class_name == Class.class_name)
-            & (Student.student_year == ClassYearExamModule.year_name)
-            & (
-                Student.class_day ==
-                ParentTeacherInterviewTeacherAllocation.class_day
-            )
-            & (Student.is_active == True)
+            ParentTeacherInterviewStudentAllocation,
+            ParentTeacherInterviewStudentAllocation.allocation_id
+            == ParentTeacherInterviewTeacherAllocation.id
         )
         .filter(
             ParentTeacherInterviewTeacherAllocation.center_code == center_code,
             ParentTeacherInterviewTeacherAllocation.event_id == event_id,
-            Class.center_code == center_code,
-            ClassYearExamModule.center_code == center_code
+            ParentTeacherInterviewStudentAllocation.center_code == center_code,
         )
         .group_by(
             ParentTeacherInterviewTeacherAllocation.teacher_id
@@ -13995,10 +14606,15 @@ def delete_parent_teacher_interview_teacher_allocation(
 
     students = (
         db.query(Student)
+        .join(
+            ParentTeacherInterviewStudentAllocation,
+            ParentTeacherInterviewStudentAllocation.student_id == Student.student_id
+        )
         .filter(
+            ParentTeacherInterviewStudentAllocation.allocation_id == allocation.id,
+            ParentTeacherInterviewStudentAllocation.center_code == center_code,
+            ParentTeacherInterviewStudentAllocation.event_id == allocation.event_id,
             Student.center_code == center_code,
-            Student.class_name == class_record.class_name,
-            Student.student_year == class_year.year_name,
             Student.is_active == True
         )
         .all()
@@ -14083,6 +14699,12 @@ def delete_parent_teacher_interview_teacher_allocation(
             "[DELETE ALLOCATION] Deleting teacher allocation "
             "without sending cancellation emails."
         )
+
+        db.query(ParentTeacherInterviewStudentAllocation).filter(
+            ParentTeacherInterviewStudentAllocation.allocation_id == allocation.id,
+            ParentTeacherInterviewStudentAllocation.center_code == center_code,
+            ParentTeacherInterviewStudentAllocation.event_id == allocation.event_id,
+        ).delete(synchronize_session=False)
 
         db.delete(allocation)
         db.commit()
@@ -14360,6 +14982,12 @@ def delete_parent_teacher_interview_teacher_allocation(
     print(
         "[DELETE ALLOCATION] Deleting teacher allocation..."
     )
+
+    db.query(ParentTeacherInterviewStudentAllocation).filter(
+        ParentTeacherInterviewStudentAllocation.allocation_id == allocation.id,
+        ParentTeacherInterviewStudentAllocation.center_code == center_code,
+        ParentTeacherInterviewStudentAllocation.event_id == allocation.event_id,
+    ).delete(synchronize_session=False)
 
     db.delete(allocation)
 
