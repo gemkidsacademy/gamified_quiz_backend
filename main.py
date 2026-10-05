@@ -422,11 +422,7 @@ def send_parent_teacher_interview_reminder_email(
                 <strong>{email_title}</strong>
             </p>
 
-            <p>
-                <strong>
-                    Sub - {subject}
-                </strong>
-            </p>
+            
 
             <p>Dear Parent,</p>
 
@@ -14433,7 +14429,7 @@ def create_parent_teacher_interview_teacher_allocation(
             detail="Class day is required."
         )
 
-    # Prevent duplicate allocation
+    # Prevent duplicate allocation for the same teacher/class/year/day/event
     existing_allocation = (
         db.query(
             ParentTeacherInterviewTeacherAllocation
@@ -14461,27 +14457,87 @@ def create_parent_teacher_interview_teacher_allocation(
             detail="This teacher allocation already exists."
         )
 
-    # Create allocation
-    new_allocation = (
-        ParentTeacherInterviewTeacherAllocation(
-            center_code=center_code,
-            event_id=payload.event_id,
-            teacher_id=payload.teacher_id,
-            class_id=payload.class_id,
-            class_year_id=payload.class_year_id,
-            class_day=class_day
+    # Check whether another teacher is already allocated
+    # to this same event/class/year/day.
+    #
+    # If no allocation exists, the new teacher is the FIRST teacher
+    # and will automatically receive all eligible students.
+    existing_teacher_allocation = (
+        db.query(
+            ParentTeacherInterviewTeacherAllocation
         )
+        .filter(
+            ParentTeacherInterviewTeacherAllocation.center_code
+            == center_code,
+            ParentTeacherInterviewTeacherAllocation.event_id
+            == payload.event_id,
+            ParentTeacherInterviewTeacherAllocation.class_id
+            == payload.class_id,
+            ParentTeacherInterviewTeacherAllocation.class_year_id
+            == payload.class_year_id,
+            ParentTeacherInterviewTeacherAllocation.class_day
+            == class_day
+        )
+        .first()
     )
 
-    db.add(new_allocation)
-    db.commit()
-    db.refresh(new_allocation)
+    is_first_teacher = existing_teacher_allocation is None
+
+    try:
+        # Create teacher allocation
+        new_allocation = (
+            ParentTeacherInterviewTeacherAllocation(
+                center_code=center_code,
+                event_id=payload.event_id,
+                teacher_id=payload.teacher_id,
+                class_id=payload.class_id,
+                class_year_id=payload.class_year_id,
+                class_day=class_day
+            )
+        )
+
+        db.add(new_allocation)
+
+        # Flush so new_allocation.id is available before creating
+        # StudentAllocation records.
+        db.flush()
+
+        # First teacher automatically receives all eligible students.
+        if is_first_teacher:
+
+            eligible_students = (
+                db.query(Student)
+                .filter(
+                    Student.center_code == center_code,
+                    Student.class_name == class_record.class_name,
+                    Student.student_year == class_year.year_name,
+                    Student.class_day == class_day,
+                    Student.is_active == True,
+                )
+                .all()
+            )
+
+            for student in eligible_students:
+                db.add(
+                    ParentTeacherInterviewStudentAllocation(
+                        center_code=center_code,
+                        event_id=payload.event_id,
+                        allocation_id=new_allocation.id,
+                        student_id=student.student_id,
+                    )
+                )
+
+        db.commit()
+        db.refresh(new_allocation)
+
+    except Exception:
+        db.rollback()
+        raise
 
     return {
         "message": "Teacher allocation created successfully.",
         "allocation_id": new_allocation.id
     }
-
 
 @app.delete("/parent-teacher-interview/teacher-allocations/{allocation_id}")
 def delete_parent_teacher_interview_teacher_allocation(
