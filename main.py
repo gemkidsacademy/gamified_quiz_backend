@@ -8830,6 +8830,9 @@ app.add_middleware(
         "https://gamifiedquiz.gemkidsacademy.com.au",
         "https://exam.gemkidsacademy.com.au",
         "https://exam.gemkidsacademy.com",
+        "https://gemai.gemkidsacademy.com",
+        "https://chatbot.gemkidsacademy.com",
+        "https://gamifiedquiz.gemkidsacademy.com",
         "https://exam-module-pink.vercel.app",
 
         # Local frontend development
