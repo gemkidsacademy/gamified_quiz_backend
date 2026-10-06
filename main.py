@@ -8825,6 +8825,7 @@ app.add_middleware(
         "https://homework-support.vercel.app",
         "https://gamified-quiz-delta.vercel.app",
         "https://chatbot.gemkidsacademy.com.au",
+        "https://gamifiedquiz.gemkidsacademy.com",
         "https://leader-board-viewer-gamified-quiz.vercel.app",
         "https://leaderboard.gemkidsacademy.com.au",
         "https://gamifiedquiz.gemkidsacademy.com.au",
