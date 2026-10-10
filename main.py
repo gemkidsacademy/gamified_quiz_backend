@@ -118074,7 +118074,10 @@ def get_naplan_numeracy_homework_review(
 
     for q in raw_questions:
         if q.get("question_type") == 1:
-            q = serialize_type1_question_for_exam(q)
+            q = {
+                **serialize_type1_question_for_exam(q),
+                "correct_answer": q.get("correct_answer"),
+            }
 
         normalize_images_in_question(q, image_map)
         normalize_type2_image_multiselect(q)
