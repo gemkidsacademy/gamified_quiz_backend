@@ -1268,6 +1268,9 @@ print("======================================")
 
 
 
+class CopyClassesRequest(BaseModel):
+    source_term_id: int
+
 class ManageExamAccessRequest(BaseModel):
     center_code: str
     class_name: str
@@ -10119,6 +10122,168 @@ def sync_oc_profile_report_record(
         )
 
         raise
+
+@app.get(
+    "/admin/academic-terms/{target_term_id}/copy-source-options"
+)
+def get_copy_source_terms(
+    target_term_id: int,
+    db: Session = Depends(get_db),
+):
+    target_term = (
+        db.query(AcademicTerm)
+        .filter(AcademicTerm.id == target_term_id)
+        .first()
+    )
+
+    if not target_term:
+        raise HTTPException(
+            status_code=404,
+            detail="Target academic term not found."
+        )
+
+    terms = (
+        db.query(AcademicTerm)
+        .filter(
+            AcademicTerm.center_code == target_term.center_code,
+            AcademicTerm.id != target_term_id,
+        )
+        .order_by(AcademicTerm.start_date.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": term.id,
+            "term_name": term.term_name,
+            "start_date": term.start_date,
+            "end_date": term.end_date,
+        }
+        for term in terms
+    ]
+    
+@app.post(
+    "/admin/academic-terms/{target_term_id}/copy-classes"
+)
+def copy_classes_from_previous_term(
+    target_term_id: int,
+    request: CopyClassesRequest,
+    db: Session = Depends(get_db),
+):
+    source_term_id = request.source_term_id
+
+    if source_term_id == target_term_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Source and target terms must be different."
+        )
+
+    # Find both terms
+    source_term = (
+        db.query(AcademicTerm)
+        .filter(AcademicTerm.id == source_term_id)
+        .first()
+    )
+
+    target_term = (
+        db.query(AcademicTerm)
+        .filter(AcademicTerm.id == target_term_id)
+        .first()
+    )
+
+    if not source_term or not target_term:
+        raise HTTPException(
+            status_code=404,
+            detail="Source or target academic term not found."
+        )
+
+    # Ensure both terms belong to the same centre
+    if source_term.center_code != target_term.center_code:
+        raise HTTPException(
+            status_code=400,
+            detail="Classes can only be copied between terms "
+                   "belonging to the same centre."
+        )
+
+    # Load classes from the source term
+    source_classes = (
+        db.query(ClassConfiguration)
+        .filter(
+            ClassConfiguration.center_code
+            == target_term.center_code,
+            ClassConfiguration.term_id == source_term_id,
+        )
+        .all()
+    )
+
+    if not source_classes:
+        raise HTTPException(
+            status_code=404,
+            detail="No classes found in the selected source term."
+        )
+
+    copied = 0
+    skipped = 0
+
+    try:
+        for source_class in source_classes:
+
+            # Check whether this class already exists
+            # in the destination term
+            existing = (
+                db.query(ClassConfiguration)
+                .filter(
+                    ClassConfiguration.center_code
+                    == target_term.center_code,
+                    ClassConfiguration.term_id
+                    == target_term_id,
+                    ClassConfiguration.category
+                    == source_class.category,
+                    ClassConfiguration.class_year
+                    == source_class.class_year,
+                    ClassConfiguration.class_day
+                    == source_class.class_day,
+                )
+                .first()
+            )
+
+            if existing:
+                skipped += 1
+                continue
+
+            new_class = ClassConfiguration(
+                center_code=target_term.center_code,
+                term_id=target_term.id,
+                term_name=target_term.term_name,
+                category=source_class.category,
+                class_year=source_class.class_year,
+                class_day=source_class.class_day,
+            )
+
+            db.add(new_class)
+            copied += 1
+
+        db.commit()
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to copy classes."
+        )
+
+    return {
+        "success": True,
+        "message": (
+            f"Copied {copied} classes to {target_term.term_name}. "
+            f"Skipped {skipped} classes that already existed."
+        ),
+        "copied": copied,
+        "skipped": skipped,
+        "source_term": source_term.term_name,
+        "target_term": target_term.term_name,
+    }
+
 @app.put("/api/manage-exams/students/access")
 def update_manage_exam_access(
     data: ManageExamAccessRequest,
