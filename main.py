@@ -9127,7 +9127,12 @@ def serialize_blocks_for_gpt(blocks: list[dict]) -> str:
 
     for block in blocks:
         if block["type"] == "text":
-            lines.append(block["content"])
+            content = block["content"]
+
+            # Rejoin filenames split across a line break after "_op"
+            content = re.sub(r"(?i)(_op)\s*\n\s*([A-E]\.png)", r"\1\2", content)
+
+            lines.append(content)
 
         elif block["type"] == "image":
             # IMPORTANT: GPT must see image placeholders
@@ -9330,6 +9335,9 @@ async def parse_with_gpt(payload: dict, retries: int = 2):
 
 
     serialized = serialize_blocks_for_gpt(payload["blocks"])
+    print("\n===== SERIALIZED GPT INPUT =====")
+    print(serialized)
+    print("===== END SERIALIZED GPT INPUT =====\n")
 
     # 🔍 DEBUG: input size + preview
     
@@ -114273,6 +114281,8 @@ def normalize_thinking_skills_questions(raw_questions, db):
             continue
 
     return normalized
+
+
 def student_year_to_int_2(student_year: str | None) -> int | None:
     if student_year == "Year 3":
         return 3
@@ -125715,10 +125725,24 @@ async def upload_word(
                             .first()
                         )
 
+                        
                         if image_record:
                             resolved_options[key] = image_record.gcs_url
+
+                            print(
+                                f"[IMAGE LOOKUP] key={key} "
+                                f"filename={normalized!r} "
+                                f"FOUND url={image_record.gcs_url!r}"
+                            )
                         else:
                             resolved_options[key] = normalized
+
+                            print(
+                                f"[IMAGE LOOKUP] key={key} "
+                                f"filename={normalized!r} "
+                                f"NOT FOUND in UploadedImage"
+                            )
+
 
                     else:
                         resolved_options[key] = normalized
