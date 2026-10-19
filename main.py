@@ -63728,6 +63728,65 @@ def get_homework_writing_report(
         "advisory": "This report is advisory only and does not guarantee placement."
     }
 
+
+@app.get("/api/exams/oc-writing/result")
+def get_oc_writing_result(
+    student_id: str,
+    db: Session = Depends(get_db)
+):
+    # 1. Resolve student
+    student = (
+        db.query(Student)
+        .filter(
+            func.lower(Student.student_id) == func.lower(student_id)
+        )
+        .first()
+    )
+
+    if not student:
+        raise HTTPException(404, "Student not found")
+
+    # 2. Get the latest OC writing report
+    admin_report = (
+        db.query(AdminExamOCReport)
+        .filter(
+            AdminExamOCReport.student_id == student.student_id,
+            AdminExamOCReport.exam_type == "writing"
+        )
+        .order_by(AdminExamOCReport.created_at.desc())
+        .first()
+    )
+
+    if not admin_report:
+        raise HTTPException(404, "OC writing result not found")
+
+    attempt_id = admin_report.exam_attempt_id
+
+    # 3. Load the evaluation snapshot for this attempt
+    snapshot = (
+        db.query(StudentWritingSnapshot)
+        .filter(
+            StudentWritingSnapshot.exam_attempt_id == attempt_id
+        )
+        .first()
+    )
+
+    if not snapshot or not snapshot.ai_evaluation_json:
+        raise HTTPException(404, "OC writing result not ready yet")
+
+    # 4. Return the existing response contract
+    return {
+        "exam_type": "Writing",
+        "score": admin_report.overall_score,
+        "max_score": 25,
+        "selective_readiness_band": admin_report.readiness_band,
+        "evaluation": snapshot.ai_evaluation_json,
+        "attempt_id": attempt_id,
+        "advisory": (
+            "This report is advisory only and does not guarantee placement."
+        )
+    }
+
 @app.get("/api/exams/writing/result")
 def get_writing_result(
     student_id: str,
