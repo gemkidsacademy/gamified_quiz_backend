@@ -514,12 +514,7 @@ def parent_teacher_interview_reminder_scheduler_job(
     local_now,
     db
 ):
-    print(
-        f"\n[PTI REMINDERS] Checking reminders for {center_code}"
-    )
-    print(
-        f"[PTI REMINDERS] Local time: {local_now}"
-    )
+    
 
     bookings = (
         db.query(ParentTeacherInterviewBooking)
@@ -530,9 +525,7 @@ def parent_teacher_interview_reminder_scheduler_job(
         .all()
     )
 
-    print(
-        f"[PTI REMINDERS] Confirmed bookings found: {len(bookings)}"
-    )
+    
 
     for booking in bookings:
 
@@ -552,10 +545,7 @@ def parent_teacher_interview_reminder_scheduler_job(
         )
 
         if not settings:
-            print(
-                f"[PTI REMINDERS] No reminder settings "
-                f"for booking {booking.id}; using default settings."
-            )
+    
             one_day_before_enabled = True
             thirty_minutes_before_enabled = True
         else:
@@ -586,10 +576,7 @@ def parent_teacher_interview_reminder_scheduler_job(
         )
 
         if not event or not slot:
-            print(
-                f"[PTI REMINDERS] Event or slot not found "
-                f"for booking {booking.id}"
-            )
+            
             continue
         student = (
             db.query(Student)
@@ -610,10 +597,7 @@ def parent_teacher_interview_reminder_scheduler_job(
         )
 
         if not student or not teacher:
-            print(
-                f"[PTI REMINDERS] Student or teacher not found "
-                f"for booking {booking.id}"
-            )
+            
             continue
 
         student_name = student.name
@@ -626,21 +610,7 @@ def parent_teacher_interview_reminder_scheduler_job(
             tzinfo=local_now.tzinfo
         )
 
-        print(
-            f"[PTI DEBUG] Booking {booking.id} "
-            f"Interview datetime: {interview_datetime}"
-        )
-
-        print(
-            f"[PTI DEBUG] Booking {booking.id} "
-            f"30-min reminder datetime: "
-            f"{interview_datetime - timedelta(minutes=30)}"
-        )
-
-        print(
-            f"[PTI DEBUG] Booking {booking.id} "
-            f"Current local time: {local_now}"
-        )
+        
 
         # --------------------------------------------------
         # Check 1-day reminder
@@ -669,10 +639,7 @@ def parent_teacher_interview_reminder_scheduler_job(
 
                 if not already_sent:
 
-                    print(
-                        f"[PTI REMINDERS] Sending "
-                        f"1-day reminder for booking {booking.id}"
-                    )
+                    
 
                     send_parent_teacher_interview_reminder_email(
                         to_email=booking.parent_email,
@@ -699,10 +666,7 @@ def parent_teacher_interview_reminder_scheduler_job(
                     db.add(reminder_log)
                     db.commit()
 
-                    print(
-                        f"[PTI REMINDERS] 1-day reminder "
-                        f"recorded for booking {booking.id}"
-                    )
+                    
 
         # --------------------------------------------------
         # Check 30-minute reminder
@@ -731,10 +695,7 @@ def parent_teacher_interview_reminder_scheduler_job(
 
                 if not already_sent:
 
-                    print(
-                        f"[PTI REMINDERS] Sending "
-                        f"30-minute reminder for booking {booking.id}"
-                    )
+                    
 
                     send_parent_teacher_interview_reminder_email(
                         to_email=booking.parent_email,
@@ -761,10 +722,7 @@ def parent_teacher_interview_reminder_scheduler_job(
                     db.add(reminder_log)
                     db.commit()
 
-                    print(
-                        f"[PTI REMINDERS] 30-minute reminder "
-                        f"recorded for booking {booking.id}"
-                    )
+                    
 
 
 def homework_support_scheduler_job(
@@ -12923,15 +12881,12 @@ def get_parent_teacher_interview_slots(
     student_id: str,
     db: Session = Depends(get_db)
 ):
-    print("########## PTI SLOTS ENDPOINT HIT ##########")
+    
 
     center_code = center_code.strip()
     student_id = student_id.strip()
 
-    print("\n========== PTI SLOTS DEBUG ==========")
-    print(f"[PTI SLOTS DEBUG] center_code: {center_code}")
-    print(f"[PTI SLOTS DEBUG] event_id: {event_id}")
-    print(f"[PTI SLOTS DEBUG] student_id: {student_id}")
+    
 
     # ------------------------------------
     # Find student
@@ -12947,26 +12902,12 @@ def get_parent_teacher_interview_slots(
         .first()
     )
 
-    print(
-        f"[PTI SLOTS DEBUG] Student found: "
-        f"{student is not None}"
-    )
+    
 
-    if student:
-        print(
-            f"[PTI SLOTS DEBUG] Student details: "
-            f"class_name={student.class_name}, "
-            f"student_year={student.student_year}, "
-            f"class_day={student.class_day}, "
-            f"center_code={student.center_code}, "
-            f"is_active={student.is_active}"
-        )
+    
 
     if not student:
-        print(
-            "[PTI SLOTS DEBUG] STOP: Student not found"
-        )
-        print("========== END PTI SLOTS DEBUG ==========\n")
+    
 
         raise HTTPException(
             status_code=404,
@@ -12990,10 +12931,7 @@ def get_parent_teacher_interview_slots(
     )
 
     if not student_allocation:
-        print(
-            "[PTI SLOTS DEBUG] STOP: No teacher allocation found"
-        )
-        print("========== END PTI SLOTS DEBUG ==========\n")
+    
 
         return {
             "slots": []
@@ -13021,30 +12959,15 @@ def get_parent_teacher_interview_slots(
         .first()
     )
 
-    print(
-        f"[PTI SLOTS DEBUG] Allocation found: "
-        f"{allocation is not None}"
-    )
+    
 
     if allocation:
         allocation_record, teacher_name = allocation
 
-        print(
-            f"[PTI SLOTS DEBUG] Allocation details: "
-            f"allocation_id={allocation_record.id}, "
-            f"teacher_id={allocation_record.teacher_id}, "
-            f"class_id={allocation_record.class_id}, "
-            f"class_year_id={allocation_record.class_year_id}, "
-            f"class_day={allocation_record.class_day}, "
-            f"event_id={allocation_record.event_id}, "
-            f"teacher_name={teacher_name}"
-        )
+    
 
     if not allocation:
-        print(
-            "[PTI SLOTS DEBUG] STOP: No teacher allocation found"
-        )
-        print("========== END PTI SLOTS DEBUG ==========\n")
+    
 
         return {
             "slots": []
@@ -13054,12 +12977,7 @@ def get_parent_teacher_interview_slots(
 
     teacher_id = allocation_record.teacher_id
 
-    print(
-        f"[PTI SLOTS DEBUG] Selected teacher_id: {teacher_id}"
-    )
-    print(
-        f"[PTI SLOTS DEBUG] Selected teacher_name: {teacher_name}"
-    )
+    
 
     # ------------------------------------
     # Get teacher availability
@@ -13080,28 +12998,11 @@ def get_parent_teacher_interview_slots(
         .first()
     )
 
-    print(
-        f"[PTI SLOTS DEBUG] Availability found: "
-        f"{availability is not None}"
-    )
+    
 
-    if availability:
-        print(
-            f"[PTI SLOTS DEBUG] Availability details: "
-            f"id={availability.id}, "
-            f"start_time={availability.start_time}, "
-            f"end_time={availability.end_time}, "
-            f"slot_duration={availability.slot_duration_minutes}, "
-            f"gap={availability.gap_minutes}, "
-            f"is_available={availability.is_available}"
-        )
 
     if not availability or not availability.is_available:
-        print(
-            "[PTI SLOTS DEBUG] STOP: "
-            "No availability or availability is disabled"
-        )
-        print("========== END PTI SLOTS DEBUG ==========\n")
+
 
         return {
             "slots": []
@@ -13152,16 +13053,9 @@ def get_parent_teacher_interview_slots(
             + slot_gap
         )
 
-    print(
-        f"[PTI SLOTS DEBUG] Generated slots count: "
-        f"{len(generated_slots)}"
-    )
+    
 
-    for slot in generated_slots:
-        print(
-            f"[PTI SLOTS DEBUG] Generated slot: "
-            f"{slot['start_time']}-{slot['end_time']}"
-        )
+    
 
     # ------------------------------------
     # Get already booked times
@@ -13190,16 +13084,10 @@ def get_parent_teacher_interview_slots(
         .all()
     )
 
-    print(
-        f"[PTI SLOTS DEBUG] Booked slots count: "
-        f"{len(booked_slots)}"
-    )
+    
 
-    for start_time, end_time in booked_slots:
-        print(
-            f"[PTI SLOTS DEBUG] Booked slot: "
-            f"{start_time}-{end_time}"
-        )
+    
+    
 
     booked_times = {
         (
@@ -13209,10 +13097,7 @@ def get_parent_teacher_interview_slots(
         for start_time, end_time in booked_slots
     }
 
-    print(
-        f"[PTI SLOTS DEBUG] Booked times set: "
-        f"{booked_times}"
-    )
+    
 
     # ------------------------------------
     # Return only currently available times
@@ -13236,20 +13121,9 @@ def get_parent_teacher_interview_slots(
         ) not in booked_times
     ]
 
-    print(
-        f"[PTI SLOTS DEBUG] Final available slots count: "
-        f"{len(final_slots)}"
-    )
+    
 
-    for slot in final_slots:
-        print(
-            f"[PTI SLOTS DEBUG] Final slot: "
-            f"{slot['start_time']}-{slot['end_time']}, "
-            f"teacher_id={slot['teacher_id']}, "
-            f"teacher_name={slot['teacher_name']}"
-        )
-
-    print("========== END PTI SLOTS DEBUG ==========\n")
+     
 
     return {
         "slots": final_slots
@@ -16055,13 +15929,7 @@ def get_completed_parent_teacher_interview_events(
     # --------------------------------------------------
     today = date.today()
 
-    print(
-        f"[PTI EVENT HISTORY] Checking completed events "
-        f"for center {center_code}"
-    )
-    print(
-        f"[PTI EVENT HISTORY] Current date: {today}"
-    )
+    
 
     # --------------------------------------------------
     # Automatically mark past events as COMPLETED
@@ -16081,10 +15949,7 @@ def get_completed_parent_teacher_interview_events(
     )
 
     for event in events_to_complete:
-        print(
-            f"[PTI EVENT HISTORY] Marking event "
-            f"{event.id} ({event.name}) as COMPLETED"
-        )
+        
 
         event.status = "COMPLETED"
 
@@ -16095,10 +15960,7 @@ def get_completed_parent_teacher_interview_events(
     if events_to_complete:
         db.commit()
 
-        print(
-            f"[PTI EVENT HISTORY] Updated "
-            f"{len(events_to_complete)} event(s) to COMPLETED"
-        )
+        
 
     # --------------------------------------------------
     # Get all completed events for this center
@@ -16116,10 +15978,7 @@ def get_completed_parent_teacher_interview_events(
         .all()
     )
 
-    print(
-        f"[PTI EVENT HISTORY] Completed events found: "
-        f"{len(events)}"
-    )
+    
 
     # --------------------------------------------------
     # Return completed events
