@@ -114177,12 +114177,28 @@ def normalize_thinking_skills_questions(raw_questions, db):
                             }
             
                 # 📝 Case 2: mixed or text options
+                
+                # 📝 Case 2: mixed, text, or image URL options
                 else:
                     for key, value in options.items():
-                        safe_options[key] = {
-                            "type": "text",
-                            "content": str(value)
-                        }
+                        if value is None or not str(value).strip():
+                            continue
+
+                        value = str(value).strip()
+
+                        if value.startswith(
+                            "https://storage.googleapis.com/"
+                        ):
+                            safe_options[key] = {
+                                "type": "image",
+                                "src": value
+                            }
+                        else:
+                            safe_options[key] = {
+                                "type": "text",
+                                "content": value
+                            }
+
             # ---------- correct answer ----------
             correct_answer = fixed.get("correct_answer") or fixed.get("correct")
 
@@ -125572,6 +125588,7 @@ async def upload_word(
             # -----------------------------------
             class_year = question.get("class_year")
 
+            
             if use_new_flow:
                 raw_class_year = question.get("class_year")
 
@@ -125585,96 +125602,95 @@ async def upload_word(
                 )
 
             # -----------------------------------
-            # options
+            # options — runs for BOTH flows
             # -----------------------------------
-            if use_new_flow:
+            print(
+                "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTIONS:",
+                repr(question.get("options"))
+            )
+            print(
+                "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTION KEYS:",
+                list((question.get("options") or {}).keys())
+            )
 
-                print(
-                    "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTIONS:",
-                    repr(question.get("options"))
+            resolved_options = {}
+
+            for key, raw_value in (question.get("options") or {}).items():
+
+                # Preserve None values
+                if raw_value is None:
+                    resolved_options[key] = None
+                    continue
+
+                cleaned = str(raw_value)
+
+                normalized = re.sub(
+                    r"^[A-E]\.\s*",
+                    "",
+                    cleaned.strip(),
+                    flags=re.I
                 )
-                print(
-                    "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTION KEYS:",
-                    list((question.get("options") or {}).keys())
-                )
-                resolved_options = {}
 
-                for key, raw_value in question.get("options", {}).items():
+                normalized = re.sub(
+                    r"\s+",
+                    " ",
+                    normalized
+                ).strip()
 
-                    cleaned = str(raw_value)
+                if re.search(
+                    r"\.(png|jpg|jpeg|webp)$",
+                    normalized,
+                    re.I
+                ):
+                    lookup_name = normalized.lower().replace(" ", "")
 
-                    normalized = re.sub(
-                        r"^[A-D]\.\s*",
-                        "",
-                        cleaned.strip(),
-                        flags=re.I
+                    image_record = (
+                        db.query(UploadedImage)
+                        .filter(
+                            func.replace(
+                                func.lower(
+                                    func.trim(UploadedImage.original_name)
+                                ),
+                                " ",
+                                ""
+                            ) == lookup_name
+                        )
+                        .first()
                     )
 
-                    normalized = re.sub(
-                        r"\s+",
-                        " ",
-                        normalized
-                    ).strip()
-
-                    if re.search(
-                        r"\.(png|jpg|jpeg|webp)$",
-                        normalized,
-                        re.I
-                    ):
-
-                        lookup_name = (
-                            normalized.lower()
-                            .replace(" ", "")
+                    print("[IMAGE LOOKUP DEBUG]")
+                    print("Option key:", key)
+                    print("GPT value:", repr(raw_value))
+                    print("Normalized filename:", repr(normalized))
+                    print("Lookup filename:", repr(lookup_name))
+                    print(
+                        "Database filename:",
+                        repr(
+                            image_record.original_name
+                            if image_record else None
                         )
+                    )
 
-                        image_record = (
-                            db.query(UploadedImage)
-                            .filter(
-                                func.replace(
-                                    func.lower(
-                                        func.trim(
-                                            UploadedImage.original_name
-                                        )
-                                    ),
-                                    " ",
-                                    ""
-                                ) == lookup_name
-                            )
-                            .first()
+                    if image_record:
+                        resolved_options[key] = image_record.gcs_url
+
+                        print(
+                            f"[IMAGE LOOKUP] key={key} "
+                            f"filename={normalized!r} "
+                            f"FOUND url={image_record.gcs_url!r}"
                         )
-
-                        
-                        if image_record:
-                            resolved_options[key] = image_record.gcs_url
-
-                            print(
-                                f"[IMAGE LOOKUP] key={key} "
-                                f"filename={normalized!r} "
-                                f"FOUND url={image_record.gcs_url!r}"
-                            )
-                        else:
-                            resolved_options[key] = normalized
-
-                            print(
-                                f"[IMAGE LOOKUP] key={key} "
-                                f"filename={normalized!r} "
-                                f"NOT FOUND in UploadedImage"
-                            )
-
-
                     else:
+                        # Temporary fallback for diagnosing failed lookups
                         resolved_options[key] = normalized
 
-            else:
-                print(
-                    "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTIONS:",
-                    repr(question.get("options"))
-                )
-                print(
-                    "[OPTIONS TRACE - RESOLVED] ORIGINAL OPTION KEYS:",
-                    list((question.get("options") or {}).keys())
-                )
-                resolved_options = question["options"]
+                        print(
+                            f"[IMAGE LOOKUP] key={key} "
+                            f"filename={normalized!r} "
+                            "NOT FOUND in UploadedImage"
+                        )
+
+                else:
+                    resolved_options[key] = normalized
 
             print(
                 "[OPTIONS TRACE - RESOLVED] RESOLVED OPTIONS:",
@@ -125688,6 +125704,8 @@ async def upload_word(
                 "[OPTIONS TRACE - RESOLVED] E EXISTS:",
                 "E" in resolved_options
             )
+
+
 
             # -----------------------------------
             # Save row
