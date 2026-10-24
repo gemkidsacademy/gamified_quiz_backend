@@ -5614,6 +5614,46 @@ class SelectiveProfileReport(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
  
+
+
+class SelectiveHomeworkProfileReport(Base):
+    __tablename__ = "selective_homework_profile_reports"
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(String, index=True, nullable=False)
+    exam_date = Column(Date, index=True, nullable=False)
+
+    student_year = Column(String, index=True, nullable=False)
+    gender = Column(String, nullable=True)
+
+    reading_percent = Column(Float)
+    maths_percent = Column(Float)
+    thinking_percent = Column(Float)
+    writing_percent = Column(Float)
+
+    profile_score = Column(Float)
+    overall_rank = Column(Integer)
+    gender_rank = Column(Integer)
+
+    total_students = Column(Integer)
+    total_gender_students = Column(Integer)
+
+    readiness_band = Column(String)
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "student_id",
+            "exam_date",
+            name="uq_selective_homework_profile_student_date"
+        ),
+    )
+
 class OCProfileReport(Base):
     __tablename__ = "oc_profile_reports"
 
@@ -29366,7 +29406,73 @@ def get_available_thinking_dates(
         print("\n💥 ERROR IN FETCH THINKING DATES")
         print(str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
-    
+
+
+
+@app.get("/api/available-thinking-dates-new")
+def get_available_thinking_dates(
+    class_year: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print("\n================ FETCH THINKING DATES =================")
+        print(f"Raw class_year: {class_year}")
+
+        # Normalize input: "Year 5" -> 5
+        parsed_year = int(
+            class_year.replace("Year", "").strip()
+        )
+
+        # Convert the timestamp to Sydney local time
+        # before extracting its calendar date.
+        sydney_local_datetime = func.timezone(
+            "Australia/Sydney",
+            Question.created_at
+        )
+
+        sydney_local_date = func.date(
+            sydney_local_datetime
+        )
+
+        dates_query = (
+            db.query(
+                sydney_local_date.label("date")
+            )
+            .filter(
+                func.lower(func.trim(Question.class_name))
+                == "selective",
+                func.lower(func.trim(Question.subject))
+                == "thinking skills",
+                Question.class_year == parsed_year
+            )
+            .distinct()
+            .order_by(
+                sydney_local_date.desc()
+            )
+        )
+
+        results = dates_query.all()
+        dates = [str(row.date) for row in results]
+
+        print(f"Parsed class_year: {parsed_year}")
+        print(f"Sydney-local dates found: {dates}")
+        print("================ FETCH COMPLETE =================\n")
+
+        return dates
+
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid class_year format"
+        )
+
+    except Exception as e:
+        print("ERROR FETCHING THINKING DATES:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error"
+        )
+
 @app.get("/api/available-reading-dates")
 def get_available_reading_dates(
     class_year: str = Query(...),
@@ -40003,17 +40109,16 @@ def get_homework_dates_mathematical_reasoning(
     # --------------------------------------------------
     rows = (
         db.query(
-            HomeworkExamMathematicalReasoning.id.label("homework_id"),
-            HomeworkExamMathematicalReasoning.created_at.label("date")
-        )
-        .join(
-            StudentHomeworkMathematicalReasoning,
-            StudentHomeworkMathematicalReasoning.homework_id == HomeworkExamMathematicalReasoning.id
+            StudentHomeworkMathematicalReasoning.homework_id.label("homework_id"),
+            StudentHomeworkMathematicalReasoning.started_at.label("date")
         )
         .filter(
-            StudentHomeworkMathematicalReasoning.student_id == student.id
+            StudentHomeworkMathematicalReasoning.student_id == student.id,
+            StudentHomeworkMathematicalReasoning.completed_at.isnot(None)
         )
-        .order_by(HomeworkExamMathematicalReasoning.created_at.desc())
+        .order_by(
+            StudentHomeworkMathematicalReasoning.started_at.desc()
+        )
         .all()
     )
 
@@ -40030,6 +40135,7 @@ def get_homework_dates_mathematical_reasoning(
         for r in rows
     ]
  
+
 @app.get("/api/student/exam-dates/mathematical-reasoning")
 def get_exam_dates_mathematical_reasoning(
     student_id: str = Query(...),
@@ -66334,6 +66440,136 @@ def generate_school_recommendations_and_override(components, overall_percent):
         "school_recommendation": school_recommendation,
         "override_flag": override_flag,
         "override_message": override_message
+    }
+
+def sync_selective_homework_profile_report_record(
+    db,
+    student,
+    exam_date,
+    components,
+    overall_percent,
+    readiness_band
+):
+    """Create or update homework analytics and calculate homework ranks."""
+
+    def get_percent(subject):
+        item = components.get(subject, {})
+        if isinstance(item, dict):
+            return float(
+                item.get("score_percent", item.get("percent", 0)) or 0
+            )
+        return float(item or 0)
+
+    reading_percent = get_percent("reading")
+    maths_percent = get_percent("mathematical_reasoning")
+    thinking_percent = get_percent("thinking_skills")
+    writing_percent = get_percent("writing")
+
+    # All four homework scores are already percentages.
+    profile_score = round(
+        reading_percent * 0.30
+        + maths_percent * 0.30
+        + thinking_percent * 0.25
+        + writing_percent * 0.15,
+        2
+    )
+
+    student_gender = student.gender or "Unknown"
+    student_year = student.student_year
+
+    row = (
+        db.query(SelectiveHomeworkProfileReport)
+        .filter(
+            SelectiveHomeworkProfileReport.student_id == student.student_id,
+            SelectiveHomeworkProfileReport.exam_date == exam_date
+        )
+        .first()
+    )
+
+    if row is None:
+        row = SelectiveHomeworkProfileReport(
+            student_id=student.student_id,
+            exam_date=exam_date
+        )
+        print(
+            "INSERTING HOMEWORK PROFILE:",
+            student.student_id,
+            exam_date,
+            student.student_year
+        )
+        db.add(row)
+
+    row.student_year = student_year
+    row.gender = student_gender
+    row.reading_percent = reading_percent
+    row.maths_percent = maths_percent
+    row.thinking_percent = thinking_percent
+    row.writing_percent = writing_percent
+    row.profile_score = profile_score
+    row.readiness_band = readiness_band
+
+    # Persist this student's homework profile before ranking the cohort.
+    db.flush()
+
+    cohort = (
+        db.query(SelectiveHomeworkProfileReport)
+        .filter(
+            SelectiveHomeworkProfileReport.student_year == student_year
+        )
+        .order_by(
+            SelectiveHomeworkProfileReport.profile_score.desc(),
+            SelectiveHomeworkProfileReport.created_at.asc(),
+            SelectiveHomeworkProfileReport.id.asc()
+        )
+        .all()
+    )
+
+    total_students = len(cohort)
+
+    overall_rank = next(
+        (
+            index
+            for index, item in enumerate(cohort, start=1)
+            if item.id == row.id
+        ),
+        0
+    )
+
+    gender_cohort = [
+        item for item in cohort
+        if (item.gender or "Unknown") == student_gender
+    ]
+
+    total_gender_students = len(gender_cohort)
+
+    gender_rank = next(
+        (
+            index
+            for index, item in enumerate(gender_cohort, start=1)
+            if item.id == row.id
+        ),
+        0
+    )
+
+    row.overall_rank = overall_rank
+    row.gender_rank = gender_rank
+    row.total_students = total_students
+    row.total_gender_students = total_gender_students
+
+    db.flush()
+    print(
+        "HOMEWORK PROFILE SAVED:",
+        row.id,
+        row.student_id,
+        row.exam_date,
+        row.profile_score
+    )
+    return {
+        "profile_score": profile_score,
+        "overall_rank": overall_rank,
+        "gender_rank": gender_rank,
+        "total_students": total_students,
+        "total_gender_students": total_gender_students
     }
 
 def sync_selective_profile_report_record(
@@ -118638,8 +118874,45 @@ def generate_overall_selective_homework_report(
     print(f"   override_flag={override_flag}")
     print(f"   override_message={override_message}")
 
-    print(f"\n📈 Overall Selective percentage: {overall_percent}%")
 
+    print("DATABASE URL:", engine.url.render_as_string(hide_password=True))
+
+    print(
+        "DATABASE CHECK:",
+        db.execute(
+            text("""
+                SELECT current_database(),
+                    current_schema(),
+                    current_user
+            """)
+        ).fetchone()
+    )
+    
+    # --------------------------------------------------
+    # 7. Calculate separate homework premium metrics
+    # --------------------------------------------------
+    profile_metrics = sync_selective_homework_profile_report_record(
+        db=db,
+        student=student,
+        exam_date=exam_date,
+        components=components,
+        overall_percent=overall_percent,
+        readiness_band=band
+    )
+    db.commit()
+
+    print("✅ Homework premium metrics calculated")
+    print("   Profile score:", profile_metrics["profile_score"])
+    print("   Overall rank:", profile_metrics["overall_rank"])
+    print("   Gender rank:", profile_metrics["gender_rank"])
+    print("   Total students:", profile_metrics["total_students"])
+    print(
+        "   Total gender students:",
+        profile_metrics["total_gender_students"]
+    )
+
+
+    print(f"\n📈 Overall Selective percentage: {overall_percent}%")
     # --------------------------------------------------
     # 7. Return initial Selective Readiness data
     # --------------------------------------------------
@@ -118656,6 +118929,11 @@ def generate_overall_selective_homework_report(
         "override_flag": override_flag,
         "override_message": override_message,
         "components": components,
+        "profile_score": profile_metrics["profile_score"],
+        "overall_rank": profile_metrics["overall_rank"],
+        "gender_rank": profile_metrics["gender_rank"],
+        "total_students": profile_metrics["total_students"],
+        "total_gender_students": profile_metrics["total_gender_students"],
     }
 
     print("\n📦 FINAL SELECTIVE HOMEWORK RESPONSE SUMMARY")
