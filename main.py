@@ -908,32 +908,24 @@ def homework_support_scheduler_job(
             f"{slot.end_time} | "
             f"Capacity: {slot.capacity}"
         )    
+    
     # ------------------------------------
-    # Load test student for email testing
+    # Load active students for this centre
     # ------------------------------------
-
-    # ------------------------------------
-    # Load test students for email testing
-    # ------------------------------------
-
-    test_emails = [
-        "proactive1.san@gmail.com",
-        "rubyshaaz2013@gmail.com",
-        "sajjad.coding5037@gmail.com",
-    ]
 
     students = (
         db.query(Student)
         .filter(
             Student.center_code == center_code,
             Student.is_active == True,
-            Student.parent_email.in_(test_emails)
+            Student.parent_email.isnot(None),
+            Student.parent_email != ""
         )
         .all()
     )
 
-    print("\n--- TEST HOMEWORK SUPPORT STUDENTS ---")
-    print(f"Test recipient emails: {test_emails}")
+    print("\n--- HOMEWORK SUPPORT STUDENTS ---")
+    print(f"Center Code: {center_code}")
     print(f"Matching students: {len(students)}")
 
     for student in students:
@@ -955,6 +947,7 @@ def homework_support_scheduler_job(
                 f"[ERROR] Could not send Homework Support "
                 f"email to {student.parent_email}: {e}"
             )
+
 
 
 
