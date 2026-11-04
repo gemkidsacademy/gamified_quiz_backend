@@ -772,17 +772,31 @@ def homework_support_scheduler_job(
         )
         return
 
+    
     try:
-        configured_time = datetime.strptime(
-            automation.invitation_time.strip(),
-            "%I:%M %p"
-        ).time()
+        invitation_time_str = automation.invitation_time.strip()
+
+        try:
+            # Support 24-hour format: 09:00
+            configured_time = datetime.strptime(
+                invitation_time_str,
+                "%H:%M"
+            ).time()
+
+        except ValueError:
+            # Support 12-hour format: 09:00 AM
+            configured_time = datetime.strptime(
+                invitation_time_str,
+                "%I:%M %p"
+            ).time()
+
     except ValueError:
         print(
-            "Invalid Homework Support invitation_time:",
+            "[ERROR] Invalid Homework Support invitation_time:",
             automation.invitation_time
         )
         return
+
 
     if (
         local_now.hour != configured_time.hour
