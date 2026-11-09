@@ -39045,8 +39045,12 @@ def get_available_thinking_batches(
                 Question.batch_id.isnot(None),
 
                 # uploaded on selected date
+                # uploaded on selected Sydney date
                 func.date(
-                    Question.created_at
+                    func.timezone(
+                        "Australia/Sydney",
+                        Question.created_at
+                    )
                 ) == date
 
             )
@@ -39085,6 +39089,7 @@ def get_available_thinking_batches(
             status_code=500,
             detail="Failed to fetch batch ids"
         )
+
 @app.post("/generate-new-mr-homework")
 def generate_mr_homework_exam(
     payload: Optional[Dict] = Body(default=None),
@@ -66666,13 +66671,14 @@ def sync_selective_profile_report_record(
 
     db.commit()
 
+
     # --------------------------------------------
-    # Ranking pool = same year only
-    # --------------------------------------------
+    # Ranking pool = students with reports for the same exam date and year
     cohort = (
         db.query(SelectiveProfileReport)
         .filter(
-            SelectiveProfileReport.student_year == student_year
+            SelectiveProfileReport.student_year == student_year,
+            SelectiveProfileReport.exam_date == exam_date
         )
         .order_by(
             SelectiveProfileReport.profile_score.desc(),
