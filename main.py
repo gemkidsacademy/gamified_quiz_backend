@@ -2257,6 +2257,7 @@ class HomeworkSelectedWeekRequest(BaseModel):
 
 
 class HomeworkTimeSlotRequest(BaseModel):
+    id: Optional[int] = None
     week_number: int
     start_time: str
     end_time: str
@@ -18911,8 +18912,9 @@ def update_homework_configuration(
                     )
                 )
 
+        
         # -----------------------------------------------------
-        # Load existing time slots
+        # 6. Load existing time slots
         # -----------------------------------------------------
 
         existing_slots = (
@@ -18929,70 +18931,80 @@ def update_homework_configuration(
         )
 
         # -----------------------------------------------------
-        # Index existing slots
-        #
-        # Existing slots are identified by:
-        # week_number + start_time + end_time
+        # 7. Index existing slots by their database ID
         # -----------------------------------------------------
 
-        existing_slots_by_key = {}
+        existing_slots_by_id = {
+            slot.id: slot
+            for slot in existing_slots
+        }
 
-        for existing_slot in existing_slots:
-
-            existing_week = next(
-                (
-                    week
-                    for week in existing_weeks
-                    if week.id == existing_slot.homework_support_week_id
-                ),
-                None
-            )
-
-            if not existing_week:
-                continue
-
-            key = (
-                existing_week.week_number,
-                existing_slot.start_time,
-                existing_slot.end_time
-            )
-
-            existing_slots_by_key[key] = existing_slot
+        existing_week_by_id = {
+            week.id: week
+            for week in existing_weeks
+        }
 
         # -----------------------------------------------------
-        # Build keys for submitted slots
+        # 8. Validate submitted slot IDs
         # -----------------------------------------------------
 
-        submitted_slot_keys = set()
+        submitted_slot_ids = set()
 
         for slot in payload.time_slots:
 
-            start_time = datetime.strptime(
-                slot.start_time,
-                "%H:%M"
-            ).time()
+            if slot.id is None:
+                continue
 
-            end_time = datetime.strptime(
-                slot.end_time,
-                "%H:%M"
-            ).time()
-
-            submitted_slot_keys.add(
-                (
-                    slot.week_number,
-                    start_time,
-                    end_time
+            if slot.id in submitted_slot_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Duplicate time slot ID: {slot.id}"
                 )
+
+            submitted_slot_ids.add(slot.id)
+
+            existing_slot = existing_slots_by_id.get(slot.id)
+
+            if not existing_slot:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Time slot ID {slot.id} does not belong "
+                        f"to this centre and academic term."
+                    )
+                )
+
+            existing_week = existing_week_by_id.get(
+                existing_slot.homework_support_week_id
             )
 
+            if (
+                not existing_week
+                or existing_week.week_number != slot.week_number
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Time slot ID {slot.id} does not belong "
+                        f"to Week {slot.week_number}."
+                    )
+                )
+
         # -----------------------------------------------------
-        # Check which existing time slots are being removed
+        # 9. Identify existing slots that are genuinely removed
         # -----------------------------------------------------
 
-        for key, existing_slot in existing_slots_by_key.items():
+        removed_slots = [
+            existing_slot
+            for existing_slot in existing_slots
+            if existing_slot.id not in submitted_slot_ids
+        ]
 
-            if key in submitted_slot_keys:
-                continue
+        # -----------------------------------------------------
+        # 10. Protect booked slots from removal
+        # -----------------------------------------------------
+
+        for existing_slot in removed_slots:
 
             booking_count = (
                 db.query(HomeworkSupportStudentResponse)
@@ -19005,14 +19017,22 @@ def update_homework_configuration(
 
             if booking_count > 0:
 
-                week_number, start_time, end_time = key
+                existing_week = existing_week_by_id.get(
+                    existing_slot.homework_support_week_id
+                )
+
+                week_number = (
+                    existing_week.week_number
+                    if existing_week
+                    else "Unknown"
+                )
 
                 raise HTTPException(
                     status_code=400,
                     detail=(
                         f"Cannot remove Homework Support time slot "
-                        f"{start_time.strftime('%I:%M %p')} - "
-                        f"{end_time.strftime('%I:%M %p')} "
+                        f"{existing_slot.start_time.strftime('%I:%M %p')} - "
+                        f"{existing_slot.end_time.strftime('%I:%M %p')} "
                         f"from Week {week_number} because "
                         f"{booking_count} parent booking(s) "
                         f"already exist for this slot. "
@@ -19022,7 +19042,7 @@ def update_homework_configuration(
                 )
 
         # -----------------------------------------------------
-        # Create missing Homework Support weeks
+        # 11. Create missing Homework Support weeks
         # -----------------------------------------------------
 
         current_weeks_by_number = {}
@@ -19037,9 +19057,7 @@ def update_homework_configuration(
 
             if existing_week:
 
-                current_weeks_by_number[
-                    week_number
-                ] = existing_week
+                current_weeks_by_number[week_number] = existing_week
 
             else:
 
@@ -19052,25 +19070,19 @@ def update_homework_configuration(
                 db.add(new_week)
                 db.flush()
 
-                current_weeks_by_number[
-                    week_number
-                ] = new_week
+                current_weeks_by_number[week_number] = new_week
 
         # -----------------------------------------------------
-        # Delete unbooked time slots that were removed
+        # 12. Delete genuinely removed, unbooked slots
         # -----------------------------------------------------
 
-        for key, existing_slot in existing_slots_by_key.items():
-
-            if key in submitted_slot_keys:
-                continue
-
+        for existing_slot in removed_slots:
             db.delete(existing_slot)
 
         db.flush()
 
         # -----------------------------------------------------
-        # Update existing slots / create new slots
+        # 13. Update existing slots or create new slots
         # -----------------------------------------------------
 
         for slot in payload.time_slots:
@@ -19080,7 +19092,6 @@ def update_homework_configuration(
             )
 
             if not homework_week:
-
                 raise HTTPException(
                     status_code=400,
                     detail=(
@@ -19099,26 +19110,36 @@ def update_homework_configuration(
                 "%H:%M"
             ).time()
 
-            key = (
-                slot.week_number,
-                start_time,
-                end_time
-            )
+            if slot.id is not None:
 
-            existing_slot = existing_slots_by_key.get(
-                key
-            )
+                # Update the existing database record.
+                # Preserve its ID so existing parent bookings
+                # remain associated with this time slot.
 
-            if existing_slot:
+                existing_slot = existing_slots_by_id[slot.id]
 
-                # Keep the existing database ID.
-                # This is critical for existing parent bookings.
-
+                existing_slot.start_time = start_time
+                existing_slot.end_time = end_time
                 existing_slot.capacity = slot.capacity
-                existing_slot.uses_default_timing = slot.uses_default_timing
-                existing_slot.default_slot_index = slot.default_slot_index
+                existing_slot.uses_default_timing = (
+                    slot.uses_default_timing
+                )
+                existing_slot.default_slot_index = (
+                    slot.default_slot_index
+                )
+
+                print(
+                    f"UPDATED EXISTING SLOT: "
+                    f"ID={existing_slot.id}, "
+                    f"WEEK={slot.week_number}, "
+                    f"START={start_time}, "
+                    f"END={end_time}, "
+                    f"CAPACITY={slot.capacity}"
+                )
 
             else:
+
+                # New slots have no database ID yet.
 
                 new_slot = HomeworkSupportTimeSlot(
                     center_code=center_code,
@@ -19131,6 +19152,23 @@ def update_homework_configuration(
                 )
 
                 db.add(new_slot)
+
+                print(
+                    f"CREATED NEW SLOT: "
+                    f"WEEK={slot.week_number}, "
+                    f"START={start_time}, "
+                    f"END={end_time}, "
+                    f"CAPACITY={slot.capacity}"
+                )
+
+        db.flush()
+
+
+        # -----------------------------------------------------
+        # Time slots have already been updated or created
+        # using their database IDs in the block above.
+        # No additional processing is required here.
+        # -----------------------------------------------------
 
         # -----------------------------------------------------
         # Remove Homework Support weeks that are no longer
@@ -101545,14 +101583,16 @@ def parse_literary_block(
 
     print("🧠 [literary] START parsing block")
 
+    
     system_prompt = """
 You are an exam content extraction engine.
 
-You MUST extract ONE COMPLETE LITERARY reading exam.
+You MUST extract ONE COMPLETE LITERARY reading exam
+from the supplied document.
 
-REQUIRED KEYS:
+REQUIRED TOP-LEVEL KEYS:
 - class_name
-- class_year   ← ✅ ADD THIS
+- class_year
 - subject
 - topic
 - difficulty
@@ -101560,14 +101600,35 @@ REQUIRED KEYS:
 - reading_material
 - questions
 
-Each question MUST contain:
-- question_text
-- answer_options (A–D)
-- correct_answer (A–D)
+READING MATERIAL RULES:
+- Extract the COMPLETE original reading passage from the document.
+- Do NOT return only the passage title.
+- Do NOT summarize, shorten, rewrite, or paraphrase the passage.
+- Preserve the original wording and paragraph structure as closely as possible.
+- Return reading_material as an object with:
+    - type: "standard"
+    - title: the passage title
+    - content: the COMPLETE passage text
+- If the document contains a passage title, put it in title.
+- The actual passage must go in content.
 
-FAIL HARD if any rule is violated.
+QUESTION RULES:
+- Extract every question belonging to this exam.
+- Each question MUST contain:
+    - question_text
+    - answer_options (A, B, C, D)
+    - correct_answer (A, B, C, or D)
+- Preserve the original question wording and answer options.
+- Do not invent missing questions or answers.
+
+VALIDATION:
+- total_questions must equal the number of extracted questions.
+- If the complete passage is not present in the supplied document,
+  do not substitute the title or invent passage text.
+
 RETURN VALID JSON ONLY.
 """
+
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -101589,7 +101650,17 @@ RETURN VALID JSON ONLY.
     if not parsed:
         raise ValueError("AI returned empty JSON")
 
-    reading_material = parsed["reading_material"]
+    reading_material = parsed["reading_material"]   
+    if not isinstance(reading_material, dict):
+        raise ValueError(
+            "Literary reading_material must be an object containing title and content"
+        )
+
+    if not reading_material.get("content", "").strip():
+        raise ValueError(
+            "Literary passage content is missing from AI extraction"
+        )
+
     questions = parsed["questions"]
 
 
@@ -101640,6 +101711,7 @@ RETURN VALID JSON ONLY.
 
     print(f"💾 Literary exam saved | ID={obj.id}")
     return saved_ids
+
 def parse_extract_matching_block(
     block_text: str,
     db: Session,
@@ -108177,7 +108249,7 @@ def start_exam_oc_mathematical_reasoning(
 
                 fixed["options"] = {}
 
-            resolve_option_images(
+            resolve_option_images_with_existing_urls(
                 fixed["options"],
                 db,
                 "start-exam-oc-mr"
@@ -129552,7 +129624,82 @@ def resolve_option_images(options: dict, db: Session, request_id: str):
 
         print(f"[{request_id}] ✅ Option {key} resolved → {record.gcs_url}")
      
+def resolve_option_images_with_existing_urls(
+    options: dict,
+    db: Session,
+    request_id: str
+):
+    for key, opt in options.items():
 
+        content = (opt.get("content") or "").strip()
+
+        # Already resolved Google Storage URL
+        if content.startswith("https://storage.googleapis.com/"):
+
+            options[key] = {
+                "type": "image",
+                "src": content
+            }
+
+            print(
+                f"[{request_id}] 🖼️ Option {key} already resolved, "
+                f"skipping DB lookup: {content}"
+            )
+
+            continue
+
+        # Already resolved image object
+        if opt.get("type") == "image" and opt.get("src"):
+            continue
+
+        # Handle "A) file.png" OR "file.png"
+        match = re.search(r"\)\s*(.*\.png)", content)
+
+        if match:
+            raw_name = match.group(1).strip()
+
+        elif content.lower().endswith(".png"):
+            raw_name = content
+
+        else:
+            print(
+                f"[{request_id}] ⚠️ Skipping non-image option "
+                f"{key}: '{content}'"
+            )
+            continue
+
+        print(
+            f"[{request_id}] 🧩 Resolving option {key}: '{raw_name}'"
+        )
+
+        record = (
+            db.query(UploadedImage)
+            .filter(
+                func.replace(
+                    func.trim(UploadedImage.original_name),
+                    " ",
+                    ""
+                ) == raw_name.replace(" ", "")
+            )
+            .first()
+        )
+
+        if not record:
+            print(
+                f"[{request_id}] ❌ NOT FOUND in DB: '{raw_name}'"
+            )
+            continue
+
+        options[key] = {
+            "type": "image",
+            "src": record.gcs_url
+        }
+
+        print(
+            f"[{request_id}] ✅ Option {key} resolved → {record.gcs_url}"
+        )
+
+        
 def resolve_images(blocks: list[dict], db: Session, request_id: str):
     for block in blocks:
         if block.get("type") != "image":
