@@ -5662,6 +5662,50 @@ class SelectiveHomeworkProfileReport(Base):
         ),
     )
 
+
+class OCHomeworkProfileReport(Base):
+    __tablename__ = "oc_homework_profile_reports"
+
+    id = Column(Integer, primary_key=True)
+
+    student_id = Column(String, index=True, nullable=False)
+    exam_date = Column(Date, index=True, nullable=False)
+
+    student_year = Column(String, index=True, nullable=False)
+    gender = Column(String, nullable=True)
+
+    reading_percent = Column(Float)
+    maths_percent = Column(Float)
+    thinking_percent = Column(Float)
+
+    profile_score = Column(Float)
+    overall_rank = Column(Integer)
+    gender_rank = Column(Integer)
+
+    total_students = Column(Integer)
+    total_gender_students = Column(Integer)
+
+    readiness_band = Column(String)
+    summary_insight = Column(Text)
+
+    competitive_schools = Column(JSON)
+    next_tier_schools = Column(JSON)
+
+    prep_timeline = Column(String)
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "student_id",
+            "exam_date",
+            name="uq_oc_homework_profile_student_date"
+        ),
+    )
+
 class OCProfileReport(Base):
     __tablename__ = "oc_profile_reports"
 
@@ -5693,6 +5737,7 @@ class OCProfileReport(Base):
     prep_timeline = Column(String)
 
     created_at = Column(DateTime, default=datetime.utcnow) 
+
 class AdminExamRawScore(Base):
     __tablename__ = "admin_exam_raw_scores"
 
@@ -9818,6 +9863,326 @@ def send_otp_sms(phone_number: str, otp: int):
     )
     print(f"Sent OTP {otp} to {phone_number}, SID: {message.sid}")
 
+def sync_oc_homework_profile_report_record(
+    db,
+    student,
+    exam_date,
+    components,
+    overall_percent,
+    readiness_band
+):
+    """
+    Create/update the OC homework profile report and calculate
+    overall and gender rankings within the same student year.
+    """
+
+    print(
+        f"[OC HOMEWORK PROFILE] Starting sync | "
+        f"student_id={student.student_id} | "
+        f"exam_date={exam_date} | "
+        f"student_year={student.student_year}"
+    )
+
+    print(f"[OC HOMEWORK PROFILE] Input components: {components}")
+    print(
+        f"[OC HOMEWORK PROFILE] Overall values | "
+        f"overall_percent={overall_percent} | "
+        f"readiness_band={readiness_band}"
+    )
+
+    try:
+        # --------------------------------------------------
+        # 1. Extract component percentages
+        # --------------------------------------------------
+
+        def helper_extract_component_percent(component_key):
+            item = components.get(component_key, {})
+
+            if isinstance(item, dict):
+                value = float(item.get("percent", 0) or 0)
+            else:
+                value = float(item or 0)
+
+            print(
+                f"[OC HOMEWORK PROFILE] Extracted component | "
+                f"{component_key}={value}"
+            )
+
+            return value
+
+        reading_percent = helper_extract_component_percent("reading")
+
+        maths_percent = helper_extract_component_percent(
+            "mathematical_reasoning"
+        )
+
+        thinking_percent = helper_extract_component_percent(
+            "thinking_skills"
+        )
+
+        # --------------------------------------------------
+        # 2. Calculate profile score
+        # --------------------------------------------------
+
+        profile_score = round(
+            (
+                reading_percent
+                + maths_percent
+                + thinking_percent
+            ) / 3,
+            2
+        )
+
+        print(
+            f"[OC HOMEWORK PROFILE] Profile score calculated | "
+            f"reading={reading_percent} | "
+            f"maths={maths_percent} | "
+            f"thinking={thinking_percent} | "
+            f"profile_score={profile_score}"
+        )
+
+        # --------------------------------------------------
+        # 3. Student metadata
+        # --------------------------------------------------
+
+        student_gender = student.gender or "Unknown"
+        student_year = student.student_year
+
+        print(
+            f"[OC HOMEWORK PROFILE] Student metadata | "
+            f"student_id={student.student_id} | "
+            f"student_year={student_year} | "
+            f"gender={student_gender}"
+        )
+
+        # --------------------------------------------------
+        # 4. Find existing homework profile
+        # --------------------------------------------------
+
+        existing = (
+            db.query(OCHomeworkProfileReport)
+            .filter(
+                OCHomeworkProfileReport.student_id == student.student_id,
+                OCHomeworkProfileReport.exam_date == exam_date
+            )
+            .first()
+        )
+
+        if existing:
+            row = existing
+
+            print(
+                f"[OC HOMEWORK PROFILE] Existing profile found | "
+                f"profile_id={row.id}"
+            )
+
+        else:
+            row = OCHomeworkProfileReport(
+                student_id=student.student_id,
+                exam_date=exam_date
+            )
+
+            db.add(row)
+
+            print(
+                f"[OC HOMEWORK PROFILE] Creating new profile | "
+                f"student_id={student.student_id} | "
+                f"exam_date={exam_date}"
+            )
+
+        # --------------------------------------------------
+        # 5. Save profile values
+        # --------------------------------------------------
+
+        row.student_year = student_year
+        row.gender = student_gender
+
+        row.reading_percent = reading_percent
+        row.maths_percent = maths_percent
+        row.thinking_percent = thinking_percent
+
+        row.profile_score = profile_score
+        row.readiness_band = readiness_band
+
+        print(
+            f"[OC HOMEWORK PROFILE] Profile values prepared | "
+            f"profile_score={profile_score} | "
+            f"readiness_band={readiness_band}"
+        )
+
+        db.commit()
+
+        print(
+            f"[OC HOMEWORK PROFILE] Profile record committed | "
+            f"profile_id={row.id}"
+        )
+
+        # --------------------------------------------------
+        # 6. Build overall ranking cohort
+        # --------------------------------------------------
+
+        cohort = (
+            db.query(OCHomeworkProfileReport)
+            .filter(
+                OCHomeworkProfileReport.student_year == student_year,
+                OCHomeworkProfileReport.exam_date == exam_date
+            )
+            .order_by(
+                OCHomeworkProfileReport.profile_score.desc(),
+                OCHomeworkProfileReport.created_at.asc(),
+                OCHomeworkProfileReport.id.asc()
+            )
+            .all()
+        )
+
+        total_students = len(cohort)
+
+        print(
+            f"[OC HOMEWORK PROFILE] Overall cohort | "
+            f"student_year={student_year} | "
+            f"total_students={total_students}"
+        )
+
+        # --------------------------------------------------
+        # 7. Print overall cohort
+        # --------------------------------------------------
+
+        for index, item in enumerate(cohort, start=1):
+            print(
+                f"[OC HOMEWORK PROFILE] Overall cohort member | "
+                f"position={index} | "
+                f"student_id={item.student_id} | "
+                f"exam_date={item.exam_date} | "
+                f"profile_score={item.profile_score}"
+            )
+
+        # --------------------------------------------------
+        # 8. Calculate overall rank
+        # --------------------------------------------------
+
+        overall_rank = 0
+
+        for index, item in enumerate(cohort, start=1):
+            if (
+                item.student_id == student.student_id
+                and item.exam_date == exam_date
+            ):
+                overall_rank = index
+                break
+
+        print(
+            f"[OC HOMEWORK PROFILE] Overall rank calculated | "
+            f"student_id={student.student_id} | "
+            f"rank={overall_rank}/{total_students}"
+        )
+
+        # --------------------------------------------------
+        # 9. Build gender cohort
+        # --------------------------------------------------
+
+        gender_cohort = [
+            item
+            for item in cohort
+            if (item.gender or "Unknown") == student_gender
+        ]
+
+        total_gender_students = len(gender_cohort)
+
+        print(
+            f"[OC HOMEWORK PROFILE] Gender cohort | "
+            f"gender={student_gender} | "
+            f"total_gender_students={total_gender_students}"
+        )
+
+        # --------------------------------------------------
+        # 10. Print gender cohort
+        # --------------------------------------------------
+
+        for index, item in enumerate(gender_cohort, start=1):
+            print(
+                f"[OC HOMEWORK PROFILE] Gender cohort member | "
+                f"position={index} | "
+                f"student_id={item.student_id} | "
+                f"exam_date={item.exam_date} | "
+                f"profile_score={item.profile_score}"
+            )
+
+        # --------------------------------------------------
+        # 11. Calculate gender rank
+        # --------------------------------------------------
+
+        gender_rank = 0
+
+        for index, item in enumerate(gender_cohort, start=1):
+            if (
+                item.student_id == student.student_id
+                and item.exam_date == exam_date
+            ):
+                gender_rank = index
+                break
+
+        print(
+            f"[OC HOMEWORK PROFILE] Gender rank calculated | "
+            f"student_id={student.student_id} | "
+            f"gender={student_gender} | "
+            f"rank={gender_rank}/{total_gender_students}"
+        )
+
+        # --------------------------------------------------
+        # 12. Save ranking values
+        # --------------------------------------------------
+
+        row.overall_rank = overall_rank
+        row.gender_rank = gender_rank
+        row.total_students = total_students
+        row.total_gender_students = total_gender_students
+
+        db.commit()
+
+        print(
+            f"[OC HOMEWORK PROFILE] Ranking values committed | "
+            f"profile_id={row.id} | "
+            f"overall_rank={overall_rank}/{total_students} | "
+            f"gender_rank={gender_rank}/{total_gender_students}"
+        )
+
+        # --------------------------------------------------
+        # 13. Final result
+        # --------------------------------------------------
+
+        result = {
+            "profile_score": profile_score,
+            "overall_rank": overall_rank,
+            "gender_rank": gender_rank,
+            "total_students": total_students,
+            "total_gender_students": total_gender_students
+        }
+
+        print(
+            f"[OC HOMEWORK PROFILE] Sync completed successfully | "
+            f"student_id={student.student_id} | "
+            f"exam_date={exam_date} | "
+            f"result={result}"
+        )
+
+        return result
+
+    except Exception as e:
+        print(
+            f"[OC HOMEWORK PROFILE] ERROR during sync | "
+            f"student_id={student.student_id} | "
+            f"exam_date={exam_date} | "
+            f"error={str(e)}"
+        )
+
+        db.rollback()
+
+        print(
+            "[OC HOMEWORK PROFILE] Database rollback completed"
+        )
+
+        raise
+
 
 def sync_oc_profile_report_record(
     db,
@@ -9980,11 +10345,13 @@ def sync_oc_profile_report_record(
         cohort = (
             db.query(OCProfileReport)
             .filter(
-                OCProfileReport.student_year == student_year
+                OCProfileReport.student_year == student_year,
+                OCProfileReport.exam_date == exam_date
             )
             .order_by(
                 OCProfileReport.profile_score.desc(),
-                OCProfileReport.created_at.asc()
+                OCProfileReport.created_at.asc(),
+                OCProfileReport.id.asc()
             )
             .all()
         )
@@ -66564,7 +66931,8 @@ def sync_selective_homework_profile_report_record(
     cohort = (
         db.query(SelectiveHomeworkProfileReport)
         .filter(
-            SelectiveHomeworkProfileReport.student_year == student_year
+            SelectiveHomeworkProfileReport.student_year == student_year,
+            SelectiveHomeworkProfileReport.exam_date == exam_date
         )
         .order_by(
             SelectiveHomeworkProfileReport.profile_score.desc(),
@@ -124408,7 +124776,7 @@ def generate_overall_oc_homework_report(
     print("🧠 Syncing OC homework profile report...")
     print("   Profile components:", profile_components)
 
-    profile_metrics = sync_oc_profile_report_record(
+    profile_metrics = sync_oc_homework_profile_report_record(
         db=db,
         student=student,
         exam_date=exam_date,
