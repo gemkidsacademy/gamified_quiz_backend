@@ -59531,55 +59531,68 @@ def get_student_cumulative_report(
             # Calculate score
             # --------------------------------------------------
 
-            attempted = len(responses)
+            # --------------------------------------------------
+            # Calculate score and accuracy
+            # --------------------------------------------------
 
+            # Total questions belonging to the selected topic
+            total_topic_questions = len(responses)
+
+            # Correctly answered questions
             correct = sum(
                 1
                 for r in responses
-                if r.is_correct
+                if r.is_correct is True
             )
 
-            print(
-                "     responses_found:",
-                attempted
+            # Incorrectly answered questions
+            incorrect = sum(
+                1
+                for r in responses
+                if r.is_correct is False
             )
 
-            print(
-                "     correct:",
-                correct
+            # Questions not attempted
+            ungraded = sum(
+                1
+                for r in responses
+                if r.is_correct is None
             )
 
-            # --------------------------------------------------
-            # Skip empty attempts
-            # --------------------------------------------------
+            # Questions actually attempted = correct + incorrect
+            attempted = correct + incorrect
 
-            if attempted == 0:
-                print(
-                    "     ⚠️ Skipping attempt — "
-                    "no matching topic questions"
-                )
+            print("     total_topic_questions:", total_topic_questions)
+            print("     questions_attempted:", attempted)
+            print("     correct:", correct)
+            print("     incorrect:", incorrect)
+            print("     ungraded:", ungraded)
+
+            # Skip only if there are no questions for this topic
+            if total_topic_questions == 0:
+                print("     ⚠️ Skipping — no matching topic questions")
                 continue
 
-            accuracy = round(
-                (correct / attempted) * 100,
+            # Accuracy = Correct / Actually Attempted Questions
+            accuracy = (
+                round((correct / attempted) * 100, 2)
+                if attempted > 0
+                else 0.0
+            )
+
+            # Score = Correct / Total Questions in Selected Topic
+            score = round(
+                (correct / total_topic_questions) * 100,
                 2
             )
 
-            score = accuracy
-
-            print(
-                "     accuracy:",
-                accuracy
-            )
-
-            print(
-                "     score:",
-                score
-            )
+            print("     accuracy:", accuracy)
+            print("     score:", score)
 
             results.append({
                 "date": attempt.created_at.date().isoformat(),
                 "questions_attempted": attempted,
+                "total_topic_questions": total_topic_questions,
                 "correct_answers": correct,
                 "accuracy": accuracy,
                 "score": score,
@@ -60371,12 +60384,28 @@ def class_exam_report(
                         .all()
                     )
 
+                    print("\n========== RESPONSE DEBUG ==========")
+
+                    print("ATTEMPT IDS:", attempt_ids)
+
+                    print("RESPONSE MODEL: StudentExamReportReading")
+
                     print("RAW ROWS COUNT:", len(raw_rows))
-                    print("RAW ROWS SAMPLE:", raw_rows[:10])
+
+                    print("RAW ROWS SAMPLE:")
+                    for row in raw_rows[:10]:
+                        print(row)
+
+                    print("====================================")
 
                     raw_results = compute_student_scores_from_responses(
                         raw_rows
                     )
+
+                    print("\n========== SCORE COMPUTATION DEBUG ==========")
+                    print("RAW RESULTS:", raw_results)
+                    print("RAW RESULTS COUNT:", len(raw_results))
+                    print("============================================")
 
                     print("RAW RESULTS:", raw_results)
 
@@ -60411,6 +60440,7 @@ def class_exam_report(
             else:
 
                 external_ids = list(student_code_map.values())
+
 
                 attempt_ids = (
                     db.query(
@@ -60452,32 +60482,49 @@ def class_exam_report(
                         )
                         .all()
                     )
+                    print("\n========== SELECTIVE RESPONSE DEBUG ==========")
+                    print("EXAM:", exam)
+                    print("ATTEMPT IDS:", attempt_ids)
+                    print("RESPONSE MODEL:", ResponseModel.__name__)
+                    print("RAW ROWS COUNT:", len(raw_rows))
+                    print("RAW ROWS SAMPLE:")
+
+                    for row in raw_rows[:20]:
+                        print(row)
+
+                    print("==============================================")
+                    
 
                     raw_results = compute_student_scores_from_responses(raw_rows)
+                    print("\n========== SELECTIVE SCORE DEBUG ==========")
+                    print("RAW RESULTS COUNT:", len(raw_results))
+                    print("RAW RESULTS:", raw_results)
+                    print("===========================================")
+
 
                     student_results = []
 
                     for r in raw_results:
 
-                        internal_id = next(
-                            (
-                                k
-                                for k, v in student_code_map.items()
-                                if v == r["student_id"]
-                            ),
-                            None
-                        )
+                        internal_id = str(r["student_id"])
 
-                        if internal_id:
-
+                        if internal_id in student_name_map:
                             student_results.append({
                                 "student_id": internal_id,
-                                "student_code": r["student_id"],
+                                "student_code": student_code_map.get(internal_id),
                                 "student_name": student_name_map.get(internal_id),
                                 "score": r["score"],
                                 "accuracy": r["accuracy"]
                             })
 
+                    students_attempted = len(student_results)
+
+                    print("\n========== SELECTIVE MAPPING DEBUG ==========")
+                    print("STUDENT CODE MAP:", student_code_map)
+                    print("STUDENT NAME MAP:", student_name_map)
+                    print("FINAL STUDENT RESULTS:", student_results)
+                    print("STUDENTS ATTEMPTED:", students_attempted)
+                    print("============================================")
                     students_attempted = len(student_results)
 
                 # KEEP ALL YOUR EXISTING
@@ -60503,6 +60550,37 @@ def class_exam_report(
                 print("\n--- STUDENT MAPS ---")
                 print("STUDENT CODE MAP:", student_code_map)
                 print("STUDENT NAME MAP:", student_name_map)
+                 # =====================================
+                # TEMPORARY DATE DEBUGGING
+                # =====================================
+                print("========== DATE DEBUG ==========")
+                print("RAW DATE:", date)
+                print("NORMALIZED DATE:", selected_date)
+
+                attempts = (
+                    db.query(
+                        StudentExamOCThinkingSkills.id,
+                        StudentExamOCThinkingSkills.student_id,
+                        StudentExamOCThinkingSkills.completed_at
+                    )
+                    .filter(
+                        StudentExamOCThinkingSkills.student_id.in_(
+                            student_internal_ids
+                        ),
+                        StudentExamOCThinkingSkills.completed_at.isnot(None)
+                    )
+                    .all()
+                )
+
+                print("ALL COMPLETED ATTEMPTS:")
+                for a in attempts:
+                    print(
+                        "Attempt:", a.id,
+                        "Student:", a.student_id,
+                        "Completed:", a.completed_at
+                    )
+
+                print("================================")
 
                 raw_rows = (
                     db.query(
@@ -123735,6 +123813,14 @@ def finish_thinking_skills_exam(
 
     questions = exam.questions or []
     total_questions = len(questions)
+
+    print("\n========== THINKING SKILLS QUESTION JSON ==========")
+
+    for q in questions[:3]:
+        print(q)
+
+    print("========== END QUESTION JSON ==========\n")
+
     question_map = {q["q_id"]: q for q in questions}
 
     print("📊 Exam loaded:", {
