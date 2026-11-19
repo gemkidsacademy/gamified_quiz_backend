@@ -500,6 +500,7 @@ def send_parent_teacher_interview_reminder_email(
             f"reminder type {reminder_type}, "
             f"status code {response.status_code}"
         )
+        return response.status_code
 
     except Exception as e:
         print(
@@ -514,7 +515,7 @@ def parent_teacher_interview_reminder_scheduler_job(
     local_now,
     db
 ):
-    
+    execution_id = str(uuid.uuid4())
 
     bookings = (
         db.query(ParentTeacherInterviewBooking)
@@ -647,18 +648,48 @@ def parent_teacher_interview_reminder_scheduler_job(
 
                     
 
-                    send_parent_teacher_interview_reminder_email(
-                        to_email=booking.parent_email,
-                        parent_name="Parent",
-                        student_name=student.name,
-                        event_name=event.name,
-                        teacher_name=teacher.full_name,
-                        event_date=event.event_date,
-                        start_time=slot.start_time,
-                        end_time=slot.end_time,
-                        location=event.location,
+                    
+
+                    diagnostic = PTIReminderDiagnosticLog(
+                        center_code=center_code,
+                        booking_id=booking.id,
                         reminder_type="ONE_DAY_BEFORE",
+                        execution_id=execution_id,
+                        scheduler_pid=os.getpid(),
+                        triggered_at=datetime.utcnow(),
+                        status="SEND_STARTED",
                     )
+
+                    db.add(diagnostic)
+                    db.commit()
+                    db.refresh(diagnostic)
+
+                    try:
+                        sendgrid_status = send_parent_teacher_interview_reminder_email(
+                            to_email=booking.parent_email,
+                            parent_name="Parent",
+                            student_name=student.name,
+                            event_name=event.name,
+                            teacher_name=teacher.full_name,
+                            event_date=event.event_date,
+                            start_time=slot.start_time,
+                            end_time=slot.end_time,
+                            location=event.location,
+                            reminder_type="ONE_DAY_BEFORE",
+                        )
+
+                        diagnostic.status = "SEND_SUCCESS"
+                        diagnostic.sendgrid_status_code = sendgrid_status
+
+                    except Exception as e:
+                        diagnostic.status = "SEND_FAILED"
+                        diagnostic.error_details = str(e)[:2000]
+                        diagnostic.completed_at = datetime.utcnow()
+                        db.commit()
+                        raise
+
+                    diagnostic.completed_at = datetime.utcnow()
+                    db.commit()
 
                     reminder_log = (
                         ParentTeacherInterviewReminderLog(
@@ -705,18 +736,48 @@ def parent_teacher_interview_reminder_scheduler_job(
 
                     
 
-                    send_parent_teacher_interview_reminder_email(
-                        to_email=booking.parent_email,
-                        parent_name="Parent",
-                        student_name=student.name,
-                        event_name=event.name,
-                        teacher_name=teacher.full_name,
-                        event_date=event.event_date,
-                        start_time=slot.start_time,
-                        end_time=slot.end_time,
-                        location=event.location,
+                    
+
+                    diagnostic = PTIReminderDiagnosticLog(
+                        center_code=center_code,
+                        booking_id=booking.id,
                         reminder_type="THIRTY_MINUTES_BEFORE",
+                        execution_id=execution_id,
+                        scheduler_pid=os.getpid(),
+                        triggered_at=datetime.utcnow(),
+                        status="SEND_STARTED",
                     )
+
+                    db.add(diagnostic)
+                    db.commit()
+                    db.refresh(diagnostic)
+
+                    try:
+                        sendgrid_status = send_parent_teacher_interview_reminder_email(
+                            to_email=booking.parent_email,
+                            parent_name="Parent",
+                            student_name=student.name,
+                            event_name=event.name,
+                            teacher_name=teacher.full_name,
+                            event_date=event.event_date,
+                            start_time=slot.start_time,
+                            end_time=slot.end_time,
+                            location=event.location,
+                            reminder_type="THIRTY_MINUTES_BEFORE",
+                        )
+
+                        diagnostic.status = "SEND_SUCCESS"
+                        diagnostic.sendgrid_status_code = sendgrid_status
+
+                    except Exception as e:
+                        diagnostic.status = "SEND_FAILED"
+                        diagnostic.error_details = str(e)[:2000]
+                        diagnostic.completed_at = datetime.utcnow()
+                        db.commit()
+                        raise
+
+                    diagnostic.completed_at = datetime.utcnow()
+                    db.commit()
 
                     reminder_log = (
                         ParentTeacherInterviewReminderLog(
@@ -1244,6 +1305,26 @@ print("======================================")
 
 class CopyClassesRequest(BaseModel):
     source_term_id: int
+
+
+class PTIReminderDiagnosticLog(Base):
+    __tablename__ = "pti_reminder_diagnostic_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    center_code = Column(String, nullable=False, index=True)
+    booking_id = Column(Integer, nullable=False, index=True)
+    reminder_type = Column(String, nullable=False)
+
+    execution_id = Column(String, nullable=False, index=True)
+    scheduler_pid = Column(Integer, nullable=False)
+
+    triggered_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    status = Column(String, nullable=False)
+    sendgrid_status_code = Column(Integer, nullable=True)
+    error_details = Column(Text, nullable=True)
 
 class ManageExamAccessRequest(BaseModel):
     center_code: str
