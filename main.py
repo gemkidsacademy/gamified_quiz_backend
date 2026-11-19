@@ -524,10 +524,12 @@ def parent_teacher_interview_reminder_scheduler_job(
         )
         .all()
     )
+    
 
     
 
     for booking in bookings:
+        
 
         # --------------------------------------------------
         # Load reminder settings for this event
@@ -551,7 +553,7 @@ def parent_teacher_interview_reminder_scheduler_job(
         else:
             one_day_before_enabled = settings.one_day_before_enabled
             thirty_minutes_before_enabled = settings.thirty_minutes_before
-
+        
         # --------------------------------------------------
         # Convert booking date/time into center-local datetime
         # --------------------------------------------------
@@ -637,6 +639,10 @@ def parent_teacher_interview_reminder_scheduler_job(
                     .first()
                 )
 
+
+
+                
+
                 if not already_sent:
 
                     
@@ -692,6 +698,8 @@ def parent_teacher_interview_reminder_scheduler_job(
                     )
                     .first()
                 )
+                
+                
 
                 if not already_sent:
 
@@ -1064,7 +1072,7 @@ def scheduler_job():
             # ------------------------------------
             # Parent–Teacher Interview reminders
             # ------------------------------------
-
+            
             parent_teacher_interview_reminder_scheduler_job(
                 center_code=center.center_code,
                 local_now=local_now,
@@ -1172,6 +1180,7 @@ def scheduler_job():
         db.close()    
 
 scheduler = BackgroundScheduler()
+
 
 scheduler.add_job(
     scheduler_job,
@@ -134906,7 +134915,7 @@ def submit_quiz_answer(
     
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8002))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 
