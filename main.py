@@ -9872,8 +9872,8 @@ def sync_oc_homework_profile_report_record(
     readiness_band
 ):
     """
-    Create/update the OC homework profile report and calculate
-    overall and gender rankings within the same student year.
+    Create/update the OC homework profile report and recalculate
+    overall and gender rankings for every student in the cohort.
     """
 
     print(
@@ -9884,11 +9884,6 @@ def sync_oc_homework_profile_report_record(
     )
 
     print(f"[OC HOMEWORK PROFILE] Input components: {components}")
-    print(
-        f"[OC HOMEWORK PROFILE] Overall values | "
-        f"overall_percent={overall_percent} | "
-        f"readiness_band={readiness_band}"
-    )
 
     try:
         # --------------------------------------------------
@@ -9948,15 +9943,8 @@ def sync_oc_homework_profile_report_record(
         student_gender = student.gender or "Unknown"
         student_year = student.student_year
 
-        print(
-            f"[OC HOMEWORK PROFILE] Student metadata | "
-            f"student_id={student.student_id} | "
-            f"student_year={student_year} | "
-            f"gender={student_gender}"
-        )
-
         # --------------------------------------------------
-        # 4. Find existing homework profile
+        # 4. Find or create existing homework profile
         # --------------------------------------------------
 
         existing = (
@@ -10004,21 +9992,11 @@ def sync_oc_homework_profile_report_record(
         row.profile_score = profile_score
         row.readiness_band = readiness_band
 
-        print(
-            f"[OC HOMEWORK PROFILE] Profile values prepared | "
-            f"profile_score={profile_score} | "
-            f"readiness_band={readiness_band}"
-        )
-
-        db.commit()
-
-        print(
-            f"[OC HOMEWORK PROFILE] Profile record committed | "
-            f"profile_id={row.id}"
-        )
+        # Ensure the current profile is included in the cohort.
+        db.flush()
 
         # --------------------------------------------------
-        # 6. Build overall ranking cohort
+        # 6. Fetch complete homework ranking cohort
         # --------------------------------------------------
 
         cohort = (
@@ -10044,118 +10022,59 @@ def sync_oc_homework_profile_report_record(
         )
 
         # --------------------------------------------------
-        # 7. Print overall cohort
+        # 7. Calculate gender totals
         # --------------------------------------------------
 
-        for index, item in enumerate(cohort, start=1):
-            print(
-                f"[OC HOMEWORK PROFILE] Overall cohort member | "
-                f"position={index} | "
-                f"student_id={item.student_id} | "
-                f"exam_date={item.exam_date} | "
-                f"profile_score={item.profile_score}"
+        gender_totals = {}
+
+        for item in cohort:
+            gender_key = item.gender or "Unknown"
+
+            gender_totals[gender_key] = (
+                gender_totals.get(gender_key, 0) + 1
             )
 
         # --------------------------------------------------
-        # 8. Calculate overall rank
+        # 8. Recalculate rankings for EVERY student
         # --------------------------------------------------
 
-        overall_rank = 0
+        gender_positions = {}
 
         for index, item in enumerate(cohort, start=1):
-            if (
-                item.student_id == student.student_id
-                and item.exam_date == exam_date
-            ):
-                overall_rank = index
-                break
 
-        print(
-            f"[OC HOMEWORK PROFILE] Overall rank calculated | "
-            f"student_id={student.student_id} | "
-            f"rank={overall_rank}/{total_students}"
-        )
+            gender_key = item.gender or "Unknown"
 
-        # --------------------------------------------------
-        # 9. Build gender cohort
-        # --------------------------------------------------
+            gender_positions[gender_key] = (
+                gender_positions.get(gender_key, 0) + 1
+            )
 
-        gender_cohort = [
-            item
-            for item in cohort
-            if (item.gender or "Unknown") == student_gender
-        ]
+            item.overall_rank = index
+            item.gender_rank = gender_positions[gender_key]
 
-        total_gender_students = len(gender_cohort)
+            item.total_students = total_students
+            item.total_gender_students = gender_totals[gender_key]
 
-        print(
-            f"[OC HOMEWORK PROFILE] Gender cohort | "
-            f"gender={student_gender} | "
-            f"total_gender_students={total_gender_students}"
-        )
-
-        # --------------------------------------------------
-        # 10. Print gender cohort
-        # --------------------------------------------------
-
-        for index, item in enumerate(gender_cohort, start=1):
             print(
-                f"[OC HOMEWORK PROFILE] Gender cohort member | "
-                f"position={index} | "
+                f"[OC HOMEWORK PROFILE] Updated ranking | "
                 f"student_id={item.student_id} | "
-                f"exam_date={item.exam_date} | "
-                f"profile_score={item.profile_score}"
+                f"profile_score={item.profile_score} | "
+                f"overall={item.overall_rank}/{item.total_students} | "
+                f"gender={item.gender_rank}/{item.total_gender_students}"
             )
 
         # --------------------------------------------------
-        # 11. Calculate gender rank
+        # 9. Commit all cohort updates together
         # --------------------------------------------------
-
-        gender_rank = 0
-
-        for index, item in enumerate(gender_cohort, start=1):
-            if (
-                item.student_id == student.student_id
-                and item.exam_date == exam_date
-            ):
-                gender_rank = index
-                break
-
-        print(
-            f"[OC HOMEWORK PROFILE] Gender rank calculated | "
-            f"student_id={student.student_id} | "
-            f"gender={student_gender} | "
-            f"rank={gender_rank}/{total_gender_students}"
-        )
-
-        # --------------------------------------------------
-        # 12. Save ranking values
-        # --------------------------------------------------
-
-        row.overall_rank = overall_rank
-        row.gender_rank = gender_rank
-        row.total_students = total_students
-        row.total_gender_students = total_gender_students
 
         db.commit()
-
-        print(
-            f"[OC HOMEWORK PROFILE] Ranking values committed | "
-            f"profile_id={row.id} | "
-            f"overall_rank={overall_rank}/{total_students} | "
-            f"gender_rank={gender_rank}/{total_gender_students}"
-        )
-
-        # --------------------------------------------------
-        # 13. Final result
-        # --------------------------------------------------
+        db.refresh(row)
 
         result = {
             "profile_score": profile_score,
-            "overall_rank": overall_rank,
-            "gender_rank": gender_rank,
-            "total_students": total_students,
-            "total_gender_students": total_gender_students
+            "overall_rank": row.overall_rank,
+            "gender_rank": row.gender_rank,
+            "total_students": row.total_students,
+            "total_gender_students": row.total_gender_students
         }
 
         print(
@@ -10168,6 +10087,7 @@ def sync_oc_homework_profile_report_record(
         return result
 
     except Exception as e:
+
         print(
             f"[OC HOMEWORK PROFILE] ERROR during sync | "
             f"student_id={student.student_id} | "
@@ -10193,8 +10113,9 @@ def sync_oc_profile_report_record(
     readiness_band
 ):
     """
-    Create/update the OC profile report and calculate
-    overall and gender rankings within the same student year.
+    Create/update the OC profile report and recalculate
+    overall and gender rankings for every student
+    within the same student year and exam date.
     """
 
     print(
@@ -10205,11 +10126,6 @@ def sync_oc_profile_report_record(
     )
 
     print(f"[OC PROFILE] Input components: {components}")
-    print(
-        f"[OC PROFILE] Overall values | "
-        f"overall_percent={overall_percent} | "
-        f"readiness_band={readiness_band}"
-    )
 
     try:
         # --------------------------------------------------
@@ -10232,11 +10148,9 @@ def sync_oc_profile_report_record(
             return value
 
         reading_percent = helper_extract_component_percent("reading")
-
         maths_percent = helper_extract_component_percent(
             "mathematical_reasoning"
         )
-
         thinking_percent = helper_extract_component_percent(
             "thinking_skills"
         )
@@ -10256,9 +10170,6 @@ def sync_oc_profile_report_record(
 
         print(
             f"[OC PROFILE] Profile score calculated | "
-            f"reading={reading_percent} | "
-            f"maths={maths_percent} | "
-            f"thinking={thinking_percent} | "
             f"profile_score={profile_score}"
         )
 
@@ -10269,15 +10180,8 @@ def sync_oc_profile_report_record(
         student_gender = student.gender or "Unknown"
         student_year = student.student_year
 
-        print(
-            f"[OC PROFILE] Student metadata | "
-            f"student_id={student.student_id} | "
-            f"student_year={student_year} | "
-            f"gender={student_gender}"
-        )
-
         # --------------------------------------------------
-        # 4. Find existing profile
+        # 4. Find or create profile
         # --------------------------------------------------
 
         existing = (
@@ -10307,8 +10211,7 @@ def sync_oc_profile_report_record(
 
             print(
                 f"[OC PROFILE] Creating new profile | "
-                f"student_id={student.student_id} | "
-                f"exam_date={exam_date}"
+                f"student_id={student.student_id}"
             )
 
         # --------------------------------------------------
@@ -10325,21 +10228,11 @@ def sync_oc_profile_report_record(
         row.profile_score = profile_score
         row.readiness_band = readiness_band
 
-        print(
-            f"[OC PROFILE] Profile values prepared | "
-            f"profile_score={profile_score} | "
-            f"readiness_band={readiness_band}"
-        )
-
-        db.commit()
-
-        print(
-            f"[OC PROFILE] Profile record committed | "
-            f"profile_id={row.id}"
-        )
+        # Ensure the profile is included in the cohort query.
+        db.flush()
 
         # --------------------------------------------------
-        # 6. Build overall ranking cohort
+        # 6. Fetch complete cohort
         # --------------------------------------------------
 
         cohort = (
@@ -10360,135 +10253,75 @@ def sync_oc_profile_report_record(
 
         print(
             f"[OC PROFILE] Overall cohort | "
-            f"student_year={student_year} | "
             f"total_students={total_students}"
         )
 
         # --------------------------------------------------
-        # 7. Print overall cohort
+        # 7. Calculate gender totals
         # --------------------------------------------------
 
-        for index, item in enumerate(cohort, start=1):
-            print(
-                f"[OC PROFILE] Overall cohort member | "
-                f"position={index} | "
-                f"student_id={item.student_id} | "
-                f"exam_date={item.exam_date} | "
-                f"profile_score={item.profile_score}"
+        gender_totals = {}
+
+        for item in cohort:
+            gender_key = item.gender or "Unknown"
+
+            gender_totals[gender_key] = (
+                gender_totals.get(gender_key, 0) + 1
             )
 
         # --------------------------------------------------
-        # 8. Calculate overall rank
+        # 8. Recalculate rankings for EVERY student
         # --------------------------------------------------
 
-        overall_rank = 0
+        gender_positions = {}
 
         for index, item in enumerate(cohort, start=1):
-            if (
-                item.student_id == student.student_id
-                and item.exam_date == exam_date
-            ):
-                overall_rank = index
-                break
 
-        print(
-            f"[OC PROFILE] Overall rank calculated | "
-            f"student_id={student.student_id} | "
-            f"rank={overall_rank}/{total_students}"
-        )
+            gender_key = item.gender or "Unknown"
 
-        # --------------------------------------------------
-        # 9. Build gender cohort
-        # --------------------------------------------------
+            gender_positions[gender_key] = (
+                gender_positions.get(gender_key, 0) + 1
+            )
 
-        gender_cohort = [
-            item
-            for item in cohort
-            if (item.gender or "Unknown") == student_gender
-        ]
+            item.overall_rank = index
+            item.gender_rank = gender_positions[gender_key]
 
-        total_gender_students = len(gender_cohort)
+            item.total_students = total_students
+            item.total_gender_students = gender_totals[gender_key]
 
-        print(
-            f"[OC PROFILE] Gender cohort | "
-            f"gender={student_gender} | "
-            f"total_gender_students={total_gender_students}"
-        )
-
-        # --------------------------------------------------
-        # 10. Print gender cohort
-        # --------------------------------------------------
-
-        for index, item in enumerate(gender_cohort, start=1):
             print(
-                f"[OC PROFILE] Gender cohort member | "
-                f"position={index} | "
+                f"[OC PROFILE] Updated ranking | "
                 f"student_id={item.student_id} | "
-                f"exam_date={item.exam_date} | "
-                f"profile_score={item.profile_score}"
+                f"profile_score={item.profile_score} | "
+                f"overall={item.overall_rank}/{item.total_students} | "
+                f"gender={item.gender_rank}/{item.total_gender_students}"
             )
 
         # --------------------------------------------------
-        # 11. Calculate gender rank
+        # 9. Commit all cohort updates together
         # --------------------------------------------------
-
-        gender_rank = 0
-
-        for index, item in enumerate(gender_cohort, start=1):
-            if (
-                item.student_id == student.student_id
-                and item.exam_date == exam_date
-            ):
-                gender_rank = index
-                break
-
-        print(
-            f"[OC PROFILE] Gender rank calculated | "
-            f"student_id={student.student_id} | "
-            f"gender={student_gender} | "
-            f"rank={gender_rank}/{total_gender_students}"
-        )
-
-        # --------------------------------------------------
-        # 12. Save ranking values
-        # --------------------------------------------------
-
-        row.overall_rank = overall_rank
-        row.gender_rank = gender_rank
-        row.total_students = total_students
-        row.total_gender_students = total_gender_students
 
         db.commit()
-
-        print(
-            f"[OC PROFILE] Ranking values committed | "
-            f"profile_id={row.id} | "
-            f"overall_rank={overall_rank}/{total_students} | "
-            f"gender_rank={gender_rank}/{total_gender_students}"
-        )
-
-        # --------------------------------------------------
-        # 13. Final result
-        # --------------------------------------------------
+        db.refresh(row)
 
         result = {
             "profile_score": profile_score,
-            "overall_rank": overall_rank,
-            "gender_rank": gender_rank,
-            "total_students": total_students,
-            "total_gender_students": total_gender_students
+            "overall_rank": row.overall_rank,
+            "gender_rank": row.gender_rank,
+            "total_students": row.total_students,
+            "total_gender_students": row.total_gender_students
         }
 
         print(
             f"[OC PROFILE] Sync completed successfully | "
             f"student_id={student.student_id} | "
-            f"exam_date={exam_date} | "
             f"result={result}"
         )
 
         return result
 
     except Exception as e:
+
         print(
             f"[OC PROFILE] ERROR during sync | "
             f"student_id={student.student_id} | "
@@ -10497,10 +10330,6 @@ def sync_oc_profile_report_record(
         )
 
         db.rollback()
-
-        print(
-            "[OC PROFILE] Database rollback completed"
-        )
 
         raise
 
@@ -27870,24 +27699,32 @@ def get_oc_mathematical_reasoning_dates(
             """.strip()
         )
 
+    
     # --------------------------------------------------
-    # 3️⃣ Extract unique dates
+    # 3️⃣ Extract unique Sydney-local dates
     # --------------------------------------------------
+    sydney_date = func.date(
+        Question.created_at.op("AT TIME ZONE")(
+            "Australia/Sydney"
+        )
+    )
+
     dates = (
-        db.query(func.date(Question.created_at))
+        db.query(sydney_date)
         .filter(
             func.lower(func.trim(Question.class_name)) == "oc",
             func.lower(func.trim(Question.subject)) == "mathematical reasoning",
             Question.class_year == parsed_year
         )
         .distinct()
-        .order_by(func.date(Question.created_at).desc())
+        .order_by(sydney_date.desc())
         .all()
     )
 
     formatted_dates = [
-        str(date[0]) for date in dates
+        str(row[0]) for row in dates
     ]
+
 
     print("\n📅 AVAILABLE DATES:")
     print(formatted_dates)
@@ -29562,10 +29399,15 @@ def get_available_oc_mr_batches(
 
                 Question.batch_id.isnot(None),
 
-                # uploaded on selected date
+                # uploaded on selected Sydney date
                 func.date(
-                    Question.created_at
-                ) == date
+                    Question.created_at.op("AT TIME ZONE")(
+                        "Australia/Sydney"
+                    )
+                ) == datetime.strptime(
+                    date,
+                    "%Y-%m-%d"
+                ).date()
 
             )
             .distinct()
@@ -30256,6 +30098,7 @@ def generate_thinking_skills_exam_latest(
         "questions":
             generated_questions
     }
+
 @app.get("/api/reading-availability")
 def get_reading_availability(
     class_year: str,
@@ -66937,6 +66780,7 @@ def generate_school_recommendations_and_override(components, overall_percent):
         "override_message": override_message
     }
 
+
 def sync_selective_homework_profile_report_record(
     db,
     student,
@@ -66945,7 +66789,8 @@ def sync_selective_homework_profile_report_record(
     overall_percent,
     readiness_band
 ):
-    """Create or update homework analytics and calculate homework ranks."""
+    """Create or update homework analytics and recalculate
+    ranks for every student in the homework cohort."""
 
     def get_percent(subject):
         item = components.get(subject, {})
@@ -66972,101 +66817,127 @@ def sync_selective_homework_profile_report_record(
     student_gender = student.gender or "Unknown"
     student_year = student.student_year
 
-    row = (
-        db.query(SelectiveHomeworkProfileReport)
-        .filter(
-            SelectiveHomeworkProfileReport.student_id == student.student_id,
-            SelectiveHomeworkProfileReport.exam_date == exam_date
+    try:
+        # --------------------------------------------
+        # Upsert homework profile
+        # --------------------------------------------
+        row = (
+            db.query(SelectiveHomeworkProfileReport)
+            .filter(
+                SelectiveHomeworkProfileReport.student_id == student.student_id,
+                SelectiveHomeworkProfileReport.exam_date == exam_date
+            )
+            .first()
         )
-        .first()
-    )
 
-    if row is None:
-        row = SelectiveHomeworkProfileReport(
-            student_id=student.student_id,
-            exam_date=exam_date
+        if row is None:
+            row = SelectiveHomeworkProfileReport(
+                student_id=student.student_id,
+                exam_date=exam_date
+            )
+
+            print(
+                "INSERTING HOMEWORK PROFILE:",
+                student.student_id,
+                exam_date,
+                student.student_year
+            )
+
+            db.add(row)
+
+        row.student_year = student_year
+        row.gender = student_gender
+        row.reading_percent = reading_percent
+        row.maths_percent = maths_percent
+        row.thinking_percent = thinking_percent
+        row.writing_percent = writing_percent
+        row.profile_score = profile_score
+        row.readiness_band = readiness_band
+
+        # Make the current profile available to the cohort query.
+        db.flush()
+
+        # --------------------------------------------
+        # Fetch complete homework cohort
+        # --------------------------------------------
+        cohort = (
+            db.query(SelectiveHomeworkProfileReport)
+            .filter(
+                SelectiveHomeworkProfileReport.student_year == student_year,
+                SelectiveHomeworkProfileReport.exam_date == exam_date
+            )
+            .order_by(
+                SelectiveHomeworkProfileReport.profile_score.desc(),
+                SelectiveHomeworkProfileReport.created_at.asc(),
+                SelectiveHomeworkProfileReport.id.asc()
+            )
+            .all()
         )
+
+        total_students = len(cohort)
+
+        # --------------------------------------------
+        # Calculate gender totals
+        # --------------------------------------------
+        gender_totals = {}
+
+        for item in cohort:
+            gender_key = item.gender or "Unknown"
+
+            gender_totals[gender_key] = (
+                gender_totals.get(gender_key, 0) + 1
+            )
+
+        # --------------------------------------------
+        # Recalculate ranks for EVERY student
+        # --------------------------------------------
+        gender_positions = {}
+
+        for index, item in enumerate(cohort, start=1):
+            gender_key = item.gender or "Unknown"
+
+            gender_positions[gender_key] = (
+                gender_positions.get(gender_key, 0) + 1
+            )
+
+            item.overall_rank = index
+            item.gender_rank = gender_positions[gender_key]
+
+            item.total_students = total_students
+            item.total_gender_students = gender_totals[gender_key]
+
+        # --------------------------------------------
+        # Persist all cohort ranking updates
+        # --------------------------------------------
+        db.flush()
+
         print(
-            "INSERTING HOMEWORK PROFILE:",
-            student.student_id,
-            exam_date,
-            student.student_year
+            "HOMEWORK COHORT RANKINGS UPDATED:",
+            len(cohort)
         )
-        db.add(row)
 
-    row.student_year = student_year
-    row.gender = student_gender
-    row.reading_percent = reading_percent
-    row.maths_percent = maths_percent
-    row.thinking_percent = thinking_percent
-    row.writing_percent = writing_percent
-    row.profile_score = profile_score
-    row.readiness_band = readiness_band
+        for item in cohort:
+            print(
+                f"Student={item.student_id} | "
+                f"Score={item.profile_score} | "
+                f"Overall={item.overall_rank}/{item.total_students} | "
+                f"Gender={item.gender_rank}/{item.total_gender_students}"
+            )
 
-    # Persist this student's homework profile before ranking the cohort.
-    db.flush()
+        db.commit()
+        db.refresh(row)
 
-    cohort = (
-        db.query(SelectiveHomeworkProfileReport)
-        .filter(
-            SelectiveHomeworkProfileReport.student_year == student_year,
-            SelectiveHomeworkProfileReport.exam_date == exam_date
-        )
-        .order_by(
-            SelectiveHomeworkProfileReport.profile_score.desc(),
-            SelectiveHomeworkProfileReport.created_at.asc(),
-            SelectiveHomeworkProfileReport.id.asc()
-        )
-        .all()
-    )
+        return {
+            "profile_score": profile_score,
+            "overall_rank": row.overall_rank,
+            "gender_rank": row.gender_rank,
+            "total_students": row.total_students,
+            "total_gender_students": row.total_gender_students
+        }
 
-    total_students = len(cohort)
-
-    overall_rank = next(
-        (
-            index
-            for index, item in enumerate(cohort, start=1)
-            if item.id == row.id
-        ),
-        0
-    )
-
-    gender_cohort = [
-        item for item in cohort
-        if (item.gender or "Unknown") == student_gender
-    ]
-
-    total_gender_students = len(gender_cohort)
-
-    gender_rank = next(
-        (
-            index
-            for index, item in enumerate(gender_cohort, start=1)
-            if item.id == row.id
-        ),
-        0
-    )
-
-    row.overall_rank = overall_rank
-    row.gender_rank = gender_rank
-    row.total_students = total_students
-    row.total_gender_students = total_gender_students
-
-    db.flush()
-    print(
-        "HOMEWORK PROFILE SAVED:",
-        row.id,
-        row.student_id,
-        row.exam_date,
-        row.profile_score
-    )
-    return {
-        "profile_score": profile_score,
-        "overall_rank": overall_rank,
-        "gender_rank": gender_rank,
-        "total_students": total_students,
-        "total_gender_students": total_gender_students
-    }
+    except Exception:
+        db.rollback()
+        raise
 
 def sync_selective_profile_report_record(
     db,
@@ -67078,7 +66949,7 @@ def sync_selective_profile_report_record(
 ):
     """
     Creates or updates selective_profile_reports row
-    and calculates ranks.
+    and recalculates ranks for every student in the cohort.
     """
 
     # --------------------------------------------
@@ -67099,16 +66970,12 @@ def sync_selective_profile_report_record(
     maths_percent = helper_extract_component_percent("mathematical_reasoning")
     thinking_percent = helper_extract_component_percent("thinking_skills")
 
-    # Writing stored as raw mark out of 25 in your system
+    # Writing stored as raw mark out of 25
     writing_raw = helper_extract_component_percent("writing")
     writing_percent = round((writing_raw / 25) * 100, 2)
 
     # --------------------------------------------
     # Weighted profile score
-    # Reading 30
-    # Maths 30
-    # Thinking 25
-    # Writing 15
     # --------------------------------------------
     profile_score = round(
         (reading_percent * 0.30) +
@@ -67121,97 +66988,108 @@ def sync_selective_profile_report_record(
     student_gender = student.gender or "Unknown"
     student_year = student.student_year
 
-    # --------------------------------------------
-    # Upsert row
-    # --------------------------------------------
-    existing = (
-        db.query(SelectiveProfileReport)
-        .filter(
-            SelectiveProfileReport.student_id == student.student_id,
-            SelectiveProfileReport.exam_date == exam_date
+    try:
+        # --------------------------------------------
+        # Upsert profile row
+        # --------------------------------------------
+        existing = (
+            db.query(SelectiveProfileReport)
+            .filter(
+                SelectiveProfileReport.student_id == student.student_id,
+                SelectiveProfileReport.exam_date == exam_date
+            )
+            .first()
         )
-        .first()
-    )
 
-    if existing:
-        row = existing
-    else:
-        row = SelectiveProfileReport(
-            student_id=student.student_id,
-            exam_date=exam_date
+        if existing:
+            row = existing
+        else:
+            row = SelectiveProfileReport(
+                student_id=student.student_id,
+                exam_date=exam_date
+            )
+            db.add(row)
+
+        row.student_year = student_year
+        row.gender = student_gender
+
+        row.reading_percent = reading_percent
+        row.maths_percent = maths_percent
+        row.thinking_percent = thinking_percent
+        row.writing_percent = writing_percent
+
+        row.profile_score = profile_score
+        row.readiness_band = readiness_band
+
+        # Flush so the new/updated row is included in the cohort query.
+        db.flush()
+
+        # --------------------------------------------
+        # Fetch complete cohort
+        # Same existing filters and ranking rules
+        # --------------------------------------------
+        cohort = (
+            db.query(SelectiveProfileReport)
+            .filter(
+                SelectiveProfileReport.student_year == student_year,
+                SelectiveProfileReport.exam_date == exam_date
+            )
+            .order_by(
+                SelectiveProfileReport.profile_score.desc(),
+                SelectiveProfileReport.created_at.asc()
+            )
+            .all()
         )
-        db.add(row)
 
-    row.student_year = student_year
-    row.gender = student_gender
+        total_students = len(cohort)
 
-    row.reading_percent = reading_percent
-    row.maths_percent = maths_percent
-    row.thinking_percent = thinking_percent
-    row.writing_percent = writing_percent
+        # --------------------------------------------
+        # Recalculate overall and gender ranks
+        # for EVERY student in the cohort
+        # --------------------------------------------
+        gender_totals = {}
 
-    row.profile_score = profile_score
-    row.readiness_band = readiness_band
+        for item in cohort:
+            gender_key = item.gender or "Unknown"
+            gender_totals[gender_key] = (
+                gender_totals.get(gender_key, 0) + 1
+            )
 
-    db.commit()
+        gender_positions = {}
 
+        for index, item in enumerate(cohort, start=1):
 
-    # --------------------------------------------
-    # Ranking pool = students with reports for the same exam date and year
-    cohort = (
-        db.query(SelectiveProfileReport)
-        .filter(
-            SelectiveProfileReport.student_year == student_year,
-            SelectiveProfileReport.exam_date == exam_date
-        )
-        .order_by(
-            SelectiveProfileReport.profile_score.desc(),
-            SelectiveProfileReport.created_at.asc()
-        )
-        .all()
-    )
+            gender_key = item.gender or "Unknown"
 
-    total_students = len(cohort)
+            gender_positions[gender_key] = (
+                gender_positions.get(gender_key, 0) + 1
+            )
 
-    overall_rank = 0
-    for index, item in enumerate(cohort, start=1):
-        if item.student_id == student.student_id and item.exam_date == exam_date:
-            overall_rank = index
-            break
+            item.overall_rank = index
+            item.gender_rank = gender_positions[gender_key]
 
-    # --------------------------------------------
-    # Gender rank inside same year
-    # --------------------------------------------
-    gender_cohort = [
-        item for item in cohort
-        if (item.gender or "Unknown") == student_gender
-    ]
+            item.total_students = total_students
+            item.total_gender_students = gender_totals[gender_key]
 
-    total_gender_students = len(gender_cohort)
+        # --------------------------------------------
+        # Save all cohort ranking updates together
+        # --------------------------------------------
+        db.commit()
 
-    gender_rank = 0
-    for index, item in enumerate(gender_cohort, start=1):
-        if item.student_id == student.student_id and item.exam_date == exam_date:
-            gender_rank = index
-            break
+        # Refresh current student's row
+        db.refresh(row)
 
-    # --------------------------------------------
-    # Save ranks
-    # --------------------------------------------
-    row.overall_rank = overall_rank
-    row.gender_rank = gender_rank
-    row.total_students = total_students
-    row.total_gender_students = total_gender_students
+        return {
+            "profile_score": profile_score,
+            "overall_rank": row.overall_rank,
+            "gender_rank": row.gender_rank,
+            "total_students": row.total_students,
+            "total_gender_students": row.total_gender_students
+        }
 
-    db.commit()
-
-    return {
-        "profile_score": profile_score,
-        "overall_rank": overall_rank,
-        "gender_rank": gender_rank,
-        "total_students": total_students,
-        "total_gender_students": total_gender_students
-    } 
+    except Exception:
+        db.rollback()
+        raise
 
 def percentile_to_band(rank: int, total: int) -> str:
     if not rank or not total or total <= 0:
@@ -70466,9 +70344,11 @@ def generate_oc_mathematical_reasoning_exam_latest(
             Question.class_year
             == class_year,
 
-            # selected upload date
+            # selected upload date interpreted in Sydney timezone
             func.date(
-                Question.created_at
+                Question.created_at.op("AT TIME ZONE")(
+                    "Australia/Sydney"
+                )
             ) == parsed_date,
 
             # selected upload batch
@@ -89867,6 +89747,7 @@ created_at={q.created_at}
             status_code=500,
             detail=str(e)
         )
+
 def parse_and_normalize_writing_with_openai(text: str) -> list[dict]:
     """
     Normalize loosely formatted writing questions into structured JSON.
